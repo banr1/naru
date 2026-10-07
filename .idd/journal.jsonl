@@ -1,0 +1,2 @@
+{"at":"2026-10-07T07:31:38Z","kind":"human","action":"init","note":"idd init","idd_version":"0.2.0"}
+{"at":"2026-10-07T19:47:35Z","kind":"human","action":"interrogate","note":"対話(interrogate, claude)で IDEAL.md を書き直し(他 1068 ファイルを含む)","released":"none","ideal_sha":"045a3d5159d54f0ac55790766d2637f2951c03c6ec6da9b16cb2e8b6c5f2c38e"}
