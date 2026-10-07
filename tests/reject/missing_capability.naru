@@ -1,0 +1,24 @@
+// 反例: capability の無い型への `==` / `<`。
+// `derive eq` / `derive order` の無い record は比較できない(Lean の DecidableEq / Ord は露出せず、
+// capability として宣言する)。
+// 期待: `lake exe naru compile tests/reject/missing_capability.naru` が exit 非 0 で E005 を出力する
+//      (`lake exe naru check-reject tests/reject/missing_capability.naru E005` が PASS)。
+module Reject.MissingCapability
+
+// derive なし
+record Vote { slot: Nat, voter: Nat }
+
+// eq が無い型への == → E005
+fn same(a: Vote, b: Vote) -> Bool {
+  a == b
+}
+
+// order が無い型への < → E005
+fn before(a: Vote, b: Vote) -> Bool {
+  a < b
+}
+
+// eq を要する stdlib メソッド(Set.contains)も → E005
+fn seen(votes: Set<Vote>, v: Vote) -> Bool {
+  votes.contains(v)
+}

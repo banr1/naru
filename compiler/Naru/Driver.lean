@@ -1,12 +1,14 @@
 import Naru.Lexer
 import Naru.Parser
 import Naru.Resolve
+import Naru.Typecheck
 
 /-!
 # ドライバ
 
-ファイル群 → 字句解析 → 構文解析 → 名前解決・phase 検査。
+ファイル群 → 字句解析 → 構文解析 → 名前解決・phase 検査 → 型・capability 検査(選択 E003・順序 E004 を含む)。
 構文エラーのあるファイルがあれば後段には進まない(1 ファイル 1 エラーで止まる)。
+名前解決の誤りがあれば型検査には進まない(未解決名の波及を避ける)。
 -/
 
 namespace Naru
@@ -27,6 +29,8 @@ def compileFiles (paths : List String) : IO (Array Diagnostic × Array Module) :
     | .error d => diags := diags.push d
   if diags.isEmpty then
     diags := resolveAll mods
+  if diags.isEmpty then
+    diags := typecheckAll mods
   return (diags, mods)
 
 end Naru

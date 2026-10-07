@@ -22,17 +22,17 @@ ideal_sha: 045a3d5159d54f0ac55790766d2637f2951c03c6ec6da9b16cb2e8b6c5f2c38e
 | ID | 階層 | 条件 | 状態 | 証拠 |
 |----|------|------|------|------|
 | C1 | 必須 | 同じ naru ソースから生成される Lean は byte-for-byte 同一で、各生成ファイルの先頭にコンパイラ版・stdlib 版・ソース hash が入っている(`lake exe naru compile` を 2 回実行して `generated/` の sha256 が一致し、先頭コメントに 3 つの値) | unmet | backend 未実装(`generated/` を出力しない) |
-| C2 | 必須 | runtime 宣言から spec 宣言への依存(phase leak)はコンパイルエラーになる(`tests/reject/phase_leak.naru` で exit 非 0、`E001`) | met | cycle 1: lake exe naru check-reject tests/reject/phase_leak.naru E001 exit 0 (compile と同じ経路で拒否(exit 1 相当)と `error[E001]` を検査する。生の `lake exe naru compile tests/reject/phase_leak.naru` は exit 1 で E001 を出力) |
-| C3 | 必須 | 無条件の選択(choose / pick / set.first / set.toList 等)はコンパイルエラーになる(`tests/reject/choose.naru` で exit 非 0、`E003`) | unmet | 型検査・E003 未実装 |
+| C2 | 必須 | runtime 宣言から spec 宣言への依存(phase leak)はコンパイルエラーになる(`tests/reject/phase_leak.naru` で exit 非 0、`E001`) | met | cycle 2: lake exe naru check-reject tests/reject/phase_leak.naru E001 exit 0 (compile と同じ経路で拒否(exit 1 相当)と `error[E001]` を検査する。生の `lake exe naru compile tests/reject/phase_leak.naru` は exit 1 で E001 を出力。メソッド記法経由の `tests/reject/phase_leak_method.naru` も同様に PASS) |
+| C3 | 必須 | 無条件の選択(choose / pick / set.first / set.toList 等)はコンパイルエラーになる(`tests/reject/choose.naru` で exit 非 0、`E003`) | met | cycle 2: lake exe naru check-reject tests/reject/choose.naru E003 exit 0 (生の `lake exe naru compile tests/reject/choose.naru` は exit 1 で E003 を 4 箇所(`Set.choose` / `Set.first?` / 自由関数 `pick` / `Set.find?`)出力。`set.toList` は C5 の E004 で拒否) |
 | C4 | 必須 | 停止性を確認できない再帰はコンパイルエラーになる(`tests/reject/non_total.naru` で exit 非 0、`E002`) | unmet | 計算可能性検査・E002 未実装 |
-| C5 | 必須 | 順序指定の無い Set → List 変換はコンパイルエラーになる(`tests/reject/order_loss.naru` で exit 非 0、`E004`) | unmet | 型検査・E004 未実装 |
+| C5 | 必須 | 順序指定の無い Set → List 変換はコンパイルエラーになる(`tests/reject/order_loss.naru` で exit 非 0、`E004`) | met | cycle 2: lake exe naru check-reject tests/reject/order_loss.naru E004 exit 0 (生の `lake exe naru compile tests/reject/order_loss.naru` は exit 1 で E004 を 3 箇所(`Set.toList` / `by` 無しの `sort(set)` / `Set.fold`)出力) |
 | C6 | 必須 | 生成 Model は Lean としてビルドでき、noncomputable / unsafe / axiom / sorry / 無制限の partial を含まない(lake target のビルド exit 0、grep 0 件) | unmet | Model backend 未実装 |
 | C7 | 必須 | 生成 Model は native 実行でき、scenario をシミュレーションして observer の値を表示する(`lake exe naru simulate dsl/scenarios/basic.naru` が exit 0 で time / node / confirmed / stable / finalized を出力) | unmet | simulate 未実装(exit 2) |
 | C8 | 必須 | 生成 Statements は生成 Model だけを import し(Proofs を import しない)、sorry を含まない(import 閉包の検査スクリプト exit 0、grep 0 件) | unmet | Statements backend 未実装 |
-| C9 | 必須 | 生成 Statements の公開 claim surface は naru ソースの claim bundle と一致し、verified-consensus の 13 claims と同名(surface shape の検査スクリプトが 13 のフィールド名を列挙して exit 0) | unmet | Statements backend・検査スクリプト未実装 |
+| C9 | 必須 | 生成 Statements の公開 claim surface は naru ソースの claim bundle と一致し、verified-consensus の 13 claims と同名(surface shape の検査スクリプトが 13 のフィールド名を列挙して exit 0) | unmet | Statements backend・検査スクリプト未実装(claim bundle の項目が claim であることの検査 E016 は周回 2 で実装) |
 | C10 | 必須 | 具体的な fixture 上で手書き Model と生成 Model の confirmed / stable / finalized の読みと emitted objects が一致する(golden test が Witnesses の 4 run と naru scenario 3 本以上に対し MISMATCH 0 件で exit 0) | unmet | 移植・golden test 未実装 |
-| C11 | 望ましい | naru のユーザーは Lean 固有の概念を扱わない(予約語一覧・構文エラーメッセージ・`dsl/` の移植ソースに Fintype / DecidableEq / Finset / Classical / termination_by / Prop / theorem / by が現れない) | unmet | `dsl/` 未作成 |
-| C12 | 望ましい | capability の無い型への `==` や `<` はコンパイルエラーになる(`tests/reject/missing_capability.naru` で exit 非 0、`E005`) | unmet | 型検査・E005 未実装 |
-| C13 | 望ましい | Model 内での無限量化の結果による分岐はコンパイルエラーになる(`tests/reject/infinite_quantification.naru` で exit 非 0、`E006`) | unmet | E006 未実装 |
+| C11 | 望ましい | naru のユーザーは Lean 固有の概念を扱わない(予約語一覧・構文エラーメッセージ・`dsl/` の移植ソースに Fintype / DecidableEq / Finset / Classical / termination_by / Prop / theorem / by が現れない) | unmet | `dsl/` 未作成。注意: 前提の `sort(set, by = …)` と `by` の grep 0 件が衝突する(周回 2 の申し送り参照) |
+| C12 | 望ましい | capability の無い型への `==` や `<` はコンパイルエラーになる(`tests/reject/missing_capability.naru` で exit 非 0、`E005`) | met | cycle 2: lake exe naru check-reject tests/reject/missing_capability.naru E005 exit 0 (生の `lake exe naru compile tests/reject/missing_capability.naru` は exit 1 で E005 を 3 箇所(`==` / `<` / `Set.contains`)出力) |
+| C13 | 望ましい | Model 内での無限量化の結果による分岐はコンパイルエラーになる(`tests/reject/infinite_quantification.naru` で exit 非 0、`E006`) | unmet | runtime 宣言内の `forall` / `exists` を E006 にする検査は周回 2 で実装済み。反例 `tests/reject/infinite_quantification.naru` が未作成 |
 | C14 | 望ましい | runtime の条件が classical な命題の決定に依存するとコンパイルエラーになる(`tests/reject/classical_decision.naru` で exit 非 0、`E007`) | unmet | E007 未実装 |
 | C15 | 望ましい | 人間のレビュー面(Interface・Constants・Claim Bundle)は生成 Statements の 1 ファイル `generated/Statements/Review.lean` に集約されている | unmet | Statements backend 未実装 |

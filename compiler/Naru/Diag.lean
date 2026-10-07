@@ -48,6 +48,12 @@ def unresolved := "E011"
 def duplicate := "E012"
 /-- 型の位置に型でない宣言が現れた。 -/
 def notAType := "E013"
+/-- 型の不一致・推論できない型・値でないものの値としての使用。 -/
+def typeMismatch := "E014"
+/-- 無い欄・無いメソッド・引数の数や名前の不一致。 -/
+def arity := "E015"
+/-- claim bundle の項目が claim(または入れ子の claim bundle)でない。 -/
+def notAClaim := "E016"
 end Code
 
 end Naru

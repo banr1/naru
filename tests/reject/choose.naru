@@ -1,0 +1,29 @@
+// 反例: Set からの無条件の選択(choose / pick / first …)。
+// どの要素が返るかが集合の内部順序に依存し、決定的でない。
+// 期待: `lake exe naru compile tests/reject/choose.naru` が exit 非 0 で E003 を出力する
+//      (`lake exe naru check-reject tests/reject/choose.naru E003` が PASS)。
+module Reject.Choose
+
+type ValidatorId = Nat
+
+record Committee { members: Set<ValidatorId> } derive eq
+
+// メソッド記法の choose → E003
+fn leader(c: Committee) -> Option<ValidatorId> {
+  c.members.choose()
+}
+
+// first? も「どれか 1 つ」でしかない → E003
+fn anyMember(c: Committee) -> Option<ValidatorId> {
+  c.members.first?()
+}
+
+// 自由関数の形 pick(set) → E003
+fn pickOne(c: Committee) -> Option<ValidatorId> {
+  pick(c.members)
+}
+
+// 条件付きでも Set の find? は複数該当のとき決定的でない → E003(findUnique? を使う)
+fn findBig(c: Committee) -> Option<ValidatorId> {
+  c.members.find?(|v| v > 10)
+}

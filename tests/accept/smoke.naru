@@ -1,4 +1,5 @@
 // 受理例: MVP 構文の一通り。`lake exe naru compile tests/accept/smoke.naru` が exit 0 になること。
+// 名前解決・phase 検査(E001)・型検査・capability 検査・Set の選択(E003)/順序(E004)の検査をすべて通る。
 module Accept.Smoke
 
 type Slot = Nat
@@ -6,6 +7,9 @@ type ValidatorId = Nat
 
 enum Phase { Tick, Deliver } derive eq, order
 
+enum Verdict { Accept(Slot), Reject(Slot, String), Pending } derive eq
+
+// Set を含むので order は derive できない(E005 になる)。eq だけ。
 record Block {
   slot: Slot,
   parent: Option<Slot>,
@@ -27,6 +31,14 @@ fn phaseRank(p: Phase) -> Nat {
   }
 }
 
+fn verdictSlot(v: Verdict) -> Option<Slot> {
+  match v {
+    Verdict.Accept(s) => Some(s),
+    Verdict.Reject(s, _) => Some(s),
+    Verdict.Pending => None,
+  }
+}
+
 fn extend(st: Store, b: Block) -> Store {
   let seen = [b];
   if b.slot > st.head.slot {
@@ -44,8 +56,50 @@ fn describe(o: Option<Slot>) -> Nat {
   }
 }
 
-fn pick(xs: List<Block>) -> Option<Block> {
+// List からの find? は先頭一致で決定的
+fn firstAtSlotOne(xs: List<Block>) -> Option<Block> {
   xs.find?(|b| b.slot == 1)
+}
+
+// Set → List は sort(by = …) で順序を明示する(E004 にならない)
+fn voters(b: Block) -> List<ValidatorId> {
+  sort(b.votes, by = |v| v)
+}
+
+fn votersDesc(b: Block) -> List<ValidatorId> {
+  b.votes.sort(by = |v| -v.toInt())
+}
+
+// Set からの選択は findUnique? / minBy? / maxBy? だけ(E003 にならない)
+fn uniqueVoter(b: Block, who: ValidatorId) -> Option<ValidatorId> {
+  b.votes.findUnique?(|v| v == who)
+}
+
+// List の maxBy? は鍵の order だけを要する(Block 自身に order は要らない)
+fn heaviest(st: Store) -> Option<Block> {
+  st.seen.maxBy?(|b| b.votes.size())
+}
+
+fn weightOf(st: Store, v: ValidatorId) -> Nat {
+  st.weights.getOr(v, 0)
+}
+
+fn totalWeight(st: Store, b: Block) -> Nat {
+  sort(b.votes, by = |v| v).fold(0, |acc, v| acc + weightOf(st, v))
+}
+
+fn pairSlots(p: (Slot, Slot)) -> Nat {
+  match p {
+    (a, b) => a + b,
+  }
+}
+
+fn withVotes(b: Block, vs: List<ValidatorId>) -> Block {
+  Block { votes: Set.of(vs), ..b }
+}
+
+fn parentOr(b: Block) -> Slot {
+  b.parent.getOr(0)
 }
 
 predicate HeadIsLatest(st: Store) {
@@ -60,7 +114,13 @@ claim headMonotone(st: Store, b: Block) {
   Honest(st) implies HeadIsLatest(extend(st, b))
 }
 
-claim bundle Smoke { headMonotone, honest: Honest }
+claim headPositive(st: Store) {
+  Honest(st) implies st.head.slot > 0
+}
+
+claim bundle Liveness { headPositive }
+
+claim bundle Smoke { headMonotone, positive: headPositive, nested: Liveness }
 
 protocol Demo {
   fn step(st: Store) -> Store { st }
@@ -70,5 +130,6 @@ observer headSlot(st: Store) -> Nat { st.head.slot }
 
 scenario basic {
   let b = Block { slot: 1, parent: None, votes: Set.empty() };
-  describe(Some(b.slot))
+  let st = Store { head: b, seen: [], weights: Table.empty() };
+  describe(Some(extend(st, b).head.slot))
 }

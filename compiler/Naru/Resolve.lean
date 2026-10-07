@@ -49,8 +49,9 @@ def report (file : String) (span : Span) (code msg : String) : R Unit :=
 def builtinTypes : List String :=
   ["Bool", "Nat", "Int", "String", "Unit", "Option", "Result", "List", "Set", "Table"]
 
-/-- 組み込みの値・構築子。stdlib が naru で書かれるまでの暫定。 -/
-def builtinValues : List String := ["Some", "None", "Ok", "Err"]
+/-- 組み込みの値・構築子・自由関数。stdlib が naru で書かれるまでの暫定。
+`sort` は `sort(xs, by = …)`、`choose` / `pick` は常に E003(型検査の段で報告)。 -/
+def builtinValues : List String := ["Some", "None", "Ok", "Err", "sort", "choose", "pick"]
 
 def isBuiltinHead (head : String) : Bool :=
   builtinTypes.contains head || builtinValues.contains head
@@ -105,23 +106,41 @@ def checkRef (ctx : Ctx) (span : Span) (segs : List String) : R Unit := do
         report ctx.file span Code.phaseLeak
           s!"{ctx.declKind.describe} `{ctx.declName}` is a runtime declaration but refers to spec {sym.kind.describe} `{sym.name}`; runtime declarations cannot depend on spec declarations (phase leak)"
 
+/-- ユーザ定義の型の経路。**完全一致**で解決する(`Block` / `Mod.Block`)。
+接頭辞だけが一致する経路(`Block.whatever`)は型ではない(E011)。接頭辞の一致を許すと、
+型検査が解決できない型を「不明」として黙り、E003 / E004 などの検査を素通りさせる抜け穴になる。 -/
+def checkTyPath (ctx : Ctx) (span : Span) (name : List String) : R Unit := do
+  let s ← get
+  match s.globals.get? (renderPath name) with
+  | some sym =>
+    if !sym.kind.isType then
+      report ctx.file span Code.notAType s!"`{sym.name}` is a {sym.kind.describe}, not a type"
+  | none =>
+    match ← lookupPath name with
+    | some (some sym) =>
+      report ctx.file span Code.unresolved
+        s!"cannot find type `{renderPath name}`: `{sym.name}` is a {sym.kind.describe} and has no member types"
+    | _ =>
+      report ctx.file span Code.unresolved s!"cannot find type `{renderPath name}` in this scope"
+
 /-- 型の位置の参照。E011 と E013 を報告する。 -/
 partial def checkTy (ctx : Ctx) : Ty → R Unit
   | .named span name args => do
+    for a in args do checkTy ctx a
     match name with
     | [] => return
+    | [head] =>
+      if builtinTypes.contains head then return
+      if isBuiltinHead head then
+        report ctx.file span Code.notAType s!"`{head}` is not a type"
+        return
+      checkTyPath ctx span name
     | head :: _ =>
-      if !builtinTypes.contains head then
-        match ← lookupPath name with
-        | none =>
-          report ctx.file span Code.unresolved s!"cannot find type `{renderPath name}` in this scope"
-        | some none =>
-          report ctx.file span Code.notAType s!"`{renderPath name}` is not a type"
-        | some (some sym) =>
-          if !sym.kind.isType then
-            report ctx.file span Code.notAType
-              s!"`{sym.name}` is a {sym.kind.describe}, not a type"
-    for a in args do checkTy ctx a
+      if isBuiltinHead head then
+        report ctx.file span Code.unresolved
+          s!"cannot find type `{renderPath name}` in this scope (`{head}` has no member types)"
+        return
+      checkTyPath ctx span name
   | .tuple _ elems => do
     for e in elems do checkTy ctx e
 

@@ -1,0 +1,20 @@
+// 反例(回帰用): 型の位置に解決できない経路(`Nat.X` / `Set.Anything` / `Record.whatever`)を書いて、
+// 型検査を「不明」で黙らせ、E003 / E004 を素通りさせようとする。型の経路は完全一致で解決し、E011 で止まる。
+// 期待: `lake exe naru check-reject tests/reject/type_path_escape.naru E011` が PASS。
+module Reject.TypePathEscape
+
+record Committee { members: Set<Nat> } derive eq
+
+// `Nat.X` は型ではない → E011(以前は不明型として Set → List のすり替えを許した)
+fn roster(x: Nat.X) -> List<Nat> { x }
+
+fn launder(c: Committee) -> List<Nat> { roster(c.members) }
+
+// 組み込み型の頭に区切りが続く → E011
+fn first(x: Set.Anything) -> Option<Nat> { x.choose() }
+
+// ユーザ型の接頭辞だけが一致する → E011
+fn whatever(x: Committee.whatever) -> List<Nat> { x.toList() }
+
+// 別名経由でも同じ → E011
+type S = Set.X

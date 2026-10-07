@@ -1,0 +1,24 @@
+// 反例: 順序指定の無い Set → List 変換。
+// Set は順序を持たないので、List 化には `sort(by = …)` で順序を明示しなければならない。
+// 期待: `lake exe naru compile tests/reject/order_loss.naru` が exit 非 0 で E004 を出力する
+//      (`lake exe naru check-reject tests/reject/order_loss.naru E004` が PASS)。
+module Reject.OrderLoss
+
+type ValidatorId = Nat
+
+record Committee { members: Set<ValidatorId> } derive eq
+
+// toList は順序を言わない → E004
+fn roster(c: Committee) -> List<ValidatorId> {
+  c.members.toList()
+}
+
+// sort に by = … が無い → E004
+fn rosterSorted(c: Committee) -> List<ValidatorId> {
+  sort(c.members)
+}
+
+// fold は暗黙の順序で要素を回す → E004
+fn total(c: Committee) -> Nat {
+  c.members.fold(0, |acc, v| acc + v)
+}
