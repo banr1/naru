@@ -1,0 +1,14 @@
+name = "naru"
+version = "0.1.0"
+defaultTargets = ["naru"]
+
+# naru コンパイラ本体。字句解析・構文解析・名前解決・各種静的検査・backend を置く。
+[[lean_lib]]
+name = "Naru"
+srcDir = "compiler"
+
+# CLI: `lake exe naru compile [files...]` / `lake exe naru simulate <scenario>`
+[[lean_exe]]
+name = "naru"
+root = "Main"
+srcDir = "compiler"

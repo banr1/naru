@@ -1,0 +1,74 @@
+// 受理例: MVP 構文の一通り。`lake exe naru compile tests/accept/smoke.naru` が exit 0 になること。
+module Accept.Smoke
+
+type Slot = Nat
+type ValidatorId = Nat
+
+enum Phase { Tick, Deliver } derive eq, order
+
+record Block {
+  slot: Slot,
+  parent: Option<Slot>,
+  votes: Set<ValidatorId>,
+} derive eq
+
+state Store {
+  head: Block,
+  seen: List<Block>,
+  weights: Table<ValidatorId, Nat>,
+}
+
+input proposer(slot: Slot) -> ValidatorId
+
+fn phaseRank(p: Phase) -> Nat {
+  match p {
+    Phase.Tick => 0,
+    Phase.Deliver => 1,
+  }
+}
+
+fn extend(st: Store, b: Block) -> Store {
+  let seen = [b];
+  if b.slot > st.head.slot {
+    Store { head: b, seen: seen, ..st }
+  } else {
+    Store { ..st }
+  }
+}
+
+fn describe(o: Option<Slot>) -> Nat {
+  match o {
+    Some(s) if s > 0 => s,
+    Some(_) => 0,
+    None => 0,
+  }
+}
+
+fn pick(xs: List<Block>) -> Option<Block> {
+  xs.find?(|b| b.slot == 1)
+}
+
+predicate HeadIsLatest(st: Store) {
+  forall b: Block { b.slot <= st.head.slot }
+}
+
+condition Synchronous(delta: Nat) { delta > 0 }
+
+regime Honest(st: Store) { HeadIsLatest(st) && !(st.head.slot == 0) }
+
+claim headMonotone(st: Store, b: Block) {
+  Honest(st) implies HeadIsLatest(extend(st, b))
+}
+
+claim bundle Smoke { headMonotone, honest: Honest }
+
+protocol Demo {
+  fn step(st: Store) -> Store { st }
+}
+
+observer headSlot(st: Store) -> Nat { st.head.slot }
+
+scenario basic {
+  let b = Block { slot: 1, parent: None, votes: Set.empty() };
+  describe(Some(b.slot))
+}

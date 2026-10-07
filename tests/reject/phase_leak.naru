@@ -1,0 +1,13 @@
+// 反例: runtime 宣言(fn)が spec 宣言(predicate)に依存する。
+// 期待: `lake exe naru compile tests/reject/phase_leak.naru` が exit 非 0 で E001 を出力する。
+module Reject.PhaseLeak
+
+record Store { height: Nat } derive eq
+
+// spec: 検証にだけ参加する述語
+predicate Tall(s: Store) { s.height > 3 }
+
+// runtime: 実行に参加する関数が spec の述語で分岐している → phase leak (E001)
+fn bump(s: Store) -> Store {
+  if Tall(s) { s } else { Store { height: s.height + 1 } }
+}

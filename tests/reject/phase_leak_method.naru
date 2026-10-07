@@ -1,0 +1,12 @@
+// 反例: メソッド記法 `s.tall()` 経由の phase leak。`x.f(args)` はユーザ宣言の大域名 `f` に対しては
+// `f(x, args)` の糖衣なので、runtime fn から spec predicate を呼んだことになる。
+// 期待: `lake exe naru check-reject tests/reject/phase_leak_method.naru E001` が PASS。
+module Reject.PhaseLeakMethod
+
+record Store { height: Nat } derive eq
+
+predicate tall(s: Store) { s.height > 3 }
+
+fn isTall(s: Store) -> Bool {
+  s.tall()
+}
