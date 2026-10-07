@@ -102,6 +102,54 @@ fn parentOr(b: Block) -> Slot {
   b.parent.getOr(0)
 }
 
+// 構造的再帰: match で取り出した部分項(l / r)に再帰する(E002 にならない)
+enum Tree { Leaf, Node(Tree, Nat, Tree) } derive eq
+
+fn treeSum(t: Tree) -> Nat {
+  match t {
+    Tree.Leaf => 0,
+    Tree.Node(l, v, r) => treeSum(l) + v + treeSum(r),
+  }
+}
+
+// 部分項をさらに match しても部分項のまま(E002 にならない)
+fn leftmost(t: Tree) -> Nat {
+  match t {
+    Tree.Leaf => 0,
+    Tree.Node(l, v, _) => match l {
+      Tree.Leaf => v,
+      Tree.Node(_, _, _) => leftmost(l),
+    },
+  }
+}
+
+// 明示 fuel: Nat 引数を n == 0 で保護し、n - 1 で渡す(E002 にならない)
+fn countdown(n: Nat, acc: Nat) -> Nat {
+  if n == 0 { acc } else { countdown(n - 1, acc + n) }
+}
+
+// match で保護した fuel。別名 k は n と同じ値(E002 にならない)
+fn repeatHalve(n: Nat, x: Nat) -> Nat {
+  match n {
+    0 => x,
+    k => repeatHalve(k - 1, x / 2),
+  }
+}
+
+// && で保護し、2 ずつ減らす fuel(E002 にならない)
+fn stepTwo(fuel: Nat, x: Nat) -> Nat {
+  if fuel >= 2 && x > 0 { stepTwo(fuel - 2, x - 1) } else { x }
+}
+
+// 相互再帰: 両方の辺で fuel が減る(E002 にならない)
+fn ping(n: Nat) -> Bool {
+  if n == 0 { true } else { pong(n - 1) }
+}
+
+fn pong(n: Nat) -> Bool {
+  if n == 0 { false } else { ping(n - 1) }
+}
+
 predicate HeadIsLatest(st: Store) {
   forall b: Block { b.slot <= st.head.slot }
 }

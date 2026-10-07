@@ -144,6 +144,25 @@ Set から List への経路は `sort(by = …)` だけ。`Set.map` は Set を�
 `forall` / `exists` は spec 宣言専用。runtime 宣言(fn / observer / scenario …)に書くと E006。
 有限の集合を回すには `all` / `any` / `filter` を使う。
 
+### 再帰(E002、`Totality.lean`)
+
+IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有限集合の反復のみ。有限集合の反復は stdlib のメソッド
+(`all` / `any` / `filter` / `map` / `fold` …)で、ユーザが書く再帰は次の 2 つの形だけを受理する。それ以外の再帰
+(自己再帰・相互再帰とも)は **E002**。再帰しない関数には何の制限も無い。
+
+| 形 | 受理する書き方 |
+|---|---|
+| 構造的再帰 | 仮引数(またはそれより小さい値)を `match` し、**構築子パターンの中**で束縛した名前を再帰呼出しの同じ測度の位置に渡す。`Tree.Node(l, _, r) => sum(l) + sum(r)`、`Chain.Link(_, Some(next)) => len(next)` |
+| 明示 fuel | `Nat` の仮引数 `n`(型別名でもよい)を、`n ≥ k` が分かる分岐の中で `n - k`(k ≥ 1 のリテラル)として渡す。分かる分岐: `if n == 0 { … } else { ここ }`、`if n > 0 { ここ }`、`n != 0`、`n >= k`、`k < n`、`!(…)`、`&&` の then 側、`||` の else 側、`else if n == 1 { … } else { ここ }` の連鎖(n ≥ 2)、`match n { 0 => …, k => ここ }`(`k` は `n` の別名。`_` でもよい。**ガードの無い**リテラルの腕が 0 から連続して覆った値の次が下限: `0 => …, 1 => …, k =>` なら k ≥ 2。`0 if c => …` はガードが偽なら 0 が落ちてくるので数えない)、腕のガード `k if k > 0 => …` |
+
+- サイクル(相互再帰を含む)の各関数に測度(仮引数の位置)を 1 つずつ割り当て、サイクル内の**すべての**呼出しで
+  呼出し先の測度の実引数が呼出し元の測度より厳密に小さくなければならない(`ping(n - 1)` ↔ `pong(n - 1)` は可、
+  片方が `ping(n)` なら両方 E002)。辞書式など複合の測度は無い。
+- 検査は保守的で、Lean が受理できる形でも E002 になることがある: `let k = n - 1;` を経由する、record の欄(`c.rest`)に再帰する、
+  lambda の引数(`xs.map(|x| f(x))`)から再帰する、`Int` の引数を減らす(下に有界でない)、仮引数と同名の `let` / lambda 引数で隠す、
+  関数を値として渡す(`let g = f;`)。書き方を上の形に寄せる(検査は緩めない)。
+- spec 宣言(predicate / claim …)の再帰も同じ規則で検査する。
+
 ## 診断
 
 出力は `file:line:col: error[E0xx]: message`。終了コードは誤りがあれば 1。
@@ -153,7 +172,7 @@ Set から List への経路は `sort(by = …)` だけ。`Set.map` は Set を�
 | 番号 | 意味 | 実装 |
 |---|---|---|
 | E001 | phase leak(runtime → spec) | 済(`Resolve.lean`) |
-| E002 | 停止性を確認できない再帰 | 未 |
+| E002 | 停止性を確認できない再帰(構造的再帰・保護された fuel 以外) | 済(`Totality.lean`) |
 | E003 | 無条件の選択(Set の `choose` / `pick` / `first` / `find?` …) | 済(`Typecheck.lean`) |
 | E004 | 順序指定の無い Set → List(`toList` / `by` 無しの `sort` / `fold` …) | 済(`Typecheck.lean`) |
 | E005 | capability 不足(`==` `<`、eq / order を要する stdlib メソッド、`derive` の欄) | 済(`Typecheck.lean`) |
@@ -168,9 +187,10 @@ Set から List への経路は `sort(by = …)` だけ。`Set.map` は Set を�
 | E016 | claim bundle の項目が claim でない | 済 |
 
 名前解決(E011〜E013、E001)に誤りがあれば型検査には進まない(未解決名の波及を避ける)。
+型検査(E003〜E006、E014〜E016)に誤りがあれば停止性検査(E002)には進まない(呼出し先の署名が要る)。
 
 ## まだ無いもの
 
-計算可能性検査(E002)・E007・Core IR・Model / Statements backend・`import` の意味(現状は全ファイルが 1 つの大域表)・
+E007・Core IR・Model / Statements backend・`import` の意味(現状は全ファイルが 1 つの大域表)・
 型引数付きのユーザ宣言(`record R<T>`)・Constants と interface binding の構文・naru で書いた stdlib(現状は上の表)・
 未確定のメタ変数の報告(`[]` や `None` の型が最後まで決まらなくても誤りにしない)。

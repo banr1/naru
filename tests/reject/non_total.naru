@@ -1,0 +1,68 @@
+// 反例: 停止性を確認できない再帰。
+// naru が受理する再帰は、match パターンで取り出した部分項への構造的再帰と、
+// `n ≥ k` が分かる分岐の中で `n - k` を渡す明示 fuel だけ。それ以外の再帰は E002。
+// 期待: `lake exe naru compile tests/reject/non_total.naru` が exit 非 0 で E002 を出力する
+//      (`lake exe naru check-reject tests/reject/non_total.naru E002` が PASS)。
+module Reject.NonTotal
+
+enum Tree { Leaf, Node(Tree, Nat, Tree) } derive eq
+
+// 引数が変わらない自己再帰 → E002
+fn spin(n: Nat) -> Nat {
+  spin(n)
+}
+
+// fuel の形に見えるが n == 0 の保護が無い(Nat では 0 - 1 = 0 で止まらない) → E002
+fn countdown(n: Nat) -> Nat {
+  countdown(n - 1) + 1
+}
+
+// Int は下に有界でないので、保護があっても i - 1 は fuel にならない → E002
+fn sinkInt(i: Int) -> Int {
+  if i == 0 { 0 } else { sinkInt(i - 1) }
+}
+
+// 構造的でない再帰: drop(1) はパターンで取り出した部分項ではない → E002
+fn len(xs: List<Nat>) -> Nat {
+  if xs.isEmpty() { 0 } else { 1 + len(xs.drop(1)) }
+}
+
+// 相互再帰で片方の辺(pong → ping)が減らない → 両方 E002
+fn ping(n: Nat) -> Bool {
+  if n == 0 { true } else { pong(n - 1) }
+}
+
+fn pong(n: Nat) -> Bool {
+  if n == 0 { false } else { ping(n) }
+}
+
+// 部分項 l / r ではなく木そのものを渡し直す → E002
+fn treeSize(t: Tree) -> Nat {
+  match t {
+    Tree.Leaf => 0,
+    Tree.Node(l, _, r) => treeSize(t) + 1,
+  }
+}
+
+// let を経由した fuel は読まない(保守的) → E002
+fn viaLet(n: Nat) -> Nat {
+  if n == 0 { 0 } else {
+    let k = n - 1;
+    viaLet(k)
+  }
+}
+
+// ガード付きの 0 の腕は保護にならない(ガードが偽なら n = 0 が次の腕に落ちる) → E002
+fn zeroGuard(n: Nat, b: Bool) -> Nat {
+  match n {
+    0 if b => 0,
+    k => zeroGuard(k - 1, b),
+  }
+}
+
+fn zeroGuardWild(n: Nat, b: Bool) -> Nat {
+  match n {
+    0 if b => 0,
+    _ => zeroGuardWild(n - 1, b),
+  }
+}

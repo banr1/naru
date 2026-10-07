@@ -4,4 +4,5 @@ import Naru.Ast
 import Naru.Parser
 import Naru.Resolve
 import Naru.Typecheck
+import Naru.Totality
 import Naru.Driver

@@ -9,13 +9,16 @@
 - `lake exe naru compile <files...>` — 指定ファイルを検査。省略時は `dsl/**/*.naru`(パス順)。診断は stderr に `file:line:col: error[E0xx]: msg`、exit 1。
 - `lake exe naru check-reject <file.naru> <Exxx>` — 反例が compile で拒否され(exit 1 相当)かつ診断に `Exxx` を含むことを検査し、合格なら PASS で exit 0(台帳の `cycle N:` 出典に使える形)。検査スクリプトは Lean で書く前提なので、シェルのラッパーは置かない。
 - 回帰の一式(コードを変えた周回は必ず通し、met 条件の `cycle N:` を取り直す):
-  `lake build && lake exe naru compile tests/accept/smoke.naru && lake exe naru check-reject tests/reject/phase_leak.naru E001 && lake exe naru check-reject tests/reject/phase_leak_method.naru E001 && lake exe naru check-reject tests/reject/choose.naru E003 && lake exe naru check-reject tests/reject/order_loss.naru E004 && lake exe naru check-reject tests/reject/missing_capability.naru E005 && lake exe naru check-reject tests/reject/type_path_escape.naru E011`
+  `lake build && lake exe naru compile tests/accept/smoke.naru && lake exe naru check-reject tests/reject/phase_leak.naru E001 && lake exe naru check-reject tests/reject/phase_leak_method.naru E001 && lake exe naru check-reject tests/reject/choose.naru E003 && lake exe naru check-reject tests/reject/order_loss.naru E004 && lake exe naru check-reject tests/reject/missing_capability.naru E005 && lake exe naru check-reject tests/reject/non_total.naru E002 && lake exe naru check-reject tests/reject/type_path_escape.naru E011`
   (`type_path_escape` は条件ではなく回帰用: 型の位置の未解決経路で型検査を黙らせる抜け穴が再び開かないことを見る)
+- zsh の for ループで `set -- $p` は文字列を分割しない(`$=p` が要る)。check-reject の回帰は上のように 1 本ずつ明示的に並べる。
 - `tests/accept/smoke.naru` は MVP 構文と stdlib 表の受理例。パーサ・型検査を変えたら exit 0 を確かめる。
 - 文法と stdlib 表の正本は `compiler/SYNTAX.md`。構文・メソッドを増やしたら同時に直す。
 
 ## コンパイラの事実
-- 段: 字句解析 → 構文解析 → 名前解決・phase 検査(`Resolve.lean`: E001, E011〜E013)→ 型・capability 検査(`Typecheck.lean`: E003〜E006, E014〜E016)。前の段に誤りがあれば次の段には進まない。
+- 段: 字句解析 → 構文解析 → 名前解決・phase 検査(`Resolve.lean`: E001, E011〜E013)→ 型・capability 検査(`Typecheck.lean`: E003〜E006, E014〜E016)→ 停止性検査(`Totality.lean`: E002)。前の段に誤りがあれば次の段には進まない。
+- E002 が受理する再帰は 2 形だけ: match の構築子パターンで取り出した部分項への構造的再帰と、`n ≥ k` が分かる分岐内で Nat 仮引数(または match の bind 別名)を `n - k` で渡す fuel。下限は `if` の条件(`==` `!=` `<` `<=` `>` `>=` とリテラル、`!`、`&&` の then、`||` の else、`else if` の連鎖)と、`match n` のガード無しリテラル腕(0 から連続して覆った値の次)と腕のガードから取る。サイクル(相互再帰)は全辺で同じ測度が厳密に減ること。`let` 経由・record の欄・lambda 内・Int・関数値の受け渡し・辞書式の測度は E002(保守的。backend で Lean が証明できる形だけを通す方針)。
+- E002 の境界テスト(正例 25 件 / 負例 18 件)は `/tmp/naru-tc/tot_pos.naru` / `tot_neg.naru` に置いた(一時ファイル。消えていたら `tests/reject/non_total.naru` と smoke の再帰例が最低限の回帰)。
 - Lean 4.34.1。`syntax` と `meta` は Lean の予約語(識別子・構築子名に使えない)。`String.mk` は非推奨(`String.ofList`)。
 - 名前解決はコンパイル単位(渡された全ファイル)を 1 つの大域表で行う。`import` は受理するだけで意味を持たない。
 - 大文字始まりの経路は大域名(`Phase.Tick`、`Set.empty`)、小文字始まりは値と欄の連鎖、としてパーサが振り分ける。局所名は小文字始まりのみ(大文字は E010)。
