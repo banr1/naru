@@ -1,0 +1,112 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Duties/Inputs.lean(§7 block 3 — the duty inputs and the vote
+// duties get_sg_vote / get_fg_vote over the saved grades)。手書きの `ProposalInput` / `AttestationInput` / `with_proposal_input` /
+// `grade2_block_with` / `get_sg_vote_with` / `fg_source_with` / `get_fg_vote_with` / `with_attestation_input` に対応する。
+//
+// - `with_proposal_input {Result} … (use : ProposalInput → Result) : Result` と `with_attestation_input` は継続渡し(型引数 `Result`)。
+//   naru には型引数が無いので、読みを組み立てる部分を `proposalInput` / `attestationInput`(record を返す fn)にし、
+//   `use` は呼出し側が適用する(`with_proposal_input … use` = `use(proposalInput(…))`)。
+// - `contract : GradeContract` は `c: Cache`(Grades.naru の冒頭)。`{ contract.read E hc st r with Q2 := A_G2 }` は record update。
+// - `get_fg_vote_with` の戻り値 `Option (Height × BlockId × Bool) × Height × BlockId × Height` は同じ形の tuple
+//   (読みは `match` で取り出す)。`st.σ q` は `chainStateOf(st.sigma, q)`、`(st.σ q).T_h.root` は `root(….tH)`。
+// - `st.toFG.toSG.toGoldfishStore` は `fgToGoldfish(st)`。`nd.new_root s` は `input newRoot(nd.valIndex, s)`(Schedule.naru)。
+// - 欄 `gf_votes` / `gf_support_votes` / `val_index` / `h_j` / `J` / `h_F` → `gfVotes` / `gfSupportVotes` / `valIndex` / `hJ` / `j` / `hF`。
+module Consensus.Protocol.Duties.Inputs
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.StoreBase
+import Consensus.Protocol.ForkChoice.Views
+import Consensus.Protocol.ForkChoice.Goldfish
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ForkChoice.Head
+
+// Common read data for the duty constructors: actual selector results, not open or provenance assumptions.
+record ProposalInput {
+  parent: Block,
+  slot: Slot,
+  root: BlockId,
+  gfVotes: List<GoldfishVote>,
+  gfSupportVotes: List<GoldfishVote>,
+  proposer: ValidatorId
+} derive eq
+
+// The Boolean inside `fields` is the source state's NJ bit, not a timeout flag.
+record AttestationInput {
+  valIndex: ValidatorId,
+  round: Round,
+  confirmed: Option<BlockId>,
+  fields: Option<(Height, BlockId, Bool)>,
+  hJ: Height,
+  j: BlockId,
+  hF: Height
+} derive eq
+
+// One shared proposal read (手書き `with_proposal_input` の読みの部分): the proposer's raw and support views of the
+// current slot, the composed head at slot s − 1, and the node's nominal root.
+fn proposalInput(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: HealingStore) -> ProposalInput {
+  let s = st.s;
+  let base = fgToGoldfish(st);
+  let votes = proposerView(base, s);
+  let supportVotes = proposerSupportView(base, s);
+  let h = getHeadWith(c, e, hc, st, votes.toSet(), supportVotes.toSet(), s - 1);
+  ProposalInput { parent: h, slot: s, root: newRoot(nd.valIndex, s), gfVotes: votes, gfSupportVotes: supportVotes, proposer: nd.valIndex }
+}
+
+// ── The round action ──
+
+// The contract's grade-2 candidate for round r.
+fn grade2BlockWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round) -> Option<Block> {
+  frameGradeRead(c, e, hc, st, r).q2
+}
+
+// The selected SG vote, with the grade-2 candidate supplied by the caller.
+fn getSgVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, aG2: Option<Block>) -> Block {
+  currentSGVote(st, GradeRead { q2: aG2, ..frameGradeRead(c, e, hc, st, r) })
+}
+
+// The contract's finality-gadget source for a grade-2 candidate: the deepest clear ancestor of live_confirmed above the
+// candidate, or the candidate itself.
+fn fgSourceWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, aG2: Option<Block>) -> Option<Block> {
+  match aG2 {
+    None => None,
+    Some(q) => {
+      let grades = frameGradeRead(c, e, hc, st, r);
+      match deepestClear(Some(q), st.liveConfirmed, |b| clear(grades.frame, b)) {
+        Some(b) => Some(b),
+        None => Some(q),
+      }
+    },
+  }
+}
+
+// The finality-gadget fields read by the attestation action: the height fields (h, T_h.root, nj) of the FG source's
+// chain state, and the finality fields (h_j, J.root, h_F) of the composed head's chain state.
+fn getFgVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, aG2: Option<Block>)
+    -> (Option<(Height, BlockId, Bool)>, Height, BlockId, Height) {
+  let base = fgToGoldfish(st);
+  let votes = pool(base, st.s);
+  let supportVotes = votes.filter(|u| resolved(st.tree, u));
+  let h = getHeadWith(c, e, hc, st, votes, supportVotes, st.s);
+  let headState = chainStateOf(st.sigma, h);
+  let fields = fgSourceWith(c, e, hc, st, r, aG2).map(|q| {
+    let sourceState = chainStateOf(st.sigma, q);
+    (sourceState.h, root(sourceState.tH), sourceState.nj)
+  });
+  (fields, headState.hJ, root(headState.j), headState.hF)
+}
+
+// One shared attestation read (手書き `with_attestation_input` の読みの部分): the round of the current slot, the grade-2
+// candidate, the SG vote's root, and the FG fields.
+fn attestationInput(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: HealingStore) -> AttestationInput {
+  let r = roundOf(hc, st.s);
+  let aG2 = grade2BlockWith(c, e, hc, st, r);
+  match getFgVoteWith(c, e, hc, st, r, aG2) {
+    (fields, hJ, j, hF) =>
+      AttestationInput {
+        valIndex: nd.valIndex, round: r, confirmed: Some(root(getSgVoteWith(c, e, hc, st, r, aG2))),
+        fields: fields, hJ: hJ, j: j, hF: hF
+      },
+  }
+}

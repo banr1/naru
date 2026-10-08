@@ -217,6 +217,9 @@ fn fgToSG(st: FGStore) -> SGStore {
   }
 }
 
+// The §2 projection of a §5 store (手書きの `st.toSG.toGoldfishStore`。§6 / §7 の duty が pool と proposer view を読む).
+fn fgToGoldfish(st: FGStore) -> GoldfishStore { sgToGoldfish(fgToSG(st)) }
+
 // ── §5.2 Derived sets and the fork-choice root ──
 
 // §5.2 the viability witness: a processed descendant W of b (in `tree`) whose state height is at most one below the

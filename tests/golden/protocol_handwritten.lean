@@ -1,8 +1,8 @@
-import DecoupledConsensusModel.Protocol.ForkChoice.Goldfish
+import DecoupledConsensusModel.Protocol.Duties.Inputs
 open DecoupledConsensusModel DecoupledConsensusModel.Protocol
 
--- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6)。
--- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Protocol 層の olean がビルド済みであること)
+-- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6〜8)。
+-- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Protocol 層(Duties.Inputs まで)の olean がビルド済みであること)
 
 def el : Electorate (Fin 3) := { weight := fun v => if v = 0 then 3 else 1, weight_pos := by decide }
 def env : Env (Fin 3) :=
@@ -179,3 +179,175 @@ def elig (cur : Nat) (b : Block (Fin 3)) : Bool := goldfish_eligible env sig 3 t
 #eval rootOf (goldfish_fork_choice env sig 3 tree 3 g tree wv wv 2)
 #eval rootOf (goldfish_fork_choice env sig 3 tree 2 (get_fg_root fg) (get_filtered_block_tree fg) wv wv 2)
 #eval rootOf (goldfish_fork_choice env sig 3 tree 2 b1 {b2'} wv wv 2)
+
+-- ValidatorClient (周回 8)
+def idOf (o : Option BlockId) : Option Nat := o.map (·.value)
+def rec0 := Record.initial
+#eval ((finality_pair rec0 2 ⟨7⟩ 1).map (fun p => (p.height, p.target.value)),
+       (finality_pair rec0 2 ⟨7⟩ 2).isNone,
+       (finality_pair (rec0.with_target 2 ⟨8⟩) 2 ⟨7⟩ 1).isNone,
+       (finality_pair (rec0.with_target 2 ⟨7⟩) 2 ⟨7⟩ 1).isSome,
+       (finality_pair (rec0.with_timeout 2) 2 ⟨7⟩ 1).isNone,
+       (finality_pair (rec0.with_lock 2 ⟨9⟩) 2 ⟨7⟩ 1).isNone,
+       (finality_pair (rec0.with_lock 2 ⟨7⟩) 2 ⟨7⟩ 1).isSome)
+def f35 : Option (Height × BlockId × Bool) := some (3, ⟨5⟩, false)
+def f35t : Option (Height × BlockId × Bool) := some (3, ⟨5⟩, true)
+#eval (height_pair rec0 none none == .empty,
+       height_pair (rec0.with_timeout 3) f35 none == .timeout 3,
+       height_pair (rec0.with_lock 3 ⟨5⟩) f35 none == .target 3 ⟨5⟩,
+       height_pair (rec0.with_lock 3 ⟨6⟩) f35 none == .empty,
+       height_pair (rec0.with_target 3 ⟨5⟩) f35t none == .target 3 ⟨5⟩,
+       height_pair (rec0.with_target 3 ⟨6⟩) f35 none == .timeout 3,
+       height_pair rec0 f35 none == .target 3 ⟨5⟩,
+       height_pair rec0 f35t none == .timeout 3,
+       height_pair rec0 f35 (some ⟨3, ⟨6⟩⟩) == .empty,
+       height_pair rec0 f35t (some ⟨3, ⟨5⟩⟩) == .target 3 ⟨5⟩,
+       height_pair rec0 f35 (some ⟨4, ⟨6⟩⟩) == .target 3 ⟨5⟩)
+def ra1 := record_attestation rec0 (⟨0, 1, none, .target 3 ⟨5⟩, some ⟨2, ⟨7⟩⟩⟩ : CombinedAttestation (Fin 3))
+def ra2 := record_attestation ra1 (⟨0, 2, none, .timeout 3, none⟩ : CombinedAttestation (Fin 3))
+def ra3 := record_attestation ra2 (⟨0, 3, none, .target 3 ⟨9⟩, none⟩ : CombinedAttestation (Fin 3))
+#eval (idOf (ra1.target 3), idOf (ra1.lock 2), ra1.timeout 3, ra2.timeout 3, idOf (ra3.target 3), idOf (ra3.target 4), idOf (ra3.lock 3))
+def ca1 := create_attestation rec0 (0 : Fin 3) 1 (some ⟨1⟩) f35 2 ⟨7⟩ 1
+#eval (decide (ca1.2 = ⟨0, 1, some ⟨1⟩, .target 3 ⟨5⟩, some ⟨2, ⟨7⟩⟩⟩), idOf (ca1.1.target 3), idOf (ca1.1.lock 2))
+def ca2 := create_attestation ca1.1 (0 : Fin 3) 2 none (some (3, ⟨6⟩, false)) 2 ⟨7⟩ 1
+#eval (decide (ca2.2 = ⟨0, 2, none, .timeout 3, some ⟨2, ⟨7⟩⟩⟩), ca2.1.timeout 3)
+def ca3 := create_attestation ca2.1 (0 : Fin 3) 3 none f35 2 ⟨7⟩ 2
+#eval decide (ca3.2 = ⟨0, 3, none, .timeout 3, none⟩)
+#eval (NamedRecord.encodeHeight f35 (.target 3 ⟨5⟩) == .vote 3 ⟨5⟩ false, NamedRecord.encodeHeight f35 (.timeout 3) == .vote 3 ⟨5⟩ true,
+       NamedRecord.encodeHeight none (.target 3 ⟨5⟩) == .empty, NamedRecord.encodeHeight f35 .empty == .empty)
+#eval (decide (NamedRecord.rememberTimeout ∅ (.vote 3 ⟨5⟩ true) = {(3, ⟨5⟩)}),
+       decide (NamedRecord.rememberTimeout ∅ (.vote 3 ⟨5⟩ false) = ∅))
+def inp1 : NamedRecord.Input (Fin 3) := ⟨0, 1, some ⟨1⟩, f35, 2, ⟨7⟩, 1⟩
+def nc1 := NamedRecord.create NamedRecord.initial inp1
+#eval (decide (nc1.2 = ⟨0, 1, some ⟨1⟩, .vote 3 ⟨5⟩ false, some ⟨2, ⟨7⟩⟩⟩), decide (nc1.1.timeoutHistory = ∅), idOf (nc1.1.legacy.target 3))
+def inp2 : NamedRecord.Input (Fin 3) := ⟨0, 2, none, some (3, ⟨6⟩, false), 2, ⟨7⟩, 1⟩
+def nc2 := NamedRecord.create nc1.1 inp2
+#eval (decide (nc2.2 = ⟨0, 2, none, .vote 3 ⟨6⟩ true, some ⟨2, ⟨7⟩⟩⟩), decide (nc2.1.timeoutHistory = {(3, ⟨6⟩)}), nc2.1.legacy.timeout 3)
+
+-- Grades (周回 8)
+def hc : HealConfig := ⟨3, by decide, 2, by decide⟩
+#eval (hc.round_of 7, hc.opening_slot 2, hc.a 2 1)
+#eval (head_covers tree b1 (some ⟨2⟩), head_covers tree b2' (some ⟨2⟩), head_covers tree b1 none, head_covers tree b1 (some ⟨99⟩))
+def hs0 : HealingStore (Fin 3) := ⟨fg⟩
+#eval decide (hs0.gradeView.tree = {g, b1, b2, b2', b3})
+#eval ((chain_of b3).map rootOf, (chain_up 1 b3).map rootOf, (chain_up 0 b3).map rootOf, (chain_of g).map rootOf)
+#eval ((deepest_clear none b3 (fun _ => true)).map rootOf, (deepest_clear (some b1) b3 (fun b => b.root != ⟨4⟩)).map rootOf,
+       (deepest_clear (some b2') b3 (fun _ => true)).isNone, (deepest_clear none b3 (fun b => b.slot == 0)).map rootOf)
+#eval (rootOf (clipGrade b3 b2'), rootOf (clipGrade b3 b2), rootOf (clipGrade g b3), rootOf (clipGrade b2' b3))
+def frRoots (fr : Frame (Fin 3)) := (fr.g0.map (fun o => o.map rootOf), fr.g1.map (fun o => o.map rootOf), fr.g2.map (fun o => o.map rootOf))
+def frA : Frame (Fin 3) := ⟨some (some b1), some none, some (some b3)⟩
+def frB : Frame (Fin 3) := ⟨none, some (some b2'), some (some b3)⟩
+def frC : Frame (Fin 3) := ⟨some (some b2), none, none⟩
+#eval (clear frC b3, clear frC b2', clear frB b2', clear ⟨some none, none, none⟩ b2')
+#eval (allClosed frA, allClosed frB, allClosed (pendingFrame : Frame (Fin 3)), allClosed (emptyFrame : Frame (Fin 3)))
+#eval ((grade2Block hs0 frA).map rootOf, (grade2Block hs0 frB).isNone, (grade2Block hs0 ⟨some none, some none, some (some b2')⟩).map rootOf,
+       (grade2Block hs0 ⟨some none, some none, some (some b1')⟩).map rootOf, (grade2Block hs0 emptyFrame).isNone)
+#eval (rootOf (anchor env hc hs0 0 (some (some b2'))), rootOf (anchor env hc hs0 0 (some none)), rootOf (anchor env hc hs0 0 none),
+       rootOf (anchor env hc hs0 0 (some (some b1'))), rootOf (anchor env hc hs0 0 (some (some b3))))
+def tk (r : Nat) (k : Option Nat) : Token (Option BlockId) := ⟨r, k.map fun n => ⟨n⟩⟩
+def early1 : Finset (Token (Option BlockId)) := {tk 1 (some 2), tk 2 (some 4)}
+def late1 : Finset (Token (Option BlockId)) := {tk 3 (some 4)}
+def raw1 : Finset (Token (Option BlockId)) := {tk 1 (some 2), tk 2 (some 4), tk 3 (some 4)}
+def raw2 : Finset (Token (Option BlockId)) := {tk 1 (some 2), tk 2 (some 4), tk 3 (some 4), tk 3 (some 3)}
+def cov : Option BlockId → Block (Fin 3) → Bool := fun k b => head_covers tree b k
+instance (raw : Finset (Token (Option BlockId))) (k : Nat) : Decidable (CleanFrom raw k) := by unfold CleanFrom; infer_instance
+#eval (decide (CleanFrom raw1 1), decide (CleanFrom raw2 2), decide (CleanFrom raw2 3), decide (CleanFrom raw2 4))
+#eval (decide (Supports (fun k x => cov k x = true) early1 late1 raw1 b1), decide (Supports (fun k x => cov k x = true) early1 late1 raw1 b2'),
+       decide (Supports (fun k x => cov k x = true) early1 late1 raw2 b1), decide (Supports (fun k x => cov k x = true) ∅ late1 raw1 b1))
+#eval (decide (Opposes (fun k x => cov k x = true) early1 late1 raw1 b2'), decide (Opposes (fun k x => cov k x = true) early1 late1 raw1 b1),
+       decide (Opposes (fun k x => cov k x = true) early1 late1 raw2 b1), decide (Opposes (fun k x => cov k x = true) early1 ∅ raw1 b2'))
+def u1 : SGVote (Fin 3) := ⟨0, 1, some ⟨2⟩⟩
+def u2 : SGVote (Fin 3) := ⟨0, 2, some ⟨4⟩⟩
+def u3 : SGVote (Fin 3) := ⟨1, 2, some ⟨3⟩⟩
+def u4 : SGVote (Fin 3) := ⟨0, 3, none⟩
+def u5 : SGVote (Fin 3) := ⟨0, 2, some ⟨99⟩⟩
+def u6 : SGVote (Fin 3) := ⟨1, 3, some ⟨2⟩⟩
+def fgSg : FGStore (Fin 3) :=
+  { fg with
+    sg_votes := fun r => if r = 1 then {u1} else if r = 2 then {u2, u3, u5} else if r = 3 then {u4, u6} else ∅,
+    timestamp_sg_vote := fun u =>
+      if u = u1 then some ((5 : Time) : Stamp) else if u = u2 then some ((15 : Time) : Stamp) else if u = u3 then some ((7 : Time) : Stamp)
+      else if u = u4 then some ((20 : Time) : Stamp) else if u = u6 then some ((9 : Time) : Stamp) else none }
+def hs : HealingStore (Fin 3) := ⟨fgSg⟩
+def gv2 := hs.gradeView
+#eval (decide (rawInputs gv2 2 3 16 0 = {u1, u2}), decide (rawInputs gv2 2 3 10 0 = {u1}),
+       decide (rawInputs gv2 2 4 30 0 = {u2, u4}), decide (rawInputs gv2 2 3 16 1 = {u3}))
+#eval (bodyReady gv2 g 16 u1, bodyReady gv2 g 16 u2, bodyReady gv2 b2 16 u3, bodyReady gv2 b2' 16 u2,
+       bodyReady gv2 g 16 u4, bodyReady gv2 g 16 u5, bodyReady gv2 g 8 u1)
+#eval (decide (interpretedInputs gv2 g 2 3 16 0 = {u1, u2}), decide (interpretedInputs gv2 b2' 2 3 16 0 = ∅))
+#eval (decide (rawView gv2 2 3 16 0 = {tk 1 (some 2), tk 2 (some 4)}), decide (readyView gv2 b2' 2 3 16 0 = ∅))
+def pos (f : Block (Fin 3)) (v : Fin 3) (b : Block (Fin 3)) : Bool := positive gv2 f 2 3 10 16 v b
+def opp (f : Block (Fin 3)) (v : Fin 3) (b : Block (Fin 3)) : Bool := opposing gv2 f 2 3 10 16 v b
+#eval (pos g 0 g, pos g 0 b1, pos g 0 b2, pos g 0 b1', pos g 0 b2', pos g 0 b3)
+#eval (opp g 0 g, opp g 0 b1, opp g 0 b2, opp g 0 b1', opp g 0 b2', opp g 0 b3)
+#eval (pos g 1 b1, opp g 1 b1, pos g 2 b1, opp g 2 b1, pos b2' 0 g, opp b2' 0 b2')
+def grd (f : Block (Fin 3)) (b : Block (Fin 3)) : Bool := gradeBool env gv2 f 2 3 10 16 b
+#eval (grd g g, grd g b1, grd g b2, grd g b1', grd g b2', grd g b3)
+#eval ((freezeRoot env gv2 g 2 3 10 16).map rootOf, (freezeRoot env gv2 b2' 2 3 10 16).isNone)
+#eval ((freezeRoot env gv2 g 2 3 62 70).map rootOf, gradeBool env gv2 g 2 3 62 70 b2', gradeBool env gv2 g 2 3 62 70 b2)
+#eval ((Phase.earlyOffset .g0, Phase.earlyOffset .g1, Phase.earlyOffset .g2), (Phase.lateOffset .g0, Phase.lateOffset .g1, Phase.lateOffset .g2),
+       (Phase.domainOffset .g0, Phase.domainOffset .g1, Phase.domainOffset .g2))
+#eval (opening env hc 1, early env hc 1 .g2, late env hc 1 .g2, domain env hc 1 .g2, domain env hc 1 .g1, domain env hc 1 .g0)
+#eval (phaseResult frA .g1 == some none, frRoots (putPhase pendingFrame .g1 (some b2)), frRoots (emptyFrame : Frame (Fin 3)))
+def c70 := completeOne env hc hs 3 70 .g2 pendingFrame
+#eval (frRoots c70, frRoots (completeOne env hc hs 3 69 .g2 pendingFrame), frRoots (completeOne env hc hs 3 70 .g2 emptyFrame))
+def cf70 := completeFrame env hc hs 3 70 pendingFrame
+def cf72 := completeFrame env hc hs 3 72 cf70
+def cf74 := completeFrame env hc hs 3 74 cf72
+#eval (frRoots cf70, frRoots cf72, frRoots cf74)
+#eval (frRoots (clipFrame b2' ⟨some (some b3), some none, none⟩), frRoots (clipFrame g cf74))
+def cacheRoots (c : Cache (Fin 3)) := (c.round, frRoots c.current, frRoots c.next)
+def c0 : Cache (Fin 3) := initialCache
+def c1 := onPhaseTick env hc hs 70 c0
+def c2 := onPhaseTick env hc hs 72 c1
+def c3 := onPhaseTick env hc hs 74 c2
+def c4 := onPhaseTick env hc hs 94 c3
+def c5 := onPhaseTick env hc hs 96 c4
+#eval (cacheRoots c0, cacheRoots c1)
+#eval cacheRoots c2
+#eval cacheRoots c3
+#eval cacheRoots c4
+#eval cacheRoots c5
+#eval (cacheRoots (alignRound c1 3), (alignRound c1 2).round, cacheRoots (alignRound c1 5))
+#eval (frRoots (cacheAtRound c1 2), frRoots (cacheAtRound c1 3), frRoots (cacheAtRound c1 4))
+def rd3 := frameGradeRead c1 env hc hs 3
+#eval (rootOf rd3.anchor, rd3.Q2.isNone, (letI := rd3.rawG2_decidable; decide rd3.rawG2), rd3.clear b2', frRoots (readFrame c1 hs 3))
+#eval rootOf (currentSGVote hs rd3)
+def rd3c := frameGradeRead c3 env hc hs 3
+#eval (rootOf rd3c.anchor, rd3c.Q2.map rootOf, (letI := rd3c.rawG2_decidable; decide rd3c.rawG2), rd3c.clear b2', rd3c.clear b2)
+def hsLive3 : HealingStore (Fin 3) := ⟨{ fgSg with live_confirmed := b3 }⟩
+#eval (rootOf (currentSGVote hs rd3c), rootOf (currentSGVote hsLive3 rd3c),
+       rootOf (currentSGVote hs { rd3c with Q2 := none }),
+       rootOf (currentSGVote hs ⟨rd3c.anchor, none, rd3c.clear, False, inferInstance⟩))
+def hsS9 : HealingStore (Fin 3) := ⟨{ fgSg with s := 9 }⟩
+#eval ((frameSGCandidate c1 env hc hs 0).isNone, (frameSGCandidate c3 env hc hsS9 0).map rootOf,
+       (frameStableRoot c1 env hc hs 3).map rootOf, (frameStableRoot c1 env hc hs 0).map rootOf)
+
+-- Head (周回 8)
+def cB : Cache (Fin 3) := ⟨0, ⟨none, some (some b2'), none⟩, pendingFrame⟩
+def cC : Cache (Fin 3) := ⟨0, ⟨none, some (some b3), none⟩, pendingFrame⟩
+def hsF : HealingStore (Fin 3) := ⟨{ fgSg with F := b2' }⟩
+#eval (rootOf (get_sg_root_with (frameContract c1) env hc hs 3), rootOf (get_sg_root_with (frameContract cB) env hc hs 0),
+       rootOf (get_sg_root_with (frameContract c3) env hc hs 3), rootOf (get_sg_root_with (frameContract cC) env hc hsF 0), frRoots (readFrame cC hsF 0))
+#eval (rootOf (get_head_with (frameContract cB) env hc hs wv wv 2), rootOf (get_head_with (frameContract c1) env hc hs wv wv 2),
+       rootOf (get_head_in_tree_with_layer (frameContract cB) env hc hs {g, b1} wv wv 2))
+
+-- Duties.Inputs (周回 8)
+def nd0 : Node (Fin 3) := { val_index := 0, new_root := fun s => ⟨s + 1⟩, awake := fun _ => true }
+def nd1 : Node (Fin 3) := { val_index := 1, new_root := fun s => ⟨s + 1⟩, awake := fun _ => true }
+def pi1 := with_proposal_input (frameContract c1) env hc nd0 hs id
+#eval (rootOf pi1.parent, pi1.slot, pi1.root.value, pi1.gf_votes == [vA, vB, vC, vD], pi1.gf_support_votes == [vA, vB, vC], (pi1.proposer : Nat))
+def ai1 := with_attestation_input (frameContract c1) env hc nd0 hs id
+#eval ((ai1.val_index : Nat), ai1.round, idOf ai1.confirmed, ai1.fields.isNone, ai1.h_j, ai1.J.value, ai1.h_F)
+def cD : Cache (Fin 3) := ⟨0, ⟨some (some b2), some (some b2), some (some b3)⟩, pendingFrame⟩
+#eval ((grade2_block_with (frameContract cD) env hc hs 0).map rootOf, (grade2_block_with (frameContract c1) env hc hs 0).isNone)
+#eval (rootOf (get_sg_vote_with (frameContract cD) env hc hs 0 (some b3)), rootOf (get_sg_vote_with (frameContract cD) env hc hsLive3 0 (some b3)),
+       rootOf (get_sg_vote_with (frameContract cD) env hc hs 0 none), rootOf (get_sg_vote_with (frameContract c1) env hc hs 0 none))
+def hsLive2' : HealingStore (Fin 3) := ⟨{ fgSg with live_confirmed := b2' }⟩
+#eval ((fg_source_with (frameContract cD) env hc hs 0 (some b3)).map rootOf, (fg_source_with (frameContract cD) env hc hs 0 none).isNone,
+       (fg_source_with (frameContract cD) env hc hsLive3 0 (some b2)).map rootOf,
+       (fg_source_with (frameContract cD) env hc hsLive2' 0 (some b1)).map rootOf)
+def fv1 := get_fg_vote_with (frameContract cD) env hc hs 0 (some b3)
+#eval (fv1.1.map (fun t => (t.1, t.2.1.value, t.2.2)), fv1.2.1, fv1.2.2.1.value, fv1.2.2.2)
+def ai2 := with_attestation_input (frameContract cD) env hc nd1 hs id
+#eval ((ai2.val_index : Nat), ai2.round, idOf ai2.confirmed, ai2.fields.map (fun t => (t.1, t.2.1.value, t.2.2)), ai2.h_j, ai2.J.value, ai2.h_F)

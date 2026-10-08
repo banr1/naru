@@ -1,0 +1,389 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Grades.lean(§6.1 round schedule・grade view・§6 store projection・
+// grade interfaces・clipping・inputs・support/opposition algebra・selectors・phase cache・frame contract)。
+// 手書きの `HealConfig`(`round_of` `opening_slot` `a`)/ `GradeView` / `head_covers` / `HealingStore`(`gradeView`)/ `chain_up` /
+// `chain_of` / `deepest_clear` / `GradeRead` / `ConfirmationSGCandidate` / `GradeContract` / `currentSGVote` / `clipGrade` /
+// `rawInputs` / `bodyReady` / `interpretedInputs` / `Token` / `CleanFrom` / `Supports` / `Opposes` / `token` / `rawView` / `readyView` /
+// `localCovers` / `positive` / `opposing` / `gradeBool` / `freezeRoot` / `activePrefix` / `anchor` / `Frame` / `allClosed` /
+// `grade2Block` / `clear` / `Phase`(`earlyOffset` `lateOffset` `domainOffset`)/ `opening` / `early` / `late` / `domain` /
+// `pendingFrame` / `emptyFrame` / `phaseResult` / `putPhase` / `completeOne` / `completeFrame` / `clipResult` / `clipFrame` / `Cache` /
+// `initialCache` / `alignRound` / `cacheAtRound` / `clipCache` / `onPhaseTick` / `readFrame` / `frameGradeRead` / `frameSGCandidate` /
+// `frameStableRoot` / `frameContract` に対応する(`supportsDecidable` / `opposesDecidable` は Prop の決定可能性の instance なので
+// Model には無い: naru では `supports` / `opposes` が最初から Bool)。
+//
+// - `HealConfig` の証明の欄 `R_ge_three`(3 ≤ R)/ `η_SG_ge_one`(1 ≤ η_SG)は Model には置かず Statements の premise にする
+//   (`HeightConfig` の `K_ge_four` と同じ扱い)。欄 `R` / `η_SG` は `r` / `etaSG`。
+// - `HealingStore extends toFG : FGStore` は欄を足さないので型別名 `type HealingStore = FGStore`(手書きの `st.toFG` は `st` そのもの)。
+// - `GradeContract`(関数型の欄 `read` / `sgVote` / `confirmationSG` / `stableRoot` を持つ record)と `ConfirmationSGCandidate`
+//   (関数を包む inductive)は naru に無い。Model に instantiation は `frameContract c`(Execution/Node の `gradeContract`)の 1 つだけ
+//   なので inline し、手書きの `contract` 引数は `c: Cache` になる(`contract.read E hc st r` → `frameGradeRead(c, e, hc, st, r)`、
+//   `contract.sgVote` → `currentSGVote`、`contract.confirmationSG` の `select` → `frameSgCandidate`、`contract.stableRoot` → `frameStableRoot`)。
+// - `GradeRead` の関数型の欄 `clear : Block → Bool` は、唯一の instantiation(読んだ frame の `clear`)の frame を欄 `frame` で持ち、
+//   読みは `clear(grades.frame, b)`。`rawG2 : Prop` + `Decidable` は Bool の欄。
+// - `Token (Key : Type*)` は `Key = Option BlockId`(`token : SGVote → Token (Option BlockId)`)の instantiation だけなので固定する。
+//   `covers : Key → Block → Prop` は関数型の仮引数 `(Option<BlockId>, Block) -> Bool`。`CleanFrom` / `Supports` / `Opposes` の
+//   有界量化(`∀ x ∈ early` / `∃ u ∈ early`)は `all` / `any`、含意は `!a || b`。
+// - `Finset.univ.filter (fun v => …)`(有限型 V の全体)は `validators(e.electorate).filter(…)`: electorate の外の validator は
+//   naru では重み 0 なので、`weightOf` の和は同じ(Weights.naru の冒頭を参照)。
+// - `GradeView` の欄: 手書きの `T`(processed tree)→ `tree`(store と同じ名)、手書きの `tree`(filtered)→ `filteredTree`。
+// - `Phase` は stdlib の Event の phase(Tick / Deliver)と名が重なるので `GradePhase`(`g0` `g1` `g2` → `G0` `G1` `G2`)。
+//   `Option (Option Block)`(None = pending、Some(None) = completed empty)は型別名 `PhaseResult`。
+// - `chain_up` は明示 fuel の再帰(E002 の受理形)、`clipGrade` は Block への構造的再帰。
+// - 改名の対応: `HealConfig.a` → `actionTime`、`opening` / `early` / `late` / `domain` → `openingTime` / `earlyTime` / `lateTime` /
+//   `domainTime`(`early` / `late` は token の集合の仮引数名でもあるため)、`frameSGCandidate` → `frameSgCandidate`。
+//   `pendingFrame` / `emptyFrame` / `initialCache` は引数 0 個の fn。
+module Consensus.Protocol.Grades
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.StoreBase
+import Consensus.Protocol.ChainState
+import Consensus.Protocol.ForkChoice.Goldfish
+
+// ── §6.1 Round schedule ──
+
+// §6.1 the parameters of the graded layer: the round length R ≥ 3 (round r is the slots rR … rR+R−1) and the expiry
+// window η_SG ≥ 1 of the relative rule. The bounds are Statements premises.
+record HealConfig { r: Nat, etaSG: Round } derive eq
+
+// §3.1 round(s) = ⌊s/R⌋
+fn roundOf(hc: HealConfig, s: Slot) -> Round { s / hc.r }
+
+// §3.1 the opening slot rR of round r
+fn openingSlot(hc: HealConfig, r: Round) -> Slot { r * hc.r }
+
+// §6.1 a_r = t_{rR} + 6Δ: the action time, the opening slot's confirmation evaluation (手書き `HealConfig.a`).
+fn actionTime(hc: HealConfig, delta: Time, r: Round) -> Time { slotStart(delta, openingSlot(hc, r)) + 6 * delta }
+
+// ── Grade view substrate ──
+
+// The small projection of the store the selected protocol reads: the processed tree (to resolve roots), its receipt
+// times, the currently filtered tree, the projected SG vote pool and its receipt times.
+record GradeView {
+  tree: Set<Block>,
+  timestampBlock: Table<Block, Stamp>,
+  filteredTree: Set<Block>,
+  sgVotes: Table<Round, Set<SGVote>>,
+  timestampSgVote: Table<SGVote, Stamp>
+} derive eq
+
+// Whether a resolved head names a descendant of `b` in the processed tree.
+fn headCovers(tree: Set<Block>, b: Block, h: Option<BlockId>) -> Bool {
+  match h {
+    None => false,
+    Some(r) => {
+      match findRoot?(tree, r) {
+        Some(head) => preceq(b, head),
+        None => false,
+      }
+    },
+  }
+}
+
+// ── The §6 store projection ──
+
+// The §6 store is a thin wrapper over the finality-gadget store (手書き `HealingStore extends toFG : FGStore`、欄の追加なし).
+type HealingStore = FGStore
+
+// The store projected to the fields used by grade-runtime readers.
+fn gradeView(st: HealingStore) -> GradeView {
+  GradeView {
+    tree: st.tree, timestampBlock: st.timestampBlock, filteredTree: getFilteredBlockTree(st),
+    sgVotes: st.sgVotes, timestampSgVote: st.timestampSgVote
+  }
+}
+
+// ── Executable grade interfaces ──
+
+// The ancestors of `b`, deepest first, under a fuel bound.
+fn chainUp(n: Nat, b: Block) -> List<Block> {
+  if n == 0 { [b] } else {
+    match parent?(b) {
+      None => [b],
+      Some(p) => [b].append(chainUp(n - 1, p)),
+    }
+  }
+}
+
+// The structural ancestor chain used by both clear walks.
+fn chainOf(b: Block) -> List<Block> { chainUp(depth(b), b) }
+
+// The deepest clear ancestor in the segment from `floor` to `c` (no floor: the whole chain).
+fn deepestClear(floor: Option<Block>, c: Block, test: (Block) -> Bool) -> Option<Block> {
+  deepest?(chainOf(c).toSet().filter(|b| floor.map(|base| preceq(base, b)).getOr(true) && test(b)))
+}
+
+// §6 a saved phase result: `None` = pending, `Some(None)` = completed empty, `Some(Some(b))` = completed root.
+type PhaseResult = Option<Option<Block>>
+
+// All phase results must be complete before a height source is evaluated. Scheduled attestations occur at T+6Δ,
+// after all three fixed phase times.
+record Frame { g0: PhaseResult, g1: PhaseResult, g2: PhaseResult } derive eq
+
+fn allClosed(frame: Frame) -> Bool { frame.g0.isSome() && frame.g1.isSome() && frame.g2.isSome() }
+
+// The clear test of a frame: compatible with the completed G0 root; everything is clear while G0 is pending or empty.
+fn clear(frame: Frame, b: Block) -> Bool {
+  match frame.g0 {
+    Some(Some(r)) => compatible(b, r),
+    _ => true,
+  }
+}
+
+// One local grade read (手書き `GradeRead`): the anchor, the grade-2 candidate Q2, the clear test (as its frame) and rawG2.
+record GradeRead { anchor: Block, q2: Option<Block>, frame: Frame, rawG2: Bool } derive eq
+
+// The shared SG walk and its three fallbacks, on one supplied grade read.
+fn currentSGVote(st: HealingStore, grades: GradeRead) -> Block {
+  match deepestClear(Some(grades.anchor), st.liveConfirmed, |b| clear(grades.frame, b)) {
+    Some(b) => b,
+    None => {
+      match grades.q2 {
+        Some(q) => q,
+        None => if grades.rawG2 { getFgRoot(st) } else { grades.anchor },
+      }
+    },
+  }
+}
+
+// ── Clipping ──
+
+// The deepest ancestor-or-self of `g` compatible with `f` (genesis is compatible with everything).
+fn clipGrade(g: Block, f: Block) -> Block {
+  match g {
+    Block.Genesis => Block.Genesis,
+    Block.Node(p, _, _, _, _, _, _) => if compatible(g, f) { g } else { clipGrade(p, f) },
+  }
+}
+
+// ── Inputs ──
+
+// The sender's SG votes in the expiry window of round r, received before `cutoff`.
+fn rawInputs(gv: GradeView, eta: Round, r: Round, cutoff: Time, sender: ValidatorId) -> Set<SGVote> {
+  latestWindow(eta, r).toSet().flatMap(|k| gv.sgVotes.getOr(k, Set.empty()))
+    .filter(|u| u.valIndex == sender && occurrenceBefore(gv.timestampSgVote.get?(u), cutoff))
+}
+
+// The body condition uses only the phase's retained tree and finalized root. A finalized ancestor keeps its original
+// head. An unknown root is not ready.
+fn bodyReady(gv: GradeView, f: Block, cutoff: Time, u: SGVote) -> Bool {
+  match u.confirmed {
+    None => true,
+    Some(r) => {
+      match findRoot?(gv.tree, r) {
+        None => false,
+        Some(h) => occurrenceBefore(gv.timestampBlock.get?(h), cutoff) && compatible(h, f),
+      }
+    },
+  }
+}
+
+fn interpretedInputs(gv: GradeView, f: Block, eta: Round, r: Round, cutoff: Time, sender: ValidatorId) -> Set<SGVote> {
+  rawInputs(gv, eta, r, cutoff, sender).filter(|u| bodyReady(gv, f, cutoff, u))
+}
+
+// ── Support / opposition algebra ──
+
+// A grade token (round, key), the key being the signed confirmed root (手書き `Token (Option BlockId)`).
+record Token { round: Nat, key: Option<BlockId> } derive eq
+
+// No two tokens of `raw` at one round ≥ k carry different keys.
+fn cleanFrom(raw: Set<Token>, k: Nat) -> Bool {
+  raw.all(|x| raw.all(|y| !(k <= x.round && x.round == y.round) || x.key == y.key))
+}
+
+// `early` and `late` contain evidence-ready tokens. `raw` also contains signed roots whose evidence is incomplete.
+// Thus equivocation needs no body.
+fn supports(covers: (Option<BlockId>, Block) -> Bool, early: Set<Token>, late: Set<Token>, raw: Set<Token>, b: Block) -> Bool {
+  early.any(|u|
+    early.all(|x| x.round <= u.round)
+      && covers(u.key, b)
+      && cleanFrom(raw, u.round)
+      && late.all(|x| !(u.round < x.round) || covers(x.key, b)))
+}
+
+fn opposes(covers: (Option<BlockId>, Block) -> Bool, early: Set<Token>, late: Set<Token>, raw: Set<Token>, b: Block) -> Bool {
+  late.any(|x| early.all(|u| u.round <= x.round) && !covers(x.key, b))
+    || raw.any(|x| raw.any(|y| early.all(|u| u.round <= x.round) && x.round == y.round && x.key != y.key))
+}
+
+fn token(u: SGVote) -> Token { Token { round: u.round, key: u.confirmed } }
+
+// ── Selectors ──
+
+fn rawView(gv: GradeView, eta: Round, r: Round, cutoff: Time, v: ValidatorId) -> Set<Token> {
+  rawInputs(gv, eta, r, cutoff, v).map(|u| token(u))
+}
+
+fn readyView(gv: GradeView, f: Block, eta: Round, r: Round, cutoff: Time, v: ValidatorId) -> Set<Token> {
+  interpretedInputs(gv, f, eta, r, cutoff, v).map(|u| token(u))
+}
+
+fn localCovers(gv: GradeView, key: Option<BlockId>, b: Block) -> Bool { headCovers(gv.tree, b, key) }
+
+fn positive(gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, v: ValidatorId, b: Block) -> Bool {
+  supports(|k, x| localCovers(gv, k, x),
+           readyView(gv, f, eta, r, early, v), readyView(gv, f, eta, r, late, v), rawView(gv, eta, r, late, v), b)
+}
+
+fn opposing(gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, v: ValidatorId, b: Block) -> Bool {
+  opposes(|k, x| localCovers(gv, k, x),
+          readyView(gv, f, eta, r, early, v), readyView(gv, f, eta, r, late, v), rawView(gv, eta, r, late, v), b)
+}
+
+// An executable local grade: the opposing weight is below the supporting weight. Only current tree lookup and finite
+// token sets are used.
+fn gradeBool(e: ProtocolEnv, gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, b: Block) -> Bool {
+  weightOf(e.electorate, validators(e.electorate).filter(|v| opposing(gv, f, eta, r, early, late, v, b)))
+    < weightOf(e.electorate, validators(e.electorate).filter(|v| positive(gv, f, eta, r, early, late, v, b)))
+}
+
+// Freeze the raw phase grade over the processed tree before clipping. The FG activity filter is applied only when the
+// saved root is consumed.
+fn freezeRoot(e: ProtocolEnv, gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time) -> Option<Block> {
+  deepest?(gv.tree.filter(|b| gradeBool(e, gv, f, eta, r, early, late, b)))
+}
+
+// A completed root names its graded prefix family.
+fn activePrefix(tree: Set<Block>, r: Block) -> Option<Block> { deepest?(tree.filter(|b| preceq(b, r))) }
+
+// Adopted shifted schedule: current G1 completes before the opening proposal. Pending and completed-empty G1 use only
+// the FG-root fallback. No instantaneous selector or previous-round G1 is consulted.
+fn anchor(_e: ProtocolEnv, _hc: HealConfig, st: HealingStore, _r: Round, g1: PhaseResult) -> Block {
+  match g1 {
+    Some(Some(r)) => activePrefix(getFilteredBlockTree(st), r).getOr(getFgRoot(st)),
+    _ => getFgRoot(st),
+  }
+}
+
+fn grade2Block(st: HealingStore, frame: Frame) -> Option<Block> {
+  if allClosed(frame) {
+    frame.g2.andThen(|x| x).andThen(|r| activePrefix(getFilteredBlockTree(st), r))
+  } else {
+    None
+  }
+}
+
+// ── The phase cache ──
+
+enum GradePhase { G0, G1, G2 } derive eq
+
+fn earlyOffset(p: GradePhase) -> Int {
+  match p { GradePhase.G0 => -3, GradePhase.G1 => -4, GradePhase.G2 => -5 }
+}
+
+fn lateOffset(p: GradePhase) -> Int {
+  match p { GradePhase.G0 => -3, GradePhase.G1 => -2, GradePhase.G2 => -1 }
+}
+
+fn domainOffset(p: GradePhase) -> Int {
+  match p { GradePhase.G0 => 1, GradePhase.G1 => 0, GradePhase.G2 => -1 }
+}
+
+// The opening proposal instant of round r (手書き `opening`).
+fn openingTime(e: ProtocolEnv, hc: HealConfig, r: Round) -> Time { proposalTime(e, openingSlot(hc, r)) }
+
+fn earlyTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + earlyOffset(p) * e.delta }
+
+fn lateTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + lateOffset(p) * e.delta }
+
+fn domainTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + domainOffset(p) * e.delta }
+
+fn pendingFrame() -> Frame { Frame { g0: None, g1: None, g2: None } }
+
+fn emptyFrame() -> Frame { Frame { g0: Some(None), g1: Some(None), g2: Some(None) } }
+
+fn phaseResult(fr: Frame, p: GradePhase) -> PhaseResult {
+  match p { GradePhase.G0 => fr.g0, GradePhase.G1 => fr.g1, GradePhase.G2 => fr.g2 }
+}
+
+fn putPhase(fr: Frame, p: GradePhase, result: Option<Block>) -> Frame {
+  match p {
+    GradePhase.G0 => Frame { g0: Some(result), ..fr },
+    GradePhase.G1 => Frame { g1: Some(result), ..fr },
+    GradePhase.G2 => Frame { g2: Some(result), ..fr },
+  }
+}
+
+// A completed result is never recalculated, including completed-empty. Only an exact domain-time tick can change a
+// pending result.
+fn completeOne(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Time, p: GradePhase, fr: Frame) -> Frame {
+  match phaseResult(fr, p) {
+    Some(_) => fr,
+    None => {
+      if t == domainTime(e, hc, r, p) {
+        putPhase(fr, p, freezeRoot(e, gradeView(st), st.f, hc.etaSG, r, earlyTime(e, hc, r, p), lateTime(e, hc, r, p)))
+      } else {
+        fr
+      }
+    },
+  }
+}
+
+fn completeFrame(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Time, fr: Frame) -> Frame {
+  completeOne(e, hc, st, r, t, GradePhase.G0,
+    completeOne(e, hc, st, r, t, GradePhase.G1, completeOne(e, hc, st, r, t, GradePhase.G2, fr)))
+}
+
+fn clipResult(f: Block, result: PhaseResult) -> PhaseResult { result.map(|r| r.map(|b| clipGrade(b, f))) }
+
+fn clipFrame(f: Block, fr: Frame) -> Frame { Frame { g0: clipResult(f, fr.g0), g1: clipResult(f, fr.g1), g2: clipResult(f, fr.g2) } }
+
+// G2 for the next round completes before that round opens. Both labels must coexist until the opening rotates the
+// cache. Storage is bounded.
+record Cache { round: Round, current: Frame, next: Frame } derive eq
+
+fn initialCache() -> Cache { Cache { round: 0, current: emptyFrame(), next: pendingFrame() } }
+
+// A skipped round starts pending. Advancing one round carries only the already saved next-round frame; it never
+// reconstructs missed phase results.
+fn alignRound(c: Cache, r: Round) -> Cache {
+  if r == c.round { c }
+  else if r == c.round + 1 { Cache { round: r, current: c.next, next: pendingFrame() } }
+  else { Cache { round: r, current: pendingFrame(), next: pendingFrame() } }
+}
+
+fn cacheAtRound(c: Cache, r: Round) -> Frame {
+  if r == c.round { c.current } else if r == c.round + 1 { c.next } else { pendingFrame() }
+}
+
+fn clipCache(f: Block, c: Cache) -> Cache { Cache { round: c.round, current: clipFrame(f, c.current), next: clipFrame(f, c.next) } }
+
+// The caller supplies the store strictly before this tick. Same-time objects pass through the object handler only
+// after this operation.
+fn onPhaseTick(e: ProtocolEnv, hc: HealConfig, st: HealingStore, t: Time, c: Cache) -> Cache {
+  let aligned = alignRound(c, roundOf(hc, slotOf(e, t)));
+  clipCache(st.f, Cache {
+    round: aligned.round,
+    current: completeFrame(e, hc, st, aligned.round, t, aligned.current),
+    next: completeFrame(e, hc, st, aligned.round + 1, t, aligned.next)
+  })
+}
+
+// ── The frame contract ──
+
+fn readFrame(c: Cache, st: HealingStore, r: Round) -> Frame { clipFrame(st.f, cacheAtRound(c, r)) }
+
+// The contract's `read`: anchor from G1, Q2 from the closed frame, the clear test of the frame, rawG2 = G2 completed nonempty.
+fn frameGradeRead(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round) -> GradeRead {
+  let fr = readFrame(c, st, r);
+  GradeRead { anchor: anchor(e, hc, st, r, fr.g1), q2: grade2Block(st, fr), frame: fr, rawG2: fr.g2.andThen(|x| x).isSome() }
+}
+
+// The optional SG candidate (手書き `ConfirmationSGCandidate.optional (frameSGCandidate c)`): the caller keeps every
+// successful Goldfish write and invokes this selector only when Goldfish eligibility fails.
+fn frameSgCandidate(c: Cache, _e: ProtocolEnv, hc: HealConfig, st: HealingStore, _slot: Slot) -> Option<Block> {
+  readFrame(c, st, roundOf(hc, st.s)).g2.andThen(|x| x).andThen(|r| activePrefix(getFilteredBlockTree(st), r))
+}
+
+// The round's stable-record root: the frozen slot projected onto the candidate tree, or the FG root when that
+// projection is empty. Never empties.
+fn frameStableRoot(c: Cache, _e: ProtocolEnv, _hc: HealConfig, st: HealingStore, r: Round) -> Option<Block> {
+  match readFrame(c, st, r).g2.andThen(|x| x).andThen(|g| activePrefix(getFilteredBlockTree(st), g)) {
+    Some(g) => Some(g),
+    None => Some(getFgRoot(st)),
+  }
+}

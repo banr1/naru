@@ -1,0 +1,179 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ValidatorClient.lean(§5.3 anti-slashing record Λ・pair rules・
+// create_attestation・record_attestation、NamedRecord と named row の codec)。
+// 手書きの `Record`(`initial` `with_target` `with_timeout` `with_lock`)/ `finality_pair` / `own_lock` / `height_pair` /
+// `record_attestation` / `create_attestation` / `NamedRecord`(`Input` `initial` `encodeHeight` `encodeRow` `rememberTimeout`
+// `legacyCreate` `create`)に対応する。
+//
+// - `Record` の 3 つの欄は `Height` 上の全域写像(`target : Height → Option BlockId`、`timeout : Height → Bool`、
+//   `lock : Height → Option BlockId`、既定は `(⊥, false, ⊥)`)。naru には関数型の欄が無いので `Table<Height, BlockId>`(無い高さ = ⊥)と
+//   `Set<Height>`(timeout が true の高さ。`with_timeout` は true しか書かない)で持ち、読みは `recordTarget` / `recordTimeout` /
+//   `recordLock`。`with_*` は `insert`(`fun k => if k = h then … else Λ k` と同じ全域写像)。
+// - `fields : Option (Height × BlockId × Bool)` は `Option<(Height, BlockId, Bool)>`(同じ Lean 型に落ちる)。
+// - 組 `Record × CombinedAttestation` を返す def は tuple の戻り型のまま(読みは `match` で取り出す。tuple の射影は無い)。
+// - 改名の対応: `Record.initial` → `initialRecord`、`Record.with_target` / `with_timeout` / `with_lock` → `withTarget` /
+//   `withTimeout` / `withLock`、`NamedRecord.Input` → `RecordInput`(`input` は naru の予約語)、`NamedRecord.initial` →
+//   `initialNamedRecord`、`NamedRecord.create` → `namedCreate`。欄 `val_index` / `h_j` / `J` / `h_F` → `valIndex` / `hJ` / `j` / `hF`。
+module Consensus.Protocol.ValidatorClient
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+
+// ── §5.3 The anti-slashing record ──
+
+// §5.3 the record Λ: for every height the validator's first target, whether it emitted an empty-target vote, and the
+// target of its first finality pair. Targets are roots. The record carries no validator parameter.
+record Record { target: Table<Height, BlockId>, timeout: Set<Height>, lock: Table<Height, BlockId> } derive eq
+
+// §5.3 the initial record: (⊥, false, ⊥) at every height.
+fn initialRecord() -> Record { Record { target: Table.empty(), timeout: Set.empty(), lock: Table.empty() } }
+
+// §5.3 Λ.target[h]
+fn recordTarget(rec: Record, h: Height) -> Option<BlockId> { rec.target.get?(h) }
+
+// §5.3 Λ.timeout[h]
+fn recordTimeout(rec: Record, h: Height) -> Bool { rec.timeout.contains(h) }
+
+// §5.3 Λ.lock[h]
+fn recordLock(rec: Record, h: Height) -> Option<BlockId> { rec.lock.get?(h) }
+
+// §5.3 Λ.target[h] ← T
+fn withTarget(rec: Record, h: Height, t: BlockId) -> Record { Record { target: rec.target.insert(h, t), ..rec } }
+
+// §5.3 Λ.timeout[h] ← true
+fn withTimeout(rec: Record, h: Height) -> Record { Record { timeout: rec.timeout.insert(h), ..rec } }
+
+// §5.3 Λ.lock[h] ← J
+fn withLock(rec: Record, h: Height, j: BlockId) -> Record { Record { lock: rec.lock.insert(h, j), ..rec } }
+
+// ── §5.3 The pair rules and the record interface ──
+
+// §5.3 finality_pair(Λ, h_j, J, h_F): (h_j, J) exactly when a justification is not yet finalized and the record allows it
+// (target[h_j] empty or J, no timeout at h_j, lock[h_j] empty or J); otherwise the empty pair. Does not write the lock.
+fn finalityPair(rec: Record, hJ: Height, j: BlockId, hF: Height) -> Option<FinalityPair> {
+  if hF < hJ {
+    let target = recordTarget(rec, hJ);
+    let lock = recordLock(rec, hJ);
+    if (target == None || target == Some(j)) && !recordTimeout(rec, hJ) && (lock == None || lock == Some(j)) {
+      Some(FinalityPair { height: hJ, target: j })
+    } else {
+      None
+    }
+  } else {
+    None
+  }
+}
+
+// §5.3 the lock height_pair reads: the record's lock at h_c, overridden by this attestation's own finality pair when
+// the two heights agree (so one attestation never forms E1 evidence).
+fn ownLock(rec: Record, hC: Height, fp: Option<FinalityPair>) -> Option<BlockId> {
+  match fp {
+    Some(p) => if p.height == hC { Some(p.target) } else { recordLock(rec, hC) },
+    None => recordLock(rec, hC),
+  }
+}
+
+// §5.3 height_pair(Λ, h_c, T_c, ν, h_f, T_f): the seven rows of the document's table, in order, with its fall-through.
+// `fields` = (h_c, T_c, ν) as one Option: `None` is the "no fresh quorum" (⊥, ⊥, ⊥) that §6 passes.
+// A validator locked elsewhere returns the empty pair (abstains); a recorded target that disagrees falls through to a
+// timeout at h_c. Both target tests are equalities, not ancestry.
+fn heightPair(rec: Record, fields: Option<(Height, BlockId, Bool)>, fp: Option<FinalityPair>) -> HeightPair {
+  match fields {
+    None => HeightPair.Empty,
+    Some((hC, tC, nu)) => {
+      if recordTimeout(rec, hC) {
+        HeightPair.Timeout(hC)
+      } else {
+        match ownLock(rec, hC, fp) {
+          Some(locked) => if locked == tC { HeightPair.Target(hC, tC) } else { HeightPair.Empty },
+          None => {
+            match recordTarget(rec, hC) {
+              Some(recorded) => if recorded == tC { HeightPair.Target(hC, tC) } else { HeightPair.Timeout(hC) },
+              None => if nu { HeightPair.Timeout(hC) } else { HeightPair.Target(hC, tC) },
+            }
+          },
+        }
+      }
+    },
+  }
+}
+
+// §5.3 record_attestation(Λ, a): the only writer of Λ, folding the attestation about to be released.
+// target[h] is write-once (the guard Λ.target[h] = ⊥); timeout[h] and lock[h_f] are idempotent at the emitted values.
+fn recordAttestation(rec: Record, a: CombinedAttestation) -> Record {
+  let afterLock = match a.finalityPair { Some(p) => withLock(rec, p.height, p.target), None => rec };
+  match a.heightPair {
+    HeightPair.Empty => afterLock,
+    HeightPair.Timeout(h) => withTimeout(afterLock, h),
+    HeightPair.Target(h, t) => if recordTarget(afterLock, h) == None { withTarget(afterLock, h, t) } else { afterLock },
+  }
+}
+
+// §5.3 create_attestation(Λ, r, confirmed, h_c, T_c, ν, h_j, J, h_F): the two pair rules, then the attestation, then the
+// record — "record, then release". No store access. Returns the updated record beside the attestation.
+fn createAttestation(rec: Record, valIndex: ValidatorId, r: Round, confirmed: Option<BlockId>,
+                     fields: Option<(Height, BlockId, Bool)>, hJ: Height, j: BlockId, hF: Height) -> (Record, CombinedAttestation) {
+  let fp = finalityPair(rec, hJ, j, hF);
+  let hp = heightPair(rec, fields, fp);
+  let a = CombinedAttestation { valIndex: valIndex, round: r, confirmed: confirmed, heightPair: hp, finalityPair: fp };
+  (recordAttestation(rec, a), a)
+}
+
+// ── Named-row signing state ──
+
+// `Record` plus the active timeout-history set. The history records timeout annotations; it never suppresses a repeated
+// transmission or replaces a height-wide target/finality lock.
+record NamedRecord { legacy: Record, timeoutHistory: Set<(Height, BlockId)> } derive eq
+
+// Exact input fields supplied to the existing signing client (手書き `NamedRecord.Input`).
+record RecordInput {
+  valIndex: ValidatorId,
+  round: Round,
+  confirmed: Option<BlockId>,
+  fields: Option<(Height, BlockId, Bool)>,
+  hJ: Height,
+  j: BlockId,
+  hF: Height
+} derive eq
+
+fn initialNamedRecord() -> NamedRecord { NamedRecord { legacy: initialRecord(), timeoutHistory: Set.empty() } }
+
+// A fixed codec: the named height pair carries the source fields' entry; a timeout is the same entry with the flag set.
+fn encodeHeight(fields: Option<(Height, BlockId, Bool)>, pair: HeightPair) -> NamedHeightPair {
+  match (pair, fields) {
+    (HeightPair.Empty, _) => NamedHeightPair.Empty,
+    (HeightPair.Target(_, _), Some((h, entry, _))) => NamedHeightPair.Vote(h, entry, false),
+    (HeightPair.Timeout(_), Some((h, entry, _))) => NamedHeightPair.Vote(h, entry, true),
+    (_, None) => NamedHeightPair.Empty,
+  }
+}
+
+fn encodeRow(fields: Option<(Height, BlockId, Bool)>, row: CombinedAttestation) -> NamedAttestation {
+  NamedAttestation {
+    valIndex: row.valIndex, round: row.round, confirmed: row.confirmed,
+    heightPair: encodeHeight(fields, row.heightPair), finalityPair: row.finalityPair
+  }
+}
+
+// Set insertion is idempotent; membership is not an emission guard.
+fn rememberTimeout(history: Set<(Height, BlockId)>, p: NamedHeightPair) -> Set<(Height, BlockId)> {
+  match p {
+    NamedHeightPair.Vote(h, entry, true) => history.insert((h, entry)),
+    _ => history,
+  }
+}
+
+fn legacyCreate(rec: Record, inp: RecordInput) -> (Record, CombinedAttestation) {
+  createAttestation(rec, inp.valIndex, inp.round, inp.confirmed, inp.fields, inp.hJ, inp.j, inp.hF)
+}
+
+// The base client makes all pair decisions and updates its record once. The extra history records exactly the
+// resulting named timeout pair.
+fn namedCreate(rec: NamedRecord, inp: RecordInput) -> (NamedRecord, NamedAttestation) {
+  match legacyCreate(rec.legacy, inp) {
+    (newLegacy, old) => {
+      let row = encodeRow(inp.fields, old);
+      (NamedRecord { legacy: newLegacy, timeoutHistory: rememberTimeout(rec.timeoutHistory, row.heightPair) }, row)
+    },
+  }
+}

@@ -1,0 +1,31 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ForkChoice/Head.lean(§7 block 2a — the SG root and the
+// composed head over the saved grades)。手書きの `get_sg_root_with` / `get_head_in_tree_with_layer` / `get_head_with` に対応する。
+//
+// - 手書きの `contract : GradeContract`(関数型の欄の record)は唯一の instantiation `frameContract c` を inline するので、
+//   naru では `c: Cache`(Grades.naru の冒頭を参照)。`(contract.read E hc st r).anchor` は `frameGradeRead(c, e, hc, st, r).anchor`。
+// - `st : HealingStore` は `FGStore` の型別名。`st.σ` / `st.h_max` / `st.T` / `st.s` は `sigma` / `hMax` / `tree` / `s`。
+module Consensus.Protocol.ForkChoice.Head
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.ForkChoice.Goldfish
+import Consensus.Protocol.Grades
+
+// The SG root supplied by the contract's anchor read.
+fn getSgRootWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round) -> Block {
+  frameGradeRead(c, e, hc, st, r).anchor
+}
+
+// The explicit-tree composed head at the contract's SG root: the §5 Goldfish walk from the anchor over `tree`.
+fn getHeadInTreeWithLayer(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, tree: Set<Block>,
+                          votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, k: Slot) -> Block {
+  let a = getSgRootWith(c, e, hc, st, roundOf(hc, st.s));
+  goldfishForkChoice(e, st.sigma, st.hMax, st.tree, st.s, a, tree, votes, supportVotes, k)
+}
+
+// The ordinary full-tree composed head.
+fn getHeadWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore,
+               votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, k: Slot) -> Block {
+  getHeadInTreeWithLayer(c, e, hc, st, getFilteredBlockTree(st), votes, supportVotes, k)
+}
