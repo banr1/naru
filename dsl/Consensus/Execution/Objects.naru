@@ -1,0 +1,22 @@
+// verified-consensus の移植: DecoupledConsensusModel/Execution/Objects.lean(execution — the objects a run carries)。
+// 手書きの `NamedObject`(`block` `gfVote` `attest`)/ `NamedObject.author` に対応する。
+//
+// - `NamedEvent := Generic.Event V (NamedObject V)` とその読み(`time` / `node` / `object?`)は Generic 層(stdlib の Event)の
+//   instantiation なので、C7 の経路(stdlib の Event / Run)を決める周回で書く。
+module Consensus.Execution.Objects
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+
+// Named wire objects retain full signed row data: a named block, a Goldfish vote, or a named attestation row.
+enum NamedObject { Block(NamedBlock), GfVote(GoldfishVote), Attest(NamedAttestation) } derive eq
+
+// The validator that authored an object (a genesis block has no author).
+fn author(o: NamedObject) -> Option<ValidatorId> {
+  match o {
+    NamedObject.Block(b) => namedProposer?(b),
+    NamedObject.GfVote(vote) => Some(vote.valIndex),
+    NamedObject.Attest(row) => Some(row.valIndex),
+  }
+}

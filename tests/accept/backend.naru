@@ -216,6 +216,14 @@ fn floorDiv(t: Int, d: Int) -> Nat { t.fdiv(d).toNat() }
 // 周回 6 で足した stdlib: `Set.flatMap`(各要素の集合の和集合。可換なので Set から直接取れる)
 fn flat(s: Set<Vote>) -> Nat { s.flatMap(|v| Set.of([v.slot, v.who])).size() }
 
+// 周回 9 で足した stdlib: `List.flatMap`(連結)/ `List.filterMap`(`Some` だけ残す)/ `Table.mapValues`(鍵を保って値を写す)
+fn flatList(xs: List<Nat>) -> List<Nat> { xs.flatMap(|x| [x, x + 1]) }
+fn keepEven(xs: List<Nat>) -> List<Nat> { xs.filterMap(|x| if x % 2 == 0 { Some(x / 2) } else { None }) }
+fn doubled(t: Table<Nat, List<Nat>>) -> Table<Nat, Nat> { t.mapValues(|xs| xs.size() * 2) }
+fn listStd() -> Nat {
+  flatList([1, 2]).size() + keepEven([1, 2, 4]).sum(|x| x) + doubled(Table.empty().insert(1, [7, 8])).getOr(1, 0)
+}
+
 // 周回 6 で足した構文: 関数型の仮引数(first-order の関数値)。lambda と fn 名のどちらも渡せる。
 // fuel 再帰の中で関数値を引き回しても停止性の証明が通ること(`iterate`)。
 fn applyTwice(f: (Nat) -> Nat, x: Nat) -> Nat { f(f(x)) }

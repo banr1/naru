@@ -1,0 +1,104 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Store.lean(§7.1 the cumulative store Σ — its fields, its pool
+// reads, and the projection the §6 decisions are read through)。手書きの `sgVote` / `Store`(`init` `pool` `sg_pool` `tau`
+// `toHealing`)に対応する。
+//
+// - `Store` は手書きどおり `extends` の鎖とは別の flat な record(§6 までの store と違い、`sg_votes` が combined attestation の
+//   List で、§6 の規則はその (validator, round, confirmed) projection だけを読む)。欄名は FGStore と同じ流儀
+//   (`T` → `tree`、`σ` → `sigma`、`F` / `J` / `h_j` / `h_max` → `f` / `j` / `hJ` / `hMax`)。
+// - 全域写像の欄(`σ : Block → ChainState`、`gf_votes : Slot → List`、`sg_votes : Round → List`、`timestamp_* : TimestampMap`)は
+//   `Table`(無い鍵 = 既定値: initial chain state / [] / [] / +∞)。`init` の
+//   `timestamp_block := fun B => if B = B_gen then some ⊥ else none` は genesis だけを持つ Table。
+// - `toHealing` の `sg_votes := fun r => (st.sg_pool r).image sgVote` は `st.sgVotes.mapValues(|rows| rows.toSet().map(…))`
+//   (周回 9 で足した `Table.mapValues`: 鍵を保って値だけを写すので、全域写像の合成と同じ。無い round は両側とも空)。
+// - 改名: `pool` / `tau` は GoldfishStore 用に使っているので `storePool` / `storeTau`、`init` → `initStore`、`sg_pool` → `sgPool`、
+//   `toHealing` → `storeToHealing`。
+module Consensus.Protocol.Store
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Protocol.StoreBase
+import Consensus.Protocol.ChainState
+import Consensus.Protocol.ForkChoice.Goldfish
+import Consensus.Protocol.Grades
+
+// §7.1 the SG vote of a combined attestation: its (validator, round, confirmed) projection. Two attestations differing
+// only in their pair fields are one vote, which is exactly what this map collapses.
+fn sgVote(a: CombinedAttestation) -> SGVote { SGVote { valIndex: a.valIndex, round: a.round, confirmed: a.confirmed } }
+
+// §7.1 the cumulative node store Σ, in the document's tuple order: (t, s, T, timestamp[·] as three typed maps, σ[·],
+// gf_votes[·], sg_votes[·], F, J, h_j, h_max, live_confirmed, latest_confirmed, latest_stable). The saved relative grades
+// are not store fields; they live in the node's Cache. There is no fresh_root[·] and no Λ (that belongs to the validator).
+record Store {
+  // §2.2 Σ.t: the current time.
+  t: Time,
+  // §2.2 Σ.s: the current slot.
+  s: Slot,
+  // §2.2 Σ.T: the processed block tree, never pruned.
+  tree: Set<Block>,
+  // §1 Σ.timestamp[·] on blocks.
+  timestampBlock: Table<Block, Stamp>,
+  // §1 Σ.timestamp[·] on Goldfish votes.
+  timestampVote: Table<GoldfishVote, Stamp>,
+  // §1 Σ.timestamp[·] on the SG fibre, keyed by the vote projection (the pool admits at most one attestation per
+  // (validator, head) in a round, so the projection is injective on it).
+  timestampSgVote: Table<SGVote, Stamp>,
+  // §5.1 Σ.σ[B]: the post-state of B. Total, defaulting to the initial chain state.
+  sigma: ChainStates,
+  // §2.2 Σ.gf_votes[k]: the processed slot-k Goldfish votes, at most two distinct per validator.
+  gfVotes: Table<Slot, List<GoldfishVote>>,
+  // §7.1 Σ.sg_votes[r]: the processed round-r combined attestations, at most two with distinct heads per validator.
+  // A List, because propose_block copies it into a block; set-valued reads go through `sgPool`.
+  sgVotes: Table<Round, List<CombinedAttestation>>,
+  // §5.1 Σ.F: the finalized block.
+  f: Block,
+  // §5.1 Σ.J: the justified block.
+  j: Block,
+  // §5.1 Σ.h_j: its height.
+  hJ: Height,
+  // §5.1 Σ.h_max: the running maximum state height; monotone.
+  hMax: Height,
+  // The protocol-facing confirmation used by voting: an eligible Goldfish walk result, or the FG-root floor.
+  liveConfirmed: Block,
+  // The user-facing confirmation record (an ancestor candidate leaves it unchanged; an extension or conflict replaces it).
+  latestConfirmed: Block,
+  // The user-facing stable record: the latest G2 root, advanced by advance_confirmed.
+  latestStable: Block
+} derive eq
+
+// §7.1 the initial store: t = s = 0, T = {B_gen}, timestamp(B_gen) = −∞, h_max = 1, F = J = B_gen, h_j = 0,
+// live_confirmed = latest_confirmed = latest_stable = B_gen, and every pool empty. Σ.σ[·] defaults to the initial chain
+// state everywhere (the value on_block reads at a child of genesis).
+fn initStore() -> Store {
+  Store {
+    t: 0, s: 0, tree: Set.singleton(Block.Genesis),
+    timestampBlock: Table.empty().insert(Block.Genesis, genesisStamp()),
+    timestampVote: Table.empty(), timestampSgVote: Table.empty(), sigma: Table.empty(),
+    gfVotes: Table.empty(), sgVotes: Table.empty(),
+    f: Block.Genesis, j: Block.Genesis, hJ: 0, hMax: 1,
+    liveConfirmed: Block.Genesis, latestConfirmed: Block.Genesis, latestStable: Block.Genesis
+  }
+}
+
+// §2.2 Σ.gf_votes[k] read as the set it stands for. The list is duplicate-free, so this loses nothing.
+fn storePool(st: Store, k: Slot) -> Set<GoldfishVote> { st.gfVotes.getOr(k, []).toSet() }
+
+// §7.1 Σ.sg_votes[r] read as the set it stands for.
+fn sgPool(st: Store, r: Round) -> Set<CombinedAttestation> { st.sgVotes.getOr(r, []).toSet() }
+
+// §2.2 τ(·) on Goldfish votes at the cumulative store: the pure core `resolutionTime` (Σ is its own structure, so §2's
+// `tau` does not reach it).
+fn storeTau(st: Store, vote: GoldfishVote) -> Occurrence { resolutionTime(st.tree, st.timestampBlock, st.timestampVote, vote) }
+
+// §7.1 the store read as a §6 store: the one adapter that lets every §6 decision (get_head, the proposal, the round
+// action, the grades) apply here unchanged. The single difference between the two records is the SG pool: this one holds
+// combined attestations, and §6 reads their (validator, round, confirmed) projections. Everything else is copied.
+fn storeToHealing(st: Store) -> HealingStore {
+  FGStore {
+    t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,
+    gfVotes: st.gfVotes, liveConfirmed: st.liveConfirmed, latestConfirmed: st.latestConfirmed,
+    sgVotes: st.sgVotes.mapValues(|rows| rows.toSet().map(|a| sgVote(a))),
+    timestampSgVote: st.timestampSgVote,
+    sigma: st.sigma, f: st.f, j: st.j, hJ: st.hJ, hMax: st.hMax
+  }
+}

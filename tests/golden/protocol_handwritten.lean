@@ -1,8 +1,9 @@
-import DecoupledConsensusModel.Protocol.Duties.Inputs
+import DecoupledConsensusModel.Protocol.Tick
+import DecoupledConsensusModel.Protocol.Evidence
 open DecoupledConsensusModel DecoupledConsensusModel.Protocol
 
--- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6〜8)。
--- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Protocol 層(Duties.Inputs まで)の olean がビルド済みであること)
+-- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6〜9)。
+-- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Protocol 層(Tick / Evidence まで)と Execution.Objects の olean がビルド済みであること)
 
 def el : Electorate (Fin 3) := { weight := fun v => if v = 0 then 3 else 1, weight_pos := by decide }
 def env : Env (Fin 3) :=
@@ -351,3 +352,168 @@ def fv1 := get_fg_vote_with (frameContract cD) env hc hs 0 (some b3)
 #eval (fv1.1.map (fun t => (t.1, t.2.1.value, t.2.2)), fv1.2.1, fv1.2.2.1.value, fv1.2.2.2)
 def ai2 := with_attestation_input (frameContract cD) env hc nd1 hs id
 #eval ((ai2.val_index : Nat), ai2.round, idOf ai2.confirmed, ai2.fields.map (fun t => (t.1, t.2.1.value, t.2.2)), ai2.h_j, ai2.J.value, ai2.h_F)
+
+-- Store / Handlers (周回 9)
+def s0 : Store (Fin 3) := Store.init
+#eval (s0.t, s0.s, decide (s0.T = {g}), s0.timestamp_block g == some ⊥, (s0.timestamp_block b1).isNone,
+       s0.h_max, s0.h_j, rootOf s0.F, rootOf s0.J, decide (s0.pool 1 = ∅), decide (s0.sg_pool 0 = ∅))
+#eval (rootOf (advance_confirmed b2 b1), rootOf (advance_confirmed b1 b2), rootOf (advance_confirmed b2 b2'), rootOf (advance_confirmed b2 b2))
+#eval (rootOf (floor_on_stable b1 b2 b2'), rootOf (floor_on_stable b2 b1' b2), rootOf (floor_on_stable b2 b1' b1'), rootOf (floor_on_stable g b2' b3))
+def s1 : Store (Fin 3) := { s0 with t := 8, s := 1 }
+def s1b := on_block env cfg s1 b1
+#eval (decide (s1b.T = {g, b1}), s1b.timestamp_block b1 == some ((8 : Time) : Stamp), (s1b.σ b1).s, rootOf (s1b.σ b1).L, s1b.h_max)
+def s1x := on_block env cfg s1 b2
+def s1y := on_block env cfg s1b b1'
+def s1z := on_block env cfg { s1b with s := 2 } b3
+def s1d := on_block env cfg s1b b1
+#eval (decide (s1x.T = s0.T), decide (s1y.T = s1b.T), decide (s1z.T = s1b.T), decide (s1d.T = s1b.T) && s1d.timestamp_block b1 == s1b.timestamp_block b1)
+def s2 : Store (Fin 3) := { s1b with t := 10 }
+def vg1 := on_goldfish_vote s2 vA
+def vg2 := on_goldfish_vote vg1 vC
+def vg3 := on_goldfish_vote vg2 ⟨0, 1, ⟨5⟩⟩
+def vg4 := on_goldfish_vote vg3 vA
+def vg5 := on_goldfish_vote vg4 ⟨1, 3, ⟨1⟩⟩
+def vg6 := on_goldfish_vote { vg4 with s := 3 } ⟨2, 1, ⟨1⟩⟩
+def vg7 := on_goldfish_vote_checked env vg4 vB
+def vg8 := on_goldfish_vote_checked env vg4 ⟨0, 0, ⟨0⟩⟩
+#eval (vg1.gf_votes 1 == [vA], vg1.timestamp_vote vA == some ((10 : Time) : Stamp), vg2.gf_votes 1 == [vA, vC],
+       vg3.gf_votes 1 == [vA, vC], (vg3.timestamp_vote ⟨0, 1, ⟨5⟩⟩).isNone, vg4.gf_votes 1 == [vA, vC],
+       (vg5.gf_votes 3).isEmpty, (vg6.gf_votes 1).length, (vg7.gf_votes 1).length, vg8.gf_votes 0 == [⟨0, 0, ⟨0⟩⟩])
+#eval (decide (vg2.pool 1 = {vA, vC}), vg2.tau vA == some ((10 : Time) : Stamp), (vg2.tau vD).isNone)
+def sa0 : CombinedAttestation (Fin 3) := ⟨0, 0, some ⟨1⟩, .empty, none⟩
+def sa1 : CombinedAttestation (Fin 3) := ⟨0, 0, some ⟨1⟩, .timeout 1, none⟩
+def sa2 : CombinedAttestation (Fin 3) := ⟨0, 0, none, .empty, none⟩
+def sa3 : CombinedAttestation (Fin 3) := ⟨0, 0, some ⟨0⟩, .empty, none⟩
+def sa4 : CombinedAttestation (Fin 3) := ⟨1, 1, some ⟨1⟩, .empty, none⟩
+def sg1 := on_sg_vote hc vg2 sa0
+def sg2 := on_sg_vote hc sg1 sa1
+def sg3 := on_sg_vote hc sg2 sa2
+def sg4 := on_sg_vote hc sg3 sa3
+def sg5 := on_sg_vote hc sg4 sa4
+def sg6 := on_sg_vote hc { sg4 with s := 9 } ⟨2, 0, none, .empty, none⟩
+def sg7 := on_sg_vote hc { sg4 with s := 9 } sa4
+#eval (sg1.sg_votes 0 == [sa0], sg1.timestamp_sg_vote (sgVote sa0) == some ((10 : Time) : Stamp), sg2.sg_votes 0 == [sa0],
+       sg3.sg_votes 0 == [sa0, sa2], decide (round_votes sg3 sa3 = {some ⟨1⟩, none}), sg4.sg_votes 0 == [sa0, sa2],
+       (sg5.sg_votes 1).isEmpty, decide (sg3.sg_pool 0 = {sa0, sa2}), (sg6.sg_votes 0).length, sg7.sg_votes 1 == [sa4])
+#eval (decide (sg3.toHealing.sg_votes 0 = {⟨0, 0, some ⟨1⟩⟩, ⟨0, 0, none⟩}), sg3.toHealing.s, decide (sg3.toHealing.sg_votes 5 = ∅),
+       decide (sg3.toHealing.T = sg3.T), sg3.toHealing.timestamp_sg_vote (sgVote sa0) == some ((10 : Time) : Stamp))
+def uf : Store (Fin 3) := { s0 with T := tree, σ := sig, F := g, J := g, h_j := 0, h_max := 1 }
+def σJ : ChainState (Fin 3) := { σ0 with h := 3, J := b1, h_j := 2, F := g, h_F := 0 }
+def uf1 := update_finality uf σJ
+def σF : ChainState (Fin 3) := { σ0 with h := 4, J := b2, h_j := 3, F := b1, h_F := 2 }
+def uf2 := update_finality uf1 σF
+def σG : ChainState (Fin 3) := { σ0 with h := 4, J := b2', h_j := 3, F := b2', h_F := 3 }
+def uf3 := update_finality uf2 σG
+def σH : ChainState (Fin 3) := { σ0 with h := 4, J := b2', h_j := 3, F := b2, h_F := 3 }
+def uf4 := update_finality uf3 σH
+def σI : ChainState (Fin 3) := { σ0 with h := 4, J := b3, h_j := 4, F := b2, h_F := 3 }
+def uf5 := update_finality uf4 σI
+#eval ((uf1.h_max, rootOf uf1.J, uf1.h_j, rootOf uf1.F), (uf2.h_max, rootOf uf2.J, uf2.h_j, rootOf uf2.F), (uf3.h_max, rootOf uf3.J, uf3.h_j, rootOf uf3.F),
+       (uf4.h_max, rootOf uf4.J, uf4.h_j, rootOf uf4.F), (uf5.h_max, rootOf uf5.J, uf5.h_j, rootOf uf5.F))
+def gs : Store (Fin 3) := { s0 with F := b1, latest_stable := b2, latest_confirmed := b3 }
+#eval (rootOf (get_stable gs), rootOf (get_confirmed gs), rootOf (get_stable { gs with F := b2' }), rootOf (get_confirmed { gs with F := b2' }),
+       rootOf (get_confirmed { gs with latest_confirmed := b1 }), rootOf (get_confirmed { gs with latest_confirmed := b2' }))
+
+-- The named path (周回 9)
+def z10 : NamedAttestation (Fin 3) := ⟨0, 0, none, .vote 1 ⟨0⟩ false, none⟩
+def z11 : NamedAttestation (Fin 3) := ⟨1, 0, none, .vote 1 ⟨0⟩ false, none⟩
+def z20 : NamedAttestation (Fin 3) := ⟨0, 0, some ⟨1⟩, .vote 2 ⟨1⟩ false, some ⟨1, ⟨0⟩⟩⟩
+def z21 : NamedAttestation (Fin 3) := ⟨1, 0, some ⟨1⟩, .vote 2 ⟨1⟩ true, some ⟨1, ⟨0⟩⟩⟩
+def z22 : NamedAttestation (Fin 3) := ⟨2, 0, none, .vote 2 ⟨5⟩ false, none⟩
+def z30 : NamedAttestation (Fin 3) := ⟨0, 1, some ⟨2⟩, .vote 3 ⟨2⟩ false, none⟩
+def z31 : NamedAttestation (Fin 3) := ⟨1, 1, some ⟨2⟩, .vote 3 ⟨2⟩ false, none⟩
+def z40 : NamedAttestation (Fin 3) := ⟨0, 1, some ⟨3⟩, .empty, some ⟨3, ⟨2⟩⟩⟩
+def z41 : NamedAttestation (Fin 3) := ⟨1, 1, some ⟨3⟩, .empty, some ⟨3, ⟨2⟩⟩⟩
+def mb1 : NamedBlock (Fin 3) := .node .genesis 1 ⟨1⟩ [] [] [z10, z11] 0
+def mb2 : NamedBlock (Fin 3) := .node mb1 2 ⟨2⟩ [vA] [vA] [z20, z21, z22] 0
+def mb3 : NamedBlock (Fin 3) := .node mb2 3 ⟨3⟩ [] [] [z30, z31] 0
+def mb4 : NamedBlock (Fin 3) := .node mb3 4 ⟨4⟩ [] [] [z40, z41] 0
+def e1 := mb1.erase
+def e2 := mb2.erase
+def e3 := mb3.erase
+def e4 := mb4.erase
+def cs (st : Store (Fin 3)) (b : Block (Fin 3)) := st.σ b
+def csr (σ : ChainState (Fin 3)) := (σ.h, σ.h_j, σ.h_F, rootOf σ.J, rootOf σ.F, rootOf σ.T_h, σ.nj, σ.finalize.card)
+def ns0 : NamedStore (Fin 3) := NamedStore.initial
+def ns1 := NamedAdmission.on_block_with .alsoCarried env hc cfg (NamedStore.setClock env ns0 8) mb1
+def ns2 := NamedAdmission.on_block_with .alsoCarried env hc cfg (NamedStore.setClock env ns1 16) mb2
+def ns3 := NamedAdmission.on_block_with .alsoCarried env hc cfg (NamedStore.setClock env ns2 24) mb3
+def ns4 := NamedAdmission.on_block_with .alsoCarried env hc cfg (NamedStore.setClock env ns3 32) mb4
+#eval (ns0.bodies.card, ns0.core.T.card, (NamedStore.setClock env ns0 8).core.t, (NamedStore.setClock env ns0 8).core.s)
+#eval (ns1.core.T.card, csr (cs ns1.core e1), ns1.core.h_max, ns1.core.h_j, rootOf ns1.core.J, rootOf ns1.core.F, ns1.sg_rows 0 == [z10, z11], ns1.bodies.card,
+       ns1.core.timestamp_block e1 == some ((8 : Time) : Stamp), ns1.core.timestamp_sg_vote ⟨1, 0, none⟩ == some ((8 : Time) : Stamp))
+#eval (ns2.core.T.card, csr (cs ns2.core e2), ns2.core.h_max, ns2.core.h_j, rootOf ns2.core.J, rootOf ns2.core.F, ns2.sg_rows 0 == [z10, z11, z20, z21, z22], ns2.bodies.card,
+       ns2.core.gf_votes 1 == [vA], ns2.core.timestamp_vote vA == some ((16 : Time) : Stamp), (ns2.core.sg_pool 0).card)
+#eval (ns3.core.T.card, csr (cs ns3.core e3), ns3.core.h_max, ns3.core.h_j, rootOf ns3.core.J, rootOf ns3.core.F, ns3.sg_rows 1 == [z30, z31], ns3.bodies.card)
+#eval (ns4.core.T.card, csr (cs ns4.core e4), ns4.core.h_max, ns4.core.h_j, rootOf ns4.core.J, rootOf ns4.core.F, ns4.sg_rows 1 == [z30, z31, z40, z41], ns4.bodies.card,
+       rootOf (get_stable ns4.core), rootOf (get_confirmed ns4.core), ns4.core.tau vA == some ((16 : Time) : Stamp))
+#eval decide (ns4.core.toHealing.sg_votes 1 = {⟨0, 1, some ⟨2⟩⟩, ⟨1, 1, some ⟨2⟩⟩, ⟨0, 1, some ⟨3⟩⟩, ⟨1, 1, some ⟨3⟩⟩})
+#eval ((chain_attestations e1).card, (chain_attestations e2).card, (chain_attestations e4).card, decide (chain_attestations g = ∅),
+       (store_attestations ns4.core).card, decide (z22.erase ∈ store_attestations ns4.core), (store_attestations ns1.core).card)
+def mbx : NamedBlock (Fin 3) := .node nb1 5 ⟨7⟩ [] [] [] 0
+def mby : NamedBlock (Fin 3) := .node mb4 5 ⟨7⟩ [] [] [⟨2, 2, none, .empty, none⟩] 0
+def mbz : NamedBlock (Fin 3) := .node mb4 5 ⟨7⟩ [] [] [] 1
+def ns5c := NamedStore.setClock env ns4 40
+#eval (ns5c.core.t, ns5c.core.s, (NamedAdmission.on_block_with .alsoCarried env hc cfg ns5c mbx).bodies.card,
+       (NamedAdmission.on_block_with .alsoCarried env hc cfg ns5c mby).bodies.card, (NamedAdmission.on_block_with .alsoCarried env hc cfg ns5c mbz).bodies.card,
+       (NamedAdmission.on_block_with .alsoCarried env hc cfg ns5c mb4).bodies.card, (NamedAdmission.on_block_with .alsoCarried env hc cfg ns5c (.node mb4 5 ⟨7⟩ [] [] [] 0)).bodies.card)
+
+-- Duties.Proposals (周回 9)
+#eval (ProposalRows.inWindow hc ns5c.core 0, ProposalRows.inWindow hc ns5c.core 1, ProposalRows.inWindow hc ns5c.core 2,
+       ProposalRows.inWindow hc { ns5c.core with s := 9 } 0, ProposalRows.inWindow hc { ns5c.core with s := 9 } 1)
+#eval (NamedProposalRows.processedRows hc ns5c == [z10, z11, z20, z21, z22, z30, z31, z40, z41], (NamedProposalRows.orderedRoots ns5c).map (·.value),
+       (NamedProposalRows.orderedBodies ns5c).map (fun b => b.root.value), (NamedProposalRows.poolRows hc ns5c).length,
+       NamedProposalRows.carriedRows hc ns5c == [z10, z11, z20, z21, z22, z30, z31, z40, z41], (NamedProposalRows.select .poolAndCarried hc ns5c).length)
+#eval (NamedProposalRows.chainRows mb2 == [z20, z21, z22, z10, z11], (NamedProposalRows.chainRows (.genesis : NamedBlock (Fin 3))).isEmpty, NamedProposalRows.excludeOnChain mb2 [z10, z30, z20, z40] == [z30, z40],
+       NamedProposalRows.capPerSigner [z30, z30, z40, ⟨0, 1, some ⟨9⟩, .empty, none⟩, z31] == [z30, z40, z31],
+       NamedProposalRows.proposalRows mb2 (NamedProposalRows.select .poolAndCarried hc ns5c) == [z30, z31, z40, z41])
+#eval ((NamedActions.parentBody? ns5c e2).map (fun b => b.root.value), (NamedActions.parentBody? ns5c b2).isNone,
+       ((NamedActions.creatorInput ai1).round, idOf (NamedActions.creatorInput ai1).confirmed, (NamedActions.creatorInput ai1).h_F))
+def prop5 := NamedActions.proposal_with (frameContract c0) .poolAndCarried env hc nd0 ns5c
+#eval prop5.map (fun b => (b.root.value, b.slot, b.parent.root.value, b.attestations == [z30, z31, z40, z41], b.gf_votes.isEmpty))
+def pb5 := NamedDuties.propose_block_with (frameContract c0) env hc cfg nd0 ns5c
+def e5 := (pb5.2.getD .genesis).erase
+#eval (pb5.2.map (fun b => b.root.value), pb5.1.bodies.card, pb5.1.core.T.card, csr (cs pb5.1.core e5), pb5.1.core.timestamp_block e5 == some ((40 : Time) : Stamp),
+       (pb5.1.sg_rows 1).length, rootOf pb5.1.core.F, pb5.1.core.h_max)
+def ns5v := NamedStore.setClock env pb5.1 42
+def gv5 := NamedDuties.goldfish_vote_with (frameContract c0) env hc nd0 ns5v
+def gv5' := NamedDuties.goldfish_vote_with (frameContract c0) env hc nd1 ns5v
+#eval (gv5.2 == some ⟨0, 5, ⟨6⟩⟩, gv5.1.core.gf_votes 5 == [⟨0, 5, ⟨6⟩⟩], gv5.1.core.timestamp_vote ⟨0, 5, ⟨6⟩⟩ == some ((42 : Time) : Stamp),
+       gv5'.2.isNone, (gv5'.1.core.gf_votes 5).isEmpty)
+def ns5u := NamedDuties.update_confirmation_with (frameContract c0) env hc (NamedStore.setClock env gv5.1 44) 4
+#eval (rootOf ns5u.core.live_confirmed, rootOf ns5u.core.latest_stable, rootOf ns5u.core.latest_confirmed, rootOf (get_stable ns5u.core), rootOf (get_confirmed ns5u.core))
+def ns6u := NamedDuties.update_confirmation_with (frameContract c0) env hc (NamedStore.setClock env ns5u 52) 5
+#eval (rootOf ns6u.core.live_confirmed, rootOf ns6u.core.latest_stable, rootOf ns6u.core.latest_confirmed, rootOf (get_stable ns6u.core), rootOf (get_confirmed ns6u.core))
+def at4 := NamedDuties.attest_with (frameContract c0) env hc nd0 (NamedStore.setClock env ns4 36) NamedRecord.initial
+#eval (decide (at4.2.2 = ⟨0, 1, some ⟨2⟩, .empty, none⟩), (at4.2.1.legacy.target 1).isNone, decide (at4.2.1.timeoutHistory = ∅), (at4.1.sg_rows 1).length, (at4.1.core.sg_pool 1).card)
+def at7 := NamedDuties.attest_with (frameContract c0) env hc nd0 (NamedStore.setClock env ns6u 60) NamedRecord.initial
+#eval (decide (at7.2.2 = ⟨0, 2, some ⟨6⟩, .empty, none⟩), at7.1.sg_rows 2 == [⟨0, 2, some ⟨6⟩, .empty, none⟩],
+       at7.1.core.timestamp_sg_vote ⟨0, 2, some ⟨6⟩⟩ == some ((60 : Time) : Stamp), decide (at7.1.core.sg_pool 2 = {⟨0, 2, some ⟨6⟩, .empty, none⟩}))
+
+-- Tick / Execution.Objects (周回 9)
+def objKind (o : Execution.NamedObject (Fin 3)) : Nat := match o with | .block _ => 0 | .gfVote _ => 1 | .attest _ => 2
+def objRoot (o : Execution.NamedObject (Fin 3)) : Nat := match o with
+  | .block b => b.root.value
+  | .gfVote v => v.head.value
+  | .attest row => (row.confirmed.map (·.value)).getD 99
+def objAuthor (o : Execution.NamedObject (Fin 3)) : Option Nat := (Execution.NamedObject.author o).map (fun v => (v : Nat))
+#eval (objAuthor (.block mb1), objAuthor (.block .genesis), objAuthor (.gfVote vB), objAuthor (.attest z22))
+def tk36 := NamedTick.tick (frameContract c0) env hc cfg nd0 ns4 NamedRecord.initial 36
+#eval (tk36.2.2.map objKind, tk36.2.2.map objRoot, tk36.2.2.map objAuthor, tk36.1.core.t, tk36.1.core.s, (tk36.1.sg_rows 1).length,
+       rootOf tk36.1.core.live_confirmed, rootOf tk36.1.core.latest_stable, rootOf tk36.1.core.latest_confirmed)
+def tk40 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk36.1 tk36.2.1 40
+#eval (tk40.2.2.map objKind, tk40.2.2.map objRoot, tk40.1.bodies.card, tk40.1.core.T.card, rootOf tk40.1.core.F, tk40.1.core.s)
+def tk42 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk40.1 tk40.2.1 42
+#eval (tk42.2.2.map objKind, tk42.2.2.map objRoot, tk42.1.core.gf_votes 5 == [⟨0, 5, ⟨6⟩⟩])
+def tk44 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk42.1 tk42.2.1 44
+def tk46 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk44.1 tk44.2.1 46
+#eval (tk44.2.2.isEmpty, rootOf tk44.1.core.live_confirmed, tk46.2.2.isEmpty, tk46.1.core.t, tk46.1.core.s)
+def tk52 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk46.1 tk46.2.1 52
+#eval (tk52.2.2.isEmpty, rootOf tk52.1.core.live_confirmed, rootOf tk52.1.core.latest_stable, rootOf tk52.1.core.latest_confirmed, tk52.1.core.s)
+def tk60 := NamedTick.tick (frameContract c0) env hc cfg nd0 tk52.1 tk52.2.1 60
+#eval (tk60.2.2.map objKind, tk60.2.2.map objRoot, rootOf tk60.1.core.live_confirmed, rootOf tk60.1.core.latest_confirmed, (tk60.1.sg_rows 2).length,
+       tk60.1.sg_rows 2 == [⟨0, 2, some ⟨2⟩, .empty, none⟩])
+def nd0s : Node (Fin 3) := { val_index := 0, new_root := fun s => ⟨s + 1⟩, awake := fun _ => false }
+def tk60s := NamedTick.tick (frameContract c0) env hc cfg nd0s tk52.1 tk52.2.1 60
+def tk40o := NamedTick.tick (frameContract c0) env hc cfg nd1 tk36.1 tk36.2.1 40
+#eval (tk60s.2.2.isEmpty, (tk60s.1.sg_rows 2).isEmpty, tk40o.2.2.isEmpty, tk40o.1.bodies.card)

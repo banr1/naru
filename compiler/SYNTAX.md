@@ -128,10 +128,10 @@ naru で書いた stdlib ができるまで、型検査がここに書いた署�
 | 型 | メソッド |
 |---|---|
 | `Set<T>` | `size() -> Nat`、`isEmpty() -> Bool`、`contains(T) -> Bool`ᵉ、`insert(T)`ᵉ、`remove(T)`ᵉ、`union(Set<T>)`ᵉ、`inter`ᵉ、`diff`ᵉ、`subset(Set<T>) -> Bool`ᵉ、`filter(T -> Bool) -> Set<T>`、`map(T -> U) -> Set<U>`(U に eq)、`flatMap(T -> Set<U>) -> Set<U>`(U に eq)、`any(T -> Bool)`、`all(T -> Bool)`、`sum(T -> Nat) -> Nat`、`findUnique?(T -> Bool) -> Option<T>`、`minBy?(T -> U) -> Option<T>`ᵒ、`maxBy?(T -> U) -> Option<T>`ᵒ、`sort(by = T -> U) -> List<T>`ᵒ |
-| `List<T>` | `size`、`isEmpty`、`contains(T)`ᵉ、`push(T)`、`append(List<T>)`、`head?`、`last?`、`get?(Nat)`、`find?(T -> Bool)`、`filter`、`map(T -> U) -> List<U>`、`any`、`all`、`count(T -> Bool) -> Nat`、`sum(T -> Nat) -> Nat`、`fold(U, (U, T) -> U) -> U`、`sort(by = T -> U)`(U に order)、`minBy?` / `maxBy?`(U に order)、`reverse`、`take(Nat)`、`drop(Nat)`、`toSet() -> Set<T>`ᵉ |
+| `List<T>` | `size`、`isEmpty`、`contains(T)`ᵉ、`push(T)`、`append(List<T>)`、`head?`、`last?`、`get?(Nat)`、`find?(T -> Bool)`、`filter`、`map(T -> U) -> List<U>`、`flatMap(T -> List<U>) -> List<U>`、`filterMap(T -> Option<U>) -> List<U>`、`any`、`all`、`count(T -> Bool) -> Nat`、`sum(T -> Nat) -> Nat`、`fold(U, (U, T) -> U) -> U`、`sort(by = T -> U)`(U に order)、`minBy?` / `maxBy?`(U に order)、`reverse`、`take(Nat)`、`drop(Nat)`、`toSet() -> Set<T>`ᵉ |
 | `Option<T>` | `isSome`、`isNone`、`getOr(T) -> T`、`map(T -> U)`、`andThen(T -> Option<U>)`、`filter(T -> Bool)` |
 | `Result<T, E>` | `isOk`、`isErr`、`ok?() -> Option<T>` |
-| `Table<K, V>` | `size`、`isEmpty`、`get?(K) -> Option<V>`ᵏ、`getOr(K, V) -> V`ᵏ、`contains(K)`ᵏ、`insert(K, V)`ᵏ、`remove(K)`ᵏ、`keys() -> Set<K>`ᵏ、`entries() -> Set<(K, V)>`(K・V に eq) |
+| `Table<K, V>` | `size`、`isEmpty`、`get?(K) -> Option<V>`ᵏ、`getOr(K, V) -> V`ᵏ、`contains(K)`ᵏ、`insert(K, V)`ᵏ、`remove(K)`ᵏ、`keys() -> Set<K>`ᵏ、`entries() -> Set<(K, V)>`(K・V に eq)、`mapValues(V -> U) -> Table<K, U>`ᵏ(鍵を保って値だけを写す。全域写像の `fun k => f (t k)`) |
 | `Nat` | `min(Nat)`、`max(Nat)`、`toInt() -> Int` |
 | `Int` | `min(Int)`、`max(Int)`、`abs() -> Nat`、`fdiv(Int) -> Int`(床除算。`(-7).fdiv(2) == -4`、除数 0 なら 0)、`toNat() -> Nat`(負は 0) |
 | `String` | `size() -> Nat`、`append(String)` |

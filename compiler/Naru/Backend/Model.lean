@@ -302,6 +302,8 @@ partial def emitMethod (env : Env) (c : ECtx) (ind : Nat) (tn n : String) (recv 
   | "List", "find?" => app "List.find?" [a 0, r]
   | "List", "filter" => app "List.filter" [a 0, r]
   | "List", "map" => app "List.map" [a 0, r]
+  | "List", "flatMap" => app "List.flatMap" [a 0, r]
+  | "List", "filterMap" => app "List.filterMap" [a 0, r]
   | "List", "any" => app "List.any" [r, a 0]
   | "List", "all" => app "List.all" [r, a 0]
   | "List", "count" => app "List.countP" [a 0, r]

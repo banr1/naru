@@ -469,6 +469,10 @@ def listSigs : List (String × Sig) :=
     ("find?", { params := [(none, pred)], ret := .option vT }),
     ("filter", { params := [(none, pred)], ret := .list vT }),
     ("map", { params := [(none, .fn [vT] vU)], ret := .list vU }),
+    -- 各要素の List の連結(`List.flatMap`)。List は順序を持つので E004 とは無関係
+    ("flatMap", { params := [(none, .fn [vT] (.list vU))], ret := .list vU }),
+    -- `Some` を返した要素だけを残す(`List.filterMap`)
+    ("filterMap", { params := [(none, .fn [vT] (.option vU))], ret := .list vU }),
     ("any", { params := [(none, pred)], ret := .bool }),
     ("all", { params := [(none, pred)], ret := .bool }),
     ("count", { params := [(none, pred)], ret := .nat }),
@@ -504,7 +508,9 @@ def tableSigs : List (String × Sig) :=
     ("insert", { params := [(none, vK), (none, vV)], ret := .table vK vV, caps := [("eq", vK)] }),
     ("remove", { params := [(none, vK)], ret := .table vK vV, caps := [("eq", vK)] }),
     ("keys", { ret := .set vK, caps := [("eq", vK)] }),
-    ("entries", { ret := .set (.tuple [vK, vV]), caps := [("eq", vK), ("eq", vV)] }) ]
+    ("entries", { ret := .set (.tuple [vK, vV]), caps := [("eq", vK), ("eq", vV)] }),
+    -- 鍵を保って値だけを写す(`fun k => f (t k)`)。鍵の順序で正規化された表なので要素の順序に依存しない
+    ("mapValues", { params := [(none, .fn [vV] vU)], ret := .table vK vU, caps := [("eq", vK)] }) ]
 
 def natSigs : List (String × Sig) :=
   [ ("min", { params := [(none, .nat)], ret := .nat }),

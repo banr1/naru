@@ -52,6 +52,10 @@ def keys (t : Table κ ν) : Set κ := ⟨t.entries.map (·.1)⟩
 /-- 項目の集合(鍵の昇順で鍵が重複しないので、tuple の辞書式順序でも昇順・重複なし)。 -/
 def entriesSet [Ord ν] (t : Table κ ν) : Set (κ × ν) := ⟨t.entries⟩
 
+/-- 鍵を保って値だけを写す(全域写像の `fun k => f (t k)`)。鍵の列は変わらないので不変条件を保つ。 -/
+def mapValues {μ : Type} (t : Table κ ν) (f : ν → μ) : Table κ μ :=
+  ⟨t.entries.map fun e => (e.1, f e.2)⟩
+
 end Table
 
 end NaruStd

@@ -1,0 +1,55 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Tick.lean(§7 block 1 — on_tick, which drives the duties)と、
+// Handlers.lean の `TickScheduler.TickOps` / `runWith`。手書きの `namedOps` / `tick` に対応する。
+//
+// - `TickOps`(関数型の欄 clock / slot / proposal / vote / confirmation / attestation を持つ型引数付きの record)と generic な
+//   `runWith` は naru に無い(関数を持つ record・型引数)。Model の instantiation は `namedOps` の 1 つだけなので、`runWith` の
+//   本体に `namedOps` の欄を inline した `tick` を書く(timetable と duty の順序は `runWith` のまま。4 つの分岐は独立な if で、
+//   それぞれ直前の duty が作った状態を読む。round と awake の判定は confirmation の後の状態で行う)。
+// - `E.proposer s = nd.val_index` / `nd.awake r = true` は `proposer(s) == nd.valIndex` / `awake(nd.valIndex, r)`(input)。
+// - `(ops.proposal st0).1` と `.2` は同じ値なので、組を `match` で 1 度に受ける。`Option.toList.map` は `match` の 2 腕。
+// - 戻り値 `NamedStore V × Protocol.NamedRecord × List (NamedObject V)` は 3 要素の tuple。
+module Consensus.Protocol.Tick
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ValidatorClient
+import Consensus.Protocol.Store
+import Consensus.Protocol.Handlers
+import Consensus.Protocol.Duties.Proposals
+import Consensus.Execution.Objects
+
+// on_tick(Σ, t): stage the clock, then run the duties of the timetable in order — the proposal at t_s (the slot's
+// proposer), the Goldfish vote at t_s + Δ, the confirmation evaluation of slot s − 1 at t_s + 2Δ, and the round action at
+// a_r = t_{rR} + 6Δ when the node is awake — each reading the state the preceding duty produced, and collecting the
+// emitted objects in that order.
+fn tick(c: Cache, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, nd: Node, st: NamedStore, rec: NamedRecord, t: Time)
+    -> (NamedStore, NamedRecord, List<NamedObject>) {
+  let s = slotOf(e, t);
+  let st0 = NamedStore { core: Store { t: t, s: s, ..st.core }, ..st };
+  let proposing = 0 < s && t == proposalTime(e, s) && proposer(s) == nd.valIndex;
+  match (if proposing { proposeBlockWith(c, e, hc, cfg, nd, st0) } else { (st0, None) }) {
+    (st1, blockOut) => {
+      let emitted1 = match blockOut { None => [], Some(b) => [NamedObject.Block(b)] };
+      let voting = 0 < s && t == voteTime(e, s);
+      match (if voting { namedGoldfishVoteWith(c, e, hc, nd, st1) } else { (st1, None) }) {
+        (st2, voteOut) => {
+          let emitted2 = match voteOut { None => [], Some(v) => [NamedObject.GfVote(v)] };
+          let st3 = if 0 < s && t == supportCutoff(e, s) { namedUpdateConfirmationWith(c, e, hc, st2, s - 1) } else { st2 };
+          let r = roundOf(hc, st3.core.s);
+          if t == actionTime(hc, e.delta, r) && awake(nd.valIndex, r) {
+            match attestWith(c, e, hc, nd, st3, rec) {
+              (st4, rec4, row) => (st4, rec4, emitted1.append(emitted2).append([NamedObject.Attest(row)])),
+            }
+          } else {
+            (st3, rec, emitted1.append(emitted2))
+          }
+        },
+      }
+    },
+  }
+}

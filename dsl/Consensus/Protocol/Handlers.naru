@@ -1,0 +1,316 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Handlers.lean(§7.2 the handlers and duties over the cumulative
+// store、the three user-facing chains、the named store and its carried-row admission、the tick scheduler の構造)。
+// 手書きの `advance_confirmed` / `floor_on_stable` / `state_transition` / `update_finality` / `on_goldfish_vote` /
+// `on_goldfish_vote_checked` / `on_block_using` / `on_block` / `carried_attestations_admissible` / `on_block_checked_using` /
+// `on_block_checked` / `round_votes` / `on_sg_vote` / `update_confirmation_with` / `get_head_in_tree_with` /
+// `voter_filtered_block_tree` / `goldfish_vote_with` / `get_stable` / `get_confirmed` / `CarriedAdmission` / `NamedStore`
+// (`initial` `setClock` `commitBlock` `process_block_core`)/ `NamedAdmission`(`admit_row` `admit_rows` `admit_carried`
+// `on_block_with`)に対応する。`TickScheduler.TickOps` / `runWith`(関数型の欄を持つ型引数付きの record と、それを回す generic な
+// scheduler)は唯一の instantiation `namedOps` を inline した `tick`(Tick.naru)になる。
+//
+// - `contract : GradeContract` は `c: Cache`(Grades.naru の冒頭)。`contract.stableRoot` → `frameStableRoot`、
+//   `contract.confirmationSG` の `.optional select` → `frameSgCandidate`。
+// - 関数を取る def(`on_block_using … (buildState : ChainState → ChainState)`、`on_block_checked_using (handle : Store → Store)`)は
+//   関数型の仮引数のまま(呼出し側は lambda)。
+// - 全域写像の更新 `fun k => if k = vote.slot then st.gf_votes k ++ [vote] else st.gf_votes k` は
+//   `insert(k, getOr(k, []).append([vote]))`、`fun C => if C = B then state else st.σ C` は `sigma.insert(b, state)`、
+//   `σ.F ∈ viable_tree …` は `viableTree(…).contains(…)`。`max st.h_max σ.h` は `st.hMax.max(sigma.h)`。
+// - `update_confirmation_with` の局所 `score` / `eligible`(lambda の `let`)は関数型の注釈付き `let`。
+// - `E.committee` / `E.proposer` は `input committee` / `input proposer`(Parameters.naru)なので、それしか読まない fn
+//   (`on_goldfish_vote_checked` / `on_block_using`)は `e` を取らない。
+// - `@[irreducible]`(`floor_on_stable`)は証明の都合の属性で、Model の意味には関係しない。
+// - 改名: `NamedStore.initial` → `initialNamedStore`。他は camelCase にしただけ。
+module Consensus.Protocol.Handlers
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.StoreBase
+import Consensus.Protocol.ChainState
+import Consensus.Protocol.ForkChoice.Views
+import Consensus.Protocol.ForkChoice.Goldfish
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ForkChoice.Head
+import Consensus.Protocol.Store
+
+// ── User confirmation record update ──
+
+// Retain confirmed progress when the candidate is an ancestor. Otherwise accept the candidate, including when it
+// conflicts with an old record (safety regimes establish compatibility before claiming monotonicity).
+fn advanceConfirmed(old: Block, candidate: Block) -> Block { if preceq(candidate, old) { old } else { candidate } }
+
+// The confirmation record's floor on the stable record, three cases in order: the duty's own candidate when it extends
+// the new stable record; otherwise the prior record while that still extends the stable record; otherwise the stable
+// record itself (the only case where the record moves off the prior record's chain, onto the stable one).
+fn floorOnStable(stable: Block, candidate: Block, old: Block) -> Block {
+  if preceq(stable, candidate) { candidate } else if preceq(stable, old) { old } else { stable }
+}
+
+// ── §7.2 The handlers ──
+
+// §5 state_transition(σ, B): s ← B.slot, fold B's carried attestations, L ← B, then the height events.
+fn stateTransition(e: ProtocolEnv, cfg: HeightConfig, sigma: ChainState, b: Block) -> ChainState {
+  let afterSlot = ChainState { s: slot(b), ..sigma };
+  let afterAttestations = attestations(b).fold(afterSlot, |acc, a| processAttestation(acc, a));
+  processHeightEvents(e, cfg, ChainState { l: b, ..afterAttestations })
+}
+
+// §5.2 update_finality(Σ, σ) at the cumulative store. Three statements in order, each reading the store the previous one
+// produced: Σ.h_max only grows; J advances to σ.J when F ⪯ σ.J and (h_j, J.root) grows; F advances to σ.F when it is a
+// strict descendant of F, an ancestor of J, and viable in the store.
+fn updateFinality(st: Store, sigma: ChainState) -> Store {
+  let afterMax = Store { hMax: st.hMax.max(sigma.h), ..st };
+  let current = HeightId { height: afterMax.hJ, id: root(afterMax.j) };
+  let proposed = HeightId { height: sigma.hJ, id: root(sigma.j) };
+  let afterJustification =
+    if preceq(afterMax.f, sigma.j) && current < proposed { Store { j: sigma.j, hJ: sigma.hJ, ..afterMax } } else { afterMax };
+  if prec(afterJustification.f, sigma.f) && preceq(sigma.f, afterJustification.j)
+      && viableTree(afterJustification.sigma, afterJustification.f, afterJustification.hMax, afterJustification.tree).contains(sigma.f) {
+    Store { f: sigma.f, ..afterJustification }
+  } else {
+    afterJustification
+  }
+}
+
+// §7.2 on_goldfish_vote(Σ, vote), the final version: the slot guard and the duplicate test, the two-vote cap, and the
+// insertion that stamps the vote. A rejected vote is never stamped.
+fn onGoldfishVote(st: Store, vote: GoldfishVote) -> Store {
+  if vote.slot < st.s - 1 || st.s < vote.slot || st.gfVotes.getOr(vote.slot, []).contains(vote) {
+    st
+  } else if equivocates(storePool(st, vote.slot), vote.valIndex) {
+    st
+  } else {
+    Store {
+      gfVotes: st.gfVotes.insert(vote.slot, st.gfVotes.getOr(vote.slot, []).append([vote])),
+      timestampVote: st.timestampVote.insert(vote, Stamp.At(st.t)),
+      ..st
+    }
+  }
+}
+
+// The §7 ingress rejects a vote from outside its slot committee; a committee vote goes to the admitted-vote handler.
+// Head-slot validity is enforced when the head is resolved, so unknown and later-slot heads remain in the pool.
+fn onGoldfishVoteChecked(st: Store, vote: GoldfishVote) -> Store {
+  if !committee(vote.slot).contains(vote.valIndex) { st } else { onGoldfishVote(st, vote) }
+}
+
+// §7.2 raw valid-core on_block(Σ, B): the guards slot-or-duplicate-or-unknown-parent, then the finalized-ancestor check
+// (Σ.F ⪯ B), then the transition's proposer assertion and the parent-slot assertion as guards. Then the post-state is
+// computed and stored, the block enters the tree stamped, the carried votes are unpacked in list order, and the finality
+// caches are folded. Re-processing a tree member is a no-op.
+fn onBlockUsing(st: Store, b: Block, buildState: (ChainState) -> ChainState) -> Store {
+  if st.s < slot(b) || st.tree.contains(b) || !st.tree.contains(parent(b)) {
+    st
+  } else if !preceq(st.f, b) {
+    st
+  } else if proposer?(b) != Some(proposer(slot(b))) {
+    st
+  } else if !(slot(parent(b)) < slot(b)) {
+    st
+  } else {
+    let post = buildState(chainStateOf(st.sigma, parent(b)));
+    let stored = Store {
+      sigma: st.sigma.insert(b, post),
+      tree: st.tree.insert(b),
+      timestampBlock: st.timestampBlock.insert(b, Stamp.At(st.t)),
+      ..st
+    };
+    let unpacked = gfVotes(b).fold(stored, |acc, u| onGoldfishVoteChecked(acc, u));
+    updateFinality(unpacked, chainStateOf(unpacked.sigma, b))
+  }
+}
+
+// The default block body: the §5 state transition on the block's own (erased) attestations.
+fn onBlock(e: ProtocolEnv, cfg: HeightConfig, st: Store, b: Block) -> Store {
+  onBlockUsing(st, b, |parentState| stateTransition(e, cfg, parentState, b))
+}
+
+// A block is admissible only when every carried attestation is from its slot's round or an earlier round.
+fn carriedAttestationsAdmissible(hc: HealConfig, b: Block) -> Bool {
+  attestations(b).all(|a| a.round <= roundOf(hc, slot(b)))
+}
+
+// The receiver-side block handler: invalid carried attestations reject the entire block before the core runs.
+fn onBlockCheckedUsing(handle: (Store) -> Store, hc: HealConfig, st: Store, b: Block) -> Store {
+  if carriedAttestationsAdmissible(hc, b) { handle(st) } else { st }
+}
+
+// The checked wrapper over the default block body.
+fn onBlockChecked(e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: Store, b: Block) -> Store {
+  onBlockCheckedUsing(|current| onBlock(e, cfg, current, b), hc, st, b)
+}
+
+// §7.2 round_votes: "the validator's confirmed blocks this round", as a set (⊥-confirmed included), so that the
+// |round_votes| = 2 guard means two distinct confirmed blocks.
+fn roundVotes(st: Store, a: CombinedAttestation) -> Set<Option<BlockId>> {
+  sgPool(st, a.round).filter(|b| b.valIndex == a.valIndex).map(|b| b.confirmed)
+}
+
+// §7.2 on_sg_vote(Σ, a): reject stale or future-round attestations, duplicate projected votes, and a third distinct
+// confirmed head by one validator in a round; otherwise append the attestation and stamp its projection.
+fn onSgVote(hc: HealConfig, st: Store, a: CombinedAttestation) -> Store {
+  let r = roundOf(hc, st.s);
+  if a.round < r - hc.etaSG || r < a.round || roundVotes(st, a).contains(a.confirmed) || roundVotes(st, a).size() == 2 {
+    st
+  } else {
+    Store {
+      sgVotes: st.sgVotes.insert(a.round, st.sgVotes.getOr(a.round, []).append([a])),
+      timestampSgVote: st.timestampSgVote.insert(sgVote(a), Stamp.At(st.t)),
+      ..st
+    }
+  }
+}
+
+// §7.2 update_confirmation(Σ, s), the final version: the composed fork choice, genuine-or-nothing. The window sets are
+// §2's (support excludes equivocators outright; the denominator is the late participants). The walk descends from the
+// SG root of the current round over the filtered tree; live_confirmed takes the walk result only when it itself carries a
+// window majority, else the FG root (a floor marker, not a confirmation). The stable record advances on the round's G2
+// root, and the confirmation record is floored on that stable record (an eligible walk result, else the optional G2
+// candidate, else the prior record).
+fn updateConfirmationWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: Store, s: Slot) -> Store {
+  let earlyVotes = storePool(st, s).filter(|u| occurrenceBefore(storeTau(st, u), supportCutoff(e, s)));
+  let lateVotes = storePool(st, s).filter(|u| occurrenceBefore(st.timestampVote.get?(u), confirmationTime(e, s)));
+  let supportVotes = earlyVotes.filter(|u| noSecondVoteIn(lateVotes, u));
+  let lateCount = votersCount(e, lateVotes, s);
+  let score: (Block) -> Nat = |b| goldfishScore(e, st.tree, supportVotes, supportVotes, s, b);
+  let eligible: (Block) -> Bool = |b| lateCount < 2 * score(b);
+  let hs = storeToHealing(st);
+  let walkTree = getFilteredBlockTree(hs);
+  let fgRoot = getFgRoot(hs);
+  let sgRoot = getSgRootWith(c, e, hc, hs, roundOf(hc, st.s));
+  let h = ghost(sgRoot, walkTree, score, eligible);
+  let live = if eligible(h) { h } else { fgRoot };
+  let stable = match frameStableRoot(c, e, hc, hs, roundOf(hc, st.s)) {
+    Some(g) => advanceConfirmed(st.latestStable, g),
+    None => st.latestStable,
+  };
+  let candidate = if eligible(h) {
+    advanceConfirmed(st.latestConfirmed, h)
+  } else {
+    match frameSgCandidate(c, e, hc, hs, s) {
+      Some(cand) => advanceConfirmed(st.latestConfirmed, cand),
+      None => st.latestConfirmed,
+    }
+  };
+  Store {
+    liveConfirmed: live,
+    latestStable: stable,
+    latestConfirmed: floorOnStable(stable, candidate, st.latestConfirmed),
+    ..st
+  }
+}
+
+// ── §7.2 The duties ──
+
+// §6.4 get_head_in_tree at the cumulative store: the supplied tree changes only the Goldfish child domain; the SG
+// anchor, score resolution and eligibility read the full store.
+fn getHeadInTreeWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: Store, tree: Set<Block>,
+                     votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, k: Slot) -> Block {
+  getHeadInTreeWithLayer(c, e, hc, storeToHealing(st), tree, votes, supportVotes, k)
+}
+
+// §7.2 voter_filtered_block_tree(Σ, s): the voter's frozen processed-block view, with viability and the FG-root filter
+// recomputed inside that view (not an intersection with the full-store candidate tree).
+fn voterFilteredBlockTree(e: ProtocolEnv, st: Store, s: Slot) -> Set<Block> {
+  let hs = storeToHealing(st);
+  getFilteredBlockTreeFrom(hs, voterProcessedBlockTree(e, fgToGoldfish(hs), s))
+}
+
+// §2.5 goldfish_vote(Σ) at the cumulative store: the two merged vote views keep their §2 semantics; the vote duty alone
+// restricts the Goldfish child domain to the voter's filtered tree. A committee member votes for the head at slot s − 1
+// and admits its own vote through the checked handler.
+fn goldfishVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: Store) -> (Store, Option<GoldfishVote>) {
+  let s = st.s;
+  let base = fgToGoldfish(storeToHealing(st));
+  let votes = voterView(e, base, s);
+  let supportVotes = voterSupportView(e, base, s);
+  let tree = voterFilteredBlockTree(e, st, s);
+  let h = getHeadInTreeWith(c, e, hc, st, tree, votes, supportVotes, s - 1);
+  if committee(s).contains(nd.valIndex) {
+    let vote = GoldfishVote { valIndex: nd.valIndex, slot: s, head: root(h) };
+    (onGoldfishVoteChecked(st, vote), Some(vote))
+  } else {
+    (st, None)
+  }
+}
+
+// ── The three user-facing chains (finalized Σ.F, stable, confirmed — nested by construction) ──
+
+// The client-facing stable tip: the stored stable record when it extends the finalized block, else finality.
+fn getStable(st: Store) -> Block { if preceq(st.f, st.latestStable) { st.latestStable } else { st.f } }
+
+// The client-facing confirmed tip: the stored confirmation record when it extends the stable output, else that output.
+fn getConfirmed(st: Store) -> Block {
+  if preceq(getStable(st), st.latestConfirmed) { st.latestConfirmed } else { getStable(st) }
+}
+
+// ── The named store and carried-row admission ──
+
+// The carried-attestation admission seam of the named runtime (one mode: carried rows are also admitted).
+enum CarriedAdmission { AlsoCarried } derive eq
+
+// The named store: the erased core, the retained signed bodies, and the admitted original named rows per round.
+record NamedStore { core: Store, bodies: Set<NamedBlock>, sgRows: Table<Round, List<NamedAttestation>> } derive eq
+
+fn initialNamedStore() -> NamedStore {
+  NamedStore { core: initStore(), bodies: Set.singleton(NamedBlock.Genesis), sgRows: Table.empty() }
+}
+
+// Clock staging changes no signed body or pool entry.
+fn setClock(e: ProtocolEnv, st: NamedStore, t: Time) -> NamedStore {
+  NamedStore { core: Store { t: t, s: slotOf(e, t), ..st.core }, ..st }
+}
+
+// Commit the named body only when the common handler inserted its fresh geometry; an existing-erasure alias does not
+// replace the retained signed body.
+fn commitBlock(before: NamedStore, after: Store, b: NamedBlock) -> NamedStore {
+  let geometry = eraseBlock(b);
+  if !before.core.tree.contains(geometry) && after.tree.contains(geometry) {
+    NamedStore { core: after, bodies: before.bodies.insert(b), ..before }
+  } else {
+    NamedStore { core: after, ..before }
+  }
+}
+
+// The exact named parent must be held. All ordinary guards, insertion, GF carried-vote processing and finality updates
+// use the shared block core, with the state builder fixed to B's actual named rows. Pool admission is a separate tail.
+fn processBlockCore(e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: NamedStore, b: NamedBlock) -> NamedStore {
+  if !st.bodies.contains(namedParent(b)) {
+    st
+  } else {
+    let geometry = eraseBlock(b);
+    let after = onBlockCheckedUsing(
+      |current| onBlockUsing(current, geometry, |parentState| namedTransition(e, cfg, parentState, b)),
+      hc, st.core, geometry);
+    commitBlock(st, after, b)
+  }
+}
+
+// Admit one named row through on_sg_vote: new erased-row membership witnesses admission, and the original named row is
+// retained (SG-projection duplicates are still rejected).
+fn admitRow(hc: HealConfig, st: NamedStore, row: NamedAttestation) -> NamedStore {
+  let erased = eraseAttestation(row);
+  let after = onSgVote(hc, st.core, erased);
+  if !sgPool(st.core, row.round).contains(erased) && sgPool(after, row.round).contains(erased) {
+    NamedStore { core: after, sgRows: st.sgRows.insert(row.round, st.sgRows.getOr(row.round, []).append([row])), ..st }
+  } else {
+    NamedStore { core: after, ..st }
+  }
+}
+
+fn admitRows(hc: HealConfig, st: NamedStore, rows: List<NamedAttestation>) -> NamedStore {
+  rows.fold(st, |acc, row| admitRow(hc, acc, row))
+}
+
+// Only a newly admitted full named body triggers the carried-row tail, which reads the body's original rows.
+fn admitCarried(_admission: CarriedAdmission, hc: HealConfig, before: NamedStore, after: NamedStore, b: NamedBlock) -> NamedStore {
+  if !before.bodies.contains(b) && after.bodies.contains(b) { admitRows(hc, after, namedAttestations(b)) } else { after }
+}
+
+// The named block core followed by the named carried-row admission: the active named receipt path.
+fn onBlockWith(admission: CarriedAdmission, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: NamedStore, b: NamedBlock) -> NamedStore {
+  admitCarried(admission, hc, st, processBlockCore(e, hc, cfg, st, b), b)
+}

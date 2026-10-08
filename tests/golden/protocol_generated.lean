@@ -372,3 +372,176 @@ def fv1 := Duties.Inputs.getFgVoteWith cD env hc hs 0 (some b3)
 #eval (fv1.1.map (fun t => (t.1, t.2.1.value, t.2.2)), fv1.2.1, fv1.2.2.1.value, fv1.2.2.2)   -- (some (3, 0, false), 0, 0, 0): head b2 (b3 is not eligible), source b3
 def ai2 := Duties.Inputs.attestationInput cD env hc ⟨⟨1⟩⟩ hs
 #eval (ai2.valIndex.value, ai2.round, idOf ai2.confirmed, ai2.fields.map (fun t => (t.1, t.2.1.value, t.2.2)), ai2.hJ, ai2.j.value, ai2.hF)   -- (1, 0, some 4, some (3, 0, false), 0, 0, 0)
+
+-- Store / Handlers (周回 9): the cumulative store driven by the handlers from the initial store (proposer = 0, committee = {0})
+def proposer : Nat → Identifiers.ValidatorId := fun _ => ⟨0⟩
+def awake : Identifiers.ValidatorId → Nat → Bool := fun _ _ => true
+def s0 := Store.initStore
+#eval (s0.t, s0.s, s0.tree == NaruStd.Set.of [g], s0.timestampBlock.get? g == some .Bottom, (s0.timestampBlock.get? b1).isNone,
+       s0.hMax, s0.hJ, rootOf s0.f, rootOf s0.j, (Store.storePool s0 1).isEmpty, (Store.sgPool s0 0).isEmpty)   -- (0, 0, true, true, true, 1, 0, 0, 0, true, true)
+#eval (rootOf (Handlers.advanceConfirmed b2 b1), rootOf (Handlers.advanceConfirmed b1 b2), rootOf (Handlers.advanceConfirmed b2 b2'), rootOf (Handlers.advanceConfirmed b2 b2))   -- (2, 2, 3, 2)
+#eval (rootOf (Handlers.floorOnStable b1 b2 b2'), rootOf (Handlers.floorOnStable b2 b1' b2), rootOf (Handlers.floorOnStable b2 b1' b1'), rootOf (Handlers.floorOnStable g b2' b3))   -- (2, 2, 2, 3)
+-- on_block: one accepted block (slot 1 at s = 1), then the four rejections (future slot, wrong proposer, unknown parent, duplicate)
+def s1 : Store.Store := { s0 with t := 8, s := 1 }
+def s1b := Handlers.onBlock committee proposer env cfg s1 b1
+#eval (s1b.tree == NaruStd.Set.of [g, b1], s1b.timestampBlock.get? b1 == some (.At 8), (Goldfish.chainStateOf s1b.sigma b1).s, rootOf (Goldfish.chainStateOf s1b.sigma b1).l, s1b.hMax)   -- (true, true, 1, 1, 1)
+def s1x := Handlers.onBlock committee proposer env cfg s1 b2
+def s1y := Handlers.onBlock committee proposer env cfg s1b b1'
+def s1z := Handlers.onBlock committee proposer env cfg { s1b with s := 2 } b3
+def s1d := Handlers.onBlock committee proposer env cfg s1b b1
+#eval (s1x.tree == s0.tree, s1y.tree == s1b.tree, s1z.tree == s1b.tree, s1d.tree == s1b.tree && s1d.timestampBlock.get? b1 == s1b.timestampBlock.get? b1)   -- (true, true, true, true)
+-- on_goldfish_vote at t = 10: accept, the second distinct vote, the equivocation cap, a duplicate, a future slot, a stale slot; the committee check
+def s2 : Store.Store := { s1b with t := 10 }
+def vg1 := Handlers.onGoldfishVote s2 vA
+def vg2 := Handlers.onGoldfishVote vg1 vC
+def vg3 := Handlers.onGoldfishVote vg2 ⟨⟨0⟩, 1, ⟨5⟩⟩
+def vg4 := Handlers.onGoldfishVote vg3 vA
+def vg5 := Handlers.onGoldfishVote vg4 ⟨⟨1⟩, 3, ⟨1⟩⟩
+def vg6 := Handlers.onGoldfishVote { vg4 with s := 3 } ⟨⟨2⟩, 1, ⟨1⟩⟩
+def vg7 := Handlers.onGoldfishVoteChecked committee vg4 vB
+def vg8 := Handlers.onGoldfishVoteChecked committee vg4 ⟨⟨0⟩, 0, ⟨0⟩⟩
+#eval (vg1.gfVotes.getOr 1 [] == [vA], vg1.timestampVote.get? vA == some (.At 10), vg2.gfVotes.getOr 1 [] == [vA, vC],
+       vg3.gfVotes.getOr 1 [] == [vA, vC], (vg3.timestampVote.get? ⟨⟨0⟩, 1, ⟨5⟩⟩).isNone, vg4.gfVotes.getOr 1 [] == [vA, vC],
+       (vg5.gfVotes.getOr 3 []).isEmpty, (vg6.gfVotes.getOr 1 []).length, (vg7.gfVotes.getOr 1 []).length, vg8.gfVotes.getOr 0 [] == [⟨⟨0⟩, 0, ⟨0⟩⟩])   -- (true, true, true, true, true, true, true, 2, 2, true)
+#eval (Store.storePool vg2 1 == NaruStd.Set.of [vA, vC], Store.storeTau vg2 vA == some (.At 10), (Store.storeTau vg2 vD).isNone)   -- (true, true, true)
+-- on_sg_vote at s = 1 (round 0, η = 2): accept, a duplicate projection, the second distinct head (⊥), the third (capped), a future round; then stale / in-window at s = 9
+def sa0 : Blocks.CombinedAttestation := ⟨⟨0⟩, 0, some ⟨1⟩, .Empty, none⟩
+def sa1 : Blocks.CombinedAttestation := ⟨⟨0⟩, 0, some ⟨1⟩, .Timeout 1, none⟩
+def sa2 : Blocks.CombinedAttestation := ⟨⟨0⟩, 0, none, .Empty, none⟩
+def sa3 : Blocks.CombinedAttestation := ⟨⟨0⟩, 0, some ⟨0⟩, .Empty, none⟩
+def sa4 : Blocks.CombinedAttestation := ⟨⟨1⟩, 1, some ⟨1⟩, .Empty, none⟩
+def sg1 := Handlers.onSgVote hc vg2 sa0
+def sg2 := Handlers.onSgVote hc sg1 sa1
+def sg3 := Handlers.onSgVote hc sg2 sa2
+def sg4 := Handlers.onSgVote hc sg3 sa3
+def sg5 := Handlers.onSgVote hc sg4 sa4
+def sg6 := Handlers.onSgVote hc { sg4 with s := 9 } ⟨⟨2⟩, 0, none, .Empty, none⟩
+def sg7 := Handlers.onSgVote hc { sg4 with s := 9 } sa4
+#eval (sg1.sgVotes.getOr 0 [] == [sa0], sg1.timestampSgVote.get? (Store.sgVote sa0) == some (.At 10), sg2.sgVotes.getOr 0 [] == [sa0],
+       sg3.sgVotes.getOr 0 [] == [sa0, sa2], Handlers.roundVotes sg3 sa3 == NaruStd.Set.of [some ⟨1⟩, none], sg4.sgVotes.getOr 0 [] == [sa0, sa2],
+       (sg5.sgVotes.getOr 1 []).isEmpty, Store.sgPool sg3 0 == NaruStd.Set.of [sa0, sa2], (sg6.sgVotes.getOr 0 []).length, sg7.sgVotes.getOr 1 [] == [sa4])   -- (true, true, true, true, true, true, true, true, 2, true)
+#eval (Goldfish.sgVotesAt (Goldfish.fgToSG (Store.storeToHealing sg3)) 0 == NaruStd.Set.of [⟨⟨0⟩, 0, some ⟨1⟩⟩, ⟨⟨0⟩, 0, none⟩], (Store.storeToHealing sg3).s, (Goldfish.sgVotesAt (Goldfish.fgToSG (Store.storeToHealing sg3)) 5).isEmpty,
+       (Store.storeToHealing sg3).tree == sg3.tree, (Store.storeToHealing sg3).timestampSgVote.get? (Store.sgVote sa0) == some (.At 10))   -- (true, 1, true, true, true)
+-- update_finality over the σ table of the Goldfish section (F = J = g): J advances, then F advances to a viable b1, then not to the unviable b2', then to b2
+def uf : Store.Store := { s0 with tree := tree, sigma := sig, f := g, j := g, hJ := 0, hMax := 1 }
+def σJ : ChainState.ChainState := { σ0 with h := 3, j := b1, hJ := 2, f := g, hF := 0 }
+def uf1 := Handlers.updateFinality uf σJ
+def σF : ChainState.ChainState := { σ0 with h := 4, j := b2, hJ := 3, f := b1, hF := 2 }
+def uf2 := Handlers.updateFinality uf1 σF
+def σG : ChainState.ChainState := { σ0 with h := 4, j := b2', hJ := 3, f := b2', hF := 3 }
+def uf3 := Handlers.updateFinality uf2 σG
+def σH : ChainState.ChainState := { σ0 with h := 4, j := b2', hJ := 3, f := b2, hF := 3 }
+def uf4 := Handlers.updateFinality uf3 σH
+def σI : ChainState.ChainState := { σ0 with h := 4, j := b3, hJ := 4, f := b2, hF := 3 }
+def uf5 := Handlers.updateFinality uf4 σI
+#eval ((uf1.hMax, rootOf uf1.j, uf1.hJ, rootOf uf1.f), (uf2.hMax, rootOf uf2.j, uf2.hJ, rootOf uf2.f), (uf3.hMax, rootOf uf3.j, uf3.hJ, rootOf uf3.f),
+       (uf4.hMax, rootOf uf4.j, uf4.hJ, rootOf uf4.f), (uf5.hMax, rootOf uf5.j, uf5.hJ, rootOf uf5.f))   -- ((3, 1, 2, 0), (4, 2, 3, 1), (4, 3, 3, 1), (4, 3, 3, 1), (4, 4, 4, 2))
+-- get_stable / get_confirmed
+def gs : Store.Store := { s0 with f := b1, latestStable := b2, latestConfirmed := b3 }
+#eval (rootOf (Handlers.getStable gs), rootOf (Handlers.getConfirmed gs), rootOf (Handlers.getStable { gs with f := b2' }), rootOf (Handlers.getConfirmed { gs with f := b2' }),
+       rootOf (Handlers.getConfirmed { gs with latestConfirmed := b1 }), rootOf (Handlers.getConfirmed { gs with latestConfirmed := b2' }))   -- (2, 4, 3, 3, 2, 2)
+
+-- The named path (周回 9): four named blocks admitted through on_block_with (.alsoCarried) from the initial named store, one per slot (t = 8s)
+def z10 : NamedBlocks.NamedAttestation := ⟨⟨0⟩, 0, none, .Vote 1 ⟨0⟩ false, none⟩
+def z11 : NamedBlocks.NamedAttestation := ⟨⟨1⟩, 0, none, .Vote 1 ⟨0⟩ false, none⟩
+def z20 : NamedBlocks.NamedAttestation := ⟨⟨0⟩, 0, some ⟨1⟩, .Vote 2 ⟨1⟩ false, some ⟨1, ⟨0⟩⟩⟩
+def z21 : NamedBlocks.NamedAttestation := ⟨⟨1⟩, 0, some ⟨1⟩, .Vote 2 ⟨1⟩ true, some ⟨1, ⟨0⟩⟩⟩
+def z22 : NamedBlocks.NamedAttestation := ⟨⟨2⟩, 0, none, .Vote 2 ⟨5⟩ false, none⟩
+def z30 : NamedBlocks.NamedAttestation := ⟨⟨0⟩, 1, some ⟨2⟩, .Vote 3 ⟨2⟩ false, none⟩
+def z31 : NamedBlocks.NamedAttestation := ⟨⟨1⟩, 1, some ⟨2⟩, .Vote 3 ⟨2⟩ false, none⟩
+def z40 : NamedBlocks.NamedAttestation := ⟨⟨0⟩, 1, some ⟨3⟩, .Empty, some ⟨3, ⟨2⟩⟩⟩
+def z41 : NamedBlocks.NamedAttestation := ⟨⟨1⟩, 1, some ⟨3⟩, .Empty, some ⟨3, ⟨2⟩⟩⟩
+def mb1 : NamedBlocks.NamedBlock := .Node .Genesis 1 ⟨1⟩ [] [] [z10, z11] ⟨0⟩
+def mb2 : NamedBlocks.NamedBlock := .Node mb1 2 ⟨2⟩ [vA] [vA] [z20, z21, z22] ⟨0⟩
+def mb3 : NamedBlocks.NamedBlock := .Node mb2 3 ⟨3⟩ [] [] [z30, z31] ⟨0⟩
+def mb4 : NamedBlocks.NamedBlock := .Node mb3 4 ⟨4⟩ [] [] [z40, z41] ⟨0⟩
+def e1 := NamedBlocks.eraseBlock mb1
+def e2 := NamedBlocks.eraseBlock mb2
+def e3 := NamedBlocks.eraseBlock mb3
+def e4 := NamedBlocks.eraseBlock mb4
+def cs (st : Store.Store) (b : Blocks.Block) := Goldfish.chainStateOf st.sigma b
+def csr (σ : ChainState.ChainState) := (σ.h, σ.hJ, σ.hF, rootOf σ.j, rootOf σ.f, rootOf σ.tH, σ.nj, σ.finalize.size)
+def ns0 := Handlers.initialNamedStore
+def ns1 := Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg (Handlers.setClock env ns0 8) mb1
+def ns2 := Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg (Handlers.setClock env ns1 16) mb2
+def ns3 := Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg (Handlers.setClock env ns2 24) mb3
+def ns4 := Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg (Handlers.setClock env ns3 32) mb4
+#eval (ns0.bodies.size, ns0.core.tree.size, (Handlers.setClock env ns0 8).core.t, (Handlers.setClock env ns0 8).core.s)   -- (1, 1, 8, 1)
+#eval (ns1.core.tree.size, csr (cs ns1.core e1), ns1.core.hMax, ns1.core.hJ, rootOf ns1.core.j, rootOf ns1.core.f, ns1.sgRows.getOr 0 [] == [z10, z11], ns1.bodies.size,
+       ns1.core.timestampBlock.get? e1 == some (.At 8), ns1.core.timestampSgVote.get? ⟨⟨1⟩, 0, none⟩ == some (.At 8))   -- (2, (2, 1, 0, 0, 0, 1, false, 0), 2, 1, 0, 0, true, 2, true, true)
+#eval (ns2.core.tree.size, csr (cs ns2.core e2), ns2.core.hMax, ns2.core.hJ, rootOf ns2.core.j, rootOf ns2.core.f, ns2.sgRows.getOr 0 [] == [z10, z11, z20, z21, z22], ns2.bodies.size,
+       ns2.core.gfVotes.getOr 1 [] == [vA], ns2.core.timestampVote.get? vA == some (.At 16), (Store.sgPool ns2.core 0).size)   -- (3, (3, 1, 1, 0, 0, 2, false, 2), 3, 1, 0, 0, true, 3, true, true, 5)
+#eval (ns3.core.tree.size, csr (cs ns3.core e3), ns3.core.hMax, ns3.core.hJ, rootOf ns3.core.j, rootOf ns3.core.f, ns3.sgRows.getOr 1 [] == [z30, z31], ns3.bodies.size)   -- (4, (4, 3, 1, 2, 0, 3, true, 0), 4, 3, 2, 0, true, 4)
+#eval (ns4.core.tree.size, csr (cs ns4.core e4), ns4.core.hMax, ns4.core.hJ, rootOf ns4.core.j, rootOf ns4.core.f, ns4.sgRows.getOr 1 [] == [z30, z31, z40, z41], ns4.bodies.size,
+       rootOf (Handlers.getStable ns4.core), rootOf (Handlers.getConfirmed ns4.core), Store.storeTau ns4.core vA == some (.At 16))   -- (5, (4, 3, 3, 2, 2, 3, true, 2), 4, 3, 2, 2, true, 5, 2, 2, true)
+#eval Goldfish.sgVotesAt (Goldfish.fgToSG (Store.storeToHealing ns4.core)) 1 == NaruStd.Set.of [⟨⟨0⟩, 1, some ⟨2⟩⟩, ⟨⟨1⟩, 1, some ⟨2⟩⟩, ⟨⟨0⟩, 1, some ⟨3⟩⟩, ⟨⟨1⟩, 1, some ⟨3⟩⟩]   -- true
+-- Evidence: the chain and store attestation sets
+#eval ((Evidence.chainAttestations e1).size, (Evidence.chainAttestations e2).size, (Evidence.chainAttestations e4).size, (Evidence.chainAttestations g).isEmpty,
+       (Evidence.storeAttestations ns4.core).size, (Evidence.storeAttestations ns4.core).contains (NamedBlocks.eraseAttestation z22), (Evidence.storeAttestations ns1.core).size)   -- (2, 5, 9, true, 9, true, 2)
+-- the named rejections at slot 5: an unretained parent body, a round-2 row at round 1, the wrong proposer, a duplicate; then a fresh block
+def mbx : NamedBlocks.NamedBlock := .Node nb1 5 ⟨7⟩ [] [] [] ⟨0⟩
+def mby : NamedBlocks.NamedBlock := .Node mb4 5 ⟨7⟩ [] [] [⟨⟨2⟩, 2, none, .Empty, none⟩] ⟨0⟩
+def mbz : NamedBlocks.NamedBlock := .Node mb4 5 ⟨7⟩ [] [] [] ⟨1⟩
+def ns5c := Handlers.setClock env ns4 40
+#eval (ns5c.core.t, ns5c.core.s, (Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg ns5c mbx).bodies.size,
+       (Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg ns5c mby).bodies.size, (Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg ns5c mbz).bodies.size,
+       (Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg ns5c mb4).bodies.size, (Handlers.onBlockWith committee proposer .AlsoCarried env hc cfg ns5c (.Node mb4 5 ⟨7⟩ [] [] [] ⟨0⟩)).bodies.size)   -- (40, 5, 5, 5, 5, 5, 6)
+
+-- Duties.Proposals (周回 9): the proposal rows at ns5c (s = 5, round 1, window [0, 1]), the honest proposal, and the named duties
+#eval (Duties.Proposals.inWindow hc ns5c.core 0, Duties.Proposals.inWindow hc ns5c.core 1, Duties.Proposals.inWindow hc ns5c.core 2,
+       Duties.Proposals.inWindow hc { ns5c.core with s := 9 } 0, Duties.Proposals.inWindow hc { ns5c.core with s := 9 } 1)   -- (true, true, false, false, true)
+#eval (Duties.Proposals.processedRows hc ns5c == [z10, z11, z20, z21, z22, z30, z31, z40, z41], (Duties.Proposals.orderedRoots ns5c).map (·.value),
+       (Duties.Proposals.orderedBodies ns5c).map (fun b => (NamedBlocks.namedRoot b).value), (Duties.Proposals.poolRows hc ns5c).length,
+       Duties.Proposals.carriedRows hc ns5c == [z10, z11, z20, z21, z22, z30, z31, z40, z41], (Duties.Proposals.selectRows .PoolAndCarried hc ns5c).length)   -- (true, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4], 9, true, 18)
+#eval (Duties.Proposals.chainRows mb2 == [z20, z21, z22, z10, z11], (Duties.Proposals.chainRows .Genesis).isEmpty, Duties.Proposals.excludeOnChain mb2 [z10, z30, z20, z40] == [z30, z40],
+       Duties.Proposals.capPerSigner [z30, z30, z40, ⟨⟨0⟩, 1, some ⟨9⟩, .Empty, none⟩, z31] == [z30, z40, z31],
+       Duties.Proposals.proposalRows mb2 (Duties.Proposals.selectRows .PoolAndCarried hc ns5c) == [z30, z31, z40, z41])   -- (true, true, true, true, true)
+#eval ((Duties.Proposals.parentBody? ns5c e2).map (fun b => (NamedBlocks.namedRoot b).value), (Duties.Proposals.parentBody? ns5c b2).isNone,
+       ((Duties.Proposals.creatorInput ai1).round, idOf (Duties.Proposals.creatorInput ai1).confirmed, (Duties.Proposals.creatorInput ai1).hF))   -- (some 2, true, (0, some 0, 0))
+def prop5 := Duties.Proposals.proposalWith newRoot c0 .PoolAndCarried env hc ⟨⟨0⟩⟩ ns5c
+#eval prop5.map (fun b => ((NamedBlocks.namedRoot b).value, NamedBlocks.namedSlot b, (NamedBlocks.namedRoot (NamedBlocks.namedParent b)).value, NamedBlocks.namedAttestations b == [z30, z31, z40, z41], (NamedBlocks.namedGfVotes b).isEmpty))   -- some (6, 5, 2, true, true)
+def pb5 := Duties.Proposals.proposeBlockWith committee proposer newRoot c0 env hc cfg ⟨⟨0⟩⟩ ns5c
+def e5 := NamedBlocks.eraseBlock (pb5.2.getD .Genesis)
+#eval (pb5.2.map (fun b => (NamedBlocks.namedRoot b).value), pb5.1.bodies.size, pb5.1.core.tree.size, csr (cs pb5.1.core e5), pb5.1.core.timestampBlock.get? e5 == some (.At 40),
+       (pb5.1.sgRows.getOr 1 []).length, rootOf pb5.1.core.f, pb5.1.core.hMax)   -- (some 6, 6, 6, (4, 3, 1, 2, 0, 6, true, 0), true, 4, 2, 4): the carried rows are all duplicates
+def ns5v := Handlers.setClock env pb5.1 42
+def gv5 := Duties.Proposals.namedGoldfishVoteWith committee c0 env hc ⟨⟨0⟩⟩ ns5v
+def gv5' := Duties.Proposals.namedGoldfishVoteWith committee c0 env hc ⟨⟨1⟩⟩ ns5v
+#eval (gv5.2 == some ⟨⟨0⟩, 5, ⟨6⟩⟩, gv5.1.core.gfVotes.getOr 5 [] == [⟨⟨0⟩, 5, ⟨6⟩⟩], gv5.1.core.timestampVote.get? ⟨⟨0⟩, 5, ⟨6⟩⟩ == some (.At 42),
+       gv5'.2.isNone, (gv5'.1.core.gfVotes.getOr 5 []).isEmpty)   -- (true, true, true, true, true)
+def ns5u := Duties.Proposals.namedUpdateConfirmationWith c0 env hc (Handlers.setClock env gv5.1 44) 4
+#eval (rootOf ns5u.core.liveConfirmed, rootOf ns5u.core.latestStable, rootOf ns5u.core.latestConfirmed, rootOf (Handlers.getStable ns5u.core), rootOf (Handlers.getConfirmed ns5u.core))   -- (2, 2, 2, 2, 2)
+def ns6u := Duties.Proposals.namedUpdateConfirmationWith c0 env hc (Handlers.setClock env ns5u 52) 5
+#eval (rootOf ns6u.core.liveConfirmed, rootOf ns6u.core.latestStable, rootOf ns6u.core.latestConfirmed, rootOf (Handlers.getStable ns6u.core), rootOf (Handlers.getConfirmed ns6u.core))   -- (6, 2, 6, 2, 6): the slot-5 vote confirms b5
+def at4 := Duties.Proposals.attestWith c0 env hc ⟨⟨0⟩⟩ (Handlers.setClock env ns4 36) ValidatorClient.initialNamedRecord
+#eval (at4.2.2 == ⟨⟨0⟩, 1, some ⟨2⟩, .Empty, none⟩, (ValidatorClient.recordTarget at4.2.1.legacy 1).isNone, at4.2.1.timeoutHistory.isEmpty, (at4.1.sgRows.getOr 1 []).length, (Store.sgPool at4.1.core 1).size)   -- (true, true, true, 4, 4): a duplicate projection is not admitted
+def at7 := Duties.Proposals.attestWith c0 env hc ⟨⟨0⟩⟩ (Handlers.setClock env ns6u 60) ValidatorClient.initialNamedRecord
+#eval (at7.2.2 == ⟨⟨0⟩, 2, some ⟨6⟩, .Empty, none⟩, at7.1.sgRows.getOr 2 [] == [⟨⟨0⟩, 2, some ⟨6⟩, .Empty, none⟩],
+       at7.1.core.timestampSgVote.get? ⟨⟨0⟩, 2, some ⟨6⟩⟩ == some (.At 60), Store.sgPool at7.1.core 2 == NaruStd.Set.of [⟨⟨0⟩, 2, some ⟨6⟩, .Empty, none⟩])   -- (true, true, true, true)
+
+-- Tick / Execution.Objects (周回 9): the timetable from ns4 (t = 32, s = 4) with node 0 and the initial cache
+def objKind (o : Model.Consensus.Execution.Objects.NamedObject) : Nat := match o with | .Block _ => 0 | .GfVote _ => 1 | .Attest _ => 2
+def objRoot (o : Model.Consensus.Execution.Objects.NamedObject) : Nat := match o with
+  | .Block b => (NamedBlocks.namedRoot b).value
+  | .GfVote v => v.head.value
+  | .Attest row => (row.confirmed.map (·.value)).getD 99
+def objAuthor (o : Model.Consensus.Execution.Objects.NamedObject) : Option Nat := (Model.Consensus.Execution.Objects.author o).map (·.value)
+#eval (objAuthor (.Block mb1), objAuthor (.Block .Genesis), objAuthor (.GfVote vB), objAuthor (.Attest z22))   -- (some 0, none, some 1, some 2)
+def tk36 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ ns4 ValidatorClient.initialNamedRecord 36
+#eval (tk36.2.2.map objKind, tk36.2.2.map objRoot, tk36.2.2.map objAuthor, tk36.1.core.t, tk36.1.core.s, (tk36.1.sgRows.getOr 1 []).length,
+       rootOf tk36.1.core.liveConfirmed, rootOf tk36.1.core.latestStable, rootOf tk36.1.core.latestConfirmed)   -- ([2], [2], [some 0], 36, 4, 4, 2, 2, 2): confirmation of slot 3, then the round-1 action
+def tk40 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk36.1 tk36.2.1 40
+#eval (tk40.2.2.map objKind, tk40.2.2.map objRoot, tk40.1.bodies.size, tk40.1.core.tree.size, rootOf tk40.1.core.f, tk40.1.core.s)   -- ([0], [6], 6, 6, 2, 5): the slot-5 proposal
+def tk42 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk40.1 tk40.2.1 42
+#eval (tk42.2.2.map objKind, tk42.2.2.map objRoot, tk42.1.core.gfVotes.getOr 5 [] == [⟨⟨0⟩, 5, ⟨6⟩⟩])   -- ([1], [6], true): the Goldfish vote
+def tk44 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk42.1 tk42.2.1 44
+def tk46 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk44.1 tk44.2.1 46
+#eval (tk44.2.2.isEmpty, rootOf tk44.1.core.liveConfirmed, tk46.2.2.isEmpty, tk46.1.core.t, tk46.1.core.s)   -- (true, 2, true, 46, 5)
+def tk52 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk46.1 tk46.2.1 52
+#eval (tk52.2.2.isEmpty, rootOf tk52.1.core.liveConfirmed, rootOf tk52.1.core.latestStable, rootOf tk52.1.core.latestConfirmed, tk52.1.core.s)   -- (true, 6, 2, 6, 6)
+def tk60 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk52.1 tk52.2.1 60
+#eval (tk60.2.2.map objKind, tk60.2.2.map objRoot, rootOf tk60.1.core.liveConfirmed, rootOf tk60.1.core.latestConfirmed, (tk60.1.sgRows.getOr 2 []).length,
+       tk60.1.sgRows.getOr 2 [] == [⟨⟨0⟩, 2, some ⟨2⟩, .Empty, none⟩])   -- ([2], [2], 2, 6, 1, true): slot 6 confirms nothing (live falls back to the FG root), then the round-2 action
+def tk60s := Tick.tick committee proposer (fun _ _ => false) newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk52.1 tk52.2.1 60
+def tk40o := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨1⟩⟩ tk36.1 tk36.2.1 40
+#eval (tk60s.2.2.isEmpty, (tk60s.1.sgRows.getOr 2 []).isEmpty, tk40o.2.2.isEmpty, tk40o.1.bodies.size)   -- (true, true, true, 5): asleep, and not the proposer

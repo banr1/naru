@@ -1,0 +1,23 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Evidence.lean(§7 the quorum-crossing evidence the review
+// statements read)。手書きの `chain_attestations` / `store_attestations` に対応する。
+//
+// - `SlashableBetween` / `HasIntersectionWeight` / `HasSlashableWeightBetween` は Prop(`∃ S : Finset V, …` の accountability
+//   の結論の形)で、どの handler も読まないので Statements の移植で書く(Model には無い)。
+// - `ats.toFinset ∪ chain_attestations p` は `ats.toSet().union(…)`(Block への構造的再帰)、`st.T.biUnion chain_attestations`
+//   は `Set.flatMap`(和集合は可換なので順序に依存しない)。
+module Consensus.Protocol.Evidence
+
+import Consensus.Objects.Blocks
+import Consensus.Protocol.Store
+
+// The attestations carried by B's chain: ⋃_{C ⪯ B} C.attestations. Every attestation any transition on this chain folds is
+// a member, and no other attestation can move the derived state. Duplicates across blocks collapse.
+fn chainAttestations(b: Block) -> Set<CombinedAttestation> {
+  match b {
+    Block.Genesis => Set.empty(),
+    Block.Node(p, _, _, _, _, ats, _) => ats.toSet().union(chainAttestations(p)),
+  }
+}
+
+// The evidence a store holds: the carried attestations of every processed block (Σ.T is never pruned).
+fn storeAttestations(st: Store) -> Set<CombinedAttestation> { st.tree.flatMap(|b| chainAttestations(b)) }

@@ -1,0 +1,150 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Duties/Proposals.lean(§7 block 3 — the proposal rows, the honest
+// proposal, and the named duties propose_block / goldfish_vote / update_confirmation / attest over the cumulative store)。
+// 手書きの `ProposalRowSource` / `ProposalRows.inWindow` / `NamedProposalRows`(`processedRows` `orderedRoots` `orderedBodies`
+// `eligibleBody` `poolRows` `carriedRows` `select` `chainRows` `excludeOnChain` `capPerSigner` `proposalRows`)/ `NamedActions`
+// (`parentBody?` `proposal_with` `creatorInput` `round_action_with`)/ `NamedDuties`(`propose_block_with` `goldfish_vote_with`
+// `update_confirmation_with` `attest_with`)に対応する。
+//
+// - `(List.range n).flatMap f` / `List.filterMap` は周回 9 で足した List のメソッド(List は順序を持つので E004 とは無関係)。
+//   `(st.bodies.image NamedBlock.root).sort (· ≤ ·)` は `sort(st.bodies.map(…), by = |r| r)`(BlockId の順序で昇順)。
+// - `with_proposal_input contract … fun input => …` / `with_attestation_input` は `let inp = proposalInput(…); …` /
+//   `attestationInput(…)`(Inputs.naru の冒頭)。`contract` は `c: Cache`。
+// - `NamedStore V × Protocol.NamedRecord × NamedAttestation V` は 3 要素の tuple(右結合の `×` と同じ Lean 型)。
+// - 改名: `select` → `selectRows`(`source` は読まれない 1 variant の enum)、`NamedDuties.goldfish_vote_with` /
+//   `update_confirmation_with` は Handlers の core 版と区別して `namedGoldfishVoteWith` / `namedUpdateConfirmationWith`。
+module Consensus.Protocol.Duties.Proposals
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ValidatorClient
+import Consensus.Protocol.Store
+import Consensus.Protocol.Handlers
+import Consensus.Protocol.Duties.Inputs
+
+// ── Proposal rows ──
+
+// The source of proposal rows (one mode: window-filtered processed pool rows, then carried rows of eligible bodies).
+enum ProposalRowSource { PoolAndCarried } derive eq
+
+// The inclusive SG admission window [round(Σ.s) − η_SG, round(Σ.s)], applied to the row's own round.
+fn inWindow(hc: HealConfig, st: Store, r: Round) -> Bool {
+  roundOf(hc, st.s) - hc.etaSG <= r && r <= roundOf(hc, st.s)
+}
+
+// Every admitted named row up to the current round, in round order then admission order.
+fn processedRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
+  List.range(roundOf(hc, st.core.s) + 1).flatMap(|r| st.sgRows.getOr(r, []))
+}
+
+// The retained bodies' roots in the fixed root order.
+fn orderedRoots(st: NamedStore) -> List<BlockId> { sort(st.bodies.map(|b| namedRoot(b)), by = |r| r) }
+
+// The retained bodies in root order. A root collision has no unique answer, just as in the resolver.
+fn orderedBodies(st: NamedStore) -> List<NamedBlock> {
+  orderedRoots(st).filterMap(|r| st.bodies.findUnique?(|b| namedRoot(b) == r))
+}
+
+// A body is eligible when its round is in the window and its carried rows are admissible.
+fn eligibleBody(hc: HealConfig, st: NamedStore, b: NamedBlock) -> Bool {
+  inWindow(hc, st.core, roundOf(hc, namedSlot(b))) && carriedAttestationsAdmissible(hc, eraseBlock(b))
+}
+
+fn poolRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
+  processedRows(hc, st).filter(|row| inWindow(hc, st.core, row.round))
+}
+
+fn carriedRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
+  orderedBodies(st).flatMap(|b|
+    if eligibleBody(hc, st, b) { namedAttestations(b).filter(|row| inWindow(hc, st.core, row.round)) } else { [] })
+}
+
+// The source rows: window-filtered pool rows (unresolved SG heads included), then the carried rows of eligible bodies.
+fn selectRows(_source: ProposalRowSource, hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
+  poolRows(hc, st).append(carriedRows(hc, st))
+}
+
+// Full named rows on the head's recursive ancestor chain.
+fn chainRows(b: NamedBlock) -> List<NamedAttestation> {
+  match b {
+    NamedBlock.Genesis => [],
+    NamedBlock.Node(p, _, _, _, _, rows, _) => rows.append(chainRows(p)),
+  }
+}
+
+// Drop the rows already on the parent chain (full named rows; no erased-row equality is used here).
+fn excludeOnChain(head: NamedBlock, rows: List<NamedAttestation>) -> List<NamedAttestation> {
+  rows.filter(|row| !chainRows(head).contains(row))
+}
+
+// Keep the first two distinct full rows of each (validator, round), in list order; later rows of that pair and repeated
+// rows are dropped.
+fn capPerSigner(rows: List<NamedAttestation>) -> List<NamedAttestation> {
+  rows.fold([], |acc, row|
+    if acc.contains(row) || 2 <= acc.filter(|a| a.valIndex == row.valIndex && a.round == row.round).size() { acc }
+    else { acc.append([row]) })
+}
+
+// The honest proposal's rows: drop rows already on the parent chain, then keep at most two distinct rows per
+// (validator, round). At most 2 · |V| · (η_SG + 1) rows result.
+fn proposalRows(parent: NamedBlock, rows: List<NamedAttestation>) -> List<NamedAttestation> {
+  capPerSigner(excludeOnChain(parent, rows))
+}
+
+// ── Named constructors ──
+
+// The retained signed body of the selected core parent, compared by complete erasure (not only the root).
+fn parentBody?(st: NamedStore, parent: Block) -> Option<NamedBlock> {
+  st.bodies.findUnique?(|b| eraseBlock(b) == parent)
+}
+
+// The honest named proposal: the shared proposal read, the retained parent body, and the bounded rows. The optional
+// result exposes a failed parent lookup for arbitrary stores.
+fn proposalWith(c: Cache, source: ProposalRowSource, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore) -> Option<NamedBlock> {
+  let inp = proposalInput(c, e, hc, nd, storeToHealing(st.core));
+  parentBody?(st, inp.parent).map(|parent|
+    NamedBlock.Node(parent, inp.slot, inp.root, inp.gfVotes, inp.gfSupportVotes,
+                    proposalRows(parent, selectRows(source, hc, st)), inp.proposer))
+}
+
+// Structural conversion only: the shared read already computed every field.
+fn creatorInput(inp: AttestationInput) -> RecordInput {
+  RecordInput { valIndex: inp.valIndex, round: inp.round, confirmed: inp.confirmed, fields: inp.fields, hJ: inp.hJ, j: inp.j, hF: inp.hF }
+}
+
+// The round action: the signing client updates its height-wide locks and named timeout history exactly once.
+fn roundActionWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: HealingStore, rec: NamedRecord) -> (NamedRecord, NamedAttestation) {
+  namedCreate(rec, creatorInput(attestationInput(c, e, hc, nd, st)))
+}
+
+// ── Named duties ──
+
+// Process the exact constructed named block with carried-row admission. A failed parent lookup changes nothing.
+fn proposeBlockWith(c: Cache, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, nd: Node, st: NamedStore) -> (NamedStore, Option<NamedBlock>) {
+  match proposalWith(c, ProposalRowSource.PoolAndCarried, e, hc, nd, st) {
+    None => (st, None),
+    Some(b) => (onBlockWith(CarriedAdmission.AlsoCarried, e, hc, cfg, st, b), Some(b)),
+  }
+}
+
+// Direct use of the core GF duty; the retained named data is unchanged.
+fn namedGoldfishVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore) -> (NamedStore, Option<GoldfishVote>) {
+  match goldfishVoteWith(c, e, hc, nd, st.core) {
+    (core, out) => (NamedStore { core: core, ..st }, out),
+  }
+}
+
+// Direct use of the core confirmation update.
+fn namedUpdateConfirmationWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: NamedStore, s: Slot) -> NamedStore {
+  NamedStore { core: updateConfirmationWith(c, e, hc, st.core, s), ..st }
+}
+
+// Construct and locally accept the original named row once (the caller supplies the post-confirmation store).
+fn attestWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore, rec: NamedRecord) -> (NamedStore, NamedRecord, NamedAttestation) {
+  match roundActionWith(c, e, hc, nd, storeToHealing(st.core), rec) {
+    (rec2, row) => (admitRow(hc, st, row), rec2, row),
+  }
+}
