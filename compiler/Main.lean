@@ -8,6 +8,7 @@ import Naru
   (無ければ検査だけ。反例ソースの検査や受理例の確認に使う)。
   診断があれば標準エラーに `file:line:col: error[E0xx]: …` を出して exit 1。
 - `naru check-reject <file.naru> <Exxx>` — 反例が `Exxx` で拒否されることを検査する。
+- `naru lsp` — 標準入出力で言語サーバー(LSP)として動き、コンパイラの診断を返す(C18。`Naru/Lsp.lean`)。
 - `naru simulate <scenario.naru>` — 未実装(exit 2)。
 
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
@@ -28,15 +29,9 @@ def stdlibDir : System.FilePath := "stdlib" / "Model"
 def compilerDir : System.FilePath := "compiler"
 
 def usage : String :=
-  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru simulate <scenario.naru>"
+  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru>"
 
-/-- ディレクトリ配下の拡張子 `ext` のファイルをパス順に列挙する(決定的な順序)。 -/
-def listFiles (dir : System.FilePath) (ext : String) : IO (List String) := do
-  if !(← dir.isDir) then return []
-  let all ← dir.walkDir
-  let hits := all.filter (·.extension == some ext)
-  let sorted := hits.qsort (fun a b => a.toString < b.toString)
-  return sorted.toList.map (·.toString)
+-- `listFiles`(ディレクトリ配下の `.naru` / `.lean` の列挙)は `Naru.Driver`(言語サーバーも使う)。
 
 def defaultSources : IO (List String) := listFiles "dsl" "naru"
 
@@ -138,6 +133,7 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | "compile" :: rest => runCompile rest
   | ["check-reject", file, code] => runCheckReject file code
+  | ["lsp"] => Lsp.serve naruVersion
   | "simulate" :: _ =>
     IO.eprintln "naru simulate: not implemented yet"
     return 2

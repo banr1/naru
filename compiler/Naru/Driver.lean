@@ -13,15 +13,27 @@ import Naru.Totality
 名前解決の誤りがあれば型検査には進まない(未解決名の波及を避ける)。
 型検査の誤りがあれば停止性検査には進まない(呼出し先の署名が要る)。
 診断が 1 つでもあれば Core は空(backend には届かない)。
+
+入口は 2 つ: `compileFiles`(パスを読む。CLI の `compile` / `check-reject`)と `compileSources`(パスと内容の組。
+言語サーバー `naru lsp` がエディタのバッファを渡す)。検査そのものは純粋で、どちらも同じ `compileSources` を通る。
 -/
 
 namespace Naru
 
+/-- ディレクトリ配下の拡張子 `ext` のファイルをパス順に列挙する(決定的な順序)。 -/
+def listFiles (dir : System.FilePath) (ext : String) : IO (List String) := do
+  if !(← dir.isDir) then return []
+  let all ← dir.walkDir
+  let hits := all.filter (·.extension == some ext)
+  let sorted := hits.qsort (fun a b => a.toString < b.toString)
+  return sorted.toList.map (·.toString)
+
+def parseSource (path : String) (src : String) : Except Diagnostic Module := do
+  let toks ← lexAll path src
+  parseModule path toks
+
 def parseFile (path : String) : IO (Except Diagnostic Module) := do
-  let src ← IO.FS.readFile path
-  return (do
-    let toks ← lexAll path src
-    parseModule path toks)
+  return parseSource path (← IO.FS.readFile path)
 
 /-- 検査を通ったコンパイル単位。backend への入力。 -/
 structure Checked where
@@ -31,12 +43,13 @@ structure Checked where
   recursions : Array Totality.Recursion
 deriving Inhabited
 
-/-- 診断の配列(空なら成功)と、読めたモジュール・Core を返す。 -/
-def compileFiles (paths : List String) : IO (Array Diagnostic × Checked) := do
+/-- `(パス, 内容)` の列を 1 つのコンパイル単位として検査する。診断の `file` には与えたパスがそのまま入る。
+診断の配列(空なら成功)と、読めたモジュール・Core を返す。 -/
+def compileSources (sources : List (String × String)) : Array Diagnostic × Checked := Id.run do
   let mut diags : Array Diagnostic := #[]
   let mut mods : Array Module := #[]
-  for p in paths do
-    match ← parseFile p with
+  for (path, src) in sources do
+    match parseSource path src with
     | .ok m => mods := mods.push m
     | .error d => diags := diags.push d
   let mut core : Array Core.Module := #[]
@@ -54,5 +67,12 @@ def compileFiles (paths : List String) : IO (Array Diagnostic × Checked) := do
   if !diags.isEmpty then
     core := #[]
   return (diags, { mods, core, recursions := recs })
+
+/-- パス列を読んで 1 つのコンパイル単位として検査する(`compileSources`)。 -/
+def compileFiles (paths : List String) : IO (Array Diagnostic × Checked) := do
+  let mut sources : List (String × String) := []
+  for p in paths do
+    sources := sources ++ [(p, ← IO.FS.readFile p)]
+  return compileSources sources
 
 end Naru

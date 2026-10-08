@@ -221,9 +221,26 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 | `compile` | `dsl/**/*.naru`(パス順)を検査し、Model を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean` を作り直す)。C1 の検証コマンド |
 | `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model を出力し、無ければ検査だけ(`checked N module(s)`) |
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
+| `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`Naru/Lsp.lean`)。下の「言語サーバー」 |
 | `simulate <scenario.naru>` | 未実装(exit 2) |
 
-リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む)。
+リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む。`lsp` は cwd に依らない)。
+
+### 言語サーバー(`naru lsp`)
+
+Zed 拡張(`editors/zed-naru/`)が起動し、開いた `.naru` の診断を表示する。応じるのは `initialize`(全文同期 `textDocumentSync.change = 1`、
+`openClose`、`save`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`。
+それ以外のリクエストには `MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
+
+- 検査の単位: 文書のパスの祖先に `dsl` という名のディレクトリがあれば、その `dsl/**/*.naru` 全体を 1 つのコンパイル単位にし、
+  開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。
+- 診断は `textDocument/publishDiagnostics`。コンパイラの 1 始まりの行・列を 0 始まりに直し、範囲はその位置のトークン 1 つ分
+  (識別子・数・文字列・記号)、severity はエラー、`code` は `E0xx`、`source` は `naru`。列は UTF-16 単位(LSP の既定)。
+- 他のファイルに出た診断はそのファイルの URI へ送る(開いていないファイルにも)。文書自身には空でも必ず送り、前回その単位で送った
+  URI のうち今回空になったものには空を送って消す。`didClose` には空を送り、同じ単位に開いた文書が残っていればディスクの内容で
+  検査し直す(その検査では閉じた文書へは送らず空のままにし、次の検査からは開いていないファイルとして扱う)。残っていなければ
+  その単位の診断をすべて消す。
+- 意味検査はすべてコンパイラ側(この層は診断の運搬だけ: IDEAL.md「不変条件」)。
 
 ### エディタ対応の検査(`lake exe naru_test`)
 
@@ -231,7 +248,7 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 |---|---|
 | `grammar` | tree-sitter 文法(`editors/tree-sitter-naru/`)の検査(C16): `tree-sitter generate` の出力が追跡対象の `src/` と一致、`tree-sitter build` が exit 0、`dsl/`・`tests/accept/`・`tests/reject/` の全 `.naru`(E010 を期待する反例は除く)が ERROR / MISSING なしに解析できる、`tests/accept/editors_syntax.naru` への `queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出る、その受理例がコンパイラの検査を通る、`editors/zed-naru/languages/naru/highlights.scm` が `queries/highlights.scm` と同一 |
 | `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17): 5 ファイル(`extension.toml`・`languages/naru/config.toml`・`highlights.scm`・`Cargo.toml`・`src/lib.rs`)がある、`extension.toml` の `id = "naru"`・`[grammars.naru]` の `repository`(このリポジトリの `file://` URL)/ `rev`(40 桁の SHA)/ `path = "editors/tree-sitter-naru"`・`[language_servers.naru]` の `name` と `languages`、`config.toml` の `name` / `grammar` / `path_suffixes` / `language_servers`、`rev` がこのリポジトリのコミットで `git diff --exit-code <rev> HEAD -- editors/tree-sitter-naru` が空、`rev` の文法(`git archive`)を `tree-sitter build` して作業ツリーの `highlights.scm` が `tree-sitter query` でロードできる、`src/lib.rs` が設定 → `PATH` → `.lake/build/bin/naru` の順で `naru lsp` を起動する形、`cargo build --release --target wasm32-wasip2` が exit 0。一時ファイルは `.lake/naru/test/zed/`、cargo の成果物は `editors/zed-naru/target/` |
-| `lsp` | 言語サーバー `naru lsp` の検査(C18)。未実装(exit 2) |
+| `lsp` | 言語サーバー `naru lsp` の検査(C18): `lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と LSP を話す。`initialize` の応答に全文同期がある、未対応のリクエスト(`textDocument/hover`)が `MethodNotFound`(この応答を、通知の処理の終わりを待つ barrier にも使う)、`tests/reject/` の各反例の `didOpen` で `naru compile` と同じ E 番号・行・列の診断(先頭コメントが名指しする E 番号を含む)がその URI に返り `didClose` で空になる、絵文字を含む単独文書で列が UTF-16 単位・範囲がトークン 1 つ分、`dsl/` の全ファイルの `didOpen` で 0 件、`dsl/Consensus/Objects/Time.naru` の `didChange` で末尾に足した未解決名の E011 がその行に出る・`slotStart` の改名で他のファイル(Parameters / Grades)の URI に E011 が出る・壊れたまま Parameters を `didClose` すると空のまま・開き直すと戻る・Time を戻すと消える、`didSave` で 0 件のまま、全ファイルの `didClose` で空、`shutdown` が `null`、`exit` で exit 0。期待値はコンパイラ(`compileSources`)から取る |
 
 ## エディタ対応(tree-sitter 文法)
 
