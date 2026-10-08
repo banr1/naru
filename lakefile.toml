@@ -24,7 +24,7 @@ srcDir = "stdlib/Model"
 name = "Model"
 srcDir = "generated"
 
-# エディタ対応の検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)。Lean で書く(前提)。
+# エディタ対応の検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)。Lean で書く(前提)。
 # 検査本体は lean_lib `NaruTest`(`tests/NaruTest.lean` + `tests/NaruTest/*.lean`)、入口は `tests/NaruTestMain.lean`。
 [[lean_lib]]
 name = "NaruTest"
