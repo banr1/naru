@@ -176,8 +176,9 @@ protocol Demo {
 
 observer headSlot(st: Store) -> Nat { st.head.slot }
 
+// scenario は実行 fixture: 先頭で input に値を与え(この scenario は input を使わない)、出力は `observe <observer>(…);` だけ
 scenario basic {
   let b = Block { slot: 1, parent: None, votes: Set.empty() };
   let st = Store { head: b, seen: [], weights: Table.empty() };
-  describe(Some(extend(st, b).head.slot))
+  observe headSlot(extend(st, b));
 }

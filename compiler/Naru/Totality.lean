@@ -264,6 +264,8 @@ partial def walk (env : Env) : Expr → W Unit
         walk e val
         e := e.bind [(name, none)]
       | .exprS x => walk e x
+      | .inputS _ _ params val => walk (e.bind (params.toList.map fun (p, _) => (p, none))) val
+      | .observeS _ x => walk e x
     if let some t := tail then walk e t
   | .recordLit _ _ fields base => do
     for (_, x) in fields do walk env x

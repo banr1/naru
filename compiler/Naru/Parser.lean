@@ -526,6 +526,47 @@ def parseClaim : P Decl := do
     let body ← parseBlock
     return { kind := .claim, name := n, span := sp, params, body := some body }
 
+/-- scenario の本体: `{ (input f(x, y) = e;)* (let … ; | observe e;)* }`。
+input の束縛は先頭にまとめて書く(後ろに書くと E010)。末尾の式は無く、出力は `observe` だけ。 -/
+def parseScenarioBody (scenarioName : String) : P Expr := do
+  let sp ← expectSym "{"
+  withRecordLit true do
+    let mut stmts : Array Stmt := #[]
+    let mut afterHead := false
+    repeat
+      if (← acceptSym "}") then break
+      let t ← peekTok
+      match t.kind with
+      | .kw "input" =>
+        if afterHead then
+          failAt t.span s!"input bindings come first in scenario `{scenarioName}` (before any `let` / `observe`)"
+        advance
+        let (name, _) ← expectIdent
+        let _ ← expectSym "("
+        let params ← parseCommaList ")" expectLocalIdent
+        let _ ← expectSym "="
+        let val ← parseExpr
+        let _ ← expectSym ";"
+        stmts := stmts.push (.inputS t.span name params val)
+      | .kw "let" =>
+        afterHead := true
+        advance
+        let (name, _) ← expectLocalIdent
+        let ty ← if (← acceptSym ":") then some <$> parseTy else pure none
+        let _ ← expectSym "="
+        let val ← parseExpr
+        let _ ← expectSym ";"
+        stmts := stmts.push (.letS t.span name ty val)
+      | .kw "observe" =>
+        afterHead := true
+        advance
+        let e ← parseExpr
+        let _ ← expectSym ";"
+        stmts := stmts.push (.observeS t.span e)
+      | k =>
+        fail s!"expected `input`, `let`, `observe` or `}` in scenario `{scenarioName}`, found {k.describe} (a scenario has no result value: its output is `observe <observer>(…);`)"
+    return .block sp stmts none
+
 /-- 1 つの宣言。`protocol` は本体の宣言を平坦化して複数返す。 -/
 partial def parseDecl : P (Array Decl) := do
   let t ← peekTok
@@ -551,7 +592,7 @@ partial def parseDecl : P (Array Decl) := do
   | .kw "scenario" =>
     advance
     let (n, sp) ← expectIdent
-    let body ← parseBlock
+    let body ← parseScenarioBody n
     return #[{ kind := .scenario, name := n, span := sp, body := some body }]
   | .kw "protocol" =>
     advance

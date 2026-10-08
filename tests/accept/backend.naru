@@ -237,7 +237,25 @@ fn hof() -> Nat {
   applyTwice(inc, 1) + applyTwice(|n| n * 2, 3) + pickBy([3, 1, 2], |a, b| a < b).getOr(0) + iterate(inc, 3, 0)
 }
 
+// scenario: 先頭の `input f(x) = e;` で環境の入力に値を与え(本体が直接・間接に使う input はすべて要る: E015)、
+// `observe` は observer の呼出しだけ。backend は閉じた scenario を `List NaruStd.Observation` の `def` に落とす
+observer heavyAt(slot: Slot) -> Bool { heavy(slot) }
+
 scenario demo {
+  input proposer(slot) = slot * 10;
+  input weight(who) = who + 1;
+  observe demoSum();
+  let slot = 3;
+  observe currentProposer(slot);
+  let next: Slot = slot - 1;   // `observe` の後の `let`(生成 Lean では `::` の右の括弧の中の `let`)
+  observe heavyAt(next);
+  observe parsedLabel("quote \" backslash \\ newline \n tab \t");
+}
+
+// observe のラベルはソースの式(文字列はエスケープしたまま)
+observer parsedLabel(s: String) -> Nat { s.size() }
+
+observer demoSum() -> Nat {
   let bag = Bag { items: Set.of([Vote { slot: 1, who: 2 }]), tags: Table.empty() };
   setOps(bag.items, Vote { slot: 1, who: 2 }) + tableOps(bag.tags) + listOps([3, 1, 2]) + shapeSize(Shape.Line(1, 5))
     + halveG(9, 100, true) + countW(3) + chain(7) + forestSize(Forest.Cons(Rose.Node(1, Forest.Nil), Forest.Nil))

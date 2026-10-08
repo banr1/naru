@@ -129,6 +129,13 @@ structure Param where
   ty : TyV
 deriving Inhabited
 
+/-- scenario の文(`let` と `observe`。先頭の input 束縛は `Decl.scenario` の `inputs`)。 -/
+inductive ScenarioStmt where
+  | let_ (name : String) (ty : TyV) (val : Expr)
+  /-- `observe e;`。`label` は表示用のソース文字列、`ty` は observer の戻り型(解決済み)、`e` は observer の呼出し(`call`)。 -/
+  | observe (label : String) (ty : TyV) (e : Expr)
+deriving Inhabited
+
 /-- トップレベル宣言(解決・型付け済み)。`key` は修飾名、`name` は単純名。 -/
 inductive Decl where
   | typeAlias (key name : String) (ty : TyV)
@@ -137,7 +144,9 @@ inductive Decl where
   | enum (key name : String) (variants : List (String × List TyV)) (derives : List String)
   /-- fn / input(本体なし)/ observer / predicate / condition / regime / property / claim。 -/
   | fn (key name : String) (kind : DeclKind) (params : List Param) (ret : TyV) (body : Option Expr)
-  | scenario (key name : String) (ty : TyV) (body : Expr)
+  /-- scenario。`inputs` は先頭の `input f(x) = e;`(input の修飾名、仮引数と型、値)をソースの順に、
+  `stmts` は続く `let` / `observe`。閉じた scenario(本体が使う input はすべて `inputs` にある)だけが backend に届く。 -/
+  | scenario (key name : String) (inputs : List (String × List (String × TyV) × Expr)) (stmts : List ScenarioStmt)
   /-- claim bundle。項目名 → claim(または入れ子の bundle)の修飾名。 -/
   | claimBundle (key name : String) (items : List (String × String))
 deriving Inhabited
@@ -197,14 +206,19 @@ partial def Pat.refs : Pat → List String
   | _ => []
 end
 
-/-- 宣言が参照する大域名(署名と本体)。重複あり。 -/
+def ScenarioStmt.refs : ScenarioStmt → List String
+  | .let_ _ ty v => ty.namedKeys ++ v.refs
+  | .observe _ ty e => ty.namedKeys ++ e.refs
+
+/-- 宣言が参照する大域名(署名と本体)。重複あり。scenario は束縛した input の修飾名も含む。 -/
 def Decl.refs : Decl → List String
   | .typeAlias _ _ ty => ty.namedKeys
   | .record _ _ _ fields _ => fields.flatMap (·.2.namedKeys)
   | .enum _ _ variants _ => variants.flatMap fun (_, ts) => ts.flatMap TyV.namedKeys
   | .fn _ _ _ params ret body =>
     params.flatMap (·.ty.namedKeys) ++ ret.namedKeys ++ (body.map Expr.refs).getD []
-  | .scenario _ _ ty body => ty.namedKeys ++ body.refs
+  | .scenario _ _ inputs stmts =>
+    inputs.flatMap (fun (k, ps, v) => k :: ps.flatMap (·.2.namedKeys) ++ v.refs) ++ stmts.flatMap ScenarioStmt.refs
   | .claimBundle _ _ items => items.map (·.2)
 
 end Core

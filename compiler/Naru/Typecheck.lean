@@ -818,6 +818,11 @@ partial def inferStmts (ctx : Ctx) (stmts : Array Stmt) : M (Ctx × List (String
     | .exprS x =>
       let (t, cx) ← infer c x
       binds := binds ++ [("_", t, cx)]
+    | .inputS span name .. =>
+      -- パーサは scenario の本体にしか作らない(scenario は `checkScenario` が読む)
+      report c span Code.typeMismatch s!"`input {name}(…) = …;` can only appear at the head of a scenario"
+    | .observeS span _ =>
+      report c span Code.typeMismatch "`observe` can only appear in a scenario"
   return (c, binds)
 
 partial def inferVar (ctx : Ctx) (span : Span) (segs : List String) : M (TyV × CExpr) := do
@@ -1361,6 +1366,66 @@ def checkDerives (ctx : Ctx) (d : Decl) (q : String) : M Unit := do
           requireCap ctx d.span cap t s!"`derive {cap}` on `{d.name}` (variant `{v}`)"
   | none => pure ()
 
+/-- scenario の本体。先頭の `input f(x) = e;` は環境の入力に値を与え(仮引数の型は `input` 宣言から取り、値は
+その戻り型で検査する。同じ input を 2 度束縛すると E012、仮引数の数が違えば E015)、`let` は局所束縛、`observe e;` は
+observer の呼出しだけを受理する(他は E014: simulation の出力は observer を通す — IDEAL.md)。 -/
+def checkScenario (ctx : Ctx) (q : String) (d : Decl) (stmts : Array Stmt) : M Core.Decl := do
+  let mut c := ctx
+  let mut inputs : List (String × List (String × TyV) × CExpr) := []
+  let mut out : List Core.ScenarioStmt := []
+  for st in stmts do
+    match st with
+    | .inputS span name params val =>
+      match ← lookupEntry [name] with
+      | some (e, []) =>
+        if e.decl.kind != .input then continue   -- E014 は Resolve が報告済み
+        let some fi := (← get).fns.get? e.qualified | continue
+        if inputs.any (·.1 == e.qualified) then
+          report c span Code.duplicate s!"input `{name}` is given a value twice in scenario `{d.name}`"
+        if params.size != fi.params.size then
+          report c span Code.arity
+            s!"input `{name}` takes {fi.params.size} parameter(s) ({", ".intercalate (fi.params.toList.map (·.1))}), but this binding names {params.size}"
+          inferArgsLoosely c #[.pos val]
+          continue
+        for (p, psp) in params do
+          if (params.filter (·.1 == p)).size > 1 then
+            report c psp Code.arity s!"parameter `{p}` is named twice in the binding of input `{name}`"
+        let binds : List (String × TyV) := (params.toList.zip fi.params.toList).map fun ((p, _), (_, t)) => (p, t)
+        let cv ← check (c.bind binds) val fi.ret
+        inputs := inputs ++ [(e.qualified, binds, cv)]
+      | _ => continue   -- E011 / E014 は Resolve が報告済み
+    | .letS span name ty val =>
+      let (t, cv) ← match ty with
+        | some a =>
+          let at_ ← convTy c a (allowFn := true)
+          let cv ← check c val at_
+          pure (at_, cv)
+        | none =>
+          let (t, cv) ← infer c val
+          need span t s!"`{name}`"
+          pure (t, cv)
+      out := out ++ [.let_ name t cv]
+      c := c.bind [(name, t)]
+    | .observeS span e =>
+      let (t, ce) ← infer c e
+      let calleeKind : Option DeclKind ← match ce with
+        | .call k _ => pure ((← get).fns.get? k |>.map (·.kind))
+        | _ => pure none
+      match ce, calleeKind with
+      | .error, _ => pure ()
+      | _, some .observer => out := out ++ [.observe (renderExpr e) t ce]
+      | .call k _, some kind =>
+        report c span Code.typeMismatch
+          s!"`observe` takes a call of an observer (`observe name(…);`), but `{(k.splitOn ".").getLast!}` is a {kind.describe}; simulation output goes through observers only"
+      | _, _ =>
+        report c span Code.typeMismatch
+          "`observe` takes a call of an observer (`observe name(…);`); simulation output goes through observers only"
+    | .exprS x =>
+      -- パーサは scenario に作らないが、作られても `let _ = x;` と同じ
+      let (t, cx) ← infer c x
+      out := out ++ [.let_ "_" t cx]
+  return .scenario q d.name inputs out
+
 /-- 宣言を検査し、Core の宣言にする(`protocol` の殻など、Core に対応物が無い宣言は `none`)。 -/
 def checkDecl (m : Module) (d : Decl) : M (Option Core.Decl) := do
   let ctx := declCtx m d
@@ -1383,11 +1448,8 @@ def checkDecl (m : Module) (d : Decl) : M (Option Core.Decl) := do
       | none => pure none
     | .scenario =>
       match d.body with
-      | some b =>
-        let (t, cb) ← infer ctx b
-        need d.span t s!"the result of scenario `{d.name}`"
-        pure (some (.scenario q d.name t cb))
-      | none => pure none
+      | some (.block _ stmts _) => pure (some (← checkScenario ctx q d stmts))
+      | _ => pure none
     | .claimBundle =>
       let mut items : List (String × String) := []
       for (item, e) in d.items do
@@ -1436,8 +1498,73 @@ def checkDecl (m : Module) (d : Decl) : M (Option Core.Decl) := do
       | some b => pure (some (← zonkExpr b))
       | none => pure none
     return some (.fn k n kind ps' (← zonk ret) body')
-  | some (.scenario k n t b) => return some (.scenario k n (← zonk t) (← zonkExpr b))
+  | some (.scenario k n inputs stmts) =>
+    let inputs' ← inputs.mapM fun (ik, ps, v) => do
+      let ps' ← ps.mapM fun (p, t) => do return (p, ← zonk t)
+      return (ik, ps', ← zonkExpr v)
+    let stmts' ← stmts.mapM fun
+      | .let_ nm t v => do return Core.ScenarioStmt.let_ nm (← zonk t) (← zonkExpr v)
+      | .observe l t e => do return Core.ScenarioStmt.observe l (← zonk t) (← zonkExpr e)
+    return some (.scenario k n inputs' stmts')
   | other => return other
+
+/-- scenario は閉じていなければならない(E015): 本体(`let` / `observe`)が直接・間接に使う input はすべて先頭で
+束縛され、input の束縛の値が使う input はそれより前に束縛されている。backend は閉じた scenario を引数なしの `def` に
+落とし、`naru simulate` がそれを実行する。推移的な input の使用は Core の参照から fn / observer の不動点で求める
+(backend の `buildEnv` と同じ)。 -/
+def checkScenarioInputs (mods : Array Module) (cmods : Array Core.Module) : M Unit := do
+  let all := cmods.toList.flatMap fun m => m.decls.toList
+  let inputKeys := (all.filter fun d => d.kind == .input).map (·.key)
+  let fnKeys := (all.filter fun d => match d with
+    | .fn _ _ k _ _ (some _) => k == .fn || k == .observer
+    | _ => false).map (·.key)
+  let direct (refs : List String) : List String := refs.filter inputKeys.contains
+  let mut table : List (String × List String) := fnKeys.map fun k => (k, [])
+  let mut changed := true
+  let mut guard := all.length + 1
+  while changed && guard > 0 do
+    guard := guard - 1
+    changed := false
+    let mut next : List (String × List String) := []
+    for (k, cur) in table do
+      let refs := match all.find? (·.key == k) with
+        | some d => d.refs
+        | none => []
+      let via := (refs.filter fnKeys.contains).flatMap fun g => (table.lookup g).getD []
+      let merged := (direct refs ++ via).foldl (init := cur) fun acc x => if acc.contains x then acc else acc ++ [x]
+      if merged.length != cur.length then changed := true
+      next := next ++ [(k, merged)]
+    table := next
+  let usedBy (refs : List String) : List String :=
+    (direct refs ++ (refs.filter fnKeys.contains).flatMap fun g => (table.lookup g).getD []).eraseDups
+  let short (k : String) : String := (k.splitOn ".").getLast!
+  for cm in cmods do
+    let some sm := mods.find? (·.name == cm.name) | continue
+    for d in cm.decls do
+      let .scenario _ name inputs stmts := d | continue
+      let some sd := sm.decls.find? (fun x => x.kind == .scenario && x.name == name) | continue
+      let ctx : Ctx := { file := sm.file, declKind := .scenario, declName := name, locals := [] }
+      let bindSpans : Array Span := match sd.body with
+        | some (.block _ ss _) => ss.filterMap fun
+          | .inputS sp .. => some sp
+          | _ => none
+        | _ => #[]
+      let mut bound : List String := []
+      let mut i := 0
+      for (ik, _, v) in inputs do
+        for u in usedBy v.refs do
+          if !bound.contains u then
+            report ctx (bindSpans.getD i sd.span) Code.arity
+              s!"the value given to input `{short ik}` in scenario `{name}` uses input `{short u}` (directly or through the functions it calls), which is bound later or not at all; bind `{short u}` before `{short ik}`"
+        bound := bound ++ [ik]
+        i := i + 1
+      for u in usedBy (stmts.flatMap Core.ScenarioStmt.refs) do
+        if !bound.contains u then
+          let hint := match (← get).fns.get? u with
+            | some fi => s!"input {short u}({", ".intercalate (fi.params.toList.map fun (p : String × TyV) => p.1)}) = …;"
+            | none => s!"input {short u}(…) = …;"
+          report ctx sd.span Code.arity
+            s!"scenario `{name}` uses input `{short u}` (directly or through the functions it calls) but gives it no value; bind it at the head of the scenario: `{hint}`"
 
 end Typecheck
 
@@ -1456,6 +1583,7 @@ def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module :
       for d in m.decls do
         if let some cd ← Typecheck.checkDecl m d then decls := decls.push cd
       out := out.push { file := m.file, name := m.name, decls }
+    Typecheck.checkScenarioInputs mods out
     return out
   let (cmods, st) := run.run {}
   (st.diags, cmods)

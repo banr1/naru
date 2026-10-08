@@ -19,7 +19,7 @@ IDEAL.md「前提」の MVP 構文を Rust / TypeScript / Python / Go 利用者�
   それ以外の名前は Lean の予約語(`from` `at` `end` …)でもよい(backend が `«»` で逃がす)。
 - 数値: 10 進 Nat リテラル。Int が期待される位置(`let x: Int = 5`、`i > 0`、`i + 1`)では Int として読む。
   Nat の値を Int にするのは `n.toInt()`(暗黙の変換は無い。単項 `-` は Int 専用)。文字列: `"…"`(`\n` `\t` `\"` `\\`)。
-- 予約語: `module import type record enum derive input fn state protocol predicate condition regime property claim bundle scenario observer let if else match forall exists in implies true false`。
+- 予約語: `module import type record enum derive input fn state protocol predicate condition regime property claim bundle scenario observer observe let if else match forall exists in implies true false`。
 
 ## モジュールと宣言
 
@@ -34,7 +34,7 @@ enum Phase { Tick, Deliver } derive eq, order     // variant は `Name` また�
                                                   // (`Option<Self>` / `List<Self>` 越しは E019。rose tree は相互再帰の enum で書く)
 input proposer(slot: Slot) -> ValidatorId         // 本体なし。非決定性の明示(環境からの入力)
 fn head(st: Store) -> BlockId { … }               // runtime 関数。本体はブロック式
-observer confirmed(st: Store) -> Nat { … }        // simulation の出力。fn と同形
+observer confirmed(st: Store) -> Nat { … }        // simulation の出力を取り出す宣言。fn と同形(`observe` できるのは observer だけ)
 predicate Safe(run: Run) { … }                    // spec。本体は Prop 相当の式
 condition Synchronous(delta: Nat) { … }           // spec
 regime Honest(run: Run) { … }                     // spec
@@ -42,7 +42,11 @@ property Monotone(run: Run) { … }                 // spec
 claim finalizedSafe(run: Run) { … }               // spec。定理。引数は省略可
 claim bundle Consensus { finalizedSafe, live: confirmedLive }   // 公開する保証の一覧
 protocol Demo { fn step(st: Store) -> Store { … } }             // 中の宣言は owner = Demo として平坦化
-scenario basic { … }                              // runtime の実行 fixture。本体はブロック式
+scenario basic {                                  // runtime の実行 fixture(下の「scenario と simulate」)
+  input proposer(slot) = ValidatorId { value: 0 };   //   先頭: 環境の入力に値を与える
+  let st = Store { … };                           //   局所束縛
+  observe confirmed(st);                          //   出力: observer の呼出しだけ
+}
 ```
 
 `derive` の capability は `eq` / `order` / `finite` / `repr` のみ。
@@ -181,6 +185,44 @@ IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有�
   関数を値として渡す(`let g = f;`)。書き方を上の形に寄せる(検査は緩めない)。
 - spec 宣言(predicate / claim …)の再帰も同じ規則で検査する。
 
+## scenario と simulate(C7)
+
+scenario は定理ではなく実行 fixture で、非決定性(`input`)に値を与え、observer を通して値を表示する(IDEAL.md「言語の意味論」「用語」)。
+
+```
+scenario basic {
+  input proposer(slot) = ValidatorId { value: 0 };           // 先頭にまとめて: input の束縛(後ろに置くと E010)
+  input awake(node, round) = node.value == 0;                // 仮引数は名前だけ。型と数は `input` 宣言から(数が違う・同名は E015)
+  let v0 = ValidatorId { value: 0 };                          // let(型注釈可)
+  let rho = NamedRun { … };
+  observe trace(s, rho, v0);                                  // observer の呼出しだけ(fn や式は E014)。戻り型が List なら 1 要素 1 行
+  observe readsAt(s, rho, v0, 30);
+}                                                             // 末尾の式は無い(scenario は値を持たない)
+```
+
+- `input f(x, y) = e;` は、この scenario の中で input `f` の値を naru の式 `e` で決める。`e` は `f` の戻り型で検査し、他の fn と同じ検査
+  (E002〜E006、E014 …)を通る(Model に任意の Lean を入れる抜け道ではない)。`f` が input でなければ E014、無ければ E011、
+  同じ input を 2 度束縛すると E012。
+- **scenario は閉じていなければならない(E015)**: `let` / `observe` が直接・間接(呼ぶ fn / observer を辿って)に使う input はすべて
+  先頭で束縛し、束縛の値 `e` が使う input はそれより前に束縛する(`input awake(…) = … proposer(…) …;` なら `proposer` が先)。
+  閉じた scenario は入力の引数を持たない Lean の値になり、`simulate` がそのまま実行できる。
+- `observe e;` の `e` は observer の呼出し(`name(args)` か UFCS `x.name(args)`)。表示のラベルはソースの式(`trace(s, rho, v0)`。
+  文字列リテラルはエスケープしたまま、分岐・ブロック・lambda は `…`)。observer の戻り型は `Repr` を持つ値(primitive・record・enum・
+  コレクション・tuple)であること。関数型の値を返す observer の `observe` は naru の診断ではなく `lake build naru_simulate` で落ちる。
+- 生成 Lean(backend): `def Model.A.B.basic : List NaruStd.Observation := let proposer' := fun («slot» : Nat) => …; let «v0» := …;
+  NaruStd.observe "readsAt(…)" (Model.A.B.readsAt committee' proposer' … «s» «rho» «v0» 30) :: (… :: ([]))`。束縛した input は
+  本体の先頭の `let f'`(fn の引数名 `f'` と同じ名前)になり、呼出しがそれを引き回す。observer の戻り型が `List<T>` なら
+  `NaruStd.observeList`。`NaruStd.Observation` / `observe` / `observeList` / `runScenario` は `stdlib/Model/NaruStd/Observe.lean`。
+- `lake exe naru simulate dsl/scenarios/basic.naru`: `dsl/**/*.naru` 全体を検査して `generated/` に Model を作り直し(`compile` と同じ。
+  ファイルは `dsl/` 配下に限る: exit 2。`./dsl/…` とリポジトリの絶対パスは `dsl/…` に正規化する)、そのファイルの scenario(無ければ exit 2)を順に `NaruStd.runScenario` で表示する
+  `generated/Simulate.lean`(`main`。C1 のヘッダ付き。追跡対象外)を書き、`lake build naru_simulate`(lakefile の lean_exe。
+  Model を native にビルド)→ `.lake/build/bin/naru_simulate` を実行する(「naru を実行する」= 生成 Lean を実行する)。
+  出力: `scenario <name>`、scalar は `  <label> = <Repr>`、List は `  <label>:` の下に 1 要素 1 行。値の表示は Lean の `Repr`
+  (record は `{ time := 4, node := { value := 0 }, … }`)。
+- まだ無いもの: `protocol` 宣言の意味(現状は中の宣言を平坦化するだけ。Node.naru の fn 群を `ProtocolSpec` の hook として束ねる
+  のは stdlib の generic な `Event` / `Run` と型引数が入ってから)、observer の表示を naru 風にする `derive repr`、scenario の中の
+  配達(deliver)の生成子(いまは `NamedEvent.Deliver` を直接書く)。
+
 ## 診断
 
 出力は `file:line:col: error[E0xx]: message`。終了コードは誤りがあれば 1。
@@ -196,12 +238,12 @@ IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有�
 | E005 | capability 不足(`==` `<`、eq / order を要する stdlib メソッド、`derive` の欄) | 済(`Typecheck.lean`) |
 | E006 | runtime 宣言内の量化(`forall` / `exists`) | 済(`Typecheck.lean`) |
 | E007 | runtime 条件の classical 依存 | 未 |
-| E010 | 字句・構文の誤り | 済 |
+| E010 | 字句・構文の誤り(scenario の input 束縛が先頭にない・末尾の式、も) | 済 |
 | E011 | 解決できない名前 | 済 |
-| E012 | 同名の宣言 | 済 |
+| E012 | 同名の宣言(scenario で同じ input を 2 度束縛、も) | 済 |
 | E013 | 型の位置に型でない宣言 | 済 |
-| E014 | 型の不一致・推論できない型・値でないものの値としての使用 | 済 |
-| E015 | 無い欄・無いメソッド・引数の数や名前の不一致 | 済 |
+| E014 | 型の不一致・推論できない型・値でないものの値としての使用(`observe` に observer の呼出し以外、input でないものの束縛、も) | 済 |
+| E015 | 無い欄・無いメソッド・引数の数や名前の不一致(閉じていない scenario: 使う input の未束縛・束縛の順序・仮引数の数、も) | 済 |
 | E016 | claim bundle の項目が claim でない | 済 |
 | E017 | 生成モジュールの構造: モジュール同士の循環参照・同名のモジュール(backend) | 済(`Backend/Model.lean`) |
 | E018 | match の腕の形: 最後の腕にガード / `Nat` `Int` `String` の match に無条件の腕が無い(網羅性の穴) | 済(`Typecheck.lean`) |
@@ -222,7 +264,7 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 | `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model を出力し、無ければ検査だけ(`checked N module(s)`) |
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
 | `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`Naru/Lsp.lean`)。下の「言語サーバー」 |
-| `simulate <scenario.naru>` | 未実装(exit 2) |
+| `simulate <dsl/…/scenario.naru>` | `dsl/` 全体を検査して `generated/` を作り直し、そのファイルの scenario を native 実行して observer の値を表示する(C7。上の「scenario と simulate」)。診断があれば exit 1、`dsl/` 外・scenario 無しは exit 2、`lake build naru_simulate` の失敗は exit 1、それ以外は実行ファイルの exit code |
 
 リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む。`lsp` は cwd に依らない)。
 
@@ -272,7 +314,9 @@ node の名前(`queries/highlights.scm` が使う): 宣言は `<kind>_declaratio
 `tuple_type` / `function_type`、大域経路は `path_expression`(前置の段は `type_identifier`、最後の段は `constructor_identifier` か
 `identifier`)、record literal は `record_literal`(`type_path` + `field_initializer` / `base_initializer`)、欄は `field_identifier`、
 メソッドは `method_call_expression`(`method_identifier`)、構築子は `constructor_identifier`、モジュール経路は `module_identifier`、
-`derive` の capability は `capability`。
+`derive` の capability は `capability`。scenario の本体は `scenario_body`(`input_binding`(`name` / `parameters` = `binding_parameters` /
+`value`)、`let_statement`、`observe_statement`(`value`))。予約語 `observe` と `input_binding` の捕捉(`@keyword` / `name` の `@function` /
+`binding_parameters` の `@variable.parameter`)は、Zed 拡張の `rev` がこの文法を指す周回で `highlights.scm` に足す(下の「周回の運び」)。
 
 ## Core IR と Model backend
 
@@ -287,8 +331,9 @@ Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす
 | `type T = U` | `abbrev Model.A.B.T : Type := U`(参照は展開した型で書く) |
 | `record` / `state` | `structure … deriving DecidableEq, Ord, Repr`(`derive eq` → `DecidableEq` + `Ord`、`derive order` → `Ord`。`Repr` は常に。`finite` はまだ何も生成しない。`Ord` は `Set` / `Table` の正規化に使う隠れた全順序で、欄・variant の宣言順の辞書式)。欄名と局所名は常に `«»` で囲む(予約語の一覧に頼らない) |
 | `enum` | `inductive`(variant の引数は `a0 a1 …`) |
-| `fn` / `observer` / `scenario` | `def`。再帰は `Totality` の測度で `termination_by n` + `decreasing_by`(fuel)/ `termination_by structural p`(構造的)。相互再帰は `mutual … end` |
-| `input f(x: T) -> U` | Lean の宣言にならない。それを(推移的に)使う fn / observer / scenario の先頭の引数 `f'`(名前 + `'`)になり、呼出しで引き回す |
+| `fn` / `observer` | `def`。再帰は `Totality` の測度で `termination_by n` + `decreasing_by`(fuel)/ `termination_by structural p`(構造的)。相互再帰は `mutual … end` |
+| `scenario` | `def … : List NaruStd.Observation`。先頭の input 束縛は `let f' : (T → U) := fun («x» : T) => …`、`let` は `let`、`observe e;` は `NaruStd.observe "<ソースの式>" e ::`(observer の戻り型が `List` なら `observeList`)、末尾は `[]`(「scenario と simulate」) |
+| `input f(x: T) -> U` | Lean の宣言にならない。それを(推移的に)使う fn / observer の先頭の引数 `f'`(名前 + `'`)になり、呼出しで引き回す。scenario は束縛した input を同名の `let f'` で与える(束縛していない input は E015 で退ける) |
 | 型 | `Nat Int Bool String Unit` はそのまま、`Option<T>` → `Option T`、`List<T>` → `List T`、`Result<T, E>` → `NaruStd.Result T E`、`Set<T>` → `NaruStd.Set T`、`Table<K, V>` → `NaruStd.Table K V`、tuple → `×`。引数 0 個の関数型は値として扱う(`f()` は `f`) |
 | `==` `<` 等 | `==` / `!=` はそのまま。`<` 等は `Nat` / `Int` / `String` なら `Decidable.decide (a < b)`、他は `Ord.compare a b == .lt` 等(`Ord` だけで決める)。生成コードが使う Lean の組み込み名は完全修飾し(`Option.some` / `Min.min` …)、naru の局所名に捕獲されない |
 | stdlib メソッド | `stdlib/Model/NaruStd/*.lean` の関数(`Set` / `Table` は要素の `Ord` で昇順に正規化した重複なしリスト。`DecidableEq` が集合の等しさに一致する)と Lean core の `List` / `Option` |
@@ -306,8 +351,8 @@ Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の�
 
 ## まだ無いもの
 
-E007・Statements backend(predicate / … / claim bundle は生成しない)・`simulate`・`import` の意味(現状は全ファイルが
-1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と
-関数を持つ record(関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文・naru で書いた
-stdlib(現状は上の表と Lean 側の `NaruStd`)・`derive finite` の生成・enum / Option / Bool / tuple の match の網羅性検査
-(Lean に任せている)。
+E007・Statements backend(predicate / … / claim bundle は生成しない)・`protocol` 宣言の意味と stdlib の generic な `Event` / `Run`
+(「scenario と simulate」)・`import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)・
+型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と関数を持つ record(関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・
+Constants と interface binding の構文・naru で書いた stdlib(現状は上の表と Lean 側の `NaruStd`)・`derive finite` / `derive repr` の生成・
+enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)。

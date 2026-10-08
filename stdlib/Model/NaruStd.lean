@@ -2,6 +2,7 @@ import NaruStd.Basic
 import NaruStd.Set
 import NaruStd.Table
 import NaruStd.List
+import NaruStd.Observe
 
 /-!
 # NaruStd — naru の Model 用 stdlib(Lean 側)

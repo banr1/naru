@@ -9,7 +9,10 @@ import Naru
   診断があれば標準エラーに `file:line:col: error[E0xx]: …` を出して exit 1。
 - `naru check-reject <file.naru> <Exxx>` — 反例が `Exxx` で拒否されることを検査する。
 - `naru lsp` — 標準入出力で言語サーバー(LSP)として動き、コンパイラの診断を返す(C18。`Naru/Lsp.lean`)。
-- `naru simulate <scenario.naru>` — 未実装(exit 2)。
+- `naru simulate <dsl/…/scenario.naru>` — `dsl/` 全体を検査して `generated/` に Model を作り直し(`compile` と同じ)、
+  そのファイルの scenario を実行する `generated/Simulate.lean`(`main`)を書いて `lake build naru_simulate` →
+  `.lake/build/bin/naru_simulate` を実行する(C7。「naru を実行する」= 生成 Lean を native 実行する)。
+  出力は scenario の `observe` の行(observer の値を `Repr` で表示)。
 
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
@@ -29,7 +32,7 @@ def stdlibDir : System.FilePath := "stdlib" / "Model"
 def compilerDir : System.FilePath := "compiler"
 
 def usage : String :=
-  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru>"
+  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <dsl/.../scenario.naru>"
 
 -- `listFiles`(ディレクトリ配下の `.naru` / `.lean` の列挙)は `Naru.Driver`(言語サーバーも使う)。
 
@@ -53,6 +56,37 @@ def writeModel (outDir : System.FilePath) (files : Array (String × String)) : I
     let path := outDir / rel
     if let some parent := path.parent then IO.FS.createDirAll parent
     IO.FS.writeFile path content
+
+/-- 生成ファイルのヘッダに入れる版と hash(ソースは与えられた順、stdlib とコンパイラはパス順)。
+stdlib が見つからなければ `none`(リポジトリのルートで実行していない)。 -/
+def buildMeta (who : String) (files : List String) : IO (Option Backend.Model.Meta) := do
+  let mut fileHashes : List (String × String) := []
+  for f in files do fileHashes := fileHashes ++ [(f, ← hashFile f)]
+  let stdlibFiles ← listFiles stdlibDir "lean"
+  if stdlibFiles.isEmpty then
+    IO.eprintln s!"{who}: stdlib not found at {stdlibDir} (run from the repository root)"
+    return none
+  let mut stdlibHashes : List (String × String) := []
+  for f in stdlibFiles do stdlibHashes := stdlibHashes ++ [(f, ← hashFile f)]
+  let compilerFiles ← listFiles compilerDir "lean"
+  let mut compilerHashes : List (String × String) := []
+  for f in compilerFiles do compilerHashes := compilerHashes ++ [(f, ← hashFile f)]
+  return some
+    { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
+      stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit fileHashes, fileHashes }
+
+/-- 検査済みの単位から Model を生成して `out` に書く(`compile` と `simulate` が共用)。`who` は診断の接頭辞。 -/
+def generateModel (who : String) (out : System.FilePath) (checked : Checked)
+    (info : Backend.Model.Meta) : IO UInt32 := do
+  match Backend.Model.emitModel checked.core checked.recursions info with
+  | .error d =>
+    IO.eprintln d.render
+    IO.eprintln s!"{who}: 1 error(s)"
+    return 1
+  | .ok generated =>
+    writeModel out generated
+    IO.println s!"compiled {checked.mods.size} module(s); wrote {generated.size} file(s) under {out}/"
+    return 0
 
 def runCompile (args : List String) : IO UInt32 := do
   -- `--out <dir>` を取り出す
@@ -88,30 +122,62 @@ def runCompile (args : List String) : IO UInt32 := do
     IO.println s!"checked {checked.mods.size} module(s)"
     return 0
   | some out =>
-    -- hash: ソース(与えられた順)と stdlib(パス順)
-    let mut fileHashes : List (String × String) := []
-    for f in files do fileHashes := fileHashes ++ [(f, ← hashFile f)]
-    let stdlibFiles ← listFiles stdlibDir "lean"
-    if stdlibFiles.isEmpty then
-      IO.eprintln s!"naru compile: stdlib not found at {stdlibDir} (run from the repository root)"
-      return 2
-    let mut stdlibHashes : List (String × String) := []
-    for f in stdlibFiles do stdlibHashes := stdlibHashes ++ [(f, ← hashFile f)]
-    let compilerFiles ← listFiles compilerDir "lean"
-    let mut compilerHashes : List (String × String) := []
-    for f in compilerFiles do compilerHashes := compilerHashes ++ [(f, ← hashFile f)]
-    let info : Backend.Model.Meta :=
-      { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
-        stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit fileHashes, fileHashes }
-    match Backend.Model.emitModel checked.core checked.recursions info with
-    | .error d =>
-      IO.eprintln d.render
-      IO.eprintln "naru compile: 1 error(s)"
-      return 1
-    | .ok generated =>
-      writeModel out generated
-      IO.println s!"compiled {checked.mods.size} module(s); wrote {generated.size} file(s) under {out}/"
-      return 0
+    let some info ← buildMeta "naru compile" files | return 2
+    generateModel "naru compile" out checked info
+
+/-- scenario の実行。`file` は `dsl/` 配下の `.naru`(検査の単位は `dsl/` 全体 = `generated/` の元)。
+1. 単位を検査し(診断があれば exit 1)、`generated/` に Model を作り直す(`compile` と同じ)。
+2. そのファイルの scenario(1 つ以上。無ければ exit 2)を順に `NaruStd.runScenario` で表示する
+   `generated/Simulate.lean`(`main`)を書く(追跡対象外)。
+3. `lake build naru_simulate`(lakefile の lean_exe。Model を native にビルドする)→ `.lake/build/bin/naru_simulate`
+   を実行し、その exit code で終わる。 -/
+def runSimulate (file : String) : IO UInt32 := do
+  -- `./dsl/…` とリポジトリの絶対パス `<cwd>/dsl/…` は `dsl/…` に正規化する
+  let cwdPrefix := (← IO.currentDir).toString ++ "/"
+  let rel :=
+    if file.startsWith "./" then (file.drop 2).toString
+    else if file.startsWith cwdPrefix then (file.drop cwdPrefix.length).toString
+    else file
+  if !(rel.startsWith "dsl/") then
+    IO.eprintln s!"naru simulate: `{file}` is not under dsl/; simulate runs the scenarios of a dsl/ source (the unit that `compile` writes to generated/)"
+    return 2
+  let files ← defaultSources
+  if !files.contains rel then
+    IO.eprintln s!"naru simulate: `{rel}` not found under dsl/"
+    return 2
+  let (diags, checked) ← compileFiles files
+  if !diags.isEmpty then
+    for d in diags do IO.eprintln d.render
+    IO.eprintln s!"naru simulate: {diags.size} error(s)"
+    return 1
+  let some m := checked.mods.find? (·.file == rel)
+    | IO.eprintln s!"naru simulate: `{rel}` was not read"; return 2
+  let scenarios := m.decls.filter (·.kind == .scenario)
+  if scenarios.isEmpty then
+    IO.eprintln s!"naru simulate: `{rel}` declares no scenario"
+    return 2
+  let some info ← buildMeta "naru simulate" files | return 2
+  let code ← generateModel "naru simulate" "generated" checked info
+  if code != 0 then return code
+  let names := scenarios.toList.map (·.name)
+  let calls := names.map fun n =>
+    s!"  NaruStd.runScenario \"{n}\" {Backend.Model.leanName (renderPath (m.name ++ [n]))}\n"
+  -- Model と同じヘッダ(コンパイラ版・stdlib 版・ソース hash: C1)を付ける
+  let runner :=
+    Backend.Model.header info rel ((info.fileHashes.lookup rel).getD "") ++
+    s!"-- naru simulate: runs the scenario(s) of {rel} and prints their `observe` lines (`lake build naru_simulate && .lake/build/bin/naru_simulate`).\n" ++
+    "import Model\n\ndef main : IO Unit := do\n" ++ "".intercalate calls
+  IO.FS.writeFile ("generated" / "Simulate.lean") runner
+  IO.println s!"naru simulate: building generated/Simulate.lean (scenario {", ".intercalate names} of {rel}) with `lake build naru_simulate`"
+  let build ← IO.Process.output { cmd := "lake", args := #["build", "naru_simulate"] }
+  if build.exitCode != 0 then
+    IO.eprint build.stdout
+    IO.eprint build.stderr
+    IO.eprintln s!"naru simulate: `lake build naru_simulate` failed (exit {build.exitCode})"
+    return 1
+  let child ← IO.Process.spawn
+    { cmd := ".lake/build/bin/naru_simulate", args := #[], stdin := .inherit, stdout := .inherit, stderr := .inherit }
+  child.wait
 
 /-- 反例ソースの検査。`compile <file>` と同じ経路を走らせ、診断があって(= compile なら exit 1)
 その中に `code` があれば PASS(exit 0)、そうでなければ FAIL(exit 1)。
@@ -134,9 +200,7 @@ def main (args : List String) : IO UInt32 := do
   | "compile" :: rest => runCompile rest
   | ["check-reject", file, code] => runCheckReject file code
   | ["lsp"] => Lsp.serve naruVersion
-  | "simulate" :: _ =>
-    IO.eprintln "naru simulate: not implemented yet"
-    return 2
+  | ["simulate", file] => runSimulate file
   | _ =>
     IO.eprintln usage
     return 2

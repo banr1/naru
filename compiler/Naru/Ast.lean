@@ -82,6 +82,11 @@ inductive Arm where
 inductive Stmt where
   | letS (span : Span) (name : String) (ty : Option Ty) (val : Expr)
   | exprS (e : Expr)
+  /-- `input f(x, y) = e;`(scenario の先頭にだけ書ける): 環境の入力 `f` にこの fixture での値を与える。
+  仮引数は名前だけ(型は `input` 宣言から取る)。 -/
+  | inputS (span : Span) (name : String) (params : Array (String × Span)) (val : Expr)
+  /-- `observe e;`(scenario にだけ書ける): observer の呼出し `e` の値を simulation の出力にする。 -/
+  | observeS (span : Span) (e : Expr)
 end
 
 instance : Inhabited Pattern := ⟨.wild default⟩
@@ -94,6 +99,41 @@ def Expr.span : Expr → Span
   | .lit s _ | .var s _ | .call s .. | .field s .. | .method s .. | .binop s .. | .unop s ..
   | .ite s .. | .matchE s .. | .block s .. | .recordLit s .. | .listLit s _ | .tupleLit s _
   | .lambda s .. | .quant s .. => s
+
+/-- 式をソースに近い 1 行の文字列にする(`observe` の表示用ラベル)。値・リテラル・呼出し・欄・メソッド・演算・
+record / list / tuple literal はそのまま、分岐・ブロック・lambda・量化は `…` に畳む。 -/
+partial def renderExpr : Expr → String
+  | .lit _ (.nat n) => toString n
+  | .lit _ (.str s) =>
+    -- 字句の逆(`\n` `\t` `\"` `\\`)で、ソースに書かれた形に戻す
+    "\"" ++ (s.foldl (init := "") fun acc ch =>
+      acc ++ match ch with
+        | '"' => "\\\""
+        | '\\' => "\\\\"
+        | '\n' => "\\n"
+        | '\t' => "\\t"
+        | ch => ch.toString) ++ "\""
+  | .lit _ (.bool b) => if b then "true" else "false"
+  | .lit _ .unit => "()"
+  | .var _ segs => renderPath segs
+  | .call _ f args => renderExpr f ++ "(" ++ ", ".intercalate (args.toList.map renderArg) ++ ")"
+  | .field _ r n => renderExpr r ++ "." ++ n
+  | .method _ r n args => renderExpr r ++ "." ++ n ++ "(" ++ ", ".intercalate (args.toList.map renderArg) ++ ")"
+  | .binop _ op l r => renderExpr l ++ " " ++ op ++ " " ++ renderExpr r
+  | .unop _ op a => op ++ renderExpr a
+  | .recordLit _ name fields base =>
+    let fs := fields.toList.map fun (f, e) => f ++ ": " ++ renderExpr e
+    let bs := match base with
+      | some b => [".." ++ renderExpr b]
+      | none => []
+    renderPath name ++ " { " ++ ", ".intercalate (fs ++ bs) ++ " }"
+  | .listLit _ es => "[" ++ ", ".intercalate (es.toList.map renderExpr) ++ "]"
+  | .tupleLit _ es => "(" ++ ", ".intercalate (es.toList.map renderExpr) ++ ")"
+  | .ite .. | .matchE .. | .block .. | .lambda .. | .quant .. => "…"
+where
+  renderArg : Arg → String
+    | .pos e => renderExpr e
+    | .named n e => n ++ " = " ++ renderExpr e
 
 structure Param where
   name : String

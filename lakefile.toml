@@ -24,6 +24,13 @@ srcDir = "stdlib/Model"
 name = "Model"
 srcDir = "generated"
 
+# scenario の実行ファイル(C7)。`lake exe naru simulate <dsl/…/scenario.naru>` が `generated/Simulate.lean`(`main`。追跡対象外)を
+# 書いてから `lake build naru_simulate` で生成 Model ごと native にビルドし、`.lake/build/bin/naru_simulate` を実行する。
+[[lean_exe]]
+name = "naru_simulate"
+root = "Simulate"
+srcDir = "generated"
+
 # エディタ対応の検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)。Lean で書く(前提)。
 # 検査本体は lean_lib `NaruTest`(`tests/NaruTest.lean` + `tests/NaruTest/*.lean`)、入口は `tests/NaruTestMain.lean`。
 [[lean_lib]]

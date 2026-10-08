@@ -36,7 +36,7 @@ def TokenKind.describe : TokenKind → String
 def keywords : List String :=
   ["module", "import", "type", "record", "enum", "derive", "input", "fn", "state",
    "protocol", "predicate", "condition", "regime", "property", "claim", "bundle",
-   "scenario", "observer", "let", "if", "else", "match", "forall", "exists", "in",
+   "scenario", "observer", "observe", "let", "if", "else", "match", "forall", "exists", "in",
    "implies", "true", "false"]
 
 /-- 2 文字記号(1 文字記号より先に照合する)。`>>` は含めない(`Table<K, List<V>>` のため)。 -/

@@ -8,7 +8,7 @@
 // - 入れ子のブロックコメントは深さ MAX_COMMENT_DEPTH(= 8。`/*` を 9 重まで)で打ち切る。tree-sitter の字句は正規表現なので
 //   無限の入れ子は外部スキャナ(手書きの C)が要るが、`src/` を `tree-sitter generate` の生成物だけに保つためにここでは
 //   有界の正規表現で表す。
-// - 予約語 `in` は構文に現れないので予約できない(tree-sitter の `reserved` は文法中のトークンに限る)。他の 28 語は予約する。
+// - 予約語 `in` は構文に現れないので予約できない(tree-sitter の `reserved` は文法中のトークンに限る)。他の 29 語は予約する。
 // - `match` の腕の区切り `,` は省略できる(正本は本体がブロックのときだけ省略を許す)。
 // - `if` / `match` の頭部の `Name { … }` は GLR で record literal とブロックの両方を試し、続く字句で決める
 //   (正本は頭部で record literal を読まない)。
@@ -39,7 +39,7 @@ const PREC = {
 const KEYWORDS = [
   'module', 'import', 'type', 'record', 'enum', 'derive', 'input', 'fn', 'state',
   'protocol', 'predicate', 'condition', 'regime', 'property', 'claim', 'bundle',
-  'scenario', 'observer', 'let', 'if', 'else', 'match', 'forall', 'exists',
+  'scenario', 'observer', 'observe', 'let', 'if', 'else', 'match', 'forall', 'exists',
   'implies', 'true', 'false',
 ];
 
@@ -212,9 +212,22 @@ module.exports = grammar({
     protocol_declaration: $ => seq(
       'protocol', field('name', $._type_name), '{', repeat($._declaration), '}',
     ),
+    // `scenario basic { input f(x) = e; … let x = e; observe obs(x); … }`(正本の `parseScenarioBody`)。
+    // 先頭の input 束縛、続く `let` / `observe` の文。末尾の式は無い。
     scenario_declaration: $ => seq(
-      'scenario', field('name', $._value_name), field('body', $.block),
+      'scenario', field('name', $._value_name), field('body', $.scenario_body),
     ),
+    scenario_body: $ => seq(
+      '{', repeat($.input_binding), repeat(choice($.let_statement, $.observe_statement)), '}',
+    ),
+    // `input proposer(slot) = ValidatorId { value: 0 };`(仮引数は名前だけ。型は input 宣言から)
+    input_binding: $ => seq(
+      'input', field('name', $._value_name), field('parameters', $.binding_parameters),
+      '=', field('value', $._expression), ';',
+    ),
+    binding_parameters: $ => seq('(', commaSep($.identifier), ')'),
+    // `observe trace(s, rho, v0);`(observer の呼出し。検査は型検査の段)
+    observe_statement: $ => seq('observe', field('value', $._expression), ';'),
 
     // ── 型 ──
 

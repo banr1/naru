@@ -2,7 +2,7 @@
 // tree-sitter 文法でこのファイルを解析し、`queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出ることを
 // 確かめる。コンパイラでも `lake exe naru compile tests/accept/editors_syntax.naru` が exit 0 になること(構文を増やしたらここにも足す)。
 // 予約語の一覧: module import type record enum derive input fn state protocol predicate condition regime property claim bundle
-// scenario observer let if else match forall exists in implies true false(`in` は構文に現れない予約語)。
+// scenario observer observe let if else match forall exists in implies true false(`in` は構文に現れない予約語)。
 /* ブロックコメントは /* 入れ子 /* にできる */ */ ここはまだ外側のコメント // 行コメントの印は無効 */
 module Accept.EditorsSyntax
 
@@ -169,11 +169,15 @@ protocol Demo {
 }
 
 observer confirmed(st: Store) -> Nat { st.seen.size() }
+observer slotProposer(slot: Slot) -> ValidatorId { proposer(slot) }
 
 scenario basic {
+  input proposer(slot) = slot + 1;
   let b = Block { slot: 1, parent: None, votes: Set.empty() };
   let st = Store { head: b, seen: [], weights: Table.empty() };
-  describe(Some(extend(st, b).head.slot)) + proposer(1)
+  observe confirmed(extend(st, b));
+  observe headSlot(st);
+  observe slotProposer(1);
 }
 
 // 名前の大文字 / 小文字は、式の先頭の段とパターンの 1 段の名前でだけ区別する(SYNTAX.md「字句」)。

@@ -431,6 +431,20 @@ partial def emitMatchGuarded (env : Env) (c : ECtx) (ind : Nat) (s : Core.Expr) 
 
 end
 
+/-- scenario の文の列 → `List NaruStd.Observation` の式。`let` は `let` に、`observe` は `NaruStd.observe` /
+`NaruStd.observeList`(observer の戻り型が `List` なら 1 要素 1 行)の cons に落とし、末尾は `[]`。
+`::` の右は `let` が続きうるので常に括弧で囲む。 -/
+partial def emitScenarioStmts (env : Env) (c : ECtx) (ind : Nat) : List Core.ScenarioStmt → String
+  | [] => "[]"
+  | .let_ n t v :: rest =>
+    let name := if n == "_" then "_" else localName n
+    s!"let {name} : {ty t} := {emitE env c (ind + 2) v}\n{indent ind}{emitScenarioStmts env c ind rest}"
+  | .observe label t e :: rest =>
+    let f := match t with
+      | .list _ => "NaruStd.observeList"
+      | _ => "NaruStd.observe"
+    s!"{f} \"{escapeString label}\" {emitP env c ind e} ::\n{indent ind}({emitScenarioStmts env c (ind + 1) rest})"
+
 /-! ## 宣言 -/
 
 def derivingList (derives : List String) : List String :=
@@ -455,11 +469,14 @@ def isTypeDecl : Core.Decl → Bool
 def emitted (d : Core.Decl) : Bool :=
   d.phase == .runtime && !(isInput d) && (isTypeDecl d || isRuntimeValue d)
 
+/-- input の修飾名 → それを引き回す引数の型(`(T1 → … → U)`。仮引数 0 個なら `U`)。 -/
+def inputTy (env : Env) (ik : String) : String :=
+  match env.decls.get? ik with
+  | some (.fn _ _ _ ps ret _) => ty (.fn (ps.map (·.ty)) ret)
+  | _ => "_"
+
 def inputBinders (env : Env) (key : String) : List String :=
-  (env.inputs.getD key []).map fun ik =>
-    match env.decls.get? ik with
-    | some (.fn _ _ _ ps ret _) => s!"({inputBinder ik} : {ty (.fn (ps.map (·.ty)) ret)})"
-    | _ => s!"({inputBinder ik} : _)"
+  (env.inputs.getD key []).map fun ik => s!"({inputBinder ik} : {inputTy env ik})"
 
 def decreasingBy : String :=
   "decreasing_by all_goals (try simp_all) <;> (first | omega | decreasing_tactic)"
@@ -505,10 +522,17 @@ def emitDecl (env : Env) (d : Core.Decl) (standaloneDeriving : Bool := false) : 
       | some b => emitE env c 2 b
       | none => "(panic! \"naru: no body\")"
     s!"-- naru {kind.describe}\n{sig}\n  {b}" ++ terminationClause env k params
-  | .scenario k _ t body =>
-    let binders := inputBinders env k
-    let sig := app s!"def {leanName k}" binders ++ s!" : {ty t} :="
-    s!"-- naru scenario\n{sig}\n  {emitE env { recursive := false } 2 body}"
+  | .scenario k _ inputs stmts =>
+    -- 束縛した input は本体の先頭の `let f' := fun … =>`(呼出しはこの局所名を引き回す)。束縛していない input は
+    -- 型検査(E015)が退けるので普通は無いが、あれば従来どおり引数にする
+    let boundKeys := inputs.map (·.1)
+    let binders := ((env.inputs.getD k []).filter fun ik => !boundKeys.contains ik).map fun ik =>
+      s!"({inputBinder ik} : {inputTy env ik})"
+    let sig := app s!"def {leanName k}" binders ++ " : List NaruStd.Observation :="
+    let c : ECtx := { recursive := false }
+    let bindLines := inputs.map fun (ik, ps, v) =>
+      s!"let {inputBinder ik} : {inputTy env ik} := {emitE env c 4 (.lambda ps v)}\n  "
+    s!"-- naru scenario\n{sig}\n  " ++ "".intercalate bindLines ++ emitScenarioStmts env c 2 stmts
   | .claimBundle .. => ""
 
 /-- deriving 句を `mutual` の後に出す形。 -/

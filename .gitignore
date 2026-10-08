@@ -1,1 +1,3 @@
 .lake/
+# `naru simulate` が書く実行入口(scenario ごとに変わる。Model 本体は追跡する)
+generated/Simulate.lean

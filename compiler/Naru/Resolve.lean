@@ -186,6 +186,19 @@ partial def checkExpr (ctx : Ctx) : Expr → R Unit
         checkExpr c val
         c := c.bind [name]
       | .exprS e => checkExpr c e
+      | .inputS span name params val =>
+        -- scenario の `input f(x) = e;`: `f` は input 宣言でなければならない
+        match ← lookupPath [name] with
+        | none => report c.file span Code.unresolved s!"cannot find input `{name}` in this scope"
+        | some none =>
+          report c.file span Code.typeMismatch
+            s!"`{name}` is a built-in name, not an input; only inputs (`input {name}(…) -> …`) can be given a value in a scenario"
+        | some (some sym) =>
+          if sym.kind != .input then
+            report c.file span Code.typeMismatch
+              s!"`{name}` is a {sym.kind.describe}, not an input; only inputs (`input {name}(…) -> …`) can be given a value in a scenario"
+        checkExpr (c.bind (params.toList.map (·.1))) val
+      | .observeS _ e => checkExpr c e
     if let some t := tail then checkExpr c t
   | .recordLit span name fields base => do
     checkRef ctx span name
