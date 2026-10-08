@@ -213,6 +213,22 @@ fn kw(hiding: Nat, only: Nat, generalizing: Nat, extends: Nat, renaming: Nat, ex
 fn sums(s: Set<Vote>, xs: List<Nat>) -> Nat { s.sum(|v| v.who) + xs.sum(|x| x) }
 fn floorDiv(t: Int, d: Int) -> Nat { t.fdiv(d).toNat() }
 
+// 周回 6 で足した stdlib: `Set.flatMap`(各要素の集合の和集合。可換なので Set から直接取れる)
+fn flat(s: Set<Vote>) -> Nat { s.flatMap(|v| Set.of([v.slot, v.who])).size() }
+
+// 周回 6 で足した構文: 関数型の仮引数(first-order の関数値)。lambda と fn 名のどちらも渡せる。
+// fuel 再帰の中で関数値を引き回しても停止性の証明が通ること(`iterate`)。
+fn applyTwice(f: (Nat) -> Nat, x: Nat) -> Nat { f(f(x)) }
+fn pickBy(xs: List<Nat>, better: (Nat, Nat) -> Bool) -> Option<Nat> {
+  let start: Option<Nat> = None;
+  xs.fold(start, |acc, x| match acc { None => Some(x), Some(y) => if better(x, y) { Some(x) } else { Some(y) } })
+}
+fn inc(n: Nat) -> Nat { n + 1 }
+fn iterate(f: (Nat) -> Nat, n: Nat, x: Nat) -> Nat { if n == 0 { x } else { iterate(f, n - 1, f(x)) } }
+fn hof() -> Nat {
+  applyTwice(inc, 1) + applyTwice(|n| n * 2, 3) + pickBy([3, 1, 2], |a, b| a < b).getOr(0) + iterate(inc, 3, 0)
+}
+
 scenario demo {
   let bag = Bag { items: Set.of([Vote { slot: 1, who: 2 }]), tags: Table.empty() };
   setOps(bag.items, Vote { slot: 1, who: 2 }) + tableOps(bag.tags) + listOps([3, 1, 2]) + shapeSize(Shape.Line(1, 5))
@@ -222,5 +238,5 @@ scenario demo {
     + onlyGuard(One.Only(3)) + r9(9) + zz(4) + sumG(Tree.Node(Tree.Leaf, 5, Tree.Leaf), true) + deep(Tree.Leaf)
     + noneCapture(Some(5)).getOr(100) + (if compareCapture(0, Vote { slot: 1, who: 1 }, Vote { slot: 2, who: 0 }) { 1 } else { 0 })
     + (if decideCapture(1, 1, 2) { 1 } else { 0 }) + someCapture(1, Some(1)).getOr(0) + hCapture(3, 0) + kw(1, 1, 1, 1, 1, 1)
-    + sums(bag.items, [1, 2]) + floorDiv(-7, 2) + floorDiv(7, 2)
+    + sums(bag.items, [1, 2]) + floorDiv(-7, 2) + floorDiv(7, 2) + flat(bag.items) + hof()
 }

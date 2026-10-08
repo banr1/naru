@@ -1,0 +1,54 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ForkChoice/Views.lean(§2.3 view merge)。
+// 手書きの `voter_view` / `voter_support_view` / `voter_processed_block_tree` / `proposer_view` /
+// `proposer_support_view` に対応する。
+//
+// - `Finset.biUnion`(各 block の carried votes の和集合)は `Set.flatMap`(和集合は可換なので集合の内部順序に
+//   依存しない。E004 の対象ではない)。
+// - `∃ P ∈ proposals, …` は有限集合の反復 `proposals.any(…)`。
+// - `s − 1` は Nat の切り捨て減算(手書きと同じ。`goldfish_vote` は `s > 0` の下でだけ走る)。
+module Consensus.Protocol.ForkChoice.Views
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.StoreBase
+
+// §2.3 the voter's raw merged view in slot s: the slot-(s−1) votes received before the view freeze t_{s−1} + 3Δ
+// (the receipt clock, not τ), together with every slot-(s−1) vote carried by an admitted slot-s block, resolved or not.
+fn voterView(e: ProtocolEnv, st: GoldfishStore, s: Slot) -> Set<GoldfishVote> {
+  let freeze = viewFreeze(e, s - 1);
+  let pooled = pool(st, s - 1).filter(|vote| occurrenceBefore(st.timestampVote.get?(vote), freeze));
+  let carried = st.tree.filter(|b| slot(b) == s)
+    .flatMap(|b| gfVotes(b).filter(|vote| vote.slot == s - 1).toSet());
+  pooled.union(carried)
+}
+
+// §2.3 the voter's support view: the pool votes whose resolution time is before the freeze, and the members of a
+// current proposal's fixed support subset whose heads resolve in the receiver's tree (the carried arm does not test
+// the vote's local receipt stamp).
+fn voterSupportView(e: ProtocolEnv, st: GoldfishStore, s: Slot) -> Set<GoldfishVote> {
+  let freeze = viewFreeze(e, s - 1);
+  let pooled = pool(st, s - 1).filter(|vote| occurrenceBefore(tau(st, vote), freeze));
+  let carried = st.tree.filter(|b| slot(b) == s)
+    .flatMap(|b| gfSupportVotes(b).filter(|vote| resolved(st.tree, vote) && vote.slot == s - 1).toSet());
+  pooled.union(carried)
+}
+
+// §2.3 voter_processed_block_tree(Σ, s): each block of Σ.T received strictly before view_freeze(s − 1), together
+// with each stored ancestor (including itself) of every stored slot-s proposal.
+fn voterProcessedBlockTree(e: ProtocolEnv, st: GoldfishStore, s: Slot) -> Set<Block> {
+  let freeze = viewFreeze(e, s - 1);
+  let proposals = st.tree.filter(|p| slot(p) == s);
+  st.tree.filter(|b| occurrenceBefore(st.timestampBlock.get?(b), freeze) || proposals.any(|p| preceq(b, p)))
+}
+
+// §2.3 the proposer's raw view in slot s: the whole bucket Σ.gf_votes[s−1], with no filter at all. Kept as a list,
+// because this is exactly what the proposal carries.
+fn proposerView(st: GoldfishStore, s: Slot) -> List<GoldfishVote> { st.gfVotes.getOr(s - 1, []) }
+
+// §2.3 the proposer's support view: the resolved subset.
+fn proposerSupportView(st: GoldfishStore, s: Slot) -> List<GoldfishVote> {
+  st.gfVotes.getOr(s - 1, []).filter(|vote| resolved(st.tree, vote))
+}

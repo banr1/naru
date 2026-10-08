@@ -122,6 +122,10 @@ partial def parseTy : P Ty := do
   | .sym "(" =>
     advance
     let elems ← parseCommaList ")" parseTy
+    -- `(T1, T2) -> U` は関数型(仮引数の型にだけ書ける。検査は型検査の段)
+    if (← acceptSym "->") then
+      let ret ← parseTy
+      return .fn t.span elems ret
     if elems.size == 0 then return .named t.span ["Unit"] #[]
     else if elems.size == 1 then return elems[0]!
     else return .tuple t.span elems

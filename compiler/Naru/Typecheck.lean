@@ -66,6 +66,9 @@ structure St where
   diags : Array Diagnostic := #[]
   /-- いま検査中の宣言で、終わりまでに型が確定していなければならない位置(残れば E014)。 -/
   pending : Array (Span × TyV × String) := #[]
+  /-- いま検査中の宣言で、終わりに capability を要求する位置(`Set.of` / `Set.singleton` の要素の `eq` など。
+  要素の型が後から決まるので、宣言の終わりに zonk してから検査する。満たさなければ E005)。 -/
+  pendingCaps : Array (Span × String × TyV × String) := #[]
 
 abbrev M := StateM St
 
@@ -94,6 +97,10 @@ def fresh : M TyV := do
 /-- 宣言の終わりまでに `t` のメタ変数が解けていなければ E014 を `span` に報告する。 -/
 def need (span : Span) (t : TyV) (what : String) : M Unit :=
   modify fun s => { s with pending := s.pending.push (span, t, what) }
+
+/-- 宣言の終わりに `t`(zonk 後)が capability `cap` を持つことを要求する(無ければ E005 を `span` に報告)。 -/
+def deferCap (span : Span) (cap : String) (t : TyV) (what : String) : M Unit :=
+  modify fun s => { s with pendingCaps := s.pendingCaps.push (span, cap, t, what) }
 
 /-! ## 単一化 -/
 
@@ -193,9 +200,22 @@ def collect (m : Module) : M Unit := do
     let e : Entry := { file := m.file, qualified := renderPath (m.name ++ [d.name]), decl := d }
     modify fun s => { s with decls := (s.decls.insert d.name e).insert e.qualified e }
 
-/-- Surface の型を内部表現に変換する。型別名は展開する。引数の数の誤りと循環する別名は E014。 -/
-partial def convTy (ctx : Ctx) (ty : Ty) (depth : Nat := 0) : M TyV := do
+/-- Surface の型を内部表現に変換する。型別名は展開する。引数の数の誤りと循環する別名は E014。
+`allowFn`: 関数型 `(T1, T2) -> U` を(この位置の最外にだけ)許す。fn / observer / predicate … の仮引数と closure の
+引数の型にだけ true。欄・variant・別名・戻り型・コレクションの中は first-order の値だけ(E014)。 -/
+partial def convTy (ctx : Ctx) (ty : Ty) (depth : Nat := 0) (allowFn : Bool := false) : M TyV := do
   match ty with
+  | .fn span params ret =>
+    if !allowFn then
+      report ctx span Code.typeMismatch
+        "a function type `(T1, T2) -> U` can only be the type of a parameter of a fn / observer / predicate … or of a closure; fields, variants, aliases, return types, inputs and collections hold first-order values"
+      return .unknown
+    if params.size == 0 then
+      report ctx span Code.typeMismatch "a function type needs at least one parameter (`() -> U` is just a value of type `U`)"
+      return .unknown
+    let ps ← params.toList.mapM (convTy ctx · depth)
+    let r ← convTy ctx ret depth
+    return .fn ps r
   | .tuple _ elems =>
     let ts ← elems.toList.mapM (convTy ctx · depth)
     return .tuple ts
@@ -294,7 +314,8 @@ def buildInfo (m : Module) (d : Decl) : M Unit := do
       for p in d.params do
         if ps.any (·.1 == p.name) then
           report ctx p.span Code.arity s!"parameter `{p.name}` is declared twice in `{d.name}`"
-        ps := ps.push (p.name, ← convTy ctx p.ty)
+        -- 関数型の仮引数は fn / observer / spec 宣言にだけ(input は環境が与える first-order の値)
+        ps := ps.push (p.name, ← convTy ctx p.ty (allowFn := k != .input))
       let ret ← match d.ret with
         | some t => convTy ctx t
         | none => pure .bool
@@ -413,6 +434,8 @@ def setSigs : List (String × Sig) :=
     ("subset", { params := [(none, .set vT)], ret := .bool, caps := [("eq", vT)] }),
     ("filter", { params := [(none, pred)], ret := .set vT }),
     ("map", { params := [(none, .fn [vT] vU)], ret := .set vU, caps := [("eq", vU)] }),
+    -- 各要素の集合の和集合(`Finset.biUnion`)。和集合は可換なので要素の順序に依存しない(E004 の対象ではない)
+    ("flatMap", { params := [(none, .fn [vT] (.set vU))], ret := .set vU, caps := [("eq", vU)] }),
     ("any", { params := [(none, pred)], ret := .bool }),
     ("all", { params := [(none, pred)], ret := .bool }),
     ("findUnique?", { params := [(none, pred)], ret := .option vT }),
@@ -670,7 +693,7 @@ partial def infer (ctx : Ctx) (e : Expr) : M (TyV × CExpr) := do
     let mut binds : List (String × TyV) := []
     for p in params do
       let t ← match p.ty with
-        | some a => convTy ctx a
+        | some a => convTy ctx a (allowFn := true)
         | none =>
           let m ← fresh
           need p.span m s!"parameter `{p.name}` of this closure"
@@ -709,7 +732,7 @@ partial def check (ctx : Ctx) (e : Expr) (expected : TyV) : M CExpr := do
       let mut binds : List (String × TyV) := []
       for (p, t) in params.toList.zip ps do
         if let some a := p.ty then
-          let at_ ← convTy ctx a
+          let at_ ← convTy ctx a (allowFn := true)
           expectTy ctx p.span t at_
         binds := binds ++ [(p.name, t)]
       let cb ← check (ctx.bind binds) body r
@@ -777,7 +800,7 @@ partial def inferStmts (ctx : Ctx) (stmts : Array Stmt) : M (Ctx × List (String
     | .letS span name ty val =>
       let (t, cv) ← match ty with
         | some a =>
-          let at_ ← convTy c a
+          let at_ ← convTy c a (allowFn := true)
           let cv ← check c val at_
           pure (at_, cv)
         | none =>
@@ -875,9 +898,12 @@ partial def inferBuiltin (ctx : Ctx) (span : Span) (head : String) (rest : List 
     ok (.fn [] (.set m))
   | "Set", ["singleton"] =>
     let m ← fresh
+    -- Set の要素は `eq`(正規化の順序)を要する。要素の型は実引数で決まるので宣言の終わりに検査する
+    deferCap span "eq" m "`Set.singleton` (its element)"
     ok (.fn [m] (.set m))
   | "Set", ["of"] =>
     let m ← fresh
+    deferCap span "eq" m "`Set.of` (its elements)"
     ok (.fn [.list m] (.set m))
   | "List", ["empty"] =>
     let m ← fresh
@@ -907,7 +933,7 @@ partial def inferCall (ctx : Ctx) (span : Span) (f : Expr) (args : Array Arg) : 
     let ft ← zonk ft0
     match ft with
     | .fn ps r =>
-      let names ← calleeParamNames f
+      let names ← calleeParamNames ctx f
       let params := match names with
         | some ns => (ns.zip ps).map fun (n, t) => (some n, t)
         | none => ps.map fun t => (none, t)
@@ -932,12 +958,15 @@ partial def inferCall (ctx : Ctx) (span : Span) (f : Expr) (args : Array Arg) : 
       inferArgsLoosely ctx args
       return (.unknown, .error)
 
-/-- 呼出し先がユーザ宣言の fn 等なら、その引数名(名前付き引数のため)。 -/
-partial def calleeParamNames (f : Expr) : M (Option (List String)) := do
+/-- 呼出し先がユーザ宣言の fn 等なら、その引数名(名前付き引数のため)。局所名(関数型の仮引数・lambda)は
+大域名を隠すので、名前付き引数は使えない。 -/
+partial def calleeParamNames (ctx : Ctx) (f : Expr) : M (Option (List String)) := do
   match f with
   | .var _ segs =>
     match segs with
-    | [head] => if Resolve.isBuiltinHead head then return none
+    | [head] =>
+      if Resolve.isBuiltinHead head then return none
+      if (ctx.locals.lookup head).isSome then return none
     | _ => pure ()
     match ← lookupEntry segs with
     | some (e, []) =>
@@ -953,9 +982,10 @@ partial def calleeParamNames (f : Expr) : M (Option (List String)) := do
 (誤りの後の lambda の引数などに余計な E014 を出さない)。 -/
 partial def inferArgsLoosely (ctx : Ctx) (args : Array Arg) : M Unit := do
   let before := (← get).pending.size
+  let beforeCaps := (← get).pendingCaps.size
   for a in args do
     let _ ← infer ctx (argExpr a)
-  modify fun s => { s with pending := s.pending.extract 0 before }
+  modify fun s => { s with pending := s.pending.extract 0 before, pendingCaps := s.pendingCaps.extract 0 beforeCaps }
 
 /-- 実引数を仮引数に割り当てて検査する。位置引数は順に、名前付き引数は名前で。
 仮引数の順に並んだ Core の実引数を返す(欠けた位置は `.error`)。 -/
@@ -1298,12 +1328,16 @@ end
 /-- 宣言の終わり: 型が要る位置にメタ変数が残っていれば E014。 -/
 def finishDecl (ctx : Ctx) : M Unit := do
   let pending := (← get).pending
-  modify fun s => { s with pending := #[] }
+  let pendingCaps := (← get).pendingCaps
+  modify fun s => { s with pending := #[], pendingCaps := #[] }
   for (span, t, what) in pending do
     let t' ← zonk t
     if hasMeta t' then
       report ctx span Code.typeMismatch
         s!"cannot infer the type of {what} (`{t'.render}`); add a type annotation"
+  -- 宣言の終わりに要素の型が決まった上で capability を検査する(決まっていなければ上の E014 が出ている)
+  for (span, cap, t, what) in pendingCaps do
+    requireCap ctx span cap t what
 
 /-! ## 宣言 -/
 

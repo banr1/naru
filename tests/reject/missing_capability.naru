@@ -22,3 +22,8 @@ fn before(a: Vote, b: Vote) -> Bool {
 fn seen(votes: Set<Vote>, v: Vote) -> Bool {
   votes.contains(v)
 }
+
+// Set の構築(Set.of / Set.singleton)も要素に eq を要する(周回 6。関数値や derive eq の無い record を
+// 集合に入れると Lean 側で Ord が合成できないので、naru の段で E005 にする)→ E005 ×3
+fn build(v: Vote) -> Nat { Set.of([v]).size() + Set.singleton(v).size() }
+fn fnSet(f: (Nat) -> Nat) -> Nat { Set.of([f]).size() }

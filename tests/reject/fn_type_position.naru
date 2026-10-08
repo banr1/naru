@@ -1,0 +1,26 @@
+// 反例(回帰用): 関数型 `(T) -> U` は fn / observer / spec 宣言の仮引数と closure の引数にだけ書ける。
+// 欄・variant・型別名・戻り型・input・コレクションの中に書くと E014(関数を持つ record や関数を返す fn は naru に無い。
+// IDEAL.md「naru の表現力は Lean より小さく保つ」)。
+// 期待: `lake exe naru check-reject tests/reject/fn_type_position.naru E014` が PASS
+module Reject.FnTypePosition
+
+// 欄 → E014
+record Scorer { score: (Nat) -> Nat } derive eq
+
+// variant → E014
+enum Rule { Gate((Nat) -> Bool) } derive eq
+
+// 型別名 → E014
+type Pred = (Nat) -> Bool
+
+// コレクションの中 → E014
+fn sizeOf(fs: List<(Nat) -> Nat>) -> Nat { fs.size() }
+
+// 戻り型 → E014
+fn mk() -> (Nat) -> Nat { |x| x }
+
+// input → E014
+input oracle(f: (Nat) -> Nat) -> Nat
+
+// 引数なしの関数型 → E014
+fn thunk(f: () -> Nat) -> Nat { f() }

@@ -79,7 +79,17 @@ Option<T>  Result<T, E>  List<T>  Set<T>  Table<K, V>
 (T1, T2)                                 // tuple。`()` は Unit
 Block  Phase  A.B.Name                   // ユーザ定義(型別名・record・state・enum)。経路は完全一致で解決する
                                          // (`Block.x` / `Set.x` / `Nat.x` は型ではない → E011。不明な型で検査を黙らせる抜け穴を塞ぐ)
+(Block) -> Nat  (Nat, Nat) -> Bool       // 関数型(first-order の関数値)。fn / observer / spec 宣言の仮引数と closure の引数、
+                                         // `let` の注釈にだけ書ける。欄・variant・別名・戻り型・input・コレクションの中に
+                                         // 書くと E014(`() -> U` も)。関数を返す fn・関数を持つ record / enum は作れない
 ```
+
+関数型の仮引数には lambda(`|b| score(b)`)も fn の名前(`inc`)も渡せ、本体では `f(x)` と呼ぶ(局所名なので名前付き引数は
+使えず、UFCS `x.f()` にもならない)。停止性検査では、関数値の呼出しは呼出しグラフの辺にならず、fn を値として渡した場所が
+その fn への辺になる(引数が読めないので、サイクルの中なら E002。lambda の中からの再帰も同じ)。
+型注釈の無い位置では推論が関数の List(`[inc, |x| x * 2]`)や関数を返す closure(`|x| |y| x + y`)を一時的に作ることを
+許す(単純型付きの範囲で、停止性・決定性は変わらない)。ただし Set / Table の要素には置けず(`Set.of` / `Set.singleton` /
+`toSet` / `insert` … は要素に `eq` を要求するので E005)、欄・variant・戻り型・input は注釈が必須なので E014 になる。
 
 ## 式
 
@@ -117,7 +127,7 @@ naru で書いた stdlib ができるまで、型検査がここに書いた署�
 
 | 型 | メソッド |
 |---|---|
-| `Set<T>` | `size() -> Nat`、`isEmpty() -> Bool`、`contains(T) -> Bool`ᵉ、`insert(T)`ᵉ、`remove(T)`ᵉ、`union(Set<T>)`ᵉ、`inter`ᵉ、`diff`ᵉ、`subset(Set<T>) -> Bool`ᵉ、`filter(T -> Bool) -> Set<T>`、`map(T -> U) -> Set<U>`(U に eq)、`any(T -> Bool)`、`all(T -> Bool)`、`sum(T -> Nat) -> Nat`、`findUnique?(T -> Bool) -> Option<T>`、`minBy?(T -> U) -> Option<T>`ᵒ、`maxBy?(T -> U) -> Option<T>`ᵒ、`sort(by = T -> U) -> List<T>`ᵒ |
+| `Set<T>` | `size() -> Nat`、`isEmpty() -> Bool`、`contains(T) -> Bool`ᵉ、`insert(T)`ᵉ、`remove(T)`ᵉ、`union(Set<T>)`ᵉ、`inter`ᵉ、`diff`ᵉ、`subset(Set<T>) -> Bool`ᵉ、`filter(T -> Bool) -> Set<T>`、`map(T -> U) -> Set<U>`(U に eq)、`flatMap(T -> Set<U>) -> Set<U>`(U に eq)、`any(T -> Bool)`、`all(T -> Bool)`、`sum(T -> Nat) -> Nat`、`findUnique?(T -> Bool) -> Option<T>`、`minBy?(T -> U) -> Option<T>`ᵒ、`maxBy?(T -> U) -> Option<T>`ᵒ、`sort(by = T -> U) -> List<T>`ᵒ |
 | `List<T>` | `size`、`isEmpty`、`contains(T)`ᵉ、`push(T)`、`append(List<T>)`、`head?`、`last?`、`get?(Nat)`、`find?(T -> Bool)`、`filter`、`map(T -> U) -> List<U>`、`any`、`all`、`count(T -> Bool) -> Nat`、`sum(T -> Nat) -> Nat`、`fold(U, (U, T) -> U) -> U`、`sort(by = T -> U)`(U に order)、`minBy?` / `maxBy?`(U に order)、`reverse`、`take(Nat)`、`drop(Nat)`、`toSet() -> Set<T>`ᵉ |
 | `Option<T>` | `isSome`、`isNone`、`getOr(T) -> T`、`map(T -> U)`、`andThen(T -> Option<U>)`、`filter(T -> Bool)` |
 | `Result<T, E>` | `isOk`、`isErr`、`ok?() -> Option<T>` |
@@ -128,7 +138,8 @@ naru で書いた stdlib ができるまで、型検査がここに書いた署�
 
 ᵉ T に `eq` を要求。ᵏ K に `eq` を要求。ᵒ 鍵 U と要素 T の両方に `order` を要求(鍵が同じ要素は要素自身の順序で並べ、決定的にする)。
 
-静的関数: `Set.empty()`、`Set.singleton(x)`、`Set.of(List<T>)`、`List.empty()`、`List.range(Nat)`、`Table.empty()`。
+静的関数: `Set.empty()`、`Set.singleton(x)`ᵉ、`Set.of(List<T>)`ᵉ、`List.empty()`、`List.range(Nat)`、`Table.empty()`
+(`Set.singleton` / `Set.of` は要素の型に `eq` を要求する。宣言の終わりに検査するので、要素の型が後から決まってもよい)。
 自由関数: `sort(xs, by = …)` は `xs.sort(by = …)` の糖衣。名前付き引数 `by` は位置で渡してもよい。
 
 ### Set の規則(E003 / E004)
@@ -143,7 +154,8 @@ List 化は `sort(by = …)` だけ。
 
 Set から List への経路は `sort(by = …)` だけ。`Set.map` は Set を返し、`Table.keys` / `entries` も Set を返す。
 `Set.sum(f)` は可換な集約(Nat の和)なので要素の順序に依存せず、Set から直接取れる(E004 の対象ではない。
-`fold` は結合法則も可換性も保証できないので E004 のまま)。
+`fold` は結合法則も可換性も保証できないので E004 のまま)。`Set.flatMap(f)`(各要素の集合の和集合)も同じ理由で
+Set から直接取れる。
 
 ### 量化(E006)
 
@@ -246,7 +258,7 @@ Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の�
 ## まだ無いもの
 
 E007・Statements backend(predicate / … / claim bundle は生成しない)・`simulate`・`import` の意味(現状は全ファイルが
-1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数型の引数
-(`fn f(g: (Nat) -> Nat)`)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文・naru で書いた
+1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と
+関数を持つ record(関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文・naru で書いた
 stdlib(現状は上の表と Lean 側の `NaruStd`)・`derive finite` の生成・enum / Option / Bool / tuple の match の網羅性検査
 (Lean に任せている)。

@@ -61,6 +61,10 @@ def filter (s : Set α) (p : α → Bool) : Set α := ⟨s.elems.filter p⟩
 
 def map {β : Type} [Ord β] (s : Set α) (f : α → β) : Set β := of (s.elems.map f)
 
+/-- naru の `flatMap(f)`: 各要素の集合の和集合(`Finset.biUnion`)。和集合は可換なので内部順序に依存しない。 -/
+def flatMap {β : Type} [Ord β] (s : Set α) (f : α → Set β) : Set β :=
+  s.elems.foldl (fun acc x => union acc (f x)) empty
+
 def any (s : Set α) (p : α → Bool) : Bool := s.elems.any p
 
 def all (s : Set α) (p : α → Bool) : Bool := s.elems.all p

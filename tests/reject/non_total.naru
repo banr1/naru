@@ -66,3 +66,9 @@ fn zeroGuardWild(n: Nat, b: Bool) -> Nat {
     _ => zeroGuardWild(n - 1, b),
   }
 }
+
+// 関数型の仮引数(周回 6): 関数値 f の呼出しは辺にならないが、fn を値として渡した場所はその fn への辺(引数が読めない)
+// → サイクルの中なら E002。lambda の中からの再帰も減る引数が無いので E002
+fn hof(f: (Nat) -> Nat, n: Nat) -> Nat { f(n) }
+fn viaValue(n: Nat) -> Nat { hof(viaValue, n) }
+fn viaLambda(n: Nat) -> Nat { hof(|x| viaLambda(x), n) }

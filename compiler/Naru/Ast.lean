@@ -17,6 +17,8 @@ inductive Ty where
   | named (span : Span) (name : List String) (args : Array Ty)
   /-- `(T1, T2)`。 -/
   | tuple (span : Span) (elems : Array Ty)
+  /-- `(T1, T2) -> U`: first-order の関数値の型。fn / observer / predicate … の仮引数と closure の引数にだけ書ける。 -/
+  | fn (span : Span) (params : Array Ty) (ret : Ty)
 
 instance : Inhabited Ty := ⟨.tuple default #[]⟩
 

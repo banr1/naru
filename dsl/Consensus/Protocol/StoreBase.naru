@@ -1,0 +1,66 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/StoreBase.lean(§2.2 store・resolution・τ)。
+// 手書きの `GoldfishStore` / `resolved` / `resolution_time` / `GoldfishStore.pool` / `GoldfishStore.tau` に対応する。
+//
+// - `TimestampMap (Block V)` / `TimestampMap (GoldfishVote V)`(`α → Option Stamp`)は `Table<_, Stamp>` で持つ
+//   (表に無い = 未処理 = +∞。Time.naru の冒頭を参照)。`stampedBefore ts Γ x` は `occurrenceBefore(ts.get?(x), Γ)`。
+// - `gf_votes : Slot → List (GoldfishVote V)`(空が既定の全域写像)は `Table<Slot, List<GoldfishVote>>` で持ち、
+//   読みは `getOr(k, [])`。手書きどおり List のまま(proposal が複製するので)で、集合としての読みは `pool`。
+// - `resolution_time` は関数(`TimestampMap`)を返すので、naru では vote を引数に足した `resolutionTime(…, vote)`。
+//   `st.tau` も同様に `tau(st, vote)`。`beforeCutoff st.tau Γ S` は `S.filter(|x| occurrenceBefore(tau(st, x), Γ))`。
+// - 手書きは `extends` の鎖(GoldfishStore → SGStore → FGStore → HealingStore)の根。naru に継承は無いので、
+//   上の層は欄を複製した別の record と射影の fn で書く(Goldfish / Grades / Store の移植で現れる)。
+module Consensus.Protocol.StoreBase
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Protocol.Schedule
+
+// §2.2 the store Σ = (t, s, T, timestamp[·], gf_votes[·], live_confirmed, latest_confirmed).
+record GoldfishStore {
+  // §2.2 Σ.t: the current time, written by on_tick only.
+  t: Time,
+  // §2.2 Σ.s: the current slot, written by on_tick only.
+  s: Slot,
+  // §2.2 Σ.T: the tree of processed blocks.
+  tree: Set<Block>,
+  // §2.2 Σ.timestamp[·] on blocks.
+  timestampBlock: Table<Block, Stamp>,
+  // §2.2 Σ.timestamp[·] on Goldfish votes.
+  timestampVote: Table<GoldfishVote, Stamp>,
+  // §2.2 Σ.gf_votes[k]: the processed slot-k votes (at most two distinct per validator; duplicate-free by on_goldfish_vote).
+  gfVotes: Table<Slot, List<GoldfishVote>>,
+  // §2.2 Σ.live_confirmed: the block the last evaluated slot confirmed. Not monotone.
+  liveConfirmed: Block,
+  // §2.2 Σ.latest_confirmed: the monotone record the node exposes; no rule in this protocol reads it.
+  latestConfirmed: Block
+} derive eq
+
+// ── §2.2 Resolution ──
+
+// §2.2 whether the store holds the block `vote` names AND the vote is valid for it: the head is a stored block
+// from the vote's slot or earlier. Absent or ambiguous roots leave the vote unresolved.
+fn resolved(tree: Set<Block>, vote: GoldfishVote) -> Bool {
+  match findRoot?(tree, vote.head) {
+    Some(b) => slot(b) <= vote.slot,
+    None => false,
+  }
+}
+
+// §2.2 τ(vote) = max{Σ.timestamp(vote), Σ.timestamp(H)}, +∞ while H is missing (or named from a later slot).
+// Nothing is mutated: the two stamps are the frozen receipt instants and τ is their maximum, recomputed at every read.
+// Σ.timestamp(B_gen) = −∞ needs no special case: −∞ is the least Stamp and drops out of the maximum.
+fn resolutionTime(tree: Set<Block>, tb: Table<Block, Stamp>, tv: Table<GoldfishVote, Stamp>, vote: GoldfishVote) -> Occurrence {
+  match findRoot?(tree, vote.head) {
+    None => None,
+    Some(h) => if slot(h) <= vote.slot { occurrenceMax(tv.get?(vote), tb.get?(h)) } else { None },
+  }
+}
+
+// §2.2 Σ.gf_votes[k] read as the set it stands for. The list is duplicate-free, so this loses nothing.
+fn pool(st: GoldfishStore, k: Slot) -> Set<GoldfishVote> { st.gfVotes.getOr(k, []).toSet() }
+
+// §2.2 τ(·) read off the store.
+fn tau(st: GoldfishStore, vote: GoldfishVote) -> Occurrence {
+  resolutionTime(st.tree, st.timestampBlock, st.timestampVote, vote)
+}

@@ -143,6 +143,9 @@ partial def checkTy (ctx : Ctx) : Ty → R Unit
       checkTyPath ctx span name
   | .tuple _ elems => do
     for e in elems do checkTy ctx e
+  | .fn _ params ret => do
+    for p in params do checkTy ctx p
+    checkTy ctx ret
 
 def Ctx.bind (ctx : Ctx) (names : List String) : Ctx :=
   { ctx with locals := names ++ ctx.locals }

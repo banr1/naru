@@ -1,0 +1,70 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/Schedule.lean(§2.1 schedule・§2.4 vote-set vocabulary・wire constraints)。
+// 手書きの `Node`(`val_index` `new_root` `awake`)/ `votes_by` / `equivocates` / `participates` /
+// `proposal_time` / `vote_time` / `support_cutoff` / `view_freeze` / `confirmation_time` / `vote_well_formed` /
+// `carried_votes_well_formed` / `carried_support_well_formed` に対応する。
+//
+// - 手書きの `Node.new_root : Slot → BlockId`(この node が slot s に提案する block の名目上の root)と
+//   `Node.awake : Round → Bool`(round action への参加)は関数型の欄で、Witnesses では `fun s => ⟨s + 1⟩` /
+//   `fun _ => v = 0` のように run の固定データとして与えられる。環境が決める値(非決定性)なので naru では
+//   `input` として明示し、node は `valIndex` で名指しする(IDEAL.md「言語の意味論」。Parameters の `proposer` と同じ扱い)。
+// - `vote_well_formed E vote` は `E.committee` だけを読む。committee は Parameters で `input` なので E は取らない。
+module Consensus.Protocol.Schedule
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+
+// §2.5 the validator running the node, written val_index; a node whose val_index holds no duty for the slot
+// simply does not run it.
+record Node { valIndex: ValidatorId } derive eq
+
+// The nominal root of the block the node of `node` proposes in slot `slot` (手書き `Node.new_root`).
+input newRoot(node: ValidatorId, slot: Slot) -> BlockId
+
+// Participation of the node of `node` at the round-`round` action (手書き `Node.awake`). A false value
+// suppresses the whole combined attestation duty; clock ticks and Goldfish duties remain.
+input awake(node: ValidatorId, round: Round) -> Bool
+
+// ── §2.4 Vote-set vocabulary ──
+
+// §2.4 the votes of `votes` cast by `v`. Distinctness of votes is tuple equality, which Set membership already gives.
+fn votesBy(votes: Set<GoldfishVote>, v: ValidatorId) -> Set<GoldfishVote> {
+  votes.filter(|vote| vote.valIndex == v)
+}
+
+// §2.4 `v` equivocates in `votes` when they hold two of its distinct votes. Unqualified by slot, as written.
+fn equivocates(votes: Set<GoldfishVote>, v: ValidatorId) -> Bool { 2 <= votesBy(votes, v).size() }
+
+// §2.4 `v` participates in `votes` when they hold at least one of its votes.
+fn participates(votes: Set<GoldfishVote>, v: ValidatorId) -> Bool { 0 < votesBy(votes, v).size() }
+
+// ── §2.1 Schedule ──
+
+// §2.1 t_s: the proposal instant of slot s.
+fn proposalTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) }
+
+// §2.1 t_s + Δ: the Goldfish vote instant of slot s.
+fn voteTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + e.delta }
+
+// §2.1 t_s + 2Δ: the support cutoff of slot s.
+fn supportCutoff(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 2 * e.delta }
+
+// §2.1 t_s + 3Δ: the view freeze of slot s.
+fn viewFreeze(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 3 * e.delta }
+
+// §2.1 t_s + 6Δ: the confirmation evaluation of slot s (= support_cutoff of slot s + 1).
+fn confirmationTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 6 * e.delta }
+
+// The receiver-independent part of §2.1's Goldfish-vote constraint: the voter is in its own slot's committee.
+// (The "named block's slot ≤ vote.slot" half is enforced at the tree lookup: `resolved`.)
+fn voteWellFormed(vote: GoldfishVote) -> Bool { committee(vote.slot).contains(vote.valIndex) }
+
+// ── Wire constraints on carried votes ──
+
+// The wire constraint checked on a block's carried raw set: B.votes holds slot-(B.slot − 1) votes.
+// Written `vote.slot + 1 == B.slot` to avoid truncated subtraction, so a slot-0 block carrying any vote fails it.
+fn carriedVotesWellFormed(b: Block) -> Bool { gfVotes(b).all(|vote| vote.slot + 1 == slot(b)) }
+
+// §2.1 the proposal's support view is a subset of its carried raw view.
+fn carriedSupportWellFormed(b: Block) -> Bool { gfSupportVotes(b).all(|vote| gfVotes(b).contains(vote)) }

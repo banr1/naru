@@ -1,0 +1,167 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ForkChoice/Goldfish.lean の前半
+// (§2.4 Goldfish fork choice の pure core、§2.6 vote-cleanliness、§3.1 SGVote、§3.2 SGStore、§3.3 latest_window、
+// §5 HeightId、§5.1 finalized_descendants)。手書きの `raw_equivocators` / `raw_participants` / `raw_voters_count` /
+// `voters_count` / `targets_under` / `raw_supporters` / `raw_goldfish_score` / `goldfish_score` / `outranks` / `is_best_in` /
+// `argmax?` / `ghost_children` / `ghost_step` / `ghost_walk` / `ghost` / `no_second_vote_in` / `SGVote` / `SGStore` /
+// `latest_window` / `HeightId` / `finalized_descendants` に対応する。
+// 後半(`FGStore` / `viable` / `viable_tree` / `get_fg_root` / `get_filtered_block_tree(_from)` / `goldfish_eligible` /
+// `goldfish_fork_choice`)は `ChainState`(`σ : Block → ChainState`)を要するので、ChainState の移植と同時に書く。
+//
+// - `Finset.univ.filter (fun v => equivocates votes v)` は有限型 V の全体を回す。naru の `ValidatorId` は有限型ではないので、
+//   votes に現れる validator の集合 `voters(votes)` を回す。現れない validator は `equivocates` / `participates` とも
+//   false で、`raw_supporters` の `∃ vote ∈ votes_by support_votes v` も偽なので、集合として同じ。
+// - `ghost` の `score : Block → Nat` / `eligible : Block → Bool` は関数型の仮引数(周回 6 で足した構文)。同じ walk を
+//   Goldfish fork choice と available confirmation が別の score / gate で使う。
+// - `ghost_walk` の fuel は手書きどおり `tree.card`(`tree.size()`)。明示 fuel の再帰(E002 の受理形)。
+// - `SGStore extends GoldfishStore` は naru に継承が無いので欄を複製し、`sgToGoldfish` で射影する。
+//   `sg_votes : Round → Finset SGVote` は `Table<Round, Set<SGVote>>`(無い round は空)。
+// - `HeightId` の辞書式 `(height, id)` の `LinearOrder` は `derive order`(欄の宣言順の辞書式)そのもの。
+// - `latest_window η r = List.range' (r − η) (min r η)` は `List.range(min(r, η)).map(|i| r − η + i)`。
+module Consensus.Protocol.ForkChoice.Goldfish
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.StoreBase
+
+// ── §2.4 Represented validators and score ──
+
+// The validators represented in `votes` (the domain the counts below range over).
+fn voters(votes: Set<GoldfishVote>) -> Set<ValidatorId> { votes.map(|vote| vote.valIndex) }
+
+// The source-exact equivocator set: no committee filter is applied here.
+fn rawEquivocators(votes: Set<GoldfishVote>) -> Set<ValidatorId> { voters(votes).filter(|v| equivocates(votes, v)) }
+
+// The source-exact participant set: every validator represented in `votes`.
+fn rawParticipants(votes: Set<GoldfishVote>) -> Set<ValidatorId> { voters(votes).filter(|v| participates(votes, v)) }
+
+// The source-exact participant count.
+fn rawVotersCount(votes: Set<GoldfishVote>) -> Nat { rawParticipants(votes).size() }
+
+// The active source-exact participant count. `e` and `s` remain in the public API (手書きと同じ) and are not read.
+fn votersCount(_e: ProtocolEnv, votes: Set<GoldfishVote>, _s: Slot) -> Nat { rawVotersCount(votes) }
+
+// §2.4 whether `vote`'s target resolves in `tree` to a block descending from `b` (the B ⪯ B' of the supporter test).
+// A target that `tree` does not resolve supports nothing.
+fn targetsUnder(tree: Set<Block>, b: Block, vote: GoldfishVote) -> Bool {
+  match findRoot?(tree, vote.head) {
+    Some(c) => slot(c) <= vote.slot && preceq(b, c),
+    None => false,
+  }
+}
+
+// The source-exact supporter set: non-equivocators (in the raw view) with a slot-`s` support vote under `b`.
+fn rawSupporters(tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Set<ValidatorId> {
+  voters(supportVotes).filter(|v|
+    !equivocates(votes, v) && votesBy(supportVotes, v).any(|vote| vote.slot == s && targetsUnder(tree, b, vote)))
+}
+
+// The source-exact Goldfish score, over all represented validators: equivocators count for every block.
+fn rawGoldfishScore(tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Nat {
+  rawEquivocators(votes).size() + rawSupporters(tree, votes, supportVotes, s, b).size()
+}
+
+// The active source-exact Goldfish score. `e` remains only as a compatibility parameter.
+fn goldfishScore(_e: ProtocolEnv, tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Nat {
+  rawGoldfishScore(tree, votes, supportVotes, s, b)
+}
+
+// ── §2.4 The walk ──
+
+// §2.4 the argmax order of the walk: higher score wins, ties by the fixed root order (`outranks(score, b, c)` says b beats c;
+// the greatest root wins a tie, as in `deeper`).
+fn outranks(score: (Block) -> Nat, b: Block, c: Block) -> Bool {
+  score(c) < score(b) || (score(c) == score(b) && root(c) < root(b))
+}
+
+// §2.4 whether no member of `children` beats `b`.
+fn isBestIn(score: (Block) -> Nat, children: Set<Block>, b: Block) -> Bool { children.all(|c| !outranks(score, c, b)) }
+
+// §2.4 argmax over `children`, ties by root order. `None` on an empty set, and on the degenerate tie where two distinct
+// children share a score and a root. Choice-free, like `deepest?`.
+fn argmax?(score: (Block) -> Nat, children: Set<Block>) -> Option<Block> {
+  children.findUnique?(|b| isBestIn(score, children, b))
+}
+
+// §2.4 the eligible children of `h` in `tree`. The child edge comes from the full parent relation and membership in `tree`
+// is tested on the child only, so a walk may descend out of an anchor that `tree` does not hold.
+fn ghostChildren(tree: Set<Block>, eligible: (Block) -> Bool, h: Block) -> Set<Block> {
+  tree.filter(|b| parent?(b) == Some(h) && eligible(b))
+}
+
+// §2.4 one step of the walk: the argmax over the eligible children, or `None` where the loop returns `h`.
+fn ghostStep(tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool, h: Block) -> Option<Block> {
+  argmax?(score, ghostChildren(tree, eligible, h))
+}
+
+// §2.4 the fuelled descent. Returns the current head on both "no eligible child" and fuel exhaustion.
+fn ghostWalk(tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool, fuel: Nat, h: Block) -> Block {
+  if fuel == 0 { h } else {
+    match ghostStep(tree, score, eligible, h) {
+      None => h,
+      Some(c) => ghostWalk(tree, score, eligible, fuel - 1, c),
+    }
+  }
+}
+
+// §2.4 ghost(anchor, tree, score, eligible): descend from `anchor` through eligible children in `tree`, taking the highest
+// score at each step, and stop where no child is eligible. Fuel is `tree.size()`: every step after the first moves to a
+// member of `tree` of strictly greater depth, so no member is visited twice.
+fn ghost(anchor: Block, tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool) -> Block {
+  ghostWalk(tree, score, eligible, tree.size(), anchor)
+}
+
+// ── §2.6 Vote cleanliness ──
+
+// §2.6 whether `late` holds no second distinct vote by `vote`'s validator.
+fn noSecondVoteIn(late: Set<GoldfishVote>, vote: GoldfishVote) -> Bool {
+  late.all(|u| u == vote || u.valIndex != vote.valIndex)
+}
+
+// ── §3.1 SG votes and §3.2 the SG store ──
+
+// §3.1 an SG vote (v, r, C) from validator v with confirmed block C (by root) or ⊥. Not carried by blocks.
+record SGVote { valIndex: ValidatorId, round: Round, confirmed: Option<BlockId> } derive eq
+
+// §3.2 the §3 store: §2's seven components plus Σ.sg_votes[·] (at most two distinct votes per validator, enforced by
+// on_sg_vote) and the SG-vote fibre of Σ.timestamp[·].
+record SGStore {
+  t: Time,
+  s: Slot,
+  tree: Set<Block>,
+  timestampBlock: Table<Block, Stamp>,
+  timestampVote: Table<GoldfishVote, Stamp>,
+  gfVotes: Table<Slot, List<GoldfishVote>>,
+  liveConfirmed: Block,
+  latestConfirmed: Block,
+  // §3.2 Σ.sg_votes[r]: the processed round-r SG votes (a total map over all rounds with the empty default).
+  sgVotes: Table<Round, Set<SGVote>>,
+  // §3.2 the SG-vote fibre of Σ.timestamp[·]. No rule of §3 reads it; the grades of §6 do.
+  timestampSgVote: Table<SGVote, Stamp>
+} derive eq
+
+// The §2 projection of a §3 store (手書きの `extends` による暗黙の `toGoldfishStore`).
+fn sgToGoldfish(st: SGStore) -> GoldfishStore {
+  GoldfishStore {
+    t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,
+    gfVotes: st.gfVotes, liveConfirmed: st.liveConfirmed, latestConfirmed: st.latestConfirmed
+  }
+}
+
+// §3.2 Σ.sg_votes[r] read off a §3 store (empty for rounds never written).
+fn sgVotesAt(st: SGStore, r: Round) -> Set<SGVote> { st.sgVotes.getOr(r, Set.empty()) }
+
+// ── §3.3 Latest votes ──
+
+// §3.3 the expiry window [max{0, r − η_SG}, r), in ascending order. Half-open on the right; empty at r = 0.
+fn latestWindow(etaSG: Round, r: Round) -> List<Round> { List.range(r.min(etaSG)).map(|i| r - etaSG + i) }
+
+// ── §5 Justification events and §5.1 derived sets ──
+
+// §5 a justification event (h_j, J.root), compared lexicographically (the fixed root order breaks height ties).
+record HeightId { height: Height, id: BlockId } derive eq, order
+
+// §5.1 the descendants of the finalized block F in T (the inline `F ⪯ B` filter of the document).
+fn finalizedDescendants(f: Block, tree: Set<Block>) -> Set<Block> { tree.filter(|b| preceq(f, b)) }
