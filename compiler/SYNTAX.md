@@ -221,7 +221,8 @@ scenario basic {
   (record は `{ time := 4, node := { value := 0 }, … }`)。
 - まだ無いもの: `protocol` 宣言の意味(現状は中の宣言を平坦化するだけ。Node.naru の fn 群を `ProtocolSpec` の hook として束ねる
   のは stdlib の generic な `Event` / `Run` と型引数が入ってから)、observer の表示を naru 風にする `derive repr`、scenario の中の
-  配達(deliver)の生成子(いまは `NamedEvent.Deliver` を直接書く)。
+  配達(deliver)の生成子(いまは scenario のファイルの fn が event 列を作る: `dsl/scenarios/two_nodes.naru` の `twoNodeEvents` は各 t で
+  node 0 の `nodeTick` の出力を `NamedEvent.Deliver(v1, o, t)` に並べる)。scenario 共通の observer は `dsl/scenarios/trace.naru`。
 
 ## 診断
 

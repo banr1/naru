@@ -1,12 +1,13 @@
 // naru の実行 fixture(C7): verified-consensus の Witnesses の WeakGenesis に対応する run を、移植した protocol(dsl/Consensus)で
-// 動かし、observer の値を表示する。`lake exe naru simulate dsl/scenarios/basic.naru`。
+// 動かし、observer の値を表示する。`lake exe naru simulate dsl/scenarios/basic.naru`。observer は Scenarios.Trace(trace.naru)。
 //
 // - 非決定性(環境のオラクル `proposer` / `committee` / `newRoot` / `awake`)は scenario の先頭の `input` 束縛で与える。
 //   WeakGenesis: Δ = 1、GST 0、proposer 0、committee {0}、重み 2 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、
 //   new_root(s) = s + 1、awake ⇔ v = 0、node 0 の tick が t = 0 … 30(31 tick。配達は無い)。
 // - 出力は observer を通す(state を直接 dump しない): 各 tick の後の client-facing な読み(confirmed / stable / finalized の root)。
 //   期待値は手書き Model の Witnesses の docstring と同じ: 提案は t = 4, 8, …, 28(root 2 … 8)、投票は 5, 9, …、
-//   attestation は 6, 18, 30 で、confirmed が slot ごとに進み、stable / finalized は finality gadget の進みに従う。
+//   attestation は 6, 18, 30 で、confirmed が slot ごとに進み(t = 10 / 14 / 18 / 22 / 26 / 30 で root 2 … 7)、stable は t = 26 から
+//   root 4、finalized は 0 のまま(tests/golden/protocol_generated.lean の WeakGenesis の読みと同じ)。
 module Scenarios.Basic
 
 import Consensus.Objects.Identifiers
@@ -14,52 +15,11 @@ import Consensus.Objects.Time
 import Consensus.Objects.Blocks
 import Consensus.Objects.Weights
 import Consensus.Objects.Parameters
-import Consensus.Protocol.Schedule
 import Consensus.Protocol.Grades
 import Consensus.Protocol.ChainState
-import Consensus.Protocol.Handlers
 import Consensus.Execution.Setup
-import Consensus.Execution.Node
 import Consensus.Execution.Run
-
-// One line of the simulation output: a node's client-facing reads after every event up to and including `time`.
-record Observation { time: Time, node: ValidatorId, confirmed: BlockId, stable: BlockId, finalized: BlockId } derive eq
-
-// The reads of node `v` in world `w` at time `t` (the roots of the confirmed / stable tips and of the finalized block).
-fn observeWorld(w: NamedWorld, v: ValidatorId, t: Time) -> Observation {
-  let st = worldAt(w, v).st;
-  Observation {
-    time: t, node: v,
-    confirmed: root(getConfirmed(st.core)), stable: root(getStable(st.core)), finalized: root(st.core.f)
-  }
-}
-
-// One event folded into the scan: the world after it, and the rows so far plus node `v`'s reads after it.
-fn traceStep(s: Setup, v: ValidatorId, acc: (NamedWorld, List<Observation>), ev: NamedEvent) -> (NamedWorld, List<Observation>) {
-  match acc {
-    (w, rows) => {
-      let next = worldStep(s, w, ev);
-      (next, rows.push(observeWorld(next, v, eventTime(ev))))
-    },
-  }
-}
-
-// The reads of node `v` after each event of the run, in event order (one scan of the run).
-observer trace(s: Setup, rho: NamedRun, v: ValidatorId) -> List<Observation> {
-  let start: (NamedWorld, List<Observation>) = (worldInit(), []);
-  match rho.events.fold(start, |acc, ev| traceStep(s, v, acc, ev)) {
-    (_, rows) => rows,
-  }
-}
-
-// The reads of node `v` after every event up to and including time `t` (手書き `Run.storeAt` の読み)。
-observer readsAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Observation {
-  let st = storeAt(s, rho, v, t);
-  Observation {
-    time: t, node: v,
-    confirmed: root(getConfirmed(st.core)), stable: root(getStable(st.core)), finalized: root(st.core.f)
-  }
-}
+import Scenarios.Trace
 
 scenario basic {
   input proposer(slot) = ValidatorId { value: 0 };

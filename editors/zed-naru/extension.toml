@@ -17,9 +17,10 @@ repository = "file:///Users/banriyanahama/workspace/naru"
 # rev の文法でロードできることは `lake exe naru_test zed` が検査する。
 # 文法を変えた周回は rev を動かせない(その周回のコミットがまだ無い)ので、highlights.scm を rev の文法でもロードできる形に
 # 保ち、次の周回で rev を直前の周回のコミット(`git log -1 --format=%H -- editors/tree-sitter-naru`)に付け替える。
+# 比較は editors/tree-sitter-naru ディレクトリ全体なので、queries/highlights.scm だけを変えた周回の次も付け替えが要る。
 [grammars.naru]
 repository = "file:///Users/banriyanahama/workspace/naru"
-rev = "bfbfd80db6a7336b044a2e5c15715c3728bf177d"
+rev = "714ca42cea1ba25d4eab76c52b581186e1aef1b4"
 path = "editors/tree-sitter-naru"
 
 # 言語サーバー。src/lib.rs が `naru lsp` を起動する。naru 実行ファイルの探し方は src/lib.rs の冒頭

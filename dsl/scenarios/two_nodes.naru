@@ -1,0 +1,74 @@
+// naru の実行 fixture(C10、複数ノード): WeakGenesis の環境で 2 つの node を動かし、node 0 が emit した object を同時刻に node 1 へ配達する run。
+// `lake exe naru simulate dsl/scenarios/two_nodes.naru`。
+//
+// - 環境は basic.naru(WeakGenesis)と同じ: Δ = 1、GST 0、proposer 0、committee {0}、重み 2 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、
+//   new_root(s) = s + 1、awake ⇔ v = 0。node 1 は proposer でも committee でもなく眠っている(tick しても何も emit しない)が、
+//   node 0 の出力を受領して store を育てる。
+// - event 列は `twoNodeEvents` が作る(配達の生成子はまだ言語機能ではないので scenario の fn で書く): 各 t = 0 … 7 で node 0 の tick、
+//   node 1 の tick、そして node 0 がその tick で emit した object を 1 つずつ node 1 へ `Deliver(v1, o, t)`(同時刻では tick が配達に先行する:
+//   Run.naru の event 順序)。node 0 は何も受領しないので、その読みは単独 run(basic)の読みと同じ。
+// - 期待値(tests/golden/protocol_generated.lean の 2 ノード run `wRho2`、t = 0 … 7。周回 10 で手書き Model と一致): event は 19 個
+//   (tick 16 + 配達 3: slot 1 の block が t = 4、Goldfish vote が t = 5、attestation が t = 6)、node 1 は t = 4 で root 2 の body を持ち
+//   (`heldAt` が [0] → [0, 2])、t = 7 までの confirmed / stable / finalized はどちらの node も 0。
+//   t を 7 までに絞るのは、手書き Model(golden の相手側)が node 1 の slot 2 以降の受領で interpreter では極端に遅くなるため。
+module Scenarios.TwoNodes
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ChainState
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+import Consensus.Execution.Node
+import Consensus.Execution.Run
+import Scenarios.Trace
+
+// One time step of the two-node run: node 0 ticks, node 1 ticks, and every object node 0 emitted is delivered to node 1 at the same
+// time. The world is advanced with the same events so that the next step sees node 0's post-tick state.
+fn twoNodeStep(s: Setup, v0: ValidatorId, v1: ValidatorId, acc: (NamedWorld, List<NamedEvent>), t: Time) -> (NamedWorld, List<NamedEvent>) {
+  match acc {
+    (w, evs) => {
+      match nodeTick(s, v0, worldAt(w, v0), t) {
+        (_, out) => {
+          let batch = [NamedEvent.Tick(v0, t), NamedEvent.Tick(v1, t)].append(out.map(|o| NamedEvent.Deliver(v1, o, t)));
+          (batch.fold(w, |w2, ev| worldStep(s, w2, ev)), evs.append(batch))
+        },
+      }
+    },
+  }
+}
+
+// The events of the two-node run over t = 0 … n − 1 (golden の `wEvents2` と同じ列)。
+fn twoNodeEvents(s: Setup, v0: ValidatorId, v1: ValidatorId, n: Nat) -> List<NamedEvent> {
+  let start: (NamedWorld, List<NamedEvent>) = (worldInit(), []);
+  match List.range(n).fold(start, |acc, i| twoNodeStep(s, v0, v1, acc, i.toInt())) {
+    (_, evs) => evs,
+  }
+}
+
+scenario twoNodes {
+  input proposer(slot) = ValidatorId { value: 0 };
+  input committee(slot) = Set.singleton(ValidatorId { value: 0 });
+  input newRoot(node, slot) = BlockId { value: slot + 1 };
+  input awake(node, round) = node.value == 0;
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
+  let s = Setup {
+    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  };
+  let rho = NamedRun { honest: Set.singleton(v0).insert(v1), horizon: 7, events: twoNodeEvents(s, v0, v1, 8) };
+  observe deliveries(rho);
+  observe trace(s, rho, v1);
+  observe heldAt(s, rho, v1, 3);
+  observe heldAt(s, rho, v1, 4);
+  observe heldAt(s, rho, v1, 7);
+  observe readsAt(s, rho, v1, 7);
+  observe readsAt(s, rho, v0, 7);
+}
