@@ -25,4 +25,8 @@ def maxBy? {α β : Type} [Ord β] (xs : List α) (key : α → β) : Option α 
 
 def toSet {α : Type} [Ord α] (xs : List α) : Set α := Set.of xs
 
+/-- naru の `sum(f)`。 -/
+def sumBy {α : Type} (xs : List α) (f : α → Nat) : Nat :=
+  xs.foldl (fun acc x => acc + f x) 0
+
 end NaruStd.List

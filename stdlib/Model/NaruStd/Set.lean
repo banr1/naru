@@ -89,6 +89,10 @@ def maxBy? {β : Type} [Ord β] (s : Set α) (key : α → β) : Option α :=
 def sortBy {β : Type} [Ord β] (s : Set α) (key : α → β) : List α :=
   s.elems.mergeSort fun a b => compare (key a) (key b) != .gt
 
+/-- naru の `sum(f)`: 可換な集約なので内部順序に依存しない(E004 の対象外)。 -/
+def sum (s : Set α) (f : α → Nat) : Nat :=
+  s.elems.foldl (fun acc x => acc + f x) 0
+
 end Set
 
 end NaruStd

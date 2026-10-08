@@ -421,7 +421,9 @@ def setSigs : List (String × Sig) :=
     ("maxBy?", { params := [(none, .fn [vT] vU)], ret := .option vT,
                  caps := [("order", vU), ("order", vT)] }),
     ("sort", { params := [(some "by", .fn [vT] vU)], ret := .list vT,
-               caps := [("order", vU), ("order", vT)] }) ]
+               caps := [("order", vU), ("order", vT)] }),
+    -- 可換な集約: 和は要素の順序に依存しないので Set から直接取れる(E004 の対象ではない)
+    ("sum", { params := [(none, .fn [vT] .nat)], ret := .nat }) ]
 
 /-- Set から要素を無条件に選ぶ操作(E003)。どれが返るかが集合の内部順序に依存する。 -/
 def setChoiceMethods : List String :=
@@ -454,6 +456,7 @@ def listSigs : List (String × Sig) :=
     ("reverse", { ret := .list vT }),
     ("take", { params := [(none, .nat)], ret := .list vT }),
     ("drop", { params := [(none, .nat)], ret := .list vT }),
+    ("sum", { params := [(none, .fn [vT] .nat)], ret := .nat }),
     ("toSet", { ret := .set vT, caps := [("eq", vT)] }) ]
 
 def optionSigs : List (String × Sig) :=
@@ -488,7 +491,10 @@ def natSigs : List (String × Sig) :=
 def intSigs : List (String × Sig) :=
   [ ("min", { params := [(none, .int)], ret := .int }),
     ("max", { params := [(none, .int)], ret := .int }),
-    ("abs", { ret := .nat }) ]
+    ("abs", { ret := .nat }),
+    -- 床除算(`-7.fdiv(2) == -4`。除数 0 なら 0)と、負を 0 に切り上げる Nat 化
+    ("fdiv", { params := [(none, .int)], ret := .int }),
+    ("toNat", { ret := .nat }) ]
 
 def stringSigs : List (String × Sig) :=
   [ ("size", { ret := .nat }),

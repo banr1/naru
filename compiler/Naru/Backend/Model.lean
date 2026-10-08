@@ -312,6 +312,7 @@ partial def emitMethod (env : Env) (c : ECtx) (ind : Nat) (tn n : String) (recv 
   | "List", "reverse" => app "List.reverse" [r]
   | "List", "take" => app "List.take" [a 0, r]
   | "List", "drop" => app "List.drop" [a 0, r]
+  | "List", "sum" => app "NaruStd.List.sumBy" [r, a 0]
   | "List", "toSet" => app "NaruStd.List.toSet" [r]
   | "Option", "isSome" => app "Option.isSome" [r]
   | "Option", "isNone" => app "Option.isNone" [r]
@@ -324,6 +325,8 @@ partial def emitMethod (env : Env) (c : ECtx) (ind : Nat) (tn n : String) (recv 
   | "Table", m => app ("NaruStd.Table." ++ m) (r :: as)
   | "Nat", "toInt" => app "Int.ofNat" [r]
   | "Int", "abs" => app "Int.natAbs" [r]
+  | "Int", "fdiv" => app "Int.fdiv" [r, a 0]
+  | "Int", "toNat" => app "Int.toNat" [r]
   | _, "min" => app "Min.min" [r, a 0]
   | _, "max" => app "Max.max" [r, a 0]
   | "String", "size" => app "String.length" [r]

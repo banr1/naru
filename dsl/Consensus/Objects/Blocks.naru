@@ -1,0 +1,150 @@
+// verified-consensus の移植: DecoupledConsensusModel/Objects/Blocks.lean(§1 wire objects・ancestry・tree resolution)。
+// 手書きの `HeightPair` / `FinalityPair` / `GoldfishVote` / `CombinedAttestation` / `Block` と、その読み
+// (`slot` `root` `parent?` `parent` `gf_votes` `gf_support_votes` `attestations` `proposer?` `depth`)、
+// 祖先関係(`preceq` `prec` `compatible` `deeper`)、tree resolution(`pickUnique?` `find?` `isDeepestIn` `deepest?`)に対応する。
+//
+// `Preceq` / `Prec` / `Compatible`(Prop 版)は spec 側の述語なので Statements の移植で書く。
+// `pickUnique?` は naru の `findUnique?`(ちょうど 1 つなら返す。選択公理を使わない)そのもの。
+// `Block` は手書きどおり親を直接持つ再帰 enum(`Option<Block>` 越しではないので E019 に当たらない)。
+module Consensus.Objects.Blocks
+
+import Consensus.Objects.Identifiers
+
+// ── §4 Height and finality pairs ──
+
+// §4 the height pair: a target vote (h,T) with T ≠ ⊥, an empty-target vote (h,⊥), or the empty pair (⊥,⊥).
+enum HeightPair { Empty, Timeout(Height), Target(Height, BlockId) } derive eq
+
+// §4 the finality pair (h_f, T_f) with T_f ≠ ⊥. The empty finality pair is the `None` of an
+// `Option<FinalityPair>` at the use site, so an empty pair carries no height.
+record FinalityPair { height: Height, target: BlockId } derive eq
+
+// ── §1 Wire objects ──
+
+// §2 a Goldfish vote, written (v, s, B) in the document. The named block is carried by root.
+record GoldfishVote { valIndex: ValidatorId, slot: Slot, head: BlockId } derive eq
+
+// §4 the combined attestation (validator, round, confirmed, height, target, finalize_height, finalize_target).
+// The four finality fields are carried as the two derived pairs.
+record CombinedAttestation {
+  valIndex: ValidatorId,
+  round: Round,
+  confirmed: Option<BlockId>,
+  heightPair: HeightPair,
+  finalityPair: Option<FinalityPair>
+} derive eq
+
+// §1 a block, carrying every field every section adds:
+// Node(parent, slot, root, gf_votes, gf_support_votes, attestations, proposer).
+// Genesis's own fields are never given by the document; the accessors fix slot 0, root genesisRoot, and no parent.
+enum Block {
+  Genesis,
+  Node(Block, Slot, BlockId, List<GoldfishVote>, List<GoldfishVote>, List<CombinedAttestation>, ValidatorId)
+} derive eq
+
+// §1 B.slot; genesis is slot 0.
+fn slot(b: Block) -> Slot {
+  match b {
+    Block.Genesis => 0,
+    Block.Node(_, s, _, _, _, _, _) => s,
+  }
+}
+
+// §1 B.root
+fn root(b: Block) -> BlockId {
+  match b {
+    Block.Genesis => genesisRoot(),
+    Block.Node(_, _, r, _, _, _, _) => r,
+  }
+}
+
+// §1 B.parent, absent at genesis.
+fn parent?(b: Block) -> Option<Block> {
+  match b {
+    Block.Genesis => None,
+    Block.Node(p, _, _, _, _, _, _) => Some(p),
+  }
+}
+
+// §1 B.parent as a total function, genesis being its own parent.
+fn parent(b: Block) -> Block {
+  match b {
+    Block.Genesis => Block.Genesis,
+    Block.Node(p, _, _, _, _, _, _) => p,
+  }
+}
+
+// §2 B.votes
+fn gfVotes(b: Block) -> List<GoldfishVote> {
+  match b {
+    Block.Genesis => [],
+    Block.Node(_, _, _, votes, _, _, _) => votes,
+  }
+}
+
+// §2 B.support_votes, the fixed proposal-time support subset.
+fn gfSupportVotes(b: Block) -> List<GoldfishVote> {
+  match b {
+    Block.Genesis => [],
+    Block.Node(_, _, _, _, support, _, _) => support,
+  }
+}
+
+// §4 B.attestations
+fn attestations(b: Block) -> List<CombinedAttestation> {
+  match b {
+    Block.Genesis => [],
+    Block.Node(_, _, _, _, _, ats, _) => ats,
+  }
+}
+
+// §1 B.proposer, absent at genesis.
+fn proposer?(b: Block) -> Option<ValidatorId> {
+  match b {
+    Block.Genesis => None,
+    Block.Node(_, _, _, _, _, _, i) => Some(i),
+  }
+}
+
+// §1 depth: the number of parent edges from genesis.
+fn depth(b: Block) -> Nat {
+  match b {
+    Block.Genesis => 0,
+    Block.Node(p, _, _, _, _, _, _) => depth(p) + 1,
+  }
+}
+
+// ── §1 Ancestry ──
+
+// §1 B ⪯ C: B = C, or B is an ancestor of C. Executable, by walking C upwards.
+fn preceq(b: Block, c: Block) -> Bool {
+  match c {
+    Block.Genesis => b == Block.Genesis,
+    Block.Node(p, _, _, _, _, _, _) => b == c || preceq(b, p),
+  }
+}
+
+// §1 B ≺ C: strict ancestry.
+fn prec(b: Block, c: Block) -> Bool { b != c && preceq(b, c) }
+
+// §1 two blocks are compatible when one is an ancestor of the other.
+fn compatible(b: Block, c: Block) -> Bool { preceq(b, c) || preceq(c, b) }
+
+// §1 the "deepest" order: greater depth wins, ties by the fixed root order.
+// `deeper(b, c)` says b beats c; the greatest root wins a tie.
+fn deeper(b: Block, c: Block) -> Bool {
+  depth(c) < depth(b) || (depth(c) == depth(b) && root(c) < root(b))
+}
+
+// ── §1 Tree resolution ──
+
+// §1 root → block resolution in a processed tree. A root is a block's identity, so a tree that holds
+// two blocks with one root resolves it to neither. (手書きの `Block.find?`)
+fn findRoot?(t: Set<Block>, r: BlockId) -> Option<Block> { t.findUnique?(|b| root(b) == r) }
+
+// Whether no block of T beats B in the `deeper` order.
+fn isDeepestIn(t: Set<Block>, b: Block) -> Bool { t.all(|c| !deeper(c, b)) }
+
+// §1 "deepest": maximum depth, ties by the fixed root order. `None` on an empty tree, and on the
+// degenerate tie where two distinct blocks share a depth and a root.
+fn deepest?(t: Set<Block>) -> Option<Block> { t.findUnique?(|b| isDeepestIn(t, b)) }

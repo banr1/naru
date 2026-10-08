@@ -1,0 +1,114 @@
+// verified-consensus の移植: DecoupledConsensusModel/Objects/NamedBlocks.lean(§1 named wire objects と erasure)。
+// 手書きの `NamedHeightPair`(`erase` `matchesEntry`)/ `NamedAttestation`(`erase`)/ `NamedBlock`
+// (`slot` `root` `parent` `gf_votes` `attestations` `proposer?` `erase` `preceq`)に対応する。
+//
+// naru の大域名は 1 つの表なので、`Block` と同名になる読みは `named…` を前置し、`erase` は型ごとに名前を分ける。
+// `NamedBlock.Preceq`(Prop 版)は Statements の移植で書く。
+module Consensus.Objects.NamedBlocks
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+
+// Separate named wire payload for entry-bound height votes. The signed row carries the entry annotation.
+enum NamedHeightPair { Empty, Vote(Height, BlockId, Bool) } derive eq
+
+// Erasure is for prior SG/accountability views, not signed-row identity.
+fn eraseHeightPair(p: NamedHeightPair) -> HeightPair {
+  match p {
+    NamedHeightPair.Empty => HeightPair.Empty,
+    NamedHeightPair.Vote(h, entry, timeout) =>
+      if timeout { HeightPair.Timeout(h) } else { HeightPair.Target(h, entry) },
+  }
+}
+
+// Both proper targets and timeouts use the same height/entry match.
+fn matchesEntry(p: NamedHeightPair, height: Height, entry: BlockId) -> Bool {
+  match p {
+    NamedHeightPair.Empty => false,
+    NamedHeightPair.Vote(h, target, _) => h == height && target == entry,
+  }
+}
+
+record NamedAttestation {
+  valIndex: ValidatorId,
+  round: Round,
+  confirmed: Option<BlockId>,
+  heightPair: NamedHeightPair,
+  finalityPair: Option<FinalityPair>
+} derive eq
+
+// Timeout annotations erase to prior timeouts, never to proper targets.
+fn eraseAttestation(row: NamedAttestation) -> CombinedAttestation {
+  CombinedAttestation {
+    valIndex: row.valIndex,
+    round: row.round,
+    confirmed: row.confirmed,
+    heightPair: eraseHeightPair(row.heightPair),
+    finalityPair: row.finalityPair
+  }
+}
+
+// Separate recursive block data with full named rows at every ancestor.
+enum NamedBlock {
+  Genesis,
+  Node(NamedBlock, Slot, BlockId, List<GoldfishVote>, List<GoldfishVote>, List<NamedAttestation>, ValidatorId)
+} derive eq
+
+fn namedSlot(b: NamedBlock) -> Slot {
+  match b {
+    NamedBlock.Genesis => 0,
+    NamedBlock.Node(_, s, _, _, _, _, _) => s,
+  }
+}
+
+fn namedRoot(b: NamedBlock) -> BlockId {
+  match b {
+    NamedBlock.Genesis => genesisRoot(),
+    NamedBlock.Node(_, _, r, _, _, _, _) => r,
+  }
+}
+
+fn namedParent(b: NamedBlock) -> NamedBlock {
+  match b {
+    NamedBlock.Genesis => NamedBlock.Genesis,
+    NamedBlock.Node(p, _, _, _, _, _, _) => p,
+  }
+}
+
+fn namedGfVotes(b: NamedBlock) -> List<GoldfishVote> {
+  match b {
+    NamedBlock.Genesis => [],
+    NamedBlock.Node(_, _, _, votes, _, _, _) => votes,
+  }
+}
+
+fn namedAttestations(b: NamedBlock) -> List<NamedAttestation> {
+  match b {
+    NamedBlock.Genesis => [],
+    NamedBlock.Node(_, _, _, _, _, rows, _) => rows,
+  }
+}
+
+fn namedProposer?(b: NamedBlock) -> Option<ValidatorId> {
+  match b {
+    NamedBlock.Genesis => None,
+    NamedBlock.Node(_, _, _, _, _, _, proposer) => Some(proposer),
+  }
+}
+
+// The named tree keeps its own payload; only this view erases annotations.
+fn eraseBlock(b: NamedBlock) -> Block {
+  match b {
+    NamedBlock.Genesis => Block.Genesis,
+    NamedBlock.Node(p, s, r, votes, support, rows, proposer) =>
+      Block.Node(eraseBlock(p), s, r, votes, support, rows.map(|row| eraseAttestation(row)), proposer),
+  }
+}
+
+// Equality here compares full named payloads, including all ancestor rows.
+fn namedPreceq(a: NamedBlock, b: NamedBlock) -> Bool {
+  match b {
+    NamedBlock.Genesis => a == NamedBlock.Genesis,
+    NamedBlock.Node(p, _, _, _, _, _, _) => a == b || namedPreceq(a, p),
+  }
+}

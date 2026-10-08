@@ -1,0 +1,34 @@
+// verified-consensus の移植: DecoupledConsensusModel/Objects/Weights.lean(§1 electorate・quorum・committees)。
+// 手書きの `Electorate`(`weight : V → Nat`、`weight_pos`)/ `totalWeight` / `weightOf` / `finalityThreshold` /
+// `quorumCheck` / `Committees`(`members : Slot → Finset V`)に対応する。
+//
+// 手書きの `weight : V → Nat` は有限型 V 上の関数で、`totalWeight = ∑ i, weight i` は `Fintype V` の和。
+// naru の `ValidatorId` は有限型ではないので、electorate は validator の有限集合とその重みを
+// `Table<ValidatorId, Nat>` で持つ(表に無い validator は electorate の外: 重み 0)。
+// `weight_pos`(重みは正)は Model には書かず、Statements の premise として表す(IDEAL.md「理想化」)。
+// `Committees.members : Slot → Finset V` は環境のオラクルなので `input committee` として Parameters に置く。
+module Consensus.Objects.Weights
+
+import Consensus.Objects.Identifiers
+
+// §3 a finite electorate with fixed positive integer weights.
+record Electorate { weight: Table<ValidatorId, Nat> } derive eq
+
+// §3 the validator set `V` as the electorate's domain.
+fn validators(e: Electorate) -> Set<ValidatorId> { e.weight.keys() }
+
+// §3 w(v): the weight of a validator (0 outside the electorate).
+fn weightOfValidator(e: Electorate, v: ValidatorId) -> Nat { e.weight.getOr(v, 0) }
+
+// §3 W = w(V): the total fixed validator weight.
+// 和は可換なので、集合の内部順序に依存せずに `sum` で取れる。
+fn totalWeight(e: Electorate) -> Nat { validators(e).sum(|v| weightOfValidator(e, v)) }
+
+// §3 w(S), counting each validator in a finite set once.
+fn weightOf(e: Electorate, s: Set<ValidatorId>) -> Nat { s.sum(|v| weightOfValidator(e, v)) }
+
+// §4 q = ⌈2W/3⌉. Natural-number ceiling division by three is written (2W+2)/3.
+fn finalityThreshold(e: Electorate) -> Nat { (2 * totalWeight(e) + 2) / 3 }
+
+// Executable quorum check.
+fn quorumCheck(e: Electorate, s: Set<ValidatorId>) -> Bool { finalityThreshold(e) <= weightOf(e, s) }

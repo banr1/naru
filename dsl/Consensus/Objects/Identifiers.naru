@@ -18,3 +18,8 @@ record BlockId { value: Nat } derive eq, order
 
 // §1 the root of B_gen: the model fixes the least root, so genesis loses every root tie-break
 fn genesisRoot() -> BlockId { BlockId { value: 0 } }
+
+// 手書き Model の型引数 `V`(validator の型。Witnesses では `Fin n`)は naru では具体的な識別子に固定する。
+// naru には型引数付きの宣言が無く、Model が V に要るのは等しさと(集合の正規化のための)順序だけなので、
+// `Fin n` の値は `value` で写せる(golden test はこの対応で手書き Model と突き合わせる)。
+record ValidatorId { value: Nat } derive eq, order

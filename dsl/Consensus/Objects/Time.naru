@@ -1,0 +1,54 @@
+// verified-consensus の移植: DecoupledConsensusModel/Objects/Time.lean(§1 時間・timestamp・cutoff view)。
+// 手書きの `Time` / `Stamp`(`WithBot Time`)/ `Occurrence`(`Option Stamp`)/ `genesisStamp` /
+// `occurrenceBefore` / `occurrenceMax` / `slotStart` / `slotOfTime` に対応する。
+//
+// 手書きの `TimestampMap α := α → Option Stamp` と、それを取る `stampedBefore` / `beforeCutoff` は型引数 α を持つ。
+// naru には型引数付きの宣言が無いので、timestamp map は使う側で `Table<T, Stamp>`(無ければ未処理 = +∞)として持ち、
+// `stampedBefore ts Γ x` は `occurrenceBefore(ts.get?(x), Γ)`、`beforeCutoff ts Γ S` は
+// `S.filter(|x| occurrenceBefore(ts.get?(x), Γ))` と書く(Store の移植で現れる)。
+module Consensus.Objects.Time
+
+import Consensus.Objects.Identifiers
+
+// §1 the time domain. The document needs only 4Δs arithmetic and strict comparisons,
+// and Γ_r^{−1} = t_0 − Δ is negative at round 0.
+type Time = Int
+
+// §1 a processing instant: a time, or `Bottom` (= −∞) for genesis.
+// `WithBot Time` の移植。`derive order` は variant の宣言順なので `Bottom < At(t)`、`At` 同士は t の順。
+enum Stamp { Bottom, At(Time) } derive eq, order
+
+// §2, §6 an event instant: a stamp, or `None` (= +∞) when the event never occurs.
+// 同じ型が timestamp map の値にもなる(`Table<T, Stamp>.get?` が `Occurrence` を返す)。
+type Occurrence = Option<Stamp>
+
+// §1 Σ.timestamp(B_gen) = −∞
+fn genesisStamp() -> Stamp { Stamp.Bottom }
+
+// §1 the strict cutoff test on a stamp: `u < Γ`. `−∞` passes it.
+fn stampBefore(u: Stamp, gamma: Time) -> Bool { u < Stamp.At(gamma) }
+
+// §1 the strict cutoff test on a bare occurrence, `x < Γ`. `+∞` fails it; `−∞` passes it.
+// (`stampedBefore ts Γ x` is this test applied to `ts.get?(x)`.)
+fn occurrenceBefore(x: Occurrence, gamma: Time) -> Bool {
+  match x {
+    None => false,
+    Some(u) => stampBefore(u, gamma),
+  }
+}
+
+// §2 τ as a maximum of two occurrences, `+∞` absorbing.
+// `max` on `Stamp` already puts `−∞` below everything, so genesis's stamp drops out of the maximum.
+fn occurrenceMax(x: Occurrence, y: Occurrence) -> Occurrence {
+  match (x, y) {
+    (Some(a), Some(b)) => Some(if a < b { b } else { a }),
+    _ => None,
+  }
+}
+
+// §1 t_s = 4Δs: the start of slot s
+fn slotStart(delta: Time, s: Slot) -> Time { delta * 4 * s.toInt() }
+
+// §1 s = ⌊t / 4Δ⌋: the slot containing t. Floor division, so `slotOfTime(Δ, slotStart(Δ, s)) == s`;
+// times before t_0 clamp to slot 0, which the document never reads.
+fn slotOfTime(delta: Time, t: Time) -> Slot { t.fdiv(delta * 4).toNat() }
