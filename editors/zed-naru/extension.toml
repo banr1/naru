@@ -19,7 +19,7 @@ repository = "file:///Users/banriyanahama/workspace/naru"
 # 保ち、次の周回で rev を直前の周回のコミット(`git log -1 --format=%H -- editors/tree-sitter-naru`)に付け替える。
 [grammars.naru]
 repository = "file:///Users/banriyanahama/workspace/naru"
-rev = "4b695bf398117e515ea7f1b9de437b0ba4c2e99e"
+rev = "bfbfd80db6a7336b044a2e5c15715c3728bf177d"
 path = "editors/tree-sitter-naru"
 
 # 言語サーバー。src/lib.rs が `naru lsp` を起動する。naru 実行ファイルの探し方は src/lib.rs の冒頭

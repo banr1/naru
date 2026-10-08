@@ -10,7 +10,7 @@
 
 [
   "module" "import" "type" "record" "state" "enum" "derive" "input" "fn" "observer"
-  "predicate" "condition" "regime" "property" "claim" "bundle" "protocol" "scenario"
+  "predicate" "condition" "regime" "property" "claim" "bundle" "protocol" "scenario" "observe"
   "let" "if" "else" "match" "forall" "exists" "implies"
 ] @keyword
 
@@ -29,6 +29,9 @@
 (property_declaration name: (identifier) @function)
 (claim_declaration name: (identifier) @function)
 (scenario_declaration name: (identifier) @function)
+; scenario の本体の `input f(x) = e;`(束縛する input の名前と仮引数。周回 16 の文法から)
+(input_binding name: (identifier) @function)
+(binding_parameters (identifier) @variable.parameter)
 
 (call_expression function: (identifier) @function)
 (call_expression function: (path_expression (identifier) @function))

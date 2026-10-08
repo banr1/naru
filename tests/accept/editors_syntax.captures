@@ -181,6 +181,8 @@
 174	function	basic
 174	punctuation.bracket	{
 175	keyword	input
+175	function	proposer
+175	variable.parameter	slot
 175	number	1
 175	punctuation.delimiter	;
 176	type	Block
@@ -190,9 +192,12 @@
 176	type	Set
 176	function	empty
 176	punctuation.delimiter	;
+178	keyword	observe
 178	function	confirmed
 178	function	extend
+179	keyword	observe
 179	function	headSlot
+180	keyword	observe
 180	function	slotProposer
 # 名前の大小を入れ替えた例(小文字の variant・大文字の欄・大文字 fn の UFCS)
 185	constructor	on
