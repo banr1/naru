@@ -2,7 +2,7 @@
 -- naru-compiler: 0.1.0 sha256:a41db9ddaf59bd550ddd5db1c4076d2115d34914d7083757324a9f1f7e0333d9
 -- naru-stdlib: 0.1.0 sha256:e7f0eea176a68a8b9bbc950acb7775cd2720aef01fc03edc63b1ebe7472ba9cb
 -- naru-source: dsl/Consensus/Protocol/ForkChoice/Views.naru sha256:1e6e1435fc2a268efcffb63f74a82b1c51c8de5ba518e873aab91b9f95407707
--- naru-unit: sha256:c2eaa6ce2d15976bb4581c3c343348100e0e9879c2ad174ab2266d4ee84d02c2
+-- naru-unit: sha256:b4a8f4c2682df51121b5acbfe036fdd45f5f1e00ac020519087e44640c199e8b
 import NaruStd
 import Model.Consensus.Objects.Blocks
 import Model.Consensus.Objects.Parameters

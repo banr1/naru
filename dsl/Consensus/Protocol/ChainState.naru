@@ -1,0 +1,258 @@
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ChainState.lean(§4 combined attestations の slashing・
+// chain state σ・決定的な state transition・row-parametric な block folding)。
+// 手書きの `conflictsWithFinality` / `sameValidator` / `sameRound` / `e1Fields` / `e2Fields` / `e1Slashable` / `e2Slashable` /
+// `slashable` / `selfSlashable` / `sgHeadEquivocation` / `HeightConfig` / `ChainState`(`initial` `Q_target` `Q_prog` `Q_finality`
+// `targetQuorum` `progQuorum` `finalityQuorum`)/ `nonjustifiable` / `process_attestation` / `finalityReady` / `targetReady` /
+// `progReady` / `advance_height` / `process_height_events` / `TimeoutBinding`(`view` `targetedHeightPair` `targeted`)/
+// `process_attestation_with` / `fold_rows` / `transition_rows` / `named_transition` / `derive_named` に対応する。
+//
+// - Prop 版(`E1Slashable` / `E2Slashable` / `Slashable` / `SGHeadEquivocation`)と、honest な振る舞いだけを縛る
+//   `atMostOnePer` / `HonestEmissionBudget`(どの handler も読まない)は spec 側の述語なので Statements の移植で書く。
+// - `HeightConfig` の証明の欄 `K_ge_four`(4 ≤ K)/ `D_ge_two`(2 ≤ D)は Model には置かず Statements の premise にする
+//   (Parameters の `Δ_pos` と同じ扱い)。
+// - 手書きの `ChainState` は `Finset V` の欄のため `Repr` を derive しない(mathlib の `Repr (Finset α)` は unsafe)。
+//   naru の `Set` は正規化された List なので `derive eq` だけで backend が `DecidableEq` / `Ord` / `Repr` を生成する。
+// - 改名の対応: `ChainState.initial` → `initialChainState`、`Q_target` / `Q_prog` / `Q_finality` → `qTarget` / `qProg` /
+//   `qFinality`、`TimeoutBinding.view`(targeted)→ `targetedView`、`TimeoutBinding.targeted` は inline したので無い。
+// - `K ∣ h` は `h % k == 0`(k = 0 なら h == 0 のときだけ真。Lean の `Nat.dvd_iff_mod_eq_zero` と同じ)。
+// - `TimeoutBinding V Row`(型引数 `Row` と関数型の欄 `base` / `heightPair` を持つ record)は naru に型引数も関数型の欄も
+//   無いので、唯一の instantiation `TimeoutBinding.targeted`(Row = NamedAttestation、base = erase、heightPair = targetedHeightPair)
+//   を inline した fn の組(`targetedHeightPair` / `targetedView` / `processAttestationWith`)で書く。
+//   `fold_rows` / `transition_rows` / `named_transition` もその binding に固定する(Model の振る舞いは同じ)。
+// - 欄名は文書の tuple `σ = (L, s, h, T_h, nj, target_participation, progress, finalize, J, h_j, F, h_F)` の順と名前に
+//   合わせる(`l` `s` `h` `tH` `nj` `targetParticipation` `progress` `finalize` `j` `hJ` `f` `hF`)。
+module Consensus.Protocol.ChainState
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+
+// ── §4 Combined attestations: slashing and equivocation ──
+
+// §4 the height-pair half of E1: a height pair (h, T') conflicts with a nonempty finality pair (h, T) when the heights
+// agree and T' ≠ T, T' = ⊥ included. The empty height pair has height ⊥ and so conflicts with nothing.
+fn conflictsWithFinality(hp: HeightPair, pair: FinalityPair) -> Bool {
+  match hp {
+    HeightPair.Empty => false,
+    HeightPair.Timeout(height) => height == pair.height,
+    HeightPair.Target(height, target) => height == pair.height && target != pair.target,
+  }
+}
+
+// §4 "two pair occurrences from one validator".
+fn sameValidator(left: CombinedAttestation, right: CombinedAttestation) -> Bool { left.valIndex == right.valIndex }
+
+// §3 one round, the scope of the head-equivocation test.
+fn sameRound(left: CombinedAttestation, right: CombinedAttestation) -> Bool { left.round == right.round }
+
+// §4 E1's field conflict, before the one-signer test. Either attestation may supply the finality pair; taking
+// left = right is what makes "the conflicting occurrences can be in one attestation" hold.
+fn e1Fields(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  left.finalityPair.map(|pair| conflictsWithFinality(right.heightPair, pair)).getOr(false)
+    || right.finalityPair.map(|pair| conflictsWithFinality(left.heightPair, pair)).getOr(false)
+}
+
+// §4 E2's field conflict, before the one-signer test: two height pairs (h, T), (h, T') with T, T' ≠ ⊥ and T ≠ T'.
+// A timeout or empty pair on either side is not E2.
+fn e2Fields(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  match (left.heightPair, right.heightPair) {
+    (HeightPair.Target(leftHeight, leftTarget), HeightPair.Target(rightHeight, rightTarget)) =>
+      leftHeight == rightHeight && leftTarget != rightTarget,
+    _ => false,
+  }
+}
+
+// §4 E1: one finality pair is (h, T) with T ≠ ⊥, and one height pair is (h, T') with T' ≠ T, including T' = ⊥.
+fn e1Slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  sameValidator(left, right) && e1Fields(left, right)
+}
+
+// §4 E2: two height pairs are (h, T) and (h, T') with T, T' ≠ ⊥ and T ≠ T'.
+fn e2Slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  sameValidator(left, right) && e2Fields(left, right)
+}
+
+// §4 slashable under either condition.
+fn slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  e1Slashable(left, right) || e2Slashable(left, right)
+}
+
+// §4 the conflicting occurrences can be in one attestation.
+fn selfSlashable(a: CombinedAttestation) -> Bool { slashable(a, a) }
+
+// §3, §7 two distinct heads from one validator in one round.
+fn sgHeadEquivocation(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
+  sameValidator(left, right) && sameRound(left, right) && left.confirmed != right.confirmed
+}
+
+// ── §4 Chain state ──
+
+// §4 the fixed height parameters K ≥ 4, D ≥ 2 and the timeout delay δ_t ≥ 0 in slots (the §4 parameters not already
+// in the environment: w(·) and q come from the electorate). The bounds are Statements premises.
+record HeightConfig { k: Nat, d: Nat, timeoutDelay: Nat } derive eq
+
+// §4 a chain state σ = (L, s, h, T_h, nj, target_participation, progress, finalize, J, h_j, F, h_F), in the document's
+// order. T_h is a block, never ⊥. The three participation arrays are held as their quorum sets.
+record ChainState {
+  // §4 L: the latest block.
+  l: Block,
+  // §4 s = L.slot, held as a field because state_transition writes it before it writes L.
+  s: Slot,
+  // §4 h: the current height.
+  h: Height,
+  // §4 T_h: the block that carried the transition into height h.
+  tH: Block,
+  // §4 nj: computed when the chain enters h, fixed until the height changes.
+  nj: Bool,
+  // §4 target_participation, as its quorum set.
+  targetParticipation: Set<ValidatorId>,
+  // §4 progress, as its quorum set.
+  progress: Set<ValidatorId>,
+  // §4 finalize, as its quorum set.
+  finalize: Set<ValidatorId>,
+  // §4 J: the latest justification on the chain.
+  j: Block,
+  // §4 h_j: the height of that justification.
+  hJ: Height,
+  // §4 F: the latest finalization on the chain.
+  f: Block,
+  // §4 h_F: the height of that finalization.
+  hF: Height
+} derive eq
+
+// §4 the initial chain state: L = T_h = J = F = B_gen, s = 0, h = 1, h_j = h_F = 0, nj = false, every array empty.
+// This is the default of the total map Σ.σ[·], so σ[B_gen] and σ[B_gen.parent] are both this state.
+fn initialChainState() -> ChainState {
+  ChainState {
+    l: Block.Genesis, s: 0, h: 1, tH: Block.Genesis, nj: false,
+    targetParticipation: Set.empty(), progress: Set.empty(), finalize: Set.empty(),
+    j: Block.Genesis, hJ: 0, f: Block.Genesis, hF: 0
+  }
+}
+
+// §4 Q_target(σ): here the array is its quorum set, so the three derived sets are identities.
+fn qTarget(st: ChainState) -> Set<ValidatorId> { st.targetParticipation }
+
+// §4 Q_prog(σ)
+fn qProg(st: ChainState) -> Set<ValidatorId> { st.progress }
+
+// §4 Q_finality(σ)
+fn qFinality(st: ChainState) -> Set<ValidatorId> { st.finalize }
+
+// §4 w(Q_target(σ)) ≥ q. Weights and q are the electorate's; Goldfish's unit counts never reach this test.
+fn targetQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qTarget(st)) }
+
+// §4 w(Q_prog(σ)) ≥ q
+fn progQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qProg(st)) }
+
+// §4 w(Q_finality(σ)) ≥ q
+fn finalityQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qFinality(st)) }
+
+// ── §4 The deterministic state transition ──
+
+// §4 the nonjustifiability rule nj ← (K | h) ∧ (h − h_F > D). Both read the already-updated h_F.
+// Height is Nat, so h − h_F truncates at zero; with D ≥ 1 a state with h < h_F gives false either way.
+fn nonjustifiable(cfg: HeightConfig, h: Height, hF: Height) -> Bool { h % cfg.k == 0 && cfg.d < h - hF }
+
+// §4 process_attestation(σ, a). The two tests are independent guarded ifs: one call can set the finality bit and a
+// height bit. A target vote sets both height bits, a timeout vote sets only progress; any other pair sets neither.
+// Equality of pairs is equality of roots: a carried target is a BlockId, so the tests compare σ.T_h.root and σ.J.root.
+// The finality guard omits σ.F ⪯ σ.J (redundant at every reachable state; the handwritten proofs show the two agree).
+fn processAttestation(st: ChainState, a: CombinedAttestation) -> ChainState {
+  let i = a.valIndex;
+  let finalityHit = st.hF < st.hJ && a.finalityPair == Some(FinalityPair { height: st.hJ, target: root(st.j) });
+  let afterFinality = if finalityHit { ChainState { finalize: st.finalize.insert(i), ..st } } else { st };
+  if a.heightPair == HeightPair.Target(st.h, root(st.tH)) {
+    ChainState {
+      targetParticipation: afterFinality.targetParticipation.insert(i),
+      progress: afterFinality.progress.insert(i),
+      ..afterFinality
+    }
+  } else if a.heightPair == HeightPair.Timeout(st.h) {
+    ChainState { progress: afterFinality.progress.insert(i), ..afterFinality }
+  } else {
+    afterFinality
+  }
+}
+
+// §4 the finality guard of process_height_events: h_j > h_F, and Q_finality is a quorum (F ⪯ J omitted, as above).
+fn finalityReady(e: ProtocolEnv, st: ChainState) -> Bool { st.hF < st.hJ && finalityQuorum(e, st) }
+
+// §4 the justification guard: ¬nj, and Q_target is a quorum. There is no "T_h is set" clause — T_h is always a block.
+fn targetReady(e: ProtocolEnv, st: ChainState) -> Bool { !st.nj && targetQuorum(e, st) }
+
+// §4 the progress guard: an exact target quorum is consumed immediately; a progress quorum that can contain timeout
+// rows is consumed only at or after T_h.slot + timeoutDelay.
+fn progReady(e: ProtocolEnv, cfg: HeightConfig, st: ChainState) -> Bool {
+  targetQuorum(e, st) || (slot(st.tH) + cfg.timeoutDelay <= st.s && progQuorum(e, st))
+}
+
+// §4 advance_height(σ): increment the height, carry the latest block into T_h, recompute nj from the new height and
+// the already-updated h_F, and clear the target and progress sets. σ.finalize is deliberately not cleared here.
+fn advanceHeight(cfg: HeightConfig, st: ChainState) -> ChainState {
+  let next = st.h + 1;
+  ChainState {
+    h: next, tH: st.l, nj: nonjustifiable(cfg, next, st.hF),
+    targetParticipation: Set.empty(), progress: Set.empty(),
+    ..st
+  }
+}
+
+// §4 process_height_events(σ): three branches in the document's order. The finality branch falls through — it mutates
+// (F, h_F) and the two height branches then read the mutated state. Justification has priority over progress.
+// The justification write (J, h_j) ← (T_h, h) uses the height being left, so the new height is h_j + 1.
+fn processHeightEvents(e: ProtocolEnv, cfg: HeightConfig, st: ChainState) -> ChainState {
+  let afterFinality = if finalityReady(e, st) { ChainState { f: st.j, hF: st.hJ, ..st } } else { st };
+  if targetReady(e, afterFinality) {
+    advanceHeight(cfg, ChainState { j: afterFinality.tH, hJ: afterFinality.h, finalize: Set.empty(), ..afterFinality })
+  } else if progReady(e, cfg, afterFinality) {
+    advanceHeight(cfg, afterFinality)
+  } else {
+    afterFinality
+  }
+}
+
+// ── Entry-bound row interpretation and block folding ──
+
+// One unified height/entry match (手書き `TimeoutBinding.targetedHeightPair`). A mismatch erases only the height field;
+// the base row still supplies the original finality component.
+fn targetedHeightPair(st: ChainState, row: NamedAttestation) -> HeightPair {
+  if matchesEntry(row.heightPair, st.h, root(st.tH)) { eraseHeightPair(row.heightPair) } else { HeightPair.Empty }
+}
+
+// The targeted binding's view of a row: the erased row with its height pair reinterpreted against the chain state
+// (手書き `TimeoutBinding.view` at `targeted`). The signer, SG projection and finality pair are preserved.
+fn targetedView(st: ChainState, row: NamedAttestation) -> CombinedAttestation {
+  CombinedAttestation { heightPair: targetedHeightPair(st, row), ..eraseAttestation(row) }
+}
+
+// The leaf adapter calls the existing processor once, on the interpreted row.
+fn processAttestationWith(st: ChainState, row: NamedAttestation) -> ChainState {
+  processAttestation(st, targetedView(st, row))
+}
+
+// Row-parametric block folding, at the targeted binding: s ← geometry.slot before the fold, L ← geometry after it.
+fn foldRows(st: ChainState, geometry: Block, rows: List<NamedAttestation>) -> ChainState {
+  let folded = rows.fold(ChainState { s: slot(geometry), ..st }, |acc, row| processAttestationWith(acc, row));
+  ChainState { l: geometry, ..folded }
+}
+
+// The folded rows followed by the height events.
+fn transitionRows(e: ProtocolEnv, cfg: HeightConfig, st: ChainState, geometry: Block, rows: List<NamedAttestation>) -> ChainState {
+  processHeightEvents(e, cfg, foldRows(st, geometry, rows))
+}
+
+// This binding uses exactly the named block's own signed rows.
+fn namedTransition(e: ProtocolEnv, cfg: HeightConfig, st: ChainState, b: NamedBlock) -> ChainState {
+  transitionRows(e, cfg, st, eraseBlock(b), namedAttestations(b))
+}
+
+// Deterministic named derivation from recursively retained full metadata: σ[B] = state_transition(σ[B.parent], B).
+fn deriveNamed(e: ProtocolEnv, cfg: HeightConfig, b: NamedBlock) -> ChainState {
+  match b {
+    NamedBlock.Genesis => initialChainState(),
+    NamedBlock.Node(p, _, _, _, _, _, _) => namedTransition(e, cfg, deriveNamed(e, cfg, p), b),
+  }
+}

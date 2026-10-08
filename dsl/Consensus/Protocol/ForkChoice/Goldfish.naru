@@ -1,11 +1,18 @@
-// verified-consensus の移植: DecoupledConsensusModel/Protocol/ForkChoice/Goldfish.lean の前半
+// verified-consensus の移植: DecoupledConsensusModel/Protocol/ForkChoice/Goldfish.lean
 // (§2.4 Goldfish fork choice の pure core、§2.6 vote-cleanliness、§3.1 SGVote、§3.2 SGStore、§3.3 latest_window、
-// §5 HeightId、§5.1 finalized_descendants)。手書きの `raw_equivocators` / `raw_participants` / `raw_voters_count` /
-// `voters_count` / `targets_under` / `raw_supporters` / `raw_goldfish_score` / `goldfish_score` / `outranks` / `is_best_in` /
-// `argmax?` / `ghost_children` / `ghost_step` / `ghost_walk` / `ghost` / `no_second_vote_in` / `SGVote` / `SGStore` /
-// `latest_window` / `HeightId` / `finalized_descendants` に対応する。
-// 後半(`FGStore` / `viable` / `viable_tree` / `get_fg_root` / `get_filtered_block_tree(_from)` / `goldfish_eligible` /
-// `goldfish_fork_choice`)は `ChainState`(`σ : Block → ChainState`)を要するので、ChainState の移植と同時に書く。
+// §5 HeightId、§5.1 FGStore と derived sets、§5.2 fork choice)。手書きの `raw_equivocators` / `raw_participants` /
+// `raw_voters_count` / `voters_count` / `targets_under` / `raw_supporters` / `raw_goldfish_score` / `goldfish_score` /
+// `outranks` / `is_best_in` / `argmax?` / `ghost_children` / `ghost_step` / `ghost_walk` / `ghost` / `no_second_vote_in` /
+// `SGVote` / `SGStore` / `latest_window` / `HeightId` / `finalized_descendants` / `FGStore` / `viable` / `viable_tree` /
+// `get_fg_root` / `get_filtered_block_tree_from` / `get_filtered_block_tree` / `goldfish_eligible` / `goldfish_fork_choice`
+// に対応する(`HeightId.rank_injective` は定理なので Model には無い)。
+//
+// - `Σ.σ : Block → ChainState`(initial が既定の全域写像)は `Table<Block, ChainState>`(型別名 `ChainStates`)で持ち、
+//   読みは `chainStateOf(sigma, b)` = `getOr(b, initialChainState())`。`viable` / `goldfish_eligible` は手書きどおり
+//   σ を store ではなく引数に取る(§6 / §7 が自分の欄を同じ規則に渡す)。
+// - `FGStore extends SGStore` も欄の複製 + 射影 fn(`fgToSG`。手書きの親の射影 `toSG`)。欄 `σ` は `sigma`。
+// - `goldfish_fork_choice` は `ghost` に score / gate を lambda で渡す(手書きの部分適用に相当)。手書きの `T`(祖先関係を
+//   解決する処理済み tree)と `tree`(walk が降りる tree)は naru でも別の引数(`tree` / `walkTree`)。
 //
 // - `Finset.univ.filter (fun v => equivocates votes v)` は有限型 V の全体を回す。naru の `ValidatorId` は有限型ではないので、
 //   votes に現れる validator の集合 `voters(votes)` を回す。現れない validator は `equivocates` / `participates` とも
@@ -25,6 +32,7 @@ import Consensus.Objects.Blocks
 import Consensus.Objects.Parameters
 import Consensus.Protocol.Schedule
 import Consensus.Protocol.StoreBase
+import Consensus.Protocol.ChainState
 
 // ── §2.4 Represented validators and score ──
 
@@ -165,3 +173,96 @@ record HeightId { height: Height, id: BlockId } derive eq, order
 
 // §5.1 the descendants of the finalized block F in T (the inline `F ⪯ B` filter of the document).
 fn finalizedDescendants(f: Block, tree: Set<Block>) -> Set<Block> { tree.filter(|b| preceq(f, b)) }
+
+// ── §5.1 The FG store ──
+
+// §5.1 Σ.σ[·]: the post-states of processed blocks, as a map with the initial chain state as the default
+// (手書きの全域写像 `Block → ChainState`). Written by on_block, read through `chainStateOf`.
+type ChainStates = Table<Block, ChainState>
+
+// §5.1 Σ.σ[B]: the initial chain state for a block never written (σ[B_gen] and σ[B_gen.parent] are both this state).
+fn chainStateOf(sigma: ChainStates, b: Block) -> ChainState { sigma.getOr(b, initialChainState()) }
+
+// §5.1 the §5 store: §3's store plus the block state map and the four finality fields Σ.σ[·], (Σ.F, Σ.J, Σ.h_j, Σ.h_max).
+// Σ.T is never pruned; the live tree is derived below the finalized block.
+record FGStore {
+  t: Time,
+  s: Slot,
+  tree: Set<Block>,
+  timestampBlock: Table<Block, Stamp>,
+  timestampVote: Table<GoldfishVote, Stamp>,
+  gfVotes: Table<Slot, List<GoldfishVote>>,
+  liveConfirmed: Block,
+  latestConfirmed: Block,
+  sgVotes: Table<Round, Set<SGVote>>,
+  timestampSgVote: Table<SGVote, Stamp>,
+  // §5.1 Σ.σ[B]: the post-state of B, written by on_block. Total, with the initial chain state as the default.
+  sigma: ChainStates,
+  // §5.1 Σ.F: the store's finalized block.
+  f: Block,
+  // §5.1 Σ.J: the store's justified block.
+  j: Block,
+  // §5.1 Σ.h_j: its height.
+  hJ: Height,
+  // §5.1 Σ.h_max: the running maximum state height. Monotone: the field only grows.
+  hMax: Height
+} derive eq
+
+// The §3 projection of a §5 store (手書きの `extends toSG`).
+fn fgToSG(st: FGStore) -> SGStore {
+  SGStore {
+    t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,
+    gfVotes: st.gfVotes, liveConfirmed: st.liveConfirmed, latestConfirmed: st.latestConfirmed,
+    sgVotes: st.sgVotes, timestampSgVote: st.timestampSgVote
+  }
+}
+
+// ── §5.2 Derived sets and the fork-choice root ──
+
+// §5.2 the viability witness: a processed descendant W of b (in `tree`) whose state height is at most one below the
+// current maximum. Height is Nat, so h_max − 1 truncates at zero, which does not change the answer.
+fn viable(sigma: ChainStates, hMax: Height, tree: Set<Block>, b: Block) -> Bool {
+  tree.any(|w| preceq(b, w) && hMax - 1 <= chainStateOf(sigma, w).h)
+}
+
+// §5.2 viable_tree(Σ) = {B ∈ Σ.T : Σ.F ⪯ B, ∃ W ∈ Σ.T, B ⪯ W, σ[W].h ≥ h_max − 1}: the finalized-descendants
+// filter, then the viability test with its witness over the processed tree. Derived at every use.
+fn viableTree(sigma: ChainStates, f: Block, hMax: Height, tree: Set<Block>) -> Set<Block> {
+  finalizedDescendants(f, tree).filter(|b| viable(sigma, hMax, tree, b))
+}
+
+// §5.2 get_fg_root(Σ): the block the walk starts from — Σ.J when the store's maximum state height is exactly one
+// above the justification, Σ.F otherwise. Σ.J need not be viable, so the anchor can sit outside the walked tree.
+fn getFgRoot(st: FGStore) -> Block { if st.hMax == st.hJ + 1 { st.j } else { st.f } }
+
+// §5.2 get_filtered_block_tree_from(Σ, blocks): recompute viability inside an explicit processed-block view, then keep
+// the viable blocks below the full-store fork-choice root (Σ.σ, Σ.F, Σ.h_max and the root keep their full-store values).
+fn getFilteredBlockTreeFrom(st: FGStore, blocks: Set<Block>) -> Set<Block> {
+  let fgRoot = getFgRoot(st);
+  viableTree(st.sigma, st.f, st.hMax, blocks).filter(|b| preceq(fgRoot, b))
+}
+
+// §5.2 get_filtered_block_tree(Σ): the ordinary full processed-tree specialization.
+fn getFilteredBlockTree(st: FGStore) -> Set<Block> { getFilteredBlockTreeFrom(st, st.tree) }
+
+// ── §5.2 Fork choice ──
+
+// §5.2 goldfish_eligible(Σ, votes, s, B), the final version: §2's two clauses plus the height clause, keyed on the block
+// the walk stands on ("a child of a block whose state height is below Σ.h_max − 1 is eligible without a majority").
+// The majority gate therefore applies exactly when the current block is inside the band {h_max − 1, h_max}.
+// `parent` is the total accessor (genesis is its own parent); `cur` is Σ.s.
+fn goldfishEligible(e: ProtocolEnv, sigma: ChainStates, hMax: Height, tree: Set<Block>, cur: Slot,
+                    votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Bool {
+  chainStateOf(sigma, parent(b)).h < hMax - 1
+    || votersCount(e, votes, s) < 2 * goldfishScore(e, tree, votes, supportVotes, s, b)
+    || slot(b) == cur
+}
+
+// §2.4 goldfish_fork_choice(Σ, anchor, tree, votes, s) with the §5 gate: the body is §2's, only the gate differs.
+// `tree` resolves ancestry (Σ.T); `walkTree` is the tree the walk descends (the filtered candidate tree).
+fn goldfishForkChoice(e: ProtocolEnv, sigma: ChainStates, hMax: Height, tree: Set<Block>, cur: Slot, anchor: Block,
+                      walkTree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot) -> Block {
+  ghost(anchor, walkTree,
+        |b| goldfishScore(e, tree, votes, supportVotes, s, b),
+        |b| goldfishEligible(e, sigma, hMax, tree, cur, votes, supportVotes, s, b))
+}
