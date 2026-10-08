@@ -5,11 +5,15 @@
 // - `readsAt(s, rho, v, t)`: 時刻 `t` までの event を畳み込んだ後の node `v` の読み(手書き `Run.storeAt` の読み)。
 // - `heldAt(s, rho, v, t)`: 時刻 `t` までに node `v` が body を持つ block の root(昇順)。配達が届いたことを見る。
 // - `deliveries(rho)`: run の配達 event の数(手書き `Run.objects`。自分が emit した object は数えない)。
+// - `votesHeldAt(s, rho, v, k, t)`: 時刻 `t` までに node `v` が slot `k` の pool に持つ Goldfish vote の数(手書き `(st.pool k).card`)。
+// - `equivocatorsAt(s, rho, v, k, t)`: その pool で equivocate している validator(昇順。手書き `raw_equivocators (st.pool k)`)。
 module Scenarios.Trace
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
 import Consensus.Objects.Blocks
+import Consensus.Protocol.Store
+import Consensus.Protocol.ForkChoice.Goldfish
 import Consensus.Protocol.Handlers
 import Consensus.Protocol.Duties.Proposals
 import Consensus.Execution.Setup
@@ -60,3 +64,14 @@ observer heldAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> List<BlockI
 
 // The number of delivery events of the run (手書き `Run.objects`: payloads of deliveries only).
 observer deliveries(rho: NamedRun) -> Nat { runObjects(rho).size() }
+
+// The number of slot-`k` Goldfish votes node `v` holds after every event up to and including time `t` (手書き `(st.pool k).card`).
+observer votesHeldAt(s: Setup, rho: NamedRun, v: ValidatorId, k: Slot, t: Time) -> Nat {
+  storePool(storeAt(s, rho, v, t).core, k).size()
+}
+
+// The validators that equivocate in node `v`'s slot-`k` pool after every event up to and including time `t`, ascending
+// (手書き `raw_equivocators (st.pool k)`: two distinct votes of theirs are held).
+observer equivocatorsAt(s: Setup, rho: NamedRun, v: ValidatorId, k: Slot, t: Time) -> List<ValidatorId> {
+  sort(rawEquivocators(storePool(storeAt(s, rho, v, t).core, k)), by = |x| x)
+}

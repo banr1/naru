@@ -665,3 +665,31 @@ def yWorlds := worlds wS yRho
 #eval (readSt (Execution.Run.storeAt wS yRho 1 4), objsOf (Generic.Run.emittedAt (Execution.spec wS) yRho 5 1 6 : List (Execution.NamedObject (Fin 2))))
 def yCr := Execution.NamedActionReads.confirmationReadAt wS yRho 1 6
 #eval (readSt yCr.st, yCr.cache.round)
+
+-- equivocation run (周回 20): 生成側と同じ順
+def qE : Env (Fin 2) :=
+  { Δ := 1, Δ_pos := by decide, t_GST := 0, t_GST_nonneg := by decide, proposer := fun _ => 0, committees := ⟨fun _ => {0, 1}⟩,
+    electorate := { weight := fun v => if v = 0 then 2 else 1, weight_pos := by decide } }
+def qS : Execution.Setup (Fin 2) :=
+  { E := qE, hc := wHc, cfg := wCfg, node := wNode, node_val_index := by intro v; rfl, timeout_rounds := by decide,
+    committee_nonempty := by intro s; change ({0, 1} : Finset (Fin 2)).Nonempty; exact Finset.insert_nonempty 0 {1}, outage_window := by decide }
+def qV2 : GoldfishVote (Fin 2) := ⟨1, 1, ⟨2⟩⟩
+def qV0 : GoldfishVote (Fin 2) := ⟨1, 1, ⟨0⟩⟩
+def qEvents (votes : List (GoldfishVote (Fin 2))) : List (Execution.NamedEvent (Fin 2)) :=
+  (List.range 15).flatMap (fun (n : Nat) =>
+    [(.tick 0 (n : Time) : Execution.NamedEvent (Fin 2))] ++ (if n == 5 then votes.map (fun u => (.deliver 0 (.gfVote u) 5 : Execution.NamedEvent (Fin 2))) else []))
+def qRho : Execution.NamedRun (Fin 2) := { honest := {0}, horizon := 14, events := qEvents [qV2, qV0] }
+def qRho1 : Execution.NamedRun (Fin 2) := { honest := {0}, horizon := 14, events := qEvents [qV2] }
+def qIdxA (rho : Execution.NamedRun (Fin 2)) (t : Nat) : Nat := (rho.events.filter (fun ev => decide (Generic.Event.time ev ≤ (t : Time)))).length
+def qIdxB (rho : Execution.NamedRun (Fin 2)) (t : Nat) : Nat := (rho.events.filter (fun ev => decide (Generic.Event.time ev < (t : Time)))).length
+def qLine (ws : Array (Execution.NamedWorld (Fin 2))) (rho : Execution.NamedRun (Fin 2)) (t : Nat) : String :=
+  let st := (ws.getD (qIdxA rho t) Execution.NamedWorld.init 0).st
+  let pool := st.core.pool 1
+  let out := emitsOf qS (ws.getD (qIdxB rho t) Execution.NamedWorld.init) 0 (t : Time)
+  toString t ++ " " ++ readSt st ++ " " ++ toString (pool.card, Protocol.equivocates pool 0, Protocol.equivocates pool 1) ++ " " ++ objsOf out
+def qW := worlds qS qRho
+def qW1 := worlds qS qRho1
+#eval do for t in List.range 15 do IO.println (qLine qW qRho t)
+#eval (qRho.events.length, (Execution.NamedRun.objects qRho).length, readSt (Execution.Run.storeAt qS qRho 0 10) == readOf (qW.getD (qIdxA qRho 10) Execution.NamedWorld.init) 0)
+#eval do for t in List.range 15 do IO.println (qLine qW1 qRho1 t)
+#eval (qRho1.events.length, (Execution.NamedRun.objects qRho1).length, readSt (Execution.Run.storeAt qS qRho1 0 10) == readOf (qW1.getD (qIdxA qRho1 10) Execution.NamedWorld.init) 0)

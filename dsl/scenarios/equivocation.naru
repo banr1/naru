@@ -1,0 +1,72 @@
+// naru の実行 fixture(C10、equivocation): WeakGenesis の環境で slot committee だけを {v0, v1} にし、Byzantine な v1(honest でなく、
+// tick もしない)が slot 1 の矛盾する 2 票(head が root 2 の票と root 0 = genesis の票)を t = 5(node 0 自身の投票 tick の後)に
+// node 0 へ配達する run `twoFaced` と、対照として v1 が root 2 への 1 票だけを配達する run `oneVote` を同じ scenario に並べる。
+// `lake exe naru simulate dsl/scenarios/equivocation.naru`。observer は Scenarios.Trace(trace.naru)。
+//
+// - 環境は basic.naru(WeakGenesis)と同じ: Δ = 1、GST 0、proposer 0、重み 2 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、new_root(s) = s + 1、
+//   awake ⇔ v = 0。違いは committee = {v0, v1}(v1 の票が committee 検査 `onGoldfishVoteChecked` を通る)と、t = 5 の配達だけ。
+//   node 0 の tick は t = 0 … 14(15 tick。t = 14 = slot 3 の support cutoff で slot 2 の confirmation が走る)。
+// - 読みで見えること(期待値は tests/golden/protocol_generated.lean の equivocation 節。周回 20 で手書き Model と一致):
+//   `twoFaced` では node 0 の slot-1 pool が t = 5 で 3 票(自分の票 + v1 の 2 票)になり equivocator は [v1]。slot 1 の confirmation
+//   (t = 10 = slot 2 の support cutoff)では、支持票 `supportVotes` が `noSecondVoteIn` で v1 の 2 票を外して v0 の 1 票だけになる一方、
+//   分母 `lateCount` は参加者 2 人(v0, v1)を数えるので 2 < 2 × 1 が成り立たず、root 2 は eligible でない → confirmed は basic の
+//   root 2 ではなく 0 のまま。slot 2 の票は v0 だけなので t = 14 の confirmation で root 3 まで進む(equivocation の影響は slot 1 に限る)。
+//   `oneVote` では pool は 2 票、equivocator は無く、支持 2 / 参加者 2 で 2 < 4 → t = 10 に confirmed 2(basic と同じ)。
+module Scenarios.Equivocation
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ChainState
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+import Consensus.Execution.Run
+import Scenarios.Trace
+
+// The events of time `t`: node `v0`'s tick, then (at `deliverAt` only) the given votes delivered to it, in list order.
+// Ticks precede deliveries at the same time (Run.naru の event 順序).
+fn deliveredVotesStep(v0: ValidatorId, votes: List<GoldfishVote>, deliverAt: Time, t: Time) -> List<NamedEvent> {
+  let own = [NamedEvent.Tick(v0, t)];
+  if t == deliverAt { own.append(votes.map(|u| NamedEvent.Deliver(v0, NamedObject.GfVote(u), t))) } else { own }
+}
+
+// Node `v0` ticks at t = 0 … n − 1 and receives `votes` at `deliverAt`.
+fn deliveredVotesEvents(v0: ValidatorId, votes: List<GoldfishVote>, deliverAt: Time, n: Nat) -> List<NamedEvent> {
+  List.range(n).flatMap(|i| deliveredVotesStep(v0, votes, deliverAt, i.toInt()))
+}
+
+scenario equivocation {
+  input proposer(slot) = ValidatorId { value: 0 };
+  input committee(slot) = Set.singleton(ValidatorId { value: 0 }).insert(ValidatorId { value: 1 });
+  input newRoot(node, slot) = BlockId { value: slot + 1 };
+  input awake(node, round) = node.value == 0;
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
+  let s = Setup {
+    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  };
+  // v1's two distinct slot-1 votes: for node 0's slot-1 block (root 2) and for genesis (root 0).
+  let forBlock2 = GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 2 } };
+  let forGenesis = GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 0 } };
+  let twoFaced = NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [forBlock2, forGenesis], 5, 15) };
+  let oneVote = NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [forBlock2], 5, 15) };
+  observe deliveries(twoFaced);
+  observe votesHeldAt(s, twoFaced, v0, 1, 5);
+  observe equivocatorsAt(s, twoFaced, v0, 1, 5);
+  observe trace(s, twoFaced, v0);
+  observe readsAt(s, twoFaced, v0, 10);
+  observe readsAt(s, twoFaced, v0, 14);
+  observe deliveries(oneVote);
+  observe votesHeldAt(s, oneVote, v0, 1, 5);
+  observe equivocatorsAt(s, oneVote, v0, 1, 5);
+  observe trace(s, oneVote, v0);
+  observe readsAt(s, oneVote, v0, 10);
+  observe readsAt(s, oneVote, v0, 14);
+}

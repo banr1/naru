@@ -698,3 +698,32 @@ def yWorlds := worlds proposer wAwake wS yRho
 #eval (readSt (Execution.Run.storeAt committee proposer wAwake newRoot wS yRho ⟨1⟩ 4), objsOf (Execution.Run.emittedAt committee proposer wAwake newRoot wS yRho 5 ⟨1⟩ 6))
 def yCr := Execution.Run.confirmationReadAt committee proposer wAwake newRoot wS yRho ⟨1⟩ 6
 #eval (readSt yCr.st, yCr.cache.round)
+
+-- equivocation run (周回 20, dsl/scenarios/equivocation.naru): WeakGenesis with committee {0, 1}; node 0 ticks at t = 0 … 14 and at t = 5
+-- (after its own vote tick) receives validator 1's two conflicting slot-1 votes (heads 2 and 0). Validator 1 is Byzantine (never ticks).
+-- The contrast run delivers the head-2 vote only. Per time: node 0's reads after every event of that time, then (|pool 1|, 0 equivocates, 1 equivocates).
+def qCommittee : Nat → NaruStd.Set Identifiers.ValidatorId := fun _ => NaruStd.Set.of [⟨0⟩, ⟨1⟩]
+def qV2 : Blocks.GoldfishVote := ⟨⟨1⟩, 1, ⟨2⟩⟩
+def qV0 : Blocks.GoldfishVote := ⟨⟨1⟩, 1, ⟨0⟩⟩
+def qEvents (votes : List Blocks.GoldfishVote) : List Execution.Run.NamedEvent :=
+  (List.range 15).flatMap (fun (n : Nat) =>
+    [Execution.Run.NamedEvent.Tick ⟨0⟩ (n : Int)] ++ (if n == 5 then votes.map (fun u => Execution.Run.NamedEvent.Deliver ⟨0⟩ (.GfVote u) 5) else []))
+def qRho : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨0⟩], 14, qEvents [qV2, qV0]⟩
+def qRho1 : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨0⟩], 14, qEvents [qV2]⟩
+def qWorlds (rho : Execution.Run.NamedRun) : Array Execution.Run.NamedWorld :=
+  (rho.events.scanl (fun w ev => Execution.Run.worldStep qCommittee proposer wAwake newRoot wS w ev) Execution.Run.worldInit).toArray
+def qIdxA (rho : Execution.Run.NamedRun) (t : Nat) : Nat := (rho.events.filter (fun ev => Execution.Run.eventTime ev <= (t : Int))).length
+def qIdxB (rho : Execution.Run.NamedRun) (t : Nat) : Nat := (rho.events.filter (fun ev => Execution.Run.eventTime ev < (t : Int))).length
+-- per time: node 0's reads after every event of time t, (|pool 1|, 0 equivocates, 1 equivocates), and the objects node 0's tick at t emits (from the world before t)
+def qLine (ws : Array Execution.Run.NamedWorld) (rho : Execution.Run.NamedRun) (t : Nat) : String :=
+  let st := (Execution.Run.worldAt (ws.getD (qIdxA rho t) Execution.Run.worldInit) ⟨0⟩).st
+  let pool := Store.storePool st.core 1
+  let pre := Execution.Run.worldAt (ws.getD (qIdxB rho t) Execution.Run.worldInit) ⟨0⟩
+  let out := match Execution.Node.nodeTick qCommittee proposer wAwake newRoot wS ⟨0⟩ pre (t : Int) with | (_, o) => o
+  toString t ++ " " ++ readSt st ++ " " ++ toString (pool.size, Schedule.equivocates pool ⟨0⟩, Schedule.equivocates pool ⟨1⟩) ++ " " ++ objsOf out
+def qW := qWorlds qRho
+def qW1 := qWorlds qRho1
+#eval do for t in List.range 15 do IO.println (qLine qW qRho t)
+#eval (qRho.events.length, (Execution.Run.runObjects qRho).length, readSt (Execution.Run.storeAt qCommittee proposer wAwake newRoot wS qRho ⟨0⟩ 10) == readOf (qW.getD (qIdxA qRho 10) Execution.Run.worldInit) ⟨0⟩)   -- (17, 2, true)
+#eval do for t in List.range 15 do IO.println (qLine qW1 qRho1 t)
+#eval (qRho1.events.length, (Execution.Run.runObjects qRho1).length, readSt (Execution.Run.storeAt qCommittee proposer wAwake newRoot wS qRho1 ⟨0⟩ 10) == readOf (qW1.getD (qIdxA qRho1 10) Execution.Run.worldInit) ⟨0⟩)   -- (16, 1, true)

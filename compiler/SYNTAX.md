@@ -222,7 +222,9 @@ scenario basic {
 - まだ無いもの: `protocol` 宣言の意味(現状は中の宣言を平坦化するだけ。Node.naru の fn 群を `ProtocolSpec` の hook として束ねる
   のは stdlib の generic な `Event` / `Run` と型引数が入ってから)、observer の表示を naru 風にする `derive repr`、scenario の中の
   配達(deliver)の生成子(いまは scenario のファイルの fn が event 列を作る: `dsl/scenarios/two_nodes.naru` の `twoNodeEvents` は各 t で
-  node 0 の `nodeTick` の出力を `NamedEvent.Deliver(v1, o, t)` に並べる)。scenario 共通の observer は `dsl/scenarios/trace.naru`。
+  node 0 の `nodeTick` の出力を `NamedEvent.Deliver(v1, o, t)` に並べ、`dsl/scenarios/equivocation.naru` の `deliveredVotesEvents` は
+  Byzantine な validator の票(注入 object)を決めた時刻に配達する)。scenario 共通の observer は `dsl/scenarios/trace.naru`。
+  1 つの scenario に複数の run(`let` で束ねた `NamedRun`)を並べ、同じ observer を両方に `observe` すれば対照実験になる(`equivocation.naru`)。
 
 ## 診断
 
