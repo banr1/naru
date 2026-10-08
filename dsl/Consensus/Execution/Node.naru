@@ -1,0 +1,113 @@
+// verified-consensus の移植: DecoupledConsensusModel/Execution/Node.lean(execution — the node profile, its receipt for one
+// event, and the node state transition)。手書きの `NamedProfile.tick` / `NamedReceipt`(`wellFormed` `depsPresent` `processed`
+// `excludes` `process`)/ `NamedNodeState` / `NamedNode`(`initial` `tick` `process`)に対応する。
+//
+// - `NamedProfile.gradeContract cache = frameContract cache` は naru では `c: Cache` そのもの(Grades.naru の冒頭)。
+// - `NamedReceipt.wellFormed S o` は `S.E.committee` しか読まないので `s` を取らず `input committee` を読む。
+// - `Execution/Instance.lean` の `spec`(`Generic.ProtocolSpec` の instance: `State` / `Object` / `init` / `tick` / `process` /
+//   `author` / `wellFormed` / `depsPresent` / `processed` / `excludes` と Prop の `handles` / `carries`)は、これらの fn を束ねる
+//   naru の `protocol` 宣言に対応する。計算可能な hook はここに揃っており、`protocol` 宣言と stdlib の Run への結び付けは
+//   C7 の経路(scenario / observer / simulate)を決める周回で書く。`handles` / `carries` は Prop なので Statements。
+// - 改名: `NamedNode.initial` / `tick` / `process` → `initialNode` / `nodeTick` / `nodeProcess`(`tick` は Protocol.Tick の名前)、
+//   `NamedReceipt.process` → `receiptProcess`。
+module Consensus.Execution.Node
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ValidatorClient
+import Consensus.Protocol.Store
+import Consensus.Protocol.Handlers
+import Consensus.Protocol.Tick
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+
+// ── NamedProfile: closed named behavior with the supplied Setup unchanged ──
+
+// Call the existing named tick once with the original environment, healing config, height config and node identity.
+// Preserve its full returned payloads.
+fn profileTick(s: Setup, c: Cache, v: ValidatorId, st: NamedStore, rec: NamedRecord, t: Time)
+    -> (NamedStore, NamedRecord, List<NamedObject>) {
+  tick(c, s.e, s.hc, s.cfg, setupNode(v), st, rec, t)
+}
+
+// ── NamedReceipt: full named ingress checks and closed local dispatch ──
+
+// Apply the existing three wire-shape checks to the full named object (the wire-shape test uses only the block projection).
+fn wellFormed(o: NamedObject) -> Bool {
+  match o {
+    NamedObject.Block(b) => {
+      let geometry = eraseBlock(b);
+      carriedVotesWellFormed(geometry) && carriedSupportWellFormed(geometry)
+        && gfVotes(geometry).all(|u| committee(u.slot).contains(u.valIndex))
+    },
+    NamedObject.GfVote(u) => voteWellFormed(u),
+    NamedObject.Attest(_) => true,
+  }
+}
+
+// Blocks require their exact named parent. Vote resolution is a later read.
+fn depsPresent(st: NamedStore, o: NamedObject) -> Bool {
+  match o {
+    NamedObject.Block(b) => st.bodies.contains(namedParent(b)),
+    NamedObject.GfVote(_) => true,
+    NamedObject.Attest(_) => true,
+  }
+}
+
+// Mark the full admitted object, including the original named row.
+fn processed(st: NamedStore, o: NamedObject) -> Bool {
+  match o {
+    NamedObject.Block(b) => st.bodies.contains(b),
+    NamedObject.GfVote(u) => storePool(st.core, u.slot).contains(u),
+    NamedObject.Attest(a) => st.sgRows.getOr(a.round, []).contains(a),
+  }
+}
+
+// A block that conflicts with the node's finalized block (neither is an ancestor of the other) is excluded for good, since
+// finality only extends; votes and attestations are never excluded.
+fn excludes(st: NamedStore, o: NamedObject) -> Bool {
+  match o {
+    NamedObject.Block(b) => !compatible(st.core.f, eraseBlock(b)),
+    NamedObject.GfVote(_) => false,
+    NamedObject.Attest(_) => false,
+  }
+}
+
+// The block branch admits carried rows (`AlsoCarried`) and forwards s.cfg unchanged.
+fn receiptProcess(s: Setup, st: NamedStore, o: NamedObject) -> NamedStore {
+  match o {
+    NamedObject.Block(b) => onBlockWith(CarriedAdmission.AlsoCarried, s.e, s.hc, s.cfg, st, b),
+    NamedObject.GfVote(u) => NamedStore { core: onGoldfishVoteChecked(st.core, u), ..st },
+    NamedObject.Attest(a) => admitRow(s.hc, st, a),
+  }
+}
+
+// ── NamedNode: one named node with the existing phase cache ──
+
+// The node state: the named store, the signing record (手書き `record`。`record` は naru の予約語、`rec` は Lean の生成名なので
+// `signing`), and the phase cache.
+record NamedNodeState { st: NamedStore, signing: NamedRecord, cache: Cache } derive eq
+
+fn initialNode() -> NamedNodeState {
+  NamedNodeState { st: initialNamedStore(), signing: initialNamedRecord(), cache: initialCache() }
+}
+
+// Complete phases from the incoming store, then call the closed tick once; the returned finalized root supplies the final
+// cache clip.
+fn nodeTick(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> (NamedNodeState, List<NamedObject>) {
+  let c = onPhaseTick(s.e, s.hc, storeToHealing(n.st.core), t, n.cache);
+  match profileTick(s, c, v, n.st, n.signing, t) {
+    (st, rec, out) => (NamedNodeState { st: st, signing: rec, cache: clipCache(st.core.f, c) }, out),
+  }
+}
+
+// A receipt retains the signing record and clips the existing cache.
+fn nodeProcess(s: Setup, n: NamedNodeState, o: NamedObject) -> NamedNodeState {
+  let st = receiptProcess(s, n.st, o);
+  NamedNodeState { st: st, signing: n.signing, cache: clipCache(st.core.f, n.cache) }
+}

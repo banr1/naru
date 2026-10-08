@@ -2,7 +2,7 @@
 -- naru-compiler: 0.1.0 sha256:c255d74013b3c92980883acd98b37c1542e0524ef97e66aa584708cc8727f64b
 -- naru-stdlib: 0.1.0 sha256:d1f2508d2ada0c5b9058846f6c3bc2d528431bd4a7f9debbbdb5804e6ee0e42c
 -- naru-source: dsl/Consensus/Protocol/StoreBase.naru sha256:94ebc3084b5547a6bffd79c95f087b198d353cf4ec3a02d96dc7c830a65600f4
--- naru-unit: sha256:ce3857224664c5701f66c387bcca44ec2a77e5d2f686099df8739a97848623e2
+-- naru-unit: sha256:b8d7113df82613d71b9bc2fd88820c4e1a91927d0605c48f7df9b68d9743ed5d
 import NaruStd
 import Model.Consensus.Objects.Blocks
 import Model.Consensus.Objects.Time

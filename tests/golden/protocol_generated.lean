@@ -4,7 +4,7 @@
 -- 集合・Occurrence は期待値との `==` で Bool に落とし、root は `.value` で出して、表現(Repr)の違いに依らず比較する。
 -- 実行: lake build Model && lake env lean tests/golden/protocol_generated.lean(リポジトリのルートで)
 import Model
-open Model.Consensus.Objects Model.Consensus.Protocol Model.Consensus.Protocol.ForkChoice
+open Model.Consensus Model.Consensus.Objects Model.Consensus.Protocol Model.Consensus.Protocol.ForkChoice
 
 def tblOf {κ ν : Type} [Ord κ] (xs : List (κ × ν)) : NaruStd.Table κ ν :=
   xs.foldl (fun t e => t.insert e.1 e.2) NaruStd.Table.empty
@@ -545,3 +545,156 @@ def tk60 := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨0⟩�
 def tk60s := Tick.tick committee proposer (fun _ _ => false) newRoot c0 env hc cfg ⟨⟨0⟩⟩ tk52.1 tk52.2.1 60
 def tk40o := Tick.tick committee proposer awake newRoot c0 env hc cfg ⟨⟨1⟩⟩ tk36.1 tk36.2.1 40
 #eval (tk60s.2.2.isEmpty, (tk60s.1.sgRows.getOr 2 []).isEmpty, tk40o.2.2.isEmpty, tk40o.1.bodies.size)   -- (true, true, true, 5): asleep, and not the proposer
+
+-- Execution (周回 10): Setup / Node / Run — the Witnesses' runs folded by the generated model.
+-- WeakGenesis (Fin 2): Δ = 1, GST 0, proposer 0, committee {0}, weights 2 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6, new_root s = s + 1,
+-- awake ⇔ v = 0; 31 ticks of node 0 at t = 0 … 30. The Witnesses' docstring: proposals at 4, 8, …, 28 (roots 2 … 8), votes at 5, 9, …, 29,
+-- attestations at 6, 18, 30.
+-- The worlds after every event prefix come from one scan of the model's step (the handwritten side costs ~0.6 s per tick in the
+-- interpreter, so the folds stateBefore / readAt / storeAt / emittedAt / finalWorld are checked against the scan at sample points only).
+def wEl : Weights.Electorate := ⟨tblOf [(⟨0⟩, 2), (⟨1⟩, 1)]⟩
+def wEnv : Parameters.ProtocolEnv := ⟨1, 0, wEl⟩
+def wHc : Grades.HealConfig := ⟨3, 2⟩
+def wCfg : ChainState.HeightConfig := ⟨4, 2, 6⟩
+def wS : Execution.Setup.Setup := ⟨wEnv, wHc, wCfg⟩
+def wAwake : Identifiers.ValidatorId → Nat → Bool := fun v _ => v.value == 0
+def wEvents : List Execution.Run.NamedEvent := (List.range 31).map (fun (n : Nat) => .Tick ⟨0⟩ (n : Int))
+def wRho : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨0⟩], 30, wEvents⟩
+#eval ((Execution.Setup.setupNode ⟨1⟩).valIndex.value, Execution.Setup.setupActionTime wS 0, Execution.Setup.setupActionTime wS 1, Execution.Setup.setupActionTime wS 2)   -- (1, 6, 18, 30)
+def evT : Execution.Run.NamedEvent := .Tick ⟨0⟩ 7
+def evD : Execution.Run.NamedEvent := .Deliver ⟨1⟩ (.GfVote vA) 7
+#eval (Execution.Run.eventTime evT, (Execution.Run.eventNode evD).value, (Execution.Run.eventObject? evT).isNone, (Execution.Run.eventObject? evD).map objKind,
+       Execution.Run.eventPhase evT, Execution.Run.eventPhase evD, Execution.Run.eventKey evD, Ord.compare (Execution.Run.eventKey evT) (Execution.Run.eventKey evD) == .lt,
+       Ord.compare (Execution.Run.eventKey (.Deliver ⟨1⟩ (.GfVote vA) 6)) (Execution.Run.eventKey evT) == .lt)   -- (7, 1, true, some 1, 0, 1, (7, 1), true, true): ticks precede deliveries at the same time
+-- the world after each event prefix (index j = events folded), one node's reads of it
+-- (t, s, |T|, |bodies|, F, J, h_max, h_j, stable, confirmed, live_confirmed, |gf_votes[s]|, rows in rounds 0‥2), and the objects a tick of it emits
+def worlds (pr : Nat → Identifiers.ValidatorId) (aw : Identifiers.ValidatorId → Nat → Bool) (S : Execution.Setup.Setup) (rho : Execution.Run.NamedRun) : Array Execution.Run.NamedWorld :=
+  (rho.events.scanl (fun w ev => Execution.Run.worldStep committee pr aw newRoot S w ev) Execution.Run.worldInit).toArray
+def readSt (st : Handlers.NamedStore) : String :=
+  toString (st.core.t, st.core.s, st.core.tree.size, st.bodies.size, rootOf st.core.f, rootOf st.core.j, st.core.hMax, st.core.hJ,
+            rootOf (Handlers.getStable st.core), rootOf (Handlers.getConfirmed st.core), rootOf st.core.liveConfirmed,
+            (st.core.gfVotes.getOr st.core.s []).length, (st.sgRows.getOr 0 []).length + (st.sgRows.getOr 1 []).length + (st.sgRows.getOr 2 []).length)
+def readOf (w : Execution.Run.NamedWorld) (v : Identifiers.ValidatorId) : String := readSt (Execution.Run.worldAt w v).st
+def emitsOf (pr : Nat → Identifiers.ValidatorId) (aw : Identifiers.ValidatorId → Nat → Bool) (S : Execution.Setup.Setup) (w : Execution.Run.NamedWorld)
+    (v : Identifiers.ValidatorId) (t : Int) : List Execution.Objects.NamedObject :=
+  match Execution.Node.nodeTick committee pr aw newRoot S v (Execution.Run.worldAt w v) t with | (_, out) => out
+def objsOf (os : List Execution.Objects.NamedObject) : String := toString (os.map objKind, os.map objRoot, os.map objAuthor)
+def wWorlds := worlds proposer wAwake wS wRho
+def wAt (i : Nat) : Execution.Run.NamedWorld := wWorlds.getD i Execution.Run.worldInit
+#eval do for i in List.range 31 do IO.println (toString i ++ " " ++ readOf (wAt i) ⟨0⟩ ++ " " ++ objsOf (emitsOf proposer wAwake wS (wAt i) ⟨0⟩ (i : Int)))
+#eval (wWorlds.size, readOf (wAt 31) ⟨0⟩)
+-- the folds against the scan: stateBefore (i = 4, 31), storeAt (t = 6, 30), stateBeforeTime / readAt (t = 4), emittedAt (i = 4, 30), finalWorld, worldInit
+#eval (([4, 31] : List Nat).all (fun i => readOf (Execution.Run.stateBefore committee proposer wAwake newRoot wS wRho i) ⟨0⟩ == readOf (wAt i) ⟨0⟩),
+       ([6, 30] : List Nat).all (fun t => readSt (Execution.Run.storeAt committee proposer wAwake newRoot wS wRho ⟨0⟩ (t : Int)) == readOf (wAt (t + 1)) ⟨0⟩),
+       readOf (Execution.Run.stateBeforeTime committee proposer wAwake newRoot wS wRho 4) ⟨0⟩ == readOf (wAt 4) ⟨0⟩,
+       readOf (Execution.Run.readAt committee proposer wAwake newRoot wS wRho 4) ⟨0⟩ == readOf (wAt 5) ⟨0⟩,
+       ([4, 30] : List Nat).all (fun i => objsOf (Execution.Run.emittedAt committee proposer wAwake newRoot wS wRho i ⟨0⟩ (i : Int)) == objsOf (emitsOf proposer wAwake wS (wAt i) ⟨0⟩ (i : Int))),
+       readOf (Execution.Run.finalWorld committee proposer wAwake newRoot wS wRho) ⟨0⟩ == readOf (wAt 31) ⟨0⟩,
+       readOf (Execution.Run.finalWorld committee proposer wAwake newRoot wS wRho) ⟨1⟩ == readOf Execution.Run.worldInit ⟨1⟩,
+       (Execution.Run.worldAt Execution.Run.worldInit ⟨0⟩).st.bodies.size)   -- (true, true, true, true, true, true, true, 1)
+-- the two-node run over t = 0 … 7: node 1 (never the proposer, outside the committee, asleep) ticks beside node 0 and receives every object
+-- node 0 emits, at the same time (ticks precede deliveries): the slot-1 block at 4, the vote at 5, the attestation at 6, and node 1's own
+-- confirmation at the slot-1 support cutoff 6. Node 0 receives nothing, so its reads are those of the single-node run. (Kept to 8 times:
+-- the handwritten model's cost explodes once node 1 has processed the slot-2 block — 20 events take 4.5 s, 30 events 29 s, 79 events hours.)
+def wEvents2 : List Execution.Run.NamedEvent :=
+  (List.range 8).flatMap (fun (n : Nat) =>
+    [Execution.Run.NamedEvent.Tick ⟨0⟩ (n : Int), .Tick ⟨1⟩ (n : Int)]
+      ++ (emitsOf proposer wAwake wS (wAt n) ⟨0⟩ (n : Int)).map (fun o => Execution.Run.NamedEvent.Deliver ⟨1⟩ o (n : Int)))
+def wRho2 : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨0⟩, ⟨1⟩], 7, wEvents2⟩
+def wObjs := Execution.Run.runObjects wRho2
+#eval (wEvents2.length, wObjs.length, (wObjs.filter (fun o => objKind o == 0)).length, (wObjs.filter (fun o => objKind o == 1)).length, (wObjs.filter (fun o => objKind o == 2)).length,
+       (Execution.Run.runObjects wRho).isEmpty)   -- (19, 3, 1, 1, 1, true)
+def wWorlds2 := worlds proposer wAwake wS wRho2
+def idxB (t : Nat) : Nat := (wEvents2.filter (fun ev => Execution.Run.eventTime ev < (t : Int))).length   -- events strictly before t
+def idxA (t : Nat) : Nat := (wEvents2.filter (fun ev => Execution.Run.eventTime ev <= (t : Int))).length  -- events up to and including t
+def w2At (j : Nat) : Execution.Run.NamedWorld := wWorlds2.getD j Execution.Run.worldInit
+-- per time: node 1's reads after t, then for the objects delivered to it at t: wellFormed / depsPresent (before t) / processed (before) / processed (after) / excludes (after)
+def delivLine (t : Nat) : String :=
+  let os := emitsOf proposer wAwake wS (wAt t) ⟨0⟩ (t : Int)
+  let before := (Execution.Run.worldAt (w2At (idxB t)) ⟨1⟩).st
+  let after := (Execution.Run.worldAt (w2At (idxA t)) ⟨1⟩).st
+  toString (os.map (Execution.Node.wellFormed committee), os.map (Execution.Node.depsPresent before), os.map (Execution.Node.processed before),
+            os.map (Execution.Node.processed after), os.map (Execution.Node.excludes after))
+#eval do for t in List.range 8 do IO.println (toString t ++ " " ++ readOf (w2At (idxA t)) ⟨1⟩ ++ " " ++ delivLine t)
+#eval ((List.range 8).all (fun t => readOf (w2At (idxA t)) ⟨0⟩ == readOf (wAt (t + 1)) ⟨0⟩),
+       readSt (Execution.Run.storeAt committee proposer wAwake newRoot wS wRho2 ⟨1⟩ 6) == readOf (w2At (idxA 6)) ⟨1⟩,
+       (idxB 4, idxA 4, idxA 7))   -- (true, true, 8, 11, 19): 4 × 2 ticks before t = 4; 2 ticks + the slot-1 block at t = 4
+-- postCore on the slot-1 block (node 1's store strictly before t = 4 has s = 0 and rejects it; staged to t = 4 it admits it; after t = 4 it is already held),
+-- confirmationReadAt at the slot-1 support cutoff
+def wB4? : Option NamedBlocks.NamedBlock := match emitsOf proposer wAwake wS (wAt 4) ⟨0⟩ 4 with | [.Block b] => some b | _ => none
+def st1b3 := (Execution.Run.worldAt (w2At (idxB 4)) ⟨1⟩).st
+#eval (wB4?.map (fun b => (NamedBlocks.namedRoot b).value), wB4?.map (fun b => (Execution.Run.postCore committee proposer wS st1b3 b).bodies.size),
+       wB4?.map (fun b => (Execution.Run.postCore committee proposer wS (Handlers.setClock wEnv st1b3 4) b).bodies.size),
+       wB4?.map (fun b => (Execution.Run.postCore committee proposer wS (Execution.Run.worldAt (w2At (idxA 4)) ⟨1⟩).st b).bodies.size))   -- (some 2, some 1, some 2, some 2)
+def cr6 := Execution.Run.confirmationReadAt committee proposer wAwake newRoot wS wRho ⟨0⟩ 6
+#eval (cr6.st.core.t, cr6.st.core.s, cr6.cache.round, cr6.st.bodies.size, (Execution.Run.preparedCache wS (Execution.Run.worldAt (wAt 6) ⟨0⟩) 6).round)   -- (6, 1, 0, 2, 0)
+-- Outage (Fin 2): Δ = 1, GST 44, proposer s = 1 → 0 else 1, committee {0}, weights 3 / 1, same hc / cfg; 46 ticks of node 0 at t = 0 … 45
+def oEl : Weights.Electorate := ⟨tblOf [(⟨0⟩, 3), (⟨1⟩, 1)]⟩
+def oEnv : Parameters.ProtocolEnv := ⟨1, 44, oEl⟩
+def oS : Execution.Setup.Setup := ⟨oEnv, wHc, wCfg⟩
+def oProposer : Nat → Identifiers.ValidatorId := fun s => if s == 1 then ⟨0⟩ else ⟨1⟩
+def oRho : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨0⟩], 45, (List.range 46).map (fun (n : Nat) => .Tick ⟨0⟩ (n : Int))⟩
+def oWorlds := worlds oProposer wAwake oS oRho
+def oAt (i : Nat) : Execution.Run.NamedWorld := oWorlds.getD i Execution.Run.worldInit
+#eval do for i in List.range 46 do IO.println (toString i ++ " " ++ readOf (oAt i) ⟨0⟩ ++ " " ++ objsOf (emitsOf oProposer wAwake oS (oAt i) ⟨0⟩ (i : Int)))
+#eval readOf (oAt 46) ⟨0⟩
+-- StrongRecovery (Fin 2, rho 30): Δ = 1, GST 1, proposer 0, committee {0}, weights 3 / 1, same hc / cfg, every node awake; 31 ticks of node 0
+def rEnv : Parameters.ProtocolEnv := ⟨1, 1, oEl⟩
+def rS : Execution.Setup.Setup := ⟨rEnv, wHc, wCfg⟩
+def rWorlds := worlds proposer awake rS wRho
+def rAt (i : Nat) : Execution.Run.NamedWorld := rWorlds.getD i Execution.Run.worldInit
+#eval do for i in List.range 31 do IO.println (toString i ++ " " ++ readOf (rAt i) ⟨0⟩ ++ " " ++ objsOf (emitsOf proposer awake rS (rAt i) ⟨0⟩ (i : Int)))
+#eval readOf (rAt 31) ⟨0⟩
+
+-- reviewer の fixture (周回 10): node 1 (t = 8 から) への配達の順序 (親より先の slot-2 block は depsPresent = false で不採用、親の後は採用、3 回目と
+-- 2 回目の vote は processed = true で無変化)、不正な object (committee 外の vote は wellFormed = false で不採用。fork / 不正な carried vote を持つ block /
+-- 誤った slot の vote を持つ block / fork の子は wellFormed が偽でも受領は採用する: 受領は wellFormed の門を通さない、手書きの設計どおり)、
+-- F を block 2 に進めた store での excludes、同時刻で tick より前に並んだ配達 (s = 0 で拒否、tick の後に採用)
+def xB1 : NamedBlocks.NamedBlock := match emitsOf proposer wAwake wS (wAt 4) ⟨0⟩ 4 with | [.Block b] => b | _ => .Genesis
+def xB2 : NamedBlocks.NamedBlock := match emitsOf proposer wAwake wS (wAt 8) ⟨0⟩ 8 with | [.Block b] => b | _ => .Genesis
+def xV1 : Execution.Objects.NamedObject := (emitsOf proposer wAwake wS (wAt 5) ⟨0⟩ 5).headD (.Block .Genesis)
+def xA0 : Execution.Objects.NamedObject := (emitsOf proposer wAwake wS (wAt 6) ⟨0⟩ 6).headD (.Block .Genesis)
+def xBadVote : Execution.Objects.NamedObject := .GfVote ⟨⟨1⟩, 1, ⟨2⟩⟩
+def xFork : NamedBlocks.NamedBlock := .Node .Genesis 1 ⟨77⟩ [] [] [] ⟨0⟩
+def xBadBlk : NamedBlocks.NamedBlock := .Node xB1 2 ⟨78⟩ [⟨⟨1⟩, 1, ⟨2⟩⟩] [] [] ⟨0⟩
+def xBadSlot : NamedBlocks.NamedBlock := .Node xB1 2 ⟨79⟩ [⟨⟨0⟩, 5, ⟨2⟩⟩] [] [] ⟨0⟩
+def xOrphan : NamedBlocks.NamedBlock := .Node xFork 2 ⟨80⟩ [] [] [] ⟨0⟩
+#eval (rootOf (NamedBlocks.eraseBlock xB1), rootOf (NamedBlocks.eraseBlock xB2), objsOf [xV1, xA0])
+def xEvents : List Execution.Run.NamedEvent :=
+  [.Tick ⟨1⟩ 8, .Deliver ⟨1⟩ (.Block xB2) 8, .Deliver ⟨1⟩ xV1 8, .Deliver ⟨1⟩ xA0 8, .Deliver ⟨1⟩ (.Block xB1) 8,
+   .Deliver ⟨1⟩ (.Block xB2) 8, .Deliver ⟨1⟩ (.Block xB2) 8, .Deliver ⟨1⟩ xV1 8, .Deliver ⟨1⟩ xBadVote 8,
+   .Deliver ⟨1⟩ (.Block xFork) 8, .Deliver ⟨1⟩ (.Block xBadBlk) 8, .Deliver ⟨1⟩ (.Block xBadSlot) 8, .Deliver ⟨1⟩ (.Block xOrphan) 8, .Tick ⟨1⟩ 9]
+def xRho : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨1⟩], 9, xEvents⟩
+def xWorlds := worlds proposer wAwake wS xRho
+def xAt (j : Nat) : Execution.Run.NamedWorld := xWorlds.getD j Execution.Run.worldInit
+def objChecks (pre post : Handlers.NamedStore) (o : Execution.Objects.NamedObject) : String :=
+  toString (Execution.Node.wellFormed committee o, Execution.Node.depsPresent pre o, Execution.Node.processed pre o,
+            Execution.Node.processed post o, Execution.Node.excludes pre o)
+#eval do for j in List.range xEvents.length do
+  let ev := xEvents.getD j (.Tick ⟨1⟩ 0)
+  let pre := (Execution.Run.worldAt (xAt j) ⟨1⟩).st
+  let post := (Execution.Run.worldAt (xAt (j+1)) ⟨1⟩).st
+  let extra := match ev with
+    | .Deliver _ o _ => objChecks pre post o
+    | .Tick v t => objsOf (emitsOf proposer wAwake wS (xAt j) v t)
+  IO.println (toString j ++ " " ++ readOf (xAt (j+1)) ⟨1⟩ ++ " " ++ extra ++ " " ++ toString (Execution.Run.worldAt (xAt (j+1)) ⟨1⟩).cache.round)
+#eval (readOf (Execution.Run.readAt committee proposer wAwake newRoot wS xRho 8) ⟨1⟩ == readOf (xAt 13) ⟨1⟩,
+       readOf (Execution.Run.stateBeforeTime committee proposer wAwake newRoot wS xRho 9) ⟨1⟩ == readOf (xAt 13) ⟨1⟩,
+       readOf (Execution.Run.finalWorld committee proposer wAwake newRoot wS xRho) ⟨1⟩ == readOf (xAt 14) ⟨1⟩,
+       readOf (Execution.Run.finalWorld committee proposer wAwake newRoot wS xRho) ⟨0⟩ == readOf Execution.Run.worldInit ⟨0⟩,
+       (Execution.Run.runObjects xRho).length)
+-- excludes with an advanced F
+def xSt := (Execution.Run.worldAt (xAt 13) ⟨1⟩).st
+def xStF : Handlers.NamedStore := { xSt with core := { xSt.core with f := NamedBlocks.eraseBlock xB2 } }
+#eval ([xB1, xB2, xFork, xOrphan, xBadBlk].map (fun b => Execution.Node.excludes xStF (.Block b)), Execution.Node.excludes xStF xV1, Execution.Node.excludes xStF xA0)
+def xNF : Execution.Node.NamedNodeState := { (Execution.Run.worldAt (xAt 13) ⟨1⟩) with st := xStF }
+#eval ((Execution.Node.nodeProcess committee proposer wS xNF (.Block xFork)).st.bodies.size, readSt (Execution.Node.nodeProcess committee proposer wS xNF xV1).st,
+       (Execution.Node.nodeProcess committee proposer wS xNF xA0).cache.round)
+-- same-time order: delivery listed before the tick
+def yEvents : List Execution.Run.NamedEvent := [.Deliver ⟨1⟩ (.Block xB1) 4, .Tick ⟨1⟩ 4, .Deliver ⟨1⟩ (.Block xB1) 4, .Deliver ⟨1⟩ xV1 5, .Tick ⟨1⟩ 5, .Tick ⟨1⟩ 6]
+def yRho : Execution.Run.NamedRun := ⟨NaruStd.Set.of [⟨1⟩], 6, yEvents⟩
+def yWorlds := worlds proposer wAwake wS yRho
+#eval do for j in List.range (yEvents.length + 1) do IO.println (toString j ++ " " ++ readOf (yWorlds.getD j Execution.Run.worldInit) ⟨1⟩)
+#eval (readSt (Execution.Run.storeAt committee proposer wAwake newRoot wS yRho ⟨1⟩ 4), objsOf (Execution.Run.emittedAt committee proposer wAwake newRoot wS yRho 5 ⟨1⟩ 6))
+def yCr := Execution.Run.confirmationReadAt committee proposer wAwake newRoot wS yRho ⟨1⟩ 6
+#eval (readSt yCr.st, yCr.cache.round)

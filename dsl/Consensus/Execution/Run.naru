@@ -1,0 +1,142 @@
+// verified-consensus の移植: DecoupledConsensusModel/Generic/Run.lean(generic execution model — events, worlds, runs)の
+// この protocol への instantiation と、DecoupledConsensusModel/Execution/Run.lean(execution — worlds, runs, the reads a run
+// exposes)。手書きの `Generic.Event` / `Generic.Run` / `World`(`init` `step`)/ `Run`(`stateBefore` `stateBeforeTime` `readAt`
+// `final` `emittedAt` `objects`)と `NamedEvent` / `NamedWorld` / `NamedRun` / `Run.storeAt` / `NamedReceiptCalls.postCore` /
+// `NamedActionReads`(`preparedCache` `confirmationReadFrom` `confirmationReadAt`)に対応する。
+//
+// - IDEAL.md「言語の意味論」では Event / ProtocolSpec / Run は stdlib(Model 用)に置く。naru にはまだ型引数が無いので、
+//   ここでは `V = ValidatorId` / `Object = NamedObject` に instantiate した形(`NamedEvent` / `NamedRun`)を書く。stdlib に
+//   generic な Event / Run が入ったら(C7 の経路を決める周回)、このファイルの Generic 相当の宣言はそれに置き換わる。
+// - Event は (time, phase) で順序付け、Tick = 0 / Deliver = 1、同時刻・同 phase は trace 順(`eventKey`。tuple の順序は辞書式)。
+// - `World V P = V → P.State`(`init` = 全 validator が `P.init`、`Function.update`)→ `Table<ValidatorId, NamedNodeState>` +
+//   既定 `initialNode()`(`worldAt`)+ `insert`。
+// - `Run.honest : Finset V` → `Set<ValidatorId>`。`emittedAt` は tick の pre-event state から出力を再計算する(手書きどおり)。
+// - Prop の `emits` / `processes` / `handlesAt` / `acceptsAt` / `directBlockInRun` / `blockInRun` / `NamedRootCollisionFree` は
+//   Statements の移植で書く。
+// - 改名: `World.init` / `step` → `worldInit` / `worldStep`、`w v` → `worldAt(w, v)`、`Run.final` → `finalWorld`、
+//   `Run.objects` → `runObjects`。
+module Consensus.Execution.Run
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.NamedBlocks
+import Consensus.Protocol.Grades
+import Consensus.Protocol.Store
+import Consensus.Protocol.Handlers
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+import Consensus.Execution.Node
+
+// ── Generic.Event instantiated: a scheduler event at a node ──
+
+// A node's local clock tick, or the delivery of one object to it.
+enum NamedEvent { Tick(ValidatorId, Time), Deliver(ValidatorId, NamedObject, Time) } derive eq
+
+fn eventTime(ev: NamedEvent) -> Time {
+  match ev {
+    NamedEvent.Tick(_, t) => t,
+    NamedEvent.Deliver(_, _, t) => t,
+  }
+}
+
+fn eventNode(ev: NamedEvent) -> ValidatorId {
+  match ev {
+    NamedEvent.Tick(v, _) => v,
+    NamedEvent.Deliver(v, _, _) => v,
+  }
+}
+
+fn eventObject?(ev: NamedEvent) -> Option<NamedObject> {
+  match ev {
+    NamedEvent.Tick(_, _) => None,
+    NamedEvent.Deliver(_, o, _) => Some(o),
+  }
+}
+
+// Ticks precede deliveries at the same time.
+fn eventPhase(ev: NamedEvent) -> Nat {
+  match ev {
+    NamedEvent.Tick(_, _) => 0,
+    NamedEvent.Deliver(_, _, _) => 1,
+  }
+}
+
+// Event order is lexicographic by time and phase; equal keys keep their list order.
+fn eventKey(ev: NamedEvent) -> (Time, Nat) { (eventTime(ev), eventPhase(ev)) }
+
+// ── Generic.World instantiated: every node's local state ──
+
+type NamedWorld = Table<ValidatorId, NamedNodeState>
+
+fn worldInit() -> NamedWorld { Table.empty() }
+
+// The state of node `v`: every node starts at the initial node state.
+fn worldAt(w: NamedWorld, v: ValidatorId) -> NamedNodeState { w.getOr(v, initialNode()) }
+
+// One event folded into the world: a tick replaces the node's state by its post-tick state (the emitted objects are not
+// delivered by the fold), a delivery by its receipt.
+fn worldStep(s: Setup, w: NamedWorld, ev: NamedEvent) -> NamedWorld {
+  match ev {
+    NamedEvent.Tick(v, t) => {
+      match nodeTick(s, v, worldAt(w, v), t) {
+        (n, _) => w.insert(v, n),
+      }
+    },
+    NamedEvent.Deliver(v, o, _) => w.insert(v, nodeProcess(s, worldAt(w, v), o)),
+  }
+}
+
+// ── Generic.Run instantiated: the honest set, the horizon, and the event list ──
+
+record NamedRun { honest: Set<ValidatorId>, horizon: Time, events: List<NamedEvent> } derive eq
+
+// Events before index `i` have been folded into the returned world.
+fn stateBefore(s: Setup, rho: NamedRun, i: Nat) -> NamedWorld {
+  rho.events.take(i).fold(worldInit(), |w, ev| worldStep(s, w, ev))
+}
+
+// The returned world includes events strictly before time `t`.
+fn stateBeforeTime(s: Setup, rho: NamedRun, t: Time) -> NamedWorld {
+  rho.events.filter(|ev| eventTime(ev) < t).fold(worldInit(), |w, ev| worldStep(s, w, ev))
+}
+
+// The returned world includes events up to and including time `t`.
+fn readAt(s: Setup, rho: NamedRun, t: Time) -> NamedWorld {
+  rho.events.filter(|ev| eventTime(ev) <= t).fold(worldInit(), |w, ev| worldStep(s, w, ev))
+}
+
+// The returned world includes the complete event list.
+fn finalWorld(s: Setup, rho: NamedRun) -> NamedWorld { rho.events.fold(worldInit(), |w, ev| worldStep(s, w, ev)) }
+
+// The objects emitted by the tick at index `i`, recomputed from its pre-event state.
+fn emittedAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, t: Time) -> List<NamedObject> {
+  match nodeTick(s, v, worldAt(stateBefore(s, rho, i), v), t) {
+    (_, out) => out,
+  }
+}
+
+// Payloads from delivery events only; self-emitted objects are not included.
+fn runObjects(rho: NamedRun) -> List<NamedObject> { rho.events.filterMap(|ev| eventObject?(ev)) }
+
+// ── Execution/Run.lean: the reads a run exposes ──
+
+// The named store of validator `v` after every event up to and including time `t` (what the Statements read).
+fn storeAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> NamedStore { worldAt(readAt(s, rho, t), v).st }
+
+// The existing named core call, with the supplied configuration unchanged (手書き `NamedReceiptCalls.postCore`).
+fn postCore(s: Setup, before: NamedStore, b: NamedBlock) -> NamedStore { processBlockCore(s.e, s.hc, s.cfg, before, b) }
+
+// The actual cache preparation at the start of `nodeTick`.
+fn preparedCache(s: Setup, before: NamedNodeState, t: Time) -> Cache {
+  onPhaseTick(s.e, s.hc, storeToHealing(before.st.core), t, before.cache)
+}
+
+// The confirmation input at a support-cutoff tick: clock update and the same prepared cache, with the incoming signing record.
+fn confirmationReadFrom(s: Setup, before: NamedNodeState, t: Time) -> NamedNodeState {
+  NamedNodeState { st: setClock(s.e, before.st, t), signing: before.signing, cache: preparedCache(s, before, t) }
+}
+
+// The strict read followed by support-cutoff clock/cache staging.
+fn confirmationReadAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> NamedNodeState {
+  confirmationReadFrom(s, worldAt(stateBeforeTime(s, rho, t), v), t)
+}

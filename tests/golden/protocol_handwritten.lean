@@ -1,9 +1,10 @@
 import DecoupledConsensusModel.Protocol.Tick
 import DecoupledConsensusModel.Protocol.Evidence
+import DecoupledConsensusModel.Execution.Instance
 open DecoupledConsensusModel DecoupledConsensusModel.Protocol
 
--- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6〜9)。
--- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Protocol 層(Tick / Evidence まで)と Execution.Objects の olean がビルド済みであること)
+-- 手書き Model の同じ値(tests/golden/protocol_generated.lean と同じ順)。golden test の予行(周回 6〜10)。
+-- 実行: cd verified-consensus && lake env lean ../tests/golden/protocol_handwritten.lean(Model の全層(Protocol / Execution / Generic)の olean がビルド済みであること)
 
 def el : Electorate (Fin 3) := { weight := fun v => if v = 0 then 3 else 1, weight_pos := by decide }
 def env : Env (Fin 3) :=
@@ -517,3 +518,150 @@ def nd0s : Node (Fin 3) := { val_index := 0, new_root := fun s => ⟨s + 1⟩, a
 def tk60s := NamedTick.tick (frameContract c0) env hc cfg nd0s tk52.1 tk52.2.1 60
 def tk40o := NamedTick.tick (frameContract c0) env hc cfg nd1 tk36.1 tk36.2.1 40
 #eval (tk60s.2.2.isEmpty, (tk60s.1.sg_rows 2).isEmpty, tk40o.2.2.isEmpty, tk40o.1.bodies.card)
+
+-- Execution (周回 10): the Witnesses' runs (the WeakGenesis / Outage / StrongRecovery fixtures restated here; the Witnesses modules import Proofs)
+def rootOf2 (b : Block (Fin 2)) : Nat := b.root.value
+def objKind2 (o : Execution.NamedObject (Fin 2)) : Nat := match o with | .block _ => 0 | .gfVote _ => 1 | .attest _ => 2
+def objRoot2 (o : Execution.NamedObject (Fin 2)) : Nat := match o with
+  | .block b => b.root.value
+  | .gfVote v => v.head.value
+  | .attest row => (row.confirmed.map (·.value)).getD 99
+def objAuthor2 (o : Execution.NamedObject (Fin 2)) : Option Nat := (Execution.NamedObject.author o).map (fun v => (v : Nat))
+def wE : Env (Fin 2) :=
+  { Δ := 1, Δ_pos := by decide, t_GST := 0, t_GST_nonneg := by decide, proposer := fun _ => 0, committees := ⟨fun _ => {0}⟩,
+    electorate := { weight := fun v => if v = 0 then 2 else 1, weight_pos := by decide } }
+def wHc : HealConfig := ⟨3, by decide, 2, by decide⟩
+def wCfg : HeightConfig := ⟨4, 2, 6, by decide, by decide⟩
+def wNode (v : Fin 2) : Node (Fin 2) := { val_index := v, new_root := fun s => ⟨s + 1⟩, awake := fun _ => v = 0 }
+def wS : Execution.Setup (Fin 2) :=
+  { E := wE, hc := wHc, cfg := wCfg, node := wNode, node_val_index := by intro v; rfl, timeout_rounds := by decide,
+    committee_nonempty := by intro s; change ({0} : Finset (Fin 2)).Nonempty; exact Finset.singleton_nonempty 0, outage_window := by decide }
+def wEvents : List (Execution.NamedEvent (Fin 2)) := (List.range 31).map (fun (n : Nat) => .tick 0 (n : Time))
+def wRho : Execution.NamedRun (Fin 2) := { honest := {0}, horizon := 30, events := wEvents }
+#eval (((wS.node 1).val_index : Nat), wS.a 0, wS.a 1, wS.a 2)
+def evT : Execution.NamedEvent (Fin 2) := .tick 0 7
+def evD : Execution.NamedEvent (Fin 2) := .deliver 1 (.gfVote ⟨0, 1, ⟨1⟩⟩) 7
+#eval (Generic.Event.time evT, ((Generic.Event.node evD : Fin 2) : Nat), (Generic.Event.object? evT).isNone, (Generic.Event.object? evD).map objKind2,
+       Generic.Event.phase evT, Generic.Event.phase evD, ofLex (Generic.Event.key evD), decide (Generic.Event.key evT < Generic.Event.key evD),
+       decide (Generic.Event.key (Execution.NamedEvent.deliver 1 (.gfVote ⟨0, 1, ⟨1⟩⟩) 6) < Generic.Event.key evT))
+def worlds (S : Execution.Setup (Fin 2)) (rho : Execution.NamedRun (Fin 2)) : Array (Execution.NamedWorld (Fin 2)) :=
+  (rho.events.scanl (fun w ev => Execution.NamedWorld.step S w ev) Execution.NamedWorld.init).toArray
+def readSt (st : NamedStore (Fin 2)) : String :=
+  toString (st.core.t, st.core.s, st.core.T.card, st.bodies.card, rootOf2 st.core.F, rootOf2 st.core.J, st.core.h_max, st.core.h_j,
+            rootOf2 (get_stable st.core), rootOf2 (get_confirmed st.core), rootOf2 st.core.live_confirmed,
+            (st.core.gf_votes st.core.s).length, (st.sg_rows 0).length + (st.sg_rows 1).length + (st.sg_rows 2).length)
+def readOf (w : Execution.NamedWorld (Fin 2)) (v : Fin 2) : String := readSt (w v).st
+def emitsOf (S : Execution.Setup (Fin 2)) (w : Execution.NamedWorld (Fin 2)) (v : Fin 2) (t : Time) : List (Execution.NamedObject (Fin 2)) :=
+  (Execution.NamedNode.tick S v (w v) t).2
+def objsOf (os : List (Execution.NamedObject (Fin 2))) : String := toString (os.map objKind2, os.map objRoot2, os.map objAuthor2)
+def wWorlds := worlds wS wRho
+def wAt (i : Nat) : Execution.NamedWorld (Fin 2) := wWorlds.getD i Execution.NamedWorld.init
+#eval do for i in List.range 31 do IO.println (toString i ++ " " ++ readOf (wAt i) 0 ++ " " ++ objsOf (emitsOf wS (wAt i) 0 (i : Time)))
+#eval (wWorlds.size, readOf (wAt 31) 0)
+#eval (([4, 31] : List Nat).all (fun i => readOf (Execution.NamedRun.stateBefore wS wRho i) 0 == readOf (wAt i) 0),
+       ([6, 30] : List Nat).all (fun t => readSt (Execution.Run.storeAt wS wRho 0 (t : Time)) == readOf (wAt (t + 1)) 0),
+       readOf (Execution.NamedRun.stateBeforeTime wS wRho 4) 0 == readOf (wAt 4) 0,
+       readOf (Execution.NamedRun.readAt wS wRho 4) 0 == readOf (wAt 5) 0,
+       ([4, 30] : List Nat).all (fun i => objsOf (Generic.Run.emittedAt (Execution.spec wS) wRho i 0 (i : Time) : List (Execution.NamedObject (Fin 2))) == objsOf (emitsOf wS (wAt i) 0 (i : Time))),
+       readOf (Generic.Run.final (Execution.spec wS) wRho : Execution.NamedWorld (Fin 2)) 0 == readOf (wAt 31) 0,
+       readOf (Generic.Run.final (Execution.spec wS) wRho : Execution.NamedWorld (Fin 2)) 1 == readOf Execution.NamedWorld.init 1,
+       (Execution.NamedWorld.init (V := Fin 2) 0).st.bodies.card)
+def wEvents2 : List (Execution.NamedEvent (Fin 2)) :=
+  (List.range 8).flatMap (fun (n : Nat) =>
+    [(.tick 0 (n : Time) : Execution.NamedEvent (Fin 2)), .tick 1 (n : Time)]
+      ++ (emitsOf wS (wAt n) 0 (n : Time)).map (fun o => (.deliver 1 o (n : Time) : Execution.NamedEvent (Fin 2))))
+def wRho2 : Execution.NamedRun (Fin 2) := { honest := {0, 1}, horizon := 7, events := wEvents2 }
+def wObjs := Execution.NamedRun.objects wRho2
+#eval (wEvents2.length, wObjs.length, (wObjs.filter (fun o => objKind2 o == 0)).length, (wObjs.filter (fun o => objKind2 o == 1)).length, (wObjs.filter (fun o => objKind2 o == 2)).length,
+       (Execution.NamedRun.objects wRho).isEmpty)
+def wWorlds2 := worlds wS wRho2
+def idxB (t : Nat) : Nat := (wEvents2.filter (fun ev => decide (Generic.Event.time ev < (t : Time)))).length
+def idxA (t : Nat) : Nat := (wEvents2.filter (fun ev => decide (Generic.Event.time ev ≤ (t : Time)))).length
+def w2At (j : Nat) : Execution.NamedWorld (Fin 2) := wWorlds2.getD j Execution.NamedWorld.init
+def delivLine (t : Nat) : String :=
+  let os := emitsOf wS (wAt t) 0 (t : Time)
+  let before := (w2At (idxB t) 1).st
+  let after := (w2At (idxA t) 1).st
+  toString (os.map (Execution.NamedReceipt.wellFormed wS), os.map (Execution.NamedReceipt.depsPresent before), os.map (Execution.NamedReceipt.processed before),
+            os.map (Execution.NamedReceipt.processed after), os.map (Execution.NamedReceipt.excludes after))
+#eval do for t in List.range 8 do IO.println (toString t ++ " " ++ readOf (w2At (idxA t)) 1 ++ " " ++ delivLine t)
+#eval ((List.range 8).all (fun t => readOf (w2At (idxA t)) 0 == readOf (wAt (t + 1)) 0),
+       readSt (Execution.Run.storeAt wS wRho2 1 6) == readOf (w2At (idxA 6)) 1,
+       (idxB 4, idxA 4, idxA 7))
+def wB4? : Option (NamedBlock (Fin 2)) := match emitsOf wS (wAt 4) 0 4 with | [.block b] => some b | _ => none
+def st1b3 := (w2At (idxB 4) 1).st
+#eval (wB4?.map (fun b => b.root.value), wB4?.map (fun b => (Execution.NamedReceiptCalls.postCore wS st1b3 b).bodies.card),
+       wB4?.map (fun b => (Execution.NamedReceiptCalls.postCore wS (NamedStore.setClock wE st1b3 4) b).bodies.card),
+       wB4?.map (fun b => (Execution.NamedReceiptCalls.postCore wS (w2At (idxA 4) 1).st b).bodies.card))
+def cr6 := Execution.NamedActionReads.confirmationReadAt wS wRho 0 6
+#eval (cr6.st.core.t, cr6.st.core.s, cr6.cache.round, cr6.st.bodies.card, (Execution.NamedActionReads.preparedCache wS (wAt 6 0) 6).round)
+def oE : Env (Fin 2) :=
+  { Δ := 1, Δ_pos := by decide, t_GST := 44, t_GST_nonneg := by decide, proposer := fun s => if s = 1 then 0 else 1, committees := ⟨fun _ => {0}⟩,
+    electorate := { weight := fun v => if v = 0 then 3 else 1, weight_pos := by decide } }
+def oS : Execution.Setup (Fin 2) :=
+  { E := oE, hc := wHc, cfg := wCfg, node := wNode, node_val_index := by intro v; rfl, timeout_rounds := by decide,
+    committee_nonempty := by intro s; change ({0} : Finset (Fin 2)).Nonempty; exact Finset.singleton_nonempty 0, outage_window := by decide }
+def oRho : Execution.NamedRun (Fin 2) := { honest := {0}, horizon := 45, events := (List.range 46).map (fun (n : Nat) => .tick 0 (n : Time)) }
+def oWorlds := worlds oS oRho
+def oAt (i : Nat) : Execution.NamedWorld (Fin 2) := oWorlds.getD i Execution.NamedWorld.init
+#eval do for i in List.range 46 do IO.println (toString i ++ " " ++ readOf (oAt i) 0 ++ " " ++ objsOf (emitsOf oS (oAt i) 0 (i : Time)))
+#eval readOf (oAt 46) 0
+def rE : Env (Fin 2) :=
+  { Δ := 1, Δ_pos := by decide, t_GST := 1, t_GST_nonneg := by decide, proposer := fun _ => 0, committees := ⟨fun _ => {0}⟩,
+    electorate := { weight := fun v => if v = 0 then 3 else 1, weight_pos := by decide } }
+def rNode (v : Fin 2) : Node (Fin 2) := { val_index := v, new_root := fun s => ⟨s + 1⟩, awake := fun _ => true }
+def rS : Execution.Setup (Fin 2) :=
+  { E := rE, hc := wHc, cfg := wCfg, node := rNode, node_val_index := by intro v; rfl, timeout_rounds := by decide,
+    committee_nonempty := by intro s; change ({0} : Finset (Fin 2)).Nonempty; exact Finset.singleton_nonempty 0, outage_window := by decide }
+def rWorlds := worlds rS wRho
+def rAt (i : Nat) : Execution.NamedWorld (Fin 2) := rWorlds.getD i Execution.NamedWorld.init
+#eval do for i in List.range 31 do IO.println (toString i ++ " " ++ readOf (rAt i) 0 ++ " " ++ objsOf (emitsOf rS (rAt i) 0 (i : Time)))
+#eval readOf (rAt 31) 0
+
+-- reviewer の fixture (周回 10): 生成側と同じ順
+def xB1 : NamedBlock (Fin 2) := match emitsOf wS (wAt 4) 0 4 with | [.block b] => b | _ => .genesis
+def xB2 : NamedBlock (Fin 2) := match emitsOf wS (wAt 8) 0 8 with | [.block b] => b | _ => .genesis
+def xV1 : Execution.NamedObject (Fin 2) := (emitsOf wS (wAt 5) 0 5).headD (.block .genesis)
+def xA0 : Execution.NamedObject (Fin 2) := (emitsOf wS (wAt 6) 0 6).headD (.block .genesis)
+def xBadVote : Execution.NamedObject (Fin 2) := .gfVote ⟨1, 1, ⟨2⟩⟩
+def xFork : NamedBlock (Fin 2) := .node .genesis 1 ⟨77⟩ [] [] [] 0
+def xBadBlk : NamedBlock (Fin 2) := .node xB1 2 ⟨78⟩ [⟨1, 1, ⟨2⟩⟩] [] [] 0
+def xBadSlot : NamedBlock (Fin 2) := .node xB1 2 ⟨79⟩ [⟨0, 5, ⟨2⟩⟩] [] [] 0
+def xOrphan : NamedBlock (Fin 2) := .node xFork 2 ⟨80⟩ [] [] [] 0
+#eval (rootOf2 xB1.erase, rootOf2 xB2.erase, objsOf [xV1, xA0])
+def xEvents : List (Execution.NamedEvent (Fin 2)) :=
+  [.tick 1 8, .deliver 1 (.block xB2) 8, .deliver 1 xV1 8, .deliver 1 xA0 8, .deliver 1 (.block xB1) 8,
+   .deliver 1 (.block xB2) 8, .deliver 1 (.block xB2) 8, .deliver 1 xV1 8, .deliver 1 xBadVote 8,
+   .deliver 1 (.block xFork) 8, .deliver 1 (.block xBadBlk) 8, .deliver 1 (.block xBadSlot) 8, .deliver 1 (.block xOrphan) 8, .tick 1 9]
+def xRho : Execution.NamedRun (Fin 2) := { honest := {1}, horizon := 9, events := xEvents }
+def xWorlds := worlds wS xRho
+def xAt (j : Nat) : Execution.NamedWorld (Fin 2) := xWorlds.getD j Execution.NamedWorld.init
+def objChecks (pre post : NamedStore (Fin 2)) (o : Execution.NamedObject (Fin 2)) : String :=
+  toString (Execution.NamedReceipt.wellFormed wS o, Execution.NamedReceipt.depsPresent pre o, Execution.NamedReceipt.processed pre o,
+            Execution.NamedReceipt.processed post o, Execution.NamedReceipt.excludes pre o)
+#eval do for j in List.range xEvents.length do
+  let ev := xEvents.getD j (.tick 1 0)
+  let pre := (xAt j 1).st
+  let post := (xAt (j+1) 1).st
+  let extra := match ev with
+    | .deliver _ o _ => objChecks pre post o
+    | .tick v t => objsOf (emitsOf wS (xAt j) v t)
+  IO.println (toString j ++ " " ++ readOf (xAt (j+1)) 1 ++ " " ++ extra ++ " " ++ toString (xAt (j+1) 1).cache.round)
+#eval (readOf (Execution.NamedRun.readAt wS xRho 8) 1 == readOf (xAt 13) 1,
+       readOf (Execution.NamedRun.stateBeforeTime wS xRho 9) 1 == readOf (xAt 13) 1,
+       readOf (Generic.Run.final (Execution.spec wS) xRho : Execution.NamedWorld (Fin 2)) 1 == readOf (xAt 14) 1,
+       readOf (Generic.Run.final (Execution.spec wS) xRho : Execution.NamedWorld (Fin 2)) 0 == readOf Execution.NamedWorld.init 0,
+       (Execution.NamedRun.objects xRho).length)
+def xSt := (xAt 13 1).st
+def xStF : NamedStore (Fin 2) := { xSt with core := { xSt.core with F := xB2.erase } }
+#eval ([xB1, xB2, xFork, xOrphan, xBadBlk].map (fun b => Execution.NamedReceipt.excludes xStF (.block b)), Execution.NamedReceipt.excludes xStF xV1, Execution.NamedReceipt.excludes xStF xA0)
+def xNF : Execution.NamedNodeState (Fin 2) := { (xAt 13 1) with st := xStF }
+#eval ((Execution.NamedNode.process wS xNF (.block xFork)).st.bodies.card, readSt (Execution.NamedNode.process wS xNF xV1).st,
+       (Execution.NamedNode.process wS xNF xA0).cache.round)
+def yEvents : List (Execution.NamedEvent (Fin 2)) := [.deliver 1 (.block xB1) 4, .tick 1 4, .deliver 1 (.block xB1) 4, .deliver 1 xV1 5, .tick 1 5, .tick 1 6]
+def yRho : Execution.NamedRun (Fin 2) := { honest := {1}, horizon := 6, events := yEvents }
+def yWorlds := worlds wS yRho
+#eval do for j in List.range (yEvents.length + 1) do IO.println (toString j ++ " " ++ readOf (yWorlds.getD j Execution.NamedWorld.init) 1)
+#eval (readSt (Execution.Run.storeAt wS yRho 1 4), objsOf (Generic.Run.emittedAt (Execution.spec wS) yRho 5 1 6 : List (Execution.NamedObject (Fin 2))))
+def yCr := Execution.NamedActionReads.confirmationReadAt wS yRho 1 6
+#eval (readSt yCr.st, yCr.cache.round)

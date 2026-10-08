@@ -1,0 +1,27 @@
+// verified-consensus の移植: DecoupledConsensusModel/Execution/Setup.lean(execution — the fixed data of a run)。
+// 手書きの `Setup`(`E` `hc` `cfg` `node` と証明欄 `node_val_index` / `timeout_rounds` / `committee_nonempty` /
+// `outage_window`)/ `Setup.a` に対応する。
+//
+// - `node : V → Protocol.Node V` は `node_val_index : (node v).val_index = v` で validator の関数と決まり、Node の残りの欄
+//   `new_root` / `awake` は naru では `input`(Schedule.naru)なので、`setupNode(v)` = `Node { valIndex: v }`。Setup は欄に持たない。
+// - 証明欄 4 つは Statements の premise(`Δ_pos` / `K_ge_four` と同じ扱い)。
+// - `RootInjectiveBelow` / `RootInjectiveOnAncestors`(Prop)は Statements の移植で書く。`PublicTime` は Model の宣言ではない。
+module Consensus.Execution.Setup
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.ChainState
+import Consensus.Protocol.Grades
+
+// The fixed data of a run: the protocol environment and wire objects, the healing round schedule, and the finality-gadget
+// height parameters. The named node each validator runs is `setupNode`.
+record Setup { e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig } derive eq
+
+// The node's validator identity is the validator running it (手書き `node_val_index`): without it a validator could tick with
+// someone else's identity and every proposer and committee test would read the wrong name.
+fn setupNode(v: ValidatorId) -> Node { Node { valIndex: v } }
+
+// a_r = t_{rR} + 6Δ, the round action time (手書き `Setup.a`).
+fn setupActionTime(s: Setup, r: Round) -> Time { actionTime(s.hc, s.e.delta, r) }
