@@ -1,0 +1,18 @@
+# naru 言語の定義(IDEAL.md C17)。`.naru` を言語 `naru` に対応付け、文法 `naru`(extension.toml の [grammars.naru])と
+# 言語サーバー `naru`(同 [language_servers.naru])を使う。ハイライトは同じディレクトリの highlights.scm
+# (editors/tree-sitter-naru/queries/highlights.scm と同一に保つ: C16)。
+name = "naru"
+grammar = "naru"
+path_suffixes = ["naru"]
+language_servers = ["naru"]
+line_comments = ["// "]
+block_comment = ["/* ", " */"]
+autoclose_before = ";:.,=}])>"
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+  { start = "<", end = ">", close = false, newline = false },
+]
+tab_size = 2

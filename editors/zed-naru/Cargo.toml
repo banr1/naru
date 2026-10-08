@@ -1,0 +1,15 @@
+# Zed 拡張本体(IDEAL.md C17)。`naru lsp` を .naru の言語サーバーとして起動する glue(Rust → WebAssembly)。
+# Zed の Dev Extension として入れると Zed 自身が wasm32-wasip2 向けにビルドする。手元で確かめるなら
+# `cargo build --release --target wasm32-wasip2`(`lake exe naru_test zed` が実行する)。
+[package]
+name = "zed-naru"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"

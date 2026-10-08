@@ -1,4 +1,5 @@
 import Naru
+import NaruTest.Common
 
 /-!
 # `naru_test grammar` — tree-sitter 文法の検査(IDEAL.md C16)
@@ -33,25 +34,6 @@ def scratchDir : System.FilePath := ".lake" / "naru" / "test" / "grammar"
 def requiredCaptures : List String :=
   ["keyword", "type", "constructor", "comment", "string", "number", "function", "property"]
 
-structure Result where
-  failures : Array String := #[]
-
-abbrev M := StateT Result IO
-
-def ok (msg : String) : M Unit := IO.println s!"ok: {msg}"
-
-def fail (msg : String) : M Unit := do
-  IO.println s!"FAIL: {msg}"
-  modify fun r => { r with failures := r.failures.push msg }
-
-/-- 子プロセスを走らせる。見つからなければ exit 127 相当として返す。 -/
-def runProc (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
-    IO IO.Process.Output := do
-  try
-    IO.Process.output { cmd, args, cwd }
-  catch e =>
-    return { exitCode := 127, stdout := "", stderr := toString e }
-
 /-- `dir` 配下のファイル(ディレクトリを除く)を、`dir` からの相対パスでパス順に列挙する。 -/
 def listFilesUnder (dir : System.FilePath) : IO (List String) := do
   if !(← dir.isDir) then return []
@@ -63,18 +45,12 @@ def listFilesUnder (dir : System.FilePath) : IO (List String) := do
       files := files.push (p.toString.drop prefixLen).toString
   return (files.qsort (· < ·)).toList
 
-def readBytes (p : System.FilePath) : IO (Option ByteArray) := do
-  if ← p.pathExists then return some (← IO.FS.readBinFile p) else return none
-
 /-- `.naru` をパス順に列挙する(`Main.lean` の `listFiles` と同じ順)。 -/
 def listNaru (dir : System.FilePath) : IO (List String) := do
   if !(← dir.isDir) then return []
   let all ← dir.walkDir
   let hits := all.filter (·.extension == some "naru")
   return (hits.qsort (fun a b => a.toString < b.toString)).toList.map (·.toString)
-
-def tail (s : String) (n : Nat := 2000) : String :=
-  if s.length > n then (s.drop (s.length - n)).toString else s
 
 /-! ## 1. generate の出力が `src/` と一致 -/
 
@@ -232,18 +208,12 @@ def run : IO UInt32 := do
     IO.eprintln s!"naru_test grammar: {grammarDir / "grammar.js"} not found (run from the repository root)"
     return 2
   IO.FS.createDirAll scratchDir
-  let ((), r) ← (do
-      checkGenerate
-      checkBuild
-      checkParse
-      checkQuery
-      checkCompile
-      checkZedHighlights).run {}
-  if r.failures.isEmpty then
-    IO.println "naru_test grammar: PASS"
-    return 0
-  else
-    IO.println s!"naru_test grammar: FAIL ({r.failures.size})"
-    return 1
+  runGroup "naru_test grammar" do
+    checkGenerate
+    checkBuild
+    checkParse
+    checkQuery
+    checkCompile
+    checkZedHighlights
 
 end NaruTest.Grammar

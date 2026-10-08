@@ -13,9 +13,7 @@ def usage : String := "usage: naru_test <grammar|zed|lsp>"
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["grammar"] => NaruTest.Grammar.run
-  | ["zed"] =>
-    IO.eprintln "naru_test zed: not implemented yet"
-    return 2
+  | ["zed"] => NaruTest.Zed.run
   | ["lsp"] =>
     IO.eprintln "naru_test lsp: not implemented yet"
     return 2

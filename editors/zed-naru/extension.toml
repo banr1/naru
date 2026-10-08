@@ -1,0 +1,29 @@
+# naru の Zed 拡張(IDEAL.md C17)。Dev Extension として入れる(C19: `zed: install dev extension` でこのディレクトリを選ぶ)。
+# Zed は `~/Library/Application Support/Zed/extensions/installed/naru` をこのディレクトリへの symlink にし、
+# 文法(grammars/naru.wasm)と本体(extension.wasm)をこのディレクトリ自身に書く(.gitignore で除外)。
+id = "naru"
+name = "naru"
+description = "naru(分散プロトコルの DSL)のシンタックスハイライトと言語サーバー(naru lsp)"
+version = "0.1.0"
+schema_version = 1
+authors = ["naru"]
+repository = "file:///Users/banriyanahama/workspace/naru"
+
+# 文法はこのリポジトリの editors/tree-sitter-naru(C16)。Zed は repository を grammars/naru/ に浅く clone して rev を
+# checkout し、path 以下の src/parser.c を同梱の wasi-sdk でコンパイルする。
+#
+# rev はブランチ名ではなくコミット SHA に固定する(ブランチ名だとクローンは最初に取った位置に留まり、入れ直しても文法が
+# 更新されない: IDEAL.md「前提」)。rev の文法が HEAD の文法と一致すること、作業ツリーの languages/naru/highlights.scm が
+# rev の文法でロードできることは `lake exe naru_test zed` が検査する。
+# 文法を変えた周回は rev を動かせない(その周回のコミットがまだ無い)ので、highlights.scm を rev の文法でもロードできる形に
+# 保ち、次の周回で rev を直前の周回のコミット(`git log -1 --format=%H -- editors/tree-sitter-naru`)に付け替える。
+[grammars.naru]
+repository = "file:///Users/banriyanahama/workspace/naru"
+rev = "4b695bf398117e515ea7f1b9de437b0ba4c2e99e"
+path = "editors/tree-sitter-naru"
+
+# 言語サーバー。src/lib.rs が `naru lsp` を起動する。naru 実行ファイルの探し方は src/lib.rs の冒頭
+# (Zed の設定 lsp.naru.binary.path → PATH 上の naru → ワークツリーの .lake/build/bin/naru)。
+[language_servers.naru]
+name = "naru"
+languages = ["naru"]

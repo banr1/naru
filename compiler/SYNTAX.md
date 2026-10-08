@@ -230,7 +230,7 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 | 群 | 意味 |
 |---|---|
 | `grammar` | tree-sitter 文法(`editors/tree-sitter-naru/`)の検査(C16): `tree-sitter generate` の出力が追跡対象の `src/` と一致、`tree-sitter build` が exit 0、`dsl/`・`tests/accept/`・`tests/reject/` の全 `.naru`(E010 を期待する反例は除く)が ERROR / MISSING なしに解析できる、`tests/accept/editors_syntax.naru` への `queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出る、その受理例がコンパイラの検査を通る、`editors/zed-naru/languages/naru/highlights.scm` が `queries/highlights.scm` と同一 |
-| `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17)。未実装(exit 2) |
+| `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17): 5 ファイル(`extension.toml`・`languages/naru/config.toml`・`highlights.scm`・`Cargo.toml`・`src/lib.rs`)がある、`extension.toml` の `id = "naru"`・`[grammars.naru]` の `repository`(このリポジトリの `file://` URL)/ `rev`(40 桁の SHA)/ `path = "editors/tree-sitter-naru"`・`[language_servers.naru]` の `name` と `languages`、`config.toml` の `name` / `grammar` / `path_suffixes` / `language_servers`、`rev` がこのリポジトリのコミットで `git diff --exit-code <rev> HEAD -- editors/tree-sitter-naru` が空、`rev` の文法(`git archive`)を `tree-sitter build` して作業ツリーの `highlights.scm` が `tree-sitter query` でロードできる、`src/lib.rs` が設定 → `PATH` → `.lake/build/bin/naru` の順で `naru lsp` を起動する形、`cargo build --release --target wasm32-wasip2` が exit 0。一時ファイルは `.lake/naru/test/zed/`、cargo の成果物は `editors/zed-naru/target/` |
 | `lsp` | 言語サーバー `naru lsp` の検査(C18)。未実装(exit 2) |
 
 ## エディタ対応(tree-sitter 文法)
@@ -244,6 +244,11 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 正本との既知の差(ハイライト用なので広く受理する側に倒してある): 入れ子のブロックコメントは深さ 9 まで(字句が正規表現のため)、
 予約語 `in` は構文に現れないので予約できない(他の 28 語は予約)、`match` の腕の `,` は常に省略可、`if` / `match` の頭部の `Name { … }` は
 GLR で record literal とブロックの両方を試す。
+
+Zed 拡張(`editors/zed-naru/`、C17)は文法をこのリポジトリの `extension.toml` の `rev`(コミット SHA)から取るので、**文法を変えた周回は
+`rev` を動かせない**(その周回のコミットがまだ無い)。その周回では `highlights.scm` を `rev` の文法でもロードできる形に保ち(新しい node を
+参照する捕捉は次の周回に回す)、次の周回で `rev` を直前の周回のコミット(`git log -1 --format=%H -- editors/tree-sitter-naru`)に付け替えて
+`lake exe naru_test zed` を通す(IDEAL.md「前提」の「周回の運び」)。
 
 node の名前(`queries/highlights.scm` が使う): 宣言は `<kind>_declaration`(`name` 欄)、型は `type_identifier` / `named_type` /
 `tuple_type` / `function_type`、大域経路は `path_expression`(前置の段は `type_identifier`、最後の段は `constructor_identifier` か
