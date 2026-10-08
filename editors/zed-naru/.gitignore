@@ -1,0 +1,4 @@
+# Zed が Dev Extension のビルド時に拡張ディレクトリ自身に書くもの(IDEAL.md「前提」。追跡しない)
+extension.wasm
+grammars/
+target/

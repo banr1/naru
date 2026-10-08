@@ -225,6 +225,32 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 
 リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む)。
 
+### エディタ対応の検査(`lake exe naru_test`)
+
+| 群 | 意味 |
+|---|---|
+| `grammar` | tree-sitter 文法(`editors/tree-sitter-naru/`)の検査(C16): `tree-sitter generate` の出力が追跡対象の `src/` と一致、`tree-sitter build` が exit 0、`dsl/`・`tests/accept/`・`tests/reject/` の全 `.naru`(E010 を期待する反例は除く)が ERROR / MISSING なしに解析できる、`tests/accept/editors_syntax.naru` への `queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出る、その受理例がコンパイラの検査を通る、`editors/zed-naru/languages/naru/highlights.scm` が `queries/highlights.scm` と同一 |
+| `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17)。未実装(exit 2) |
+| `lsp` | 言語サーバー `naru lsp` の検査(C18)。未実装(exit 2) |
+
+## エディタ対応(tree-sitter 文法)
+
+`editors/tree-sitter-naru/grammar.js` は、この文書とパーサを正本として追従させるハイライト用の第二のパーサ(IDEAL.md「不変条件」)。
+意味検査(型・phase・停止性)は持たず、診断はすべて `naru lsp` を通してコンパイラが出す。**構文を増やす周回は、この文書・`Parser.lean` と
+同じ周回で `grammar.js` も直し、`tree-sitter generate` で `src/`(追跡対象。手で編集しない)を作り直して `lake exe naru_test grammar` を通す。**
+`tests/accept/editors_syntax.naru` は全構文の受理例なので、新しい構文はここにも足し(`lake exe naru compile` が exit 0 のまま)、
+捕捉の期待値 `tests/accept/editors_syntax.captures`(行番号・捕捉名・字句)も直す。
+
+正本との既知の差(ハイライト用なので広く受理する側に倒してある): 入れ子のブロックコメントは深さ 9 まで(字句が正規表現のため)、
+予約語 `in` は構文に現れないので予約できない(他の 28 語は予約)、`match` の腕の `,` は常に省略可、`if` / `match` の頭部の `Name { … }` は
+GLR で record literal とブロックの両方を試す。
+
+node の名前(`queries/highlights.scm` が使う): 宣言は `<kind>_declaration`(`name` 欄)、型は `type_identifier` / `named_type` /
+`tuple_type` / `function_type`、大域経路は `path_expression`(前置の段は `type_identifier`、最後の段は `constructor_identifier` か
+`identifier`)、record literal は `record_literal`(`type_path` + `field_initializer` / `base_initializer`)、欄は `field_identifier`、
+メソッドは `method_call_expression`(`method_identifier`)、構築子は `constructor_identifier`、モジュール経路は `module_identifier`、
+`derive` の capability は `capability`。
+
 ## Core IR と Model backend
 
 型検査(`Typecheck.lean`)は検査と同時に Surface AST を Typed Core IR(`Core.lean`)に elaborate する。名前は解決済み、

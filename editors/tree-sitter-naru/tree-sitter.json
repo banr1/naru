@@ -1,0 +1,27 @@
+{
+  "grammars": [
+    {
+      "name": "naru",
+      "camelcase": "Naru",
+      "scope": "source.naru",
+      "path": ".",
+      "file-types": ["naru"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "description": "tree-sitter grammar for naru (syntax highlighting; the compiler in compiler/ is the source of truth)",
+    "links": {
+      "repository": "file:///Users/banriyanahama/workspace/naru"
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false
+  }
+}

@@ -1,0 +1,189 @@
+// 受理例 3: `compiler/SYNTAX.md` の全構文を 1 ファイルに書いたもの。エディタ対応(C16)の検査 `lake exe naru_test grammar` が
+// tree-sitter 文法でこのファイルを解析し、`queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出ることを
+// 確かめる。コンパイラでも `lake exe naru compile tests/accept/editors_syntax.naru` が exit 0 になること(構文を増やしたらここにも足す)。
+// 予約語の一覧: module import type record enum derive input fn state protocol predicate condition regime property claim bundle
+// scenario observer let if else match forall exists in implies true false(`in` は構文に現れない予約語)。
+/* ブロックコメントは /* 入れ子 /* にできる */ */ ここはまだ外側のコメント // 行コメントの印は無効 */
+module Accept.EditorsSyntax
+
+import Accept.Smoke
+
+type Slot = Nat
+type ValidatorId = Nat
+type Weights = Table<ValidatorId, Nat>
+
+enum Phase { Tick, Deliver } derive eq, order
+enum Verdict { Accept(Slot), Reject(Slot, String), Pending } derive eq
+
+record Block {
+  slot: Slot,
+  parent: Option<Slot>,
+  votes: Set<ValidatorId>,
+} derive eq
+
+record Vote { slot: Slot, who: ValidatorId } derive eq, order
+
+state Store {
+  head: Block,
+  seen: List<Block>,
+  weights: Weights,
+}
+
+input proposer(slot: Slot) -> ValidatorId
+
+// 末尾 `?` 付きの識別子(宣言とメソッド)
+fn parent?(b: Block) -> Option<Slot> { b.parent }
+
+fn firstAtSlotOne(xs: List<Block>) -> Option<Block> {
+  xs.find?(|b| b.slot == 1)
+}
+
+// 関数型の仮引数と `let` の注釈、lambda
+fn applyTwice(f: (Nat) -> Nat, x: Nat) -> Nat { f(f(x)) }
+
+fn scored(b: Block) -> Nat {
+  let score: (Block) -> Nat = |blk| blk.slot * 2;
+  applyTwice(|n| n + 1, score(b))
+}
+
+// 名前付き引数(stdlib の `by` とユーザ fn の引数名)と UFCS
+fn mix(a: Nat, b: Nat) -> Nat { a * 10 + b }
+fn useMix(x: Nat) -> Nat { mix(b = 2, a = x) + x.mix(3) }
+fn voters(b: Block) -> List<ValidatorId> { sort(b.votes, by = |v| v) }
+fn votersDesc(b: Block) -> List<ValidatorId> { b.votes.sort(by = |v| -v.toInt()) }
+
+// record literal と `..` update、短縮の欄、if / else if / else
+fn extend(st: Store, b: Block) -> Store {
+  let seen = st.seen.push(b);
+  if b.slot > st.head.slot {
+    Store { head: b, seen, ..st }
+  } else if b.slot == st.head.slot {
+    Store { seen: seen, ..st }
+  } else {
+    Store { ..st }
+  }
+}
+
+// ガード付き match、リテラルのパターン、`_`
+fn describe(o: Option<Slot>) -> Nat {
+  match o {
+    Some(s) if s > 0 => s,
+    Some(_) => 0,
+    None => 0,
+  }
+}
+
+fn verdictSlot(v: Verdict) -> Option<Slot> {
+  match v {
+    Verdict.Accept(s) => Some(s),
+    Verdict.Reject(s, _) => Some(s),
+    Verdict.Pending => None,
+  }
+}
+
+fn phaseRank(p: Phase) -> Nat {
+  match p {
+    Phase.Tick => 0,
+    Phase.Deliver => 1,
+  }
+}
+
+fn classify(n: Nat, name: String) -> Nat {
+  match (n, name) {
+    (0, "zero") => 0,
+    (1, _) => 1,
+    (k, _) if k > 100 => 100,
+    _ => 2,
+  }
+}
+
+// Result / Option / tuple / list / unit / 文字列のエスケープ / Int の単項 `-`
+fn parse(n: Nat) -> Result<Nat, String> { if n == 0 { Err("zero") } else { Ok(n) } }
+fn parsed(n: Nat) -> Nat { match parse(n) { Ok(v) => v, Err(_) => 0 } }
+fn literals(flag: Bool) -> Nat {
+  let pair = (1, 2);
+  let xs = [1, 2, 3];
+  let u = ();
+  let s = "quote \" backslash \\ newline \n tab \t";
+  let i: Int = -3;
+  let ok = parse(1).isOk() && !flag || true;
+  match pair {
+    (a, b) => a + b + xs.size() + s.size() + i.abs() + (if ok { 1 } else { 0 }) + List.range(3).size(),
+  }
+}
+
+// ブロック内の文、算術・比較、Set / Table の静的関数と `Phase.Tick` のような大域経路
+fn arith(a: Nat, b: Nat) -> Bool {
+  let votes = Set.empty().insert(a);
+  let w: Weights = Table.empty();
+  plain(0);
+  let q = (a + b) * 2 - a / 2 % 3;
+  q >= b && q <= a + b || a != b && a < b && b > a && votes.contains(a) && w.isEmpty()
+    && phaseRank(Phase.Tick) == 0 && Set.of([a, b]).size() == 2
+}
+fn plain(x: Nat) -> Nat { x + 1 }
+
+// 構造的再帰と明示 fuel
+enum Tree { Leaf, Node(Tree, Nat, Tree) } derive eq
+fn treeSum(t: Tree) -> Nat {
+  match t {
+    Tree.Leaf => 0,
+    Tree.Node(l, v, r) => treeSum(l) + v + treeSum(r),
+  }
+}
+fn countdown(n: Nat, acc: Nat) -> Nat {
+  if n == 0 { acc } else { countdown(n - 1, acc + n) }
+}
+
+// spec 宣言: predicate / condition / regime / property / claim / claim bundle、forall / exists、implies
+predicate HeadIsLatest(st: Store) {
+  forall b: Block { b.slot <= st.head.slot }
+}
+
+predicate SomeVoter(b: Block) {
+  exists v: ValidatorId, w: ValidatorId { b.votes.contains(v) && v == w }
+}
+
+condition Synchronous(delta: Nat) { delta > 0 }
+
+regime Honest(st: Store) { HeadIsLatest(st) && !(st.head.slot == 0) }
+
+property Monotone(st: Store, b: Block) { extend(st, b).head.slot >= st.head.slot }
+
+claim headMonotone(st: Store, b: Block) {
+  Honest(st) implies HeadIsLatest(extend(st, b)) implies Monotone(st, b)
+}
+
+claim headPositive(st: Store) {
+  Honest(st) implies st.head.slot > 0
+}
+
+claim bundle Liveness { headPositive }
+
+claim bundle Consensus { headMonotone, positive: headPositive, nested: Liveness }
+
+// protocol / observer / scenario
+protocol Demo {
+  fn step(st: Store) -> Store { extend(st, st.head) }
+  observer headSlot(st: Store) -> Nat { st.head.slot }
+}
+
+observer confirmed(st: Store) -> Nat { st.seen.size() }
+
+scenario basic {
+  let b = Block { slot: 1, parent: None, votes: Set.empty() };
+  let st = Store { head: b, seen: [], weights: Table.empty() };
+  describe(Some(extend(st, b).head.slot)) + proposer(1)
+}
+
+// 名前の大文字 / 小文字は、式の先頭の段とパターンの 1 段の名前でだけ区別する(SYNTAX.md「字句」)。
+// 欄名・variant・UFCS のメソッド名は慣例に反して大小を入れ替えても構文としては通る(reviewer の周回 11 の指摘)。
+enum Flag { on, off } derive eq
+record Odd { Big: Nat } derive eq
+fn Twice(x: Nat) -> Nat { x * 2 }
+fn oddCases(f: Flag, o: Odd) -> Nat {
+  match f {
+    Flag.on => o.Big.Twice(),
+    Flag.off => Odd { Big: 0 }.Big,
+  }
+}

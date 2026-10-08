@@ -23,3 +23,14 @@ srcDir = "stdlib/Model"
 [[lean_lib]]
 name = "Model"
 srcDir = "generated"
+
+# エディタ対応の検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)。Lean で書く(前提)。
+# 検査本体は lean_lib `NaruTest`(`tests/NaruTest.lean` + `tests/NaruTest/*.lean`)、入口は `tests/NaruTestMain.lean`。
+[[lean_lib]]
+name = "NaruTest"
+srcDir = "tests"
+
+[[lean_exe]]
+name = "naru_test"
+root = "NaruTestMain"
+srcDir = "tests"
