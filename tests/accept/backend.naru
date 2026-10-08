@@ -1,0 +1,221 @@
+// 受理例 2: backend の網羅テスト。`lake exe naru compile tests/accept/backend.naru` が exit 0 で、生成した Lean が型検査を通ること:
+//   lake exe naru compile --out /tmp/naru-gen tests/accept/backend.naru && lake env lean /tmp/naru-gen/Model/Gen/All.lean
+// input の引き回し・Result・Table・Set・List・Option・String・Int・derive order の比較・guard 付きの match と fuel 再帰・
+// 相互の構造的再帰・Lean の予約語の名前・名前付き引数と UFCS を含む。
+module Gen.All
+
+type Slot = Nat
+
+record Vote { slot: Slot, who: Nat } derive eq, order
+record Bag { items: Set<Vote>, tags: Table<String, Nat> } derive eq
+enum Shape { Dot, Line(Nat, Nat), Poly(List<Nat>) } derive eq, order
+
+input proposer(slot: Slot) -> Nat
+input weight(who: Nat) -> Nat
+
+// input を直接・間接に使う
+fn proposerOf(slot: Slot) -> Nat { proposer(slot) }
+fn heavy(slot: Slot) -> Bool { weight(proposerOf(slot)) > 10 }
+fn plain(x: Nat) -> Nat { x + 1 }
+observer currentProposer(slot: Slot) -> Nat { proposerOf(slot) }
+
+// Result / Option / Table / Set / List / String / Int
+fn parse(n: Nat) -> Result<Nat, String> {
+  if n == 0 { Err("zero") } else { Ok(n) }
+}
+fn parsed(n: Nat) -> Nat {
+  match parse(n) {
+    Ok(v) => v,
+    Err(_) => 0,
+  }
+}
+fn okOnly(n: Nat) -> Option<Nat> { parse(n).ok?() }
+fn flags(n: Nat) -> (Bool, Bool) { (parse(n).isOk(), parse(n).isErr()) }
+
+fn tableOps(t: Table<String, Nat>) -> Nat {
+  let t2 = t.insert("a", 1).insert("b", 2).remove("c");
+  let ks = t2.keys();
+  let es = t2.entries();
+  t2.size() + ks.size() + es.size() + t2.getOr("a", 0) + (if t2.contains("b") { 1 } else { 0 })
+    + t2.get?("z").getOr(7) + (if t2.isEmpty() { 1 } else { 0 })
+}
+
+fn setOps(s: Set<Vote>, v: Vote) -> Nat {
+  let s2 = s.insert(v).remove(v).union(Set.singleton(v)).inter(s).diff(Set.empty());
+  let n = s2.filter(|x| x.slot > 1).map(|x| x.who).size();
+  let m = if s2.any(|x| x.who == 0) && s2.all(|x| x.slot >= 0) && s2.subset(s) && s2.contains(v) { 1 } else { 0 };
+  let best = s2.minBy?(|x| x.slot);
+  let worst = s2.maxBy?(|x| x.who);
+  let u = s2.findUnique?(|x| x.slot == 3);
+  n + m + sort(s2, by = |x| x.who).size() + best.map(|x| x.slot).getOr(0) + worst.filter(|x| x.who > 0).map(|x| x.slot).getOr(0)
+    + (if u.isSome() || u.isNone() { 1 } else { 0 }) + (if s2.isEmpty() { 0 } else { 1 })
+}
+
+fn listOps(xs: List<Nat>) -> Nat {
+  let ys = xs.push(1).append([2, 3]).reverse().take(5).drop(1);
+  let zs = ys.filter(|x| x > 0).map(|x| x * 2);
+  let c = zs.count(|x| x > 2);
+  let f = zs.fold(0, |acc, x| acc + x);
+  let srt = zs.sort(by = |x| -x.toInt());
+  let a = zs.any(|x| x == 2);
+  let b = zs.all(|x| x < 100);
+  let h = zs.head?().getOr(0) + zs.last?().getOr(0) + zs.get?(1).getOr(0) + zs.find?(|x| x > 1).getOr(0);
+  let mn = zs.minBy?(|x| x).getOr(0) + zs.maxBy?(|x| x).getOr(0);
+  let st = zs.toSet().size();
+  c + f + srt.size() + (if a && b && zs.contains(2) && !zs.isEmpty() { 1 } else { 0 }) + h + mn + st + ys.size()
+}
+
+fn strInt(s: String, i: Int) -> Nat {
+  let t = s.append("!");
+  let j = i.min(3).max(-3) + 1;
+  let five: Nat = 5;
+  t.size() + j.abs() + five.min(2) + five.max(9) + (if "a" < "b" && i >= 0 && -i <= 0 { 1 } else { 0 })
+}
+
+// derive order の比較(compare 経由)と enum の比較
+fn cmp(a: Vote, b: Vote, x: Shape, y: Shape) -> Bool {
+  a < b || a <= b || a > b || a >= b || x < y || x != y || (a, b) < (b, a) || Some(a) < None || [a] < [b]
+}
+
+// Option の andThen、tuple パターン、ブロック内の文
+fn opt(o: Option<Nat>) -> Nat {
+  let r = o.andThen(|x| if x > 0 { Some(x - 1) } else { None });
+  plain(0);
+  let pq = (1, 2);
+  match pq {
+    (p, q) => match (r, p) {
+      (Some(v), 1) => v + q,
+      (Some(v), _) => v,
+      (None, _) => 0,
+    },
+  }
+}
+
+// enum の variant のパターンと値
+fn shapeSize(s: Shape) -> Nat {
+  match s {
+    Shape.Dot => 1,
+    Shape.Line(a, b) if a > b => a - b,
+    Shape.Line(a, b) => b - a,
+    Shape.Poly(ps) => ps.size(),
+  }
+}
+fn mkShapes() -> List<Shape> { [Shape.Dot, Shape.Line(1, 2), Shape.Poly([1, 2])] }
+
+// guard 付きの fuel 再帰(match の fallthrough が refine を保つこと)
+fn halveG(n: Nat, x: Nat, b: Bool) -> Nat {
+  match n {
+    0 => x,
+    1 if b => x,
+    k => halveG(k - 1, x / 2, b),
+  }
+}
+
+// ワイルドカードの腕で n 自身を減らす
+fn countW(n: Nat) -> Nat {
+  match n {
+    0 => 0,
+    _ => 1 + countW(n - 1),
+  }
+}
+
+// else if の連鎖
+fn chain(n: Nat) -> Nat {
+  if n == 0 { 0 } else if n == 1 { 1 } else { chain(n - 2) }
+}
+
+// 相互の構造的再帰
+enum Rose { Node(Nat, Forest) } derive eq
+enum Forest { Nil, Cons(Rose, Forest) } derive eq
+
+fn roseSize(r: Rose) -> Nat {
+  match r {
+    Rose.Node(_, f) => 1 + forestSize(f),
+  }
+}
+fn forestSize(f: Forest) -> Nat {
+  match f {
+    Forest.Nil => 0,
+    Forest.Cons(r, rest) => roseSize(r) + forestSize(rest),
+  }
+}
+
+
+// Lean の予約語を名前に使う
+fn at(from: Nat, end: Nat) -> Nat { from + end }
+record Where { with: Nat, fun: Nat } derive eq
+fn useWhere(w: Where) -> Nat { w.with + w.fun + at(1, 2) }
+
+// 名前付き引数と UFCS
+fn mix(a: Nat, b: Nat) -> Nat { a * 10 + b }
+fn useMix(x: Nat) -> Nat { mix(b = 2, a = x) + x.mix(3) }
+
+// reviewer(周回 4)が見つけた穴の再現: 単一 variant の enum のガード(Lean の redundant alternative にならないこと)
+enum One { Only(Nat) } derive eq
+fn onlyGuard(o: One) -> Nat {
+  match o {
+    One.Only(x) if x > 0 => x,
+    One.Only(_) => 0,
+  }
+}
+
+// 別名(k)経由の入れ子の Nat match と fuel(内側の bind 腕が外側の refine を保つこと)
+fn r9(n: Nat) -> Nat {
+  match n {
+    0 => 0,
+    1 => 1,
+    k => match k {
+      2 => 2,
+      j => r9(j - 2),
+    },
+  }
+}
+fn zz(n: Nat) -> Nat {
+  match n {
+    0 => 0,
+    k => match k {
+      j => zz(j - 1),
+    },
+  }
+}
+
+// 構造的再帰 + ガード、入れ子の match
+enum Tree { Leaf, Node(Tree, Nat, Tree) } derive eq
+fn sumG(t: Tree, c: Bool) -> Nat {
+  match t {
+    Tree.Node(l, v, r) if c => sumG(l, c) + v + sumG(r, c),
+    Tree.Node(l, _, _) => sumG(l, c),
+    Tree.Leaf => 0,
+  }
+}
+fn deep(t: Tree) -> Nat {
+  match t {
+    Tree.Leaf => 0,
+    Tree.Node(l, _, _) => match l {
+      Tree.Leaf => 1,
+      Tree.Node(ll, _, _) => deep(ll),
+    },
+  }
+}
+
+// 局所名が生成コードの組み込み名を捕獲しないこと(`none` は naru の None を返す。`compare` / `decide` / `some` / `_h`)
+fn noneCapture(none: Option<Nat>) -> Option<Nat> { None }
+fn compareCapture(compare: Nat, a: Vote, b: Vote) -> Bool { a < b && compare == 0 }
+fn decideCapture(decide: Nat, a: Nat, b: Nat) -> Bool { a < b || decide == 0 }
+fn someCapture(some: Nat, o: Option<Nat>) -> Option<Nat> { o.map(|x| x + some) }
+fn hCapture(n: Nat, _h: Nat) -> Nat { if n == 0 { _h } else { hCapture(n - 1, _h + 1) } }
+// Lean の予約語を局所名に使う
+fn kw(hiding: Nat, only: Nat, generalizing: Nat, extends: Nat, renaming: Nat, exact: Nat) -> Nat {
+  hiding + only + generalizing + extends + renaming + exact
+}
+
+scenario demo {
+  let bag = Bag { items: Set.of([Vote { slot: 1, who: 2 }]), tags: Table.empty() };
+  setOps(bag.items, Vote { slot: 1, who: 2 }) + tableOps(bag.tags) + listOps([3, 1, 2]) + shapeSize(Shape.Line(1, 5))
+    + halveG(9, 100, true) + countW(3) + chain(7) + forestSize(Forest.Cons(Rose.Node(1, Forest.Nil), Forest.Nil))
+    + useWhere(Where { with: 1, fun: 2 }) + useMix(4) + opt(Some(3)) + strInt("ab", -2) + parsed(4)
+    + (if bag == bag && mkShapes().size() == 3 && cmp(Vote { slot: 1, who: 1 }, Vote { slot: 2, who: 0 }, Shape.Dot, Shape.Dot) { 1 } else { 0 })
+    + onlyGuard(One.Only(3)) + r9(9) + zz(4) + sumG(Tree.Node(Tree.Leaf, 5, Tree.Leaf), true) + deep(Tree.Leaf)
+    + noneCapture(Some(5)).getOr(100) + (if compareCapture(0, Vote { slot: 1, who: 1 }, Vote { slot: 2, who: 0 }) { 1 } else { 0 })
+    + (if decideCapture(1, 1, 2) { 1 } else { 0 }) + someCapture(1, Some(1)).getOr(0) + hCapture(3, 0) + kw(1, 1, 1, 1, 1, 1)
+}

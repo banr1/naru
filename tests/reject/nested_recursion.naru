@@ -1,0 +1,16 @@
+// 回帰用(条件ではない): コンテナ越しの再帰型を E019 で拒否する(Lean の deriving が入れ子の帰納型に使えない)。
+// `lake exe naru check-reject tests/reject/nested_recursion.naru E019` が PASS。
+module Reject.NestedRecursion
+
+// 自分を Option の中で参照する
+enum Chain { End, Link(Nat, Option<Chain>) } derive eq
+
+// 自分を List の中で参照する(rose tree は相互再帰の enum で書く)
+enum Rose { Node(Nat, List<Rose>) } derive eq
+
+// 相互: Store → Table<_, Block> → Block → Store(record の欄)
+record Store { blocks: Table<Nat, Block> } derive eq
+record Block { owner: Option<Store> } derive eq
+
+// 直接の欄・variant 引数の再帰は受理する(ここでは誤りにならない)
+enum Tree { Leaf, Node(Tree, Nat, Tree) } derive eq

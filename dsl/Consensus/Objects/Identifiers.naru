@@ -1,0 +1,20 @@
+// verified-consensus の移植: DecoupledConsensusModel/Objects/Identifiers.lean(§1 識別子)。
+// 手書き Model の `Slot` / `Height` / `Round` / `BlockId` / `genesisRoot` に対応する。
+// BlockId は単なる識別子でよい(IDEAL.md「理想化」)。手書きの `LinearOrder BlockId` は `value` で持ち上げた
+// 全順序なので、`derive order`(欄の辞書式順序)がそれに一致する。
+module Consensus.Objects.Identifiers
+
+// §1 slot number
+type Slot = Nat
+
+// §4 height: the finality counter, separate from slot
+type Height = Nat
+
+// §3 round index; round r is slots rR … rR+R−1
+type Round = Nat
+
+// §1 B.root: the nominal block identity. Roots are opaque; only equality and the fixed order are used.
+record BlockId { value: Nat } derive eq, order
+
+// §1 the root of B_gen: the model fixes the least root, so genesis loses every root tie-break
+fn genesisRoot() -> BlockId { BlockId { value: 0 } }

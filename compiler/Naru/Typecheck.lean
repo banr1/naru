@@ -1,9 +1,10 @@
 import Std.Data.HashMap
 import Naru.Ast
+import Naru.Core
 import Naru.Resolve
 
 /-!
-# 型検査・capability 検査・選択と順序の検査
+# 型検査・capability 検査・選択と順序の検査 — そして Core IR への elaboration
 
 名前解決と phase 検査(`Resolve.lean`)を通った宣言の本体に型を付け、次を報告する。
 
@@ -16,6 +17,10 @@ import Naru.Resolve
 - 順序指定の無い Set → List 変換(`toList` / `by =` の無い `sort` / `fold` …) → **E004**
 - runtime 宣言の中の量化(`forall` / `exists`) → E006
 
+同時に Surface AST を Typed Core IR(`Core.lean`)に elaborate する。誤りが 1 つでもあれば Core は
+backend に渡らない(`Driver.lean`)。型が要る位置(`let` / lambda の引数 / 空のコレクション / 比較の被演算子)で
+宣言の終わりまでにメタ変数が残っていれば E014(「add a type annotation」)。
+
 stdlib のメソッド表(`setSigs` / `listSigs` / …)がこのファイルの正本。naru で書いた stdlib ができるまでは
 ここで型を与える。Lean の型クラスは露出せず、eq / order の要求はメソッド表の `caps` 列で表す。
 推論は単一化(メタ変数)で行い、lambda の引数型は期待される型から取る。
@@ -23,44 +28,12 @@ stdlib のメソッド表(`setSigs` / `listSigs` / …)がこのファイルの�
 
 namespace Naru
 
-/-- 内部の型表現。Surface の `Ty` を解決・展開したもの。 -/
-inductive TyV where
-  | bool | nat | int | string | unit
-  | option (t : TyV)
-  | result (t e : TyV)
-  | list (t : TyV)
-  | set (t : TyV)
-  | table (k v : TyV)
-  | tuple (ts : List TyV)
-  /-- record / state / enum。`key` は大域表の鍵(修飾名)、`display` は表示名。
-  `$T` のように `$` で始まる key はメソッド表の型変数。 -/
-  | named (key display : String)
-  | fn (params : List TyV) (ret : TyV)
-  /-- 推論用のメタ変数。 -/
-  | mvar (n : Nat)
-  /-- 既に報告した誤りの波及を抑えるための「不明」。何とでも単一化する。 -/
-  | unknown
-deriving Inhabited
-
-partial def TyV.render : TyV → String
-  | .bool => "Bool"
-  | .nat => "Nat"
-  | .int => "Int"
-  | .string => "String"
-  | .unit => "Unit"
-  | .option t => s!"Option<{t.render}>"
-  | .result t e => s!"Result<{t.render}, {e.render}>"
-  | .list t => s!"List<{t.render}>"
-  | .set t => s!"Set<{t.render}>"
-  | .table k v => s!"Table<{k.render}, {v.render}>"
-  | .tuple ts => "(" ++ ", ".intercalate (ts.map TyV.render) ++ ")"
-  | .named _ d => d
-  | .fn ps r => "(" ++ ", ".intercalate (ps.map TyV.render) ++ ") -> " ++ r.render
-  | .mvar n => s!"?{n}"
-  | .unknown => "_"
-
 namespace Typecheck
 open Std
+
+abbrev CExpr := Core.Expr
+abbrev CPat := Core.Pat
+abbrev CArm := Core.Arm
 
 /-- record / state の欄、enum の variant。 -/
 inductive TypeInfo where
@@ -91,6 +64,8 @@ structure St where
   subst : HashMap Nat TyV := {}
   nextMeta : Nat := 0
   diags : Array Diagnostic := #[]
+  /-- いま検査中の宣言で、終わりまでに型が確定していなければならない位置(残れば E014)。 -/
+  pending : Array (Span × TyV × String) := #[]
 
 abbrev M := StateM St
 
@@ -116,6 +91,10 @@ def fresh : M TyV := do
   set { s with nextMeta := s.nextMeta + 1 }
   return .mvar s.nextMeta
 
+/-- 宣言の終わりまでに `t` のメタ変数が解けていなければ E014 を `span` に報告する。 -/
+def need (span : Span) (t : TyV) (what : String) : M Unit :=
+  modify fun s => { s with pending := s.pending.push (span, t, what) }
+
 /-! ## 単一化 -/
 
 partial def zonk (t : TyV) : M TyV := do
@@ -139,6 +118,14 @@ partial def occurs (n : Nat) : TyV → Bool
   | .result a e | .table a e => occurs n a || occurs n e
   | .tuple ts => ts.any (occurs n)
   | .fn ps r => ps.any (occurs n) || occurs n r
+  | _ => false
+
+partial def hasMeta : TyV → Bool
+  | .mvar _ => true
+  | .option a | .list a | .set a => hasMeta a
+  | .result a e | .table a e => hasMeta a || hasMeta e
+  | .tuple ts => ts.any hasMeta
+  | .fn ps r => ps.any hasMeta || hasMeta r
   | _ => false
 
 def bindMeta (n : Nat) (t : TyV) : M Unit :=
@@ -267,6 +254,16 @@ def isFnLike : DeclKind → Bool
   | .fn | .input | .observer | .predicate | .condition | .regime | .property | .claim => true
   | _ => false
 
+/-- Lean が record / enum ごとに自動生成する名前。欄・variant には使えない(E012)。 -/
+def leanGenerated : List String :=
+  ["mk", "rec", "recOn", "casesOn", "noConfusion", "noConfusionType", "below", "brecOn", "binductionOn",
+   "ibelow", "toCtorIdx", "ofNat", "ctorIdx", "sizeOf", "sizeOf_spec", "inj", "injEq", "ctorElimType"]
+
+def checkMemberName (ctx : Ctx) (span : Span) (what name owner : String) : M Unit := do
+  if leanGenerated.contains name then
+    report ctx span Code.duplicate
+      s!"{what} `{name}` of `{owner}` is reserved: Lean generates a declaration of that name for every record / enum"
+
 /-- 宣言の署名(欄・variant・引数・戻り型)を内部表現にして表に入れる。 -/
 def buildInfo (m : Module) (d : Decl) : M Unit := do
   let ctx := declCtx m d
@@ -277,6 +274,7 @@ def buildInfo (m : Module) (d : Decl) : M Unit := do
     for f in d.fields do
       if fs.any (·.1 == f.name) then
         report ctx f.span Code.arity s!"field `{f.name}` is declared twice in `{d.name}`"
+      checkMemberName ctx f.span "field" f.name d.name
       fs := fs.push (f.name, ← convTy ctx f.ty)
     modify fun s => { s with types := s.types.insert q (.record fs d.derives) }
   | .enum =>
@@ -284,6 +282,7 @@ def buildInfo (m : Module) (d : Decl) : M Unit := do
     for v in d.variants do
       if vs.any (·.1 == v.name) then
         report ctx v.span Code.arity s!"variant `{v.name}` is declared twice in `{d.name}`"
+      checkMemberName ctx v.span "variant" v.name d.name
       vs := vs.push (v.name, ← v.args.toList.mapM (convTy ctx))
     modify fun s => { s with types := s.types.insert q (.enum vs d.derives) }
   | .typeAlias =>
@@ -300,6 +299,48 @@ def buildInfo (m : Module) (d : Decl) : M Unit := do
         | some t => convTy ctx t
         | none => pure .bool
       modify fun s => { s with fns := s.fns.insert q { kind := k, params := ps, ret } }
+
+/-! ## コンテナ越しの再帰型(E019) -/
+
+/-- record / enum の欄・variant の型が指す型と、コンテナ(Option / List / Set / Table / Result / tuple)の中かどうか。 -/
+def typeEdges (info : TypeInfo) : List (String × Bool) :=
+  let tys : List TyV := match info with
+    | .record fs _ => fs.toList.map (·.2)
+    | .enum vs _ => vs.toList.flatMap (·.2)
+  tys.flatMap fun t => match t with
+    | .named k _ => if k.startsWith "$" then [] else [(k, false)]
+    | t => t.namedKeys.map fun k => (k, true)
+
+/-- 型 `start` から欄を辿って届く型(1 辺以上)。 -/
+partial def reachTypes (start : String) : M (List String) := do
+  let types := (← get).types
+  let rec go (todo seen : List String) : List String :=
+    match todo with
+    | [] => seen
+    | x :: rest =>
+      let next := match types.get? x with
+        | some info => (typeEdges info).map (·.1) |>.filter fun y => !seen.contains y
+        | none => []
+      go (next ++ rest) (seen ++ next)
+  let init := match types.get? start with
+    | some info => ((typeEdges info).map (·.1)).eraseDups
+    | none => []
+  return go init init
+
+/-- コンテナ越しに自分(または自分に戻る型)を参照する record / enum は E019。
+Lean の `deriving DecidableEq` / `Ord` は入れ子の帰納型(nested inductive)に使えないので、backend が落とせない。 -/
+def checkNestedRecursion (m : Module) (d : Decl) : M Unit := do
+  if !(d.kind == .record || d.kind == .state || d.kind == .enum) then return
+  let ctx := declCtx m d
+  let q := renderPath (m.name ++ [d.name])
+  let some info := (← get).types.get? q | return
+  for (k, nested) in typeEdges info do
+    if !nested then continue
+    if k == q || (← reachTypes k).contains q then
+      let other := if k == q then "itself" else s!"`{((k.splitOn ".").getLast!)}` (which refers back to `{d.name}`)"
+      report ctx d.span Code.nestedRecursion
+        s!"{d.kind.describe} `{d.name}` refers to {other} inside a container type (Option / List / Set / Table / Result / tuple); recursion must go through a direct field or variant argument — split the type into mutually recursive enums or use an id instead"
+      return
 
 /-! ## capability -/
 
@@ -519,14 +560,39 @@ def choiceMsg (what : String) : String :=
 def orderMsg (what : String) : String :=
   s!"{what} turns a Set into an ordered sequence without saying which order; use `sort(by = …)` to make the order explicit"
 
+def isCatchAllPat : Pattern → Bool
+  | .wild _ | .bind .. => true
+  | _ => false
+
+/-- match の腕の形(E018)。(1) 最後の腕にガードがあると、ガードが偽のときどの腕も一致しない。
+(2) Nat / Int / String はリテラルでは覆えないので、ガードの無い `_` か束縛の腕が要る。
+他の型の網羅性は backend が出す Lean の match が検査する。 -/
+def checkMatchShape (ctx : Ctx) (span : Span) (st : TyV) (arms : Array Arm) : M Unit := do
+  if let some (.mk _ (some g) _) := arms.back? then
+    report ctx g.span Code.matchShape
+      "the last arm of a `match` must not have a guard: when the guard is false, no arm matches. Add an unconditional arm after it"
+  match ← zonk st with
+  | .nat | .int | .string =>
+    let hasCatchAll := arms.any fun
+      | .mk p none _ => isCatchAllPat p
+      | _ => false
+    if !hasCatchAll then
+      report ctx span Code.matchShape
+        s!"a `match` on `{(← zonk st).render}` needs an unconditional `_` or variable arm: literals cannot cover every value"
+  | _ => pure ()
+
+/-- ブロックの束縛を `let_` の入れ子にする。 -/
+def mkLets (binds : List (String × TyV × CExpr)) (tail : CExpr) : CExpr :=
+  binds.foldr (fun (n, t, v) body => .let_ n t v body) tail
+
 /-! ## 式 -/
 
 mutual
 
-/-- 式の型を推論する。誤りは報告して `unknown` を返す。 -/
-partial def infer (ctx : Ctx) (e : Expr) : M TyV := do
+/-- 式の型を推論し、Core に elaborate する。誤りは報告して `unknown` / `.error` を返す。 -/
+partial def infer (ctx : Ctx) (e : Expr) : M (TyV × CExpr) := do
   match e with
-  | .lit _ l => return litTy l
+  | .lit _ l => return (litTy l, .lit l (litTy l))
   | .var span segs => inferVar ctx span segs
   | .call span f args => inferCall ctx span f args
   | .field span r name => inferField ctx span r name
@@ -538,59 +604,75 @@ partial def infer (ctx : Ctx) (e : Expr) : M TyV := do
     inferMethod ctx span r name args
   | .binop span op l r => inferBinop ctx span op l r
   | .unop _ "!" a =>
-    check ctx a .bool
-    return .bool
+    let c ← check ctx a .bool
+    return (.bool, .unop "!" c)
   | .unop _ "-" a =>
     match a with
-    | .lit _ (.nat _) => return .int
+    | .lit _ (.nat n) => return (.int, .unop "-" (.lit (.nat n) .int))
     | _ =>
-      check ctx a .int
-      return .int
-  | .unop _ _ a => infer ctx a
+      let c ← check ctx a .int
+      return (.int, .unop "-" c)
+  | .unop _ op a =>
+    let (t, c) ← infer ctx a
+    return (t, .unop op c)
   | .ite _ c t el =>
-    check ctx c .bool
-    let tt ← infer ctx t
-    check ctx el tt
-    return tt
+    let cc ← check ctx c .bool
+    let (tt, ct) ← infer ctx t
+    let ce ← check ctx el tt
+    return (tt, .ite cc ct ce)
   | .matchE span s arms =>
-    let st ← infer ctx s
+    let (st, cs) ← infer ctx s
     if arms.isEmpty then
       report ctx span Code.typeMismatch "`match` needs at least one arm"
-      return .unknown
+      return (.unknown, .error)
     let mut rt : Option TyV := none
+    let mut carms : List CArm := []
     for arm in arms do
       let .mk pat guard body := arm
-      let binds ← checkPat ctx st pat
+      let (binds, cp) ← checkPat ctx st pat
       let c := ctx.bind binds
-      if let some g := guard then check c g .bool
-      match rt with
-      | none => rt := some (← infer c body)
-      | some t => check c body t
-    return rt.getD .unknown
+      let cg ← match guard with
+        | some g => pure (some (← check c g .bool))
+        | none => pure none
+      let cb ← match rt with
+        | none =>
+          let (t, cb) ← infer c body
+          rt := some t
+          pure cb
+        | some t => check c body t
+      carms := carms ++ [.mk cp cg cb]
+    checkMatchShape ctx span st arms
+    return (rt.getD .unknown, .match_ cs st carms)
   | .block _ stmts tail =>
-    let c ← inferStmts ctx stmts
+    let (c, binds) ← inferStmts ctx stmts
     match tail with
-    | some t => infer c t
-    | none => return .unit
+    | some t =>
+      let (tt, ct) ← infer c t
+      return (tt, mkLets binds ct)
+    | none => return (.unit, mkLets binds (.lit .unit .unit))
   | .recordLit span name fields base => inferRecordLit ctx span name fields base
-  | .listLit _ elems =>
+  | .listLit span elems =>
     let m ← fresh
-    for x in elems do check ctx x m
-    return .list m
+    let cs ← elems.toList.mapM (check ctx · m)
+    need span m "this list's elements"
+    return (.list m, .list cs m)
   | .tupleLit _ elems =>
-    let ts ← elems.toList.mapM (infer ctx)
-    return .tuple ts
+    let rs ← elems.toList.mapM (infer ctx)
+    return (.tuple (rs.map (·.1)), .tuple (rs.map (·.2)))
   | .lambda _ params body =>
     let mut ps : List TyV := []
     let mut binds : List (String × TyV) := []
     for p in params do
       let t ← match p.ty with
         | some a => convTy ctx a
-        | none => fresh
+        | none =>
+          let m ← fresh
+          need p.span m s!"parameter `{p.name}` of this closure"
+          pure m
       ps := ps ++ [t]
       binds := binds ++ [(p.name, t)]
-    let r ← infer (ctx.bind binds) body
-    return .fn ps r
+    let (r, cb) ← infer (ctx.bind binds) body
+    return (.fn ps r, .lambda binds cb)
   | .quant span q binders body =>
     if ctx.declKind.phase == .runtime then
       let qn := if q == .forall_ then "forall" else "exists"
@@ -600,13 +682,16 @@ partial def infer (ctx : Ctx) (e : Expr) : M TyV := do
     for b in binders do
       let t ← match b.ty with
         | some a => convTy ctx a
-        | none => fresh
+        | none =>
+          let m ← fresh
+          need b.span m s!"`{b.name}` bound by this quantifier"
+          pure m
       binds := binds ++ [(b.name, t)]
-    check (ctx.bind binds) body .bool
-    return .bool
+    let cb ← check (ctx.bind binds) body .bool
+    return (.bool, .quant q binds cb)
 
-/-- 期待される型に対して検査する。lambda・分岐・ブロック・リストには期待を内側へ伝える。 -/
-partial def check (ctx : Ctx) (e : Expr) (expected : TyV) : M Unit := do
+/-- 期待される型に対して検査し、Core に elaborate する。lambda・分岐・ブロック・リストには期待を内側へ伝える。 -/
+partial def check (ctx : Ctx) (e : Expr) (expected : TyV) : M CExpr := do
   match e with
   | .lambda span params body =>
     match ← zonk expected with
@@ -614,85 +699,110 @@ partial def check (ctx : Ctx) (e : Expr) (expected : TyV) : M Unit := do
       if ps.length != params.size then
         report ctx span Code.typeMismatch
           s!"this closure takes {params.size} parameter(s), but {ps.length} expected"
-        return
+        return .error
       let mut binds : List (String × TyV) := []
       for (p, t) in params.toList.zip ps do
         if let some a := p.ty then
           let at_ ← convTy ctx a
           expectTy ctx p.span t at_
         binds := binds ++ [(p.name, t)]
-      check (ctx.bind binds) body r
+      let cb ← check (ctx.bind binds) body r
+      return .lambda binds cb
     | _ =>
-      let t ← infer ctx e
+      let (t, c) ← infer ctx e
       expectTy ctx span expected t
+      return c
   | .ite _ c t el =>
-    check ctx c .bool
-    check ctx t expected
-    check ctx el expected
+    let cc ← check ctx c .bool
+    let ct ← check ctx t expected
+    let ce ← check ctx el expected
+    return .ite cc ct ce
   | .matchE span s arms =>
-    let st ← infer ctx s
+    let (st, cs) ← infer ctx s
     if arms.isEmpty then
       report ctx span Code.typeMismatch "`match` needs at least one arm"
+      return .error
+    let mut carms : List CArm := []
     for arm in arms do
       let .mk pat guard body := arm
-      let binds ← checkPat ctx st pat
+      let (binds, cp) ← checkPat ctx st pat
       let c := ctx.bind binds
-      if let some g := guard then check c g .bool
-      check c body expected
-  | .lit span (.nat _) =>
+      let cg ← match guard with
+        | some g => pure (some (← check c g .bool))
+        | none => pure none
+      let cb ← check c body expected
+      carms := carms ++ [.mk cp cg cb]
+    checkMatchShape ctx span st arms
+    return .match_ cs st carms
+  | .lit span (.nat n) =>
     -- 数値リテラルは Nat だが、Int が期待される位置では Int として読む
     match ← zonk expected with
-    | .int => pure ()
-    | _ => expectTy ctx span expected .nat
+    | .int => return .lit (.nat n) .int
+    | _ =>
+      expectTy ctx span expected .nat
+      return .lit (.nat n) .nat
   | .block span stmts tail =>
-    let c ← inferStmts ctx stmts
+    let (c, binds) ← inferStmts ctx stmts
     match tail with
-    | some t => check c t expected
-    | none => expectTy ctx span expected .unit
+    | some t => return mkLets binds (← check c t expected)
+    | none =>
+      expectTy ctx span expected .unit
+      return mkLets binds (.lit .unit .unit)
   | .listLit span elems =>
     match ← zonk expected with
-    | .list t => for x in elems do check ctx x t
+    | .list t =>
+      let cs ← elems.toList.mapM (check ctx · t)
+      return .list cs t
     | _ =>
-      let t ← infer ctx e
+      let (t, c) ← infer ctx e
       expectTy ctx span expected t
+      return c
   | _ =>
-    let t ← infer ctx e
+    let (t, c) ← infer ctx e
     expectTy ctx e.span expected t
+    return c
 
-partial def inferStmts (ctx : Ctx) (stmts : Array Stmt) : M Ctx := do
+/-- ブロックの文。束縛(名前・型・値)の列と、束縛後の文脈を返す。`e;` 文は名前 `_`。 -/
+partial def inferStmts (ctx : Ctx) (stmts : Array Stmt) : M (Ctx × List (String × TyV × CExpr)) := do
   let mut c := ctx
+  let mut binds : List (String × TyV × CExpr) := []
   for st in stmts do
     match st with
-    | .letS _ name ty val =>
-      let t ← match ty with
+    | .letS span name ty val =>
+      let (t, cv) ← match ty with
         | some a =>
           let at_ ← convTy c a
-          check c val at_
-          pure at_
-        | none => infer c val
+          let cv ← check c val at_
+          pure (at_, cv)
+        | none =>
+          let (t, cv) ← infer c val
+          need span t s!"`{name}`"
+          pure (t, cv)
+      binds := binds ++ [(name, t, cv)]
       c := c.bind [(name, t)]
     | .exprS x =>
-      let _ ← infer c x
-  return c
+      let (t, cx) ← infer c x
+      binds := binds ++ [("_", t, cx)]
+  return (c, binds)
 
-partial def inferVar (ctx : Ctx) (span : Span) (segs : List String) : M TyV := do
+partial def inferVar (ctx : Ctx) (span : Span) (segs : List String) : M (TyV × CExpr) := do
   match segs with
-  | [] => return .unknown
+  | [] => return (.unknown, .error)
   | head :: rest =>
     if rest.isEmpty then
-      if let some t := ctx.locals.lookup head then return t
+      if let some t := ctx.locals.lookup head then return (t, .var head)
     if Resolve.isBuiltinHead head then return ← inferBuiltin ctx span head rest
     match ← lookupEntry segs with
-    | none => return .unknown   -- E011 は Resolve が報告済み
+    | none => return (.unknown, .error)   -- E011 は Resolve が報告済み
     | some (e, rest') =>
       let k := e.decl.kind
       if isFnLike k then
         if !rest'.isEmpty then
           report ctx span Code.arity s!"`{e.decl.name}` has no member `{renderPath rest'}`"
-          return .unknown
+          return (.unknown, .error)
         match (← get).fns.get? e.qualified with
-        | some fi => return .fn (fi.params.toList.map (·.2)) fi.ret
-        | none => return .unknown
+        | some fi => return (.fn (fi.params.toList.map (·.2)) fi.ret, .global e.qualified)
+        | none => return (.unknown, .error)
       else if k.isType then
         let prefixLen := segs.length - rest'.length
         let t ← convTy ctx (.named span (segs.take prefixLen) #[])
@@ -703,21 +813,21 @@ partial def inferVar (ctx : Ctx) (span : Span) (segs : List String) : M TyV := d
             match rest' with
             | [v] =>
               match vs.toList.lookup v with
-              | some [] => return .named key d
-              | some argTys => return .fn argTys (.named key d)
+              | some [] => return (.named key d, .variant key v [])
+              | some argTys => return (.fn argTys (.named key d), .variant key v [])
               | none =>
                 report ctx span Code.arity s!"enum `{d}` has no variant `{v}`"
-                return .unknown
+                return (.unknown, .error)
             | [] =>
               report ctx span Code.typeMismatch s!"enum `{d}` cannot be used as a value; name one of its variants (`{d}.Variant`)"
-              return .unknown
+              return (.unknown, .error)
             | _ =>
               report ctx span Code.arity s!"`{renderPath segs}` is not a variant of enum `{d}`"
-              return .unknown
+              return (.unknown, .error)
           | _ =>
             report ctx span Code.typeMismatch s!"type `{d}` cannot be used as a value"
-            return .unknown
-        | _ => return .unknown
+            return (.unknown, .error)
+        | _ => return (.unknown, .error)
       else
         match k with
         | .claimBundle =>
@@ -725,54 +835,59 @@ partial def inferVar (ctx : Ctx) (span : Span) (segs : List String) : M TyV := d
             s!"claim bundle `{e.decl.name}` can only be referenced from another claim bundle"
         | _ =>
           report ctx span Code.typeMismatch s!"`{e.decl.name}` is a {k.describe}, not a value"
-        return .unknown
+        return (.unknown, .error)
 
-/-- 組み込みの構築子と静的関数(`Some` / `None` / `Ok` / `Err` / `Set.empty` …)。 -/
-partial def inferBuiltin (ctx : Ctx) (span : Span) (head : String) (rest : List String) : M TyV := do
+/-- 組み込みの構築子と静的関数(`Some` / `None` / `Ok` / `Err` / `Set.empty` …)。
+値としての参照(引数なし)。呼出しは `inferCall` が引数を付ける。 -/
+partial def inferBuiltin (ctx : Ctx) (span : Span) (head : String) (rest : List String) : M (TyV × CExpr) := do
+  let name := renderPath (head :: rest)
+  let ok (t : TyV) : M (TyV × CExpr) := return (t, .builtin name [] t)
   match head, rest with
   | "Some", [] =>
     let m ← fresh
-    return .fn [m] (.option m)
+    ok (.fn [m] (.option m))
   | "None", [] =>
     let m ← fresh
-    return .option m
+    need span m "`None`"
+    ok (.option m)
   | "Ok", [] =>
     let m ← fresh
     let err ← fresh
-    return .fn [m] (.result m err)
+    ok (.fn [m] (.result m err))
   | "Err", [] =>
     let m ← fresh
     let err ← fresh
-    return .fn [err] (.result m err)
+    ok (.fn [err] (.result m err))
   | "choose", [] | "pick", [] =>
     report ctx span Code.choose (choiceMsg s!"`{head}`")
-    return .unknown
+    return (.unknown, .error)
   | "sort", [] =>
     report ctx span Code.arity "`sort` must be called as `sort(xs, by = …)`"
-    return .unknown
+    return (.unknown, .error)
   | "Set", ["empty"] =>
     let m ← fresh
-    return .fn [] (.set m)
+    ok (.fn [] (.set m))
   | "Set", ["singleton"] =>
     let m ← fresh
-    return .fn [m] (.set m)
+    ok (.fn [m] (.set m))
   | "Set", ["of"] =>
     let m ← fresh
-    return .fn [.list m] (.set m)
+    ok (.fn [.list m] (.set m))
   | "List", ["empty"] =>
     let m ← fresh
-    return .fn [] (.list m)
-  | "List", ["range"] => return .fn [.nat] (.list .nat)
+    ok (.fn [] (.list m))
+  | "List", ["range"] => ok (.fn [.nat] (.list .nat))
   | "Table", ["empty"] =>
     let k ← fresh
     let v ← fresh
-    return .fn [] (.table k v)
+    ok (.fn [] (.table k v))
   | _, _ =>
-    report ctx span Code.arity s!"`{renderPath (head :: rest)}` is not a known built-in"
-    return .unknown
+    report ctx span Code.arity s!"`{name}` is not a known built-in"
+    return (.unknown, .error)
 
-/-- 呼出し。`sort(xs, by = …)` は `xs.sort(by = …)` の糖衣。 -/
-partial def inferCall (ctx : Ctx) (span : Span) (f : Expr) (args : Array Arg) : M TyV := do
+/-- 呼出し。`sort(xs, by = …)` は `xs.sort(by = …)` の糖衣。呼出し先の Core の形
+(fn の `global` / 組み込みの `builtin` / enum の `variant`)で、Core の呼出しの形を決める。 -/
+partial def inferCall (ctx : Ctx) (span : Span) (f : Expr) (args : Array Arg) : M (TyV × CExpr) := do
   match f with
   | .var vsp ["sort"] =>
     match args.toList with
@@ -780,28 +895,36 @@ partial def inferCall (ctx : Ctx) (span : Span) (f : Expr) (args : Array Arg) : 
     | _ =>
       report ctx vsp Code.arity "`sort(xs, by = …)` needs the collection as its first argument"
       inferArgsLoosely ctx args
-      return .unknown
+      return (.unknown, .error)
   | _ =>
-    let ft ← zonk (← infer ctx f)
+    let (ft0, cf) ← infer ctx f
+    let ft ← zonk ft0
     match ft with
     | .fn ps r =>
       let names ← calleeParamNames f
       let params := match names with
         | some ns => (ns.zip ps).map fun (n, t) => (some n, t)
         | none => ps.map fun t => (none, t)
-      matchArgs ctx span (describeCallee f) params args
-      return r
+      let cargs ← matchArgs ctx span (describeCallee f) params args
+      let call : CExpr := match cf with
+        | .global key => .call key cargs.toList
+        | .builtin name [] _ => .builtin name cargs.toList r
+        | .variant key v [] => .variant key v cargs.toList
+        | _ => .callLocal cf cargs.toList
+      if let .builtin name _ _ := call then
+        need span r s!"the result of `{name}`"
+      return (r, call)
     | .unknown =>
       inferArgsLoosely ctx args
-      return .unknown
+      return (.unknown, .error)
     | .mvar _ =>
       report ctx span Code.typeMismatch "cannot determine the type of the callee; add a type annotation"
       inferArgsLoosely ctx args
-      return .unknown
+      return (.unknown, .error)
     | t =>
       report ctx span Code.typeMismatch s!"{describeCallee f} is not callable (its type is `{t.render}`)"
       inferArgsLoosely ctx args
-      return .unknown
+      return (.unknown, .error)
 
 /-- 呼出し先がユーザ宣言の fn 等なら、その引数名(名前付き引数のため)。 -/
 partial def calleeParamNames (f : Expr) : M (Option (List String)) := do
@@ -820,13 +943,18 @@ partial def calleeParamNames (f : Expr) : M (Option (List String)) := do
     | _ => return none
   | _ => return none
 
+/-- 既に誤りを報告した呼出しの実引数を、波及を抑えつつ検査する。その間に積まれた「型が要る位置」は捨てる
+(誤りの後の lambda の引数などに余計な E014 を出さない)。 -/
 partial def inferArgsLoosely (ctx : Ctx) (args : Array Arg) : M Unit := do
+  let before := (← get).pending.size
   for a in args do
     let _ ← infer ctx (argExpr a)
+  modify fun s => { s with pending := s.pending.extract 0 before }
 
-/-- 実引数を仮引数に割り当てて検査する。位置引数は順に、名前付き引数は名前で。 -/
+/-- 実引数を仮引数に割り当てて検査する。位置引数は順に、名前付き引数は名前で。
+仮引数の順に並んだ Core の実引数を返す(欠けた位置は `.error`)。 -/
 partial def matchArgs (ctx : Ctx) (span : Span) (what : String)
-    (params : List (Option String × TyV)) (args : Array Arg) : M Unit := do
+    (params : List (Option String × TyV)) (args : Array Arg) : M (Array CExpr) := do
   let ps := params.toArray
   let mut slots : Array (Option Expr) := ps.map fun _ => none
   let mut pos := 0
@@ -854,68 +982,73 @@ partial def matchArgs (ctx : Ctx) (span : Span) (what : String)
       | none =>
         report ctx x.span Code.arity s!"{what} has no parameter named `{n}`"
         let _ ← infer ctx x
+  let mut out : Array CExpr := #[]
   for i in [0:ps.size] do
     match slots[i]! with
-    | some x => check ctx x ps[i]!.2
+    | some x => out := out.push (← check ctx x ps[i]!.2)
     | none =>
       let pname := match ps[i]!.1 with
         | some n => s!"`{n}`"
         | none => s!"#{i + 1}"
       report ctx span Code.arity s!"missing argument {pname} to {what}"
+      out := out.push .error
+  return out
 
-partial def inferField (ctx : Ctx) (span : Span) (r : Expr) (name : String) : M TyV := do
-  let rt ← zonk (← infer ctx r)
+partial def inferField (ctx : Ctx) (span : Span) (r : Expr) (name : String) : M (TyV × CExpr) := do
+  let (rt0, cr) ← infer ctx r
+  let rt ← zonk rt0
   match rt with
   | .named k d =>
     match (← get).types.get? k with
     | some (.record fs _) =>
       match fs.toList.lookup name with
-      | some t => return t
+      | some t => return (t, .field cr k name)
       | none =>
         report ctx span Code.arity s!"record `{d}` has no field `{name}`"
-        return .unknown
+        return (.unknown, .error)
     | some (.enum ..) =>
       report ctx span Code.arity s!"enum `{d}` has no field `{name}`"
-      return .unknown
-    | none => return .unknown
-  | .unknown => return .unknown
+      return (.unknown, .error)
+    | none => return (.unknown, .error)
+  | .unknown => return (.unknown, .error)
   | .mvar _ =>
     report ctx span Code.typeMismatch
       s!"cannot determine the type of the value before `.{name}`; add a type annotation"
-    return .unknown
+    return (.unknown, .error)
   | t =>
     let hint := match sigsFor t with
       | some (_, _, sigs) => if (sigs.lookup name).isSome then s!" (did you mean `{name}()`?)" else ""
       | none => ""
     report ctx span Code.arity s!"type `{t.render}` has no field `{name}`{hint}"
-    return .unknown
+    return (.unknown, .error)
 
 /-- stdlib メソッドの呼出し。Set の選択(E003)と順序(E004)の検査はここ。 -/
 partial def inferMethod (ctx : Ctx) (span : Span) (r : Expr) (name : String) (args : Array Arg) :
-    M TyV := do
-  let rt ← zonk (← infer ctx r)
+    M (TyV × CExpr) := do
+  let (rt0, cr) ← infer ctx r
+  let rt ← zonk rt0
   match rt with
   | .unknown =>
     inferArgsLoosely ctx args
-    return .unknown
+    return (.unknown, .error)
   | .mvar _ =>
     report ctx span Code.typeMismatch
       s!"cannot determine the type of the receiver of `.{name}()`; add a type annotation"
     inferArgsLoosely ctx args
-    return .unknown
+    return (.unknown, .error)
   | _ =>
     if let .set _ := rt then
       if setChoiceMethods.contains name then
         report ctx span Code.choose (choiceMsg s!"`Set.{name}`")
         inferArgsLoosely ctx args
-        return .unknown
+        return (.unknown, .error)
       if setOrderMethods.contains name then
         report ctx span Code.orderLoss (orderMsg s!"`Set.{name}`")
         inferArgsLoosely ctx args
-        return .unknown
+        return (.unknown, .error)
       if name == "sort" && args.isEmpty then
         report ctx span Code.orderLoss (orderMsg "`Set.sort` without `by = …`")
-        return .unknown
+        return (.unknown, .error)
     match sigsFor rt with
     | none =>
       let msg := match rt with
@@ -923,63 +1056,68 @@ partial def inferMethod (ctx : Ctx) (span : Span) (r : Expr) (name : String) (ar
         | t => s!"type `{t.render}` has no method `{name}`"
       report ctx span Code.arity msg
       inferArgsLoosely ctx args
-      return .unknown
+      return (.unknown, .error)
     | some (tyName, bound, sigs) =>
       match sigs.lookup name with
       | none =>
         report ctx span Code.arity s!"`{tyName}` has no method `{name}`"
         inferArgsLoosely ctx args
-        return .unknown
+        return (.unknown, .error)
       | some sig =>
         let (ps, ret, caps) ← instSig bound sig
-        matchArgs ctx span s!"`{tyName}.{name}`" ps args
+        let cargs ← matchArgs ctx span s!"`{tyName}.{name}`" ps args
         for (cap, t) in caps do
           requireCap ctx span cap t s!"`{tyName}.{name}`"
-        return ret
+        need span ret s!"the result of `{tyName}.{name}`"
+        return (ret, .method tyName name cr cargs.toList rt)
 
 /-- 二項演算の両辺を同じ型にする。左辺が数値リテラルなら右辺の型(Int かもしれない)に合わせる。 -/
-partial def sameType (ctx : Ctx) (l r : Expr) : M TyV := do
+partial def sameType (ctx : Ctx) (l r : Expr) : M (TyV × CExpr × CExpr) := do
   match l with
   | .lit _ (.nat _) =>
-    let rt ← infer ctx r
-    check ctx l rt
-    return rt
+    let (rt, cr) ← infer ctx r
+    let cl ← check ctx l rt
+    return (rt, cl, cr)
   | _ =>
-    let lt ← infer ctx l
-    check ctx r lt
-    return lt
+    let (lt, cl) ← infer ctx l
+    let cr ← check ctx r lt
+    return (lt, cl, cr)
 
-partial def inferBinop (ctx : Ctx) (span : Span) (op : String) (l r : Expr) : M TyV := do
+partial def inferBinop (ctx : Ctx) (span : Span) (op : String) (l r : Expr) : M (TyV × CExpr) := do
   match op with
   | "&&" | "||" | "implies" =>
-    check ctx l .bool
-    check ctx r .bool
-    return .bool
+    let cl ← check ctx l .bool
+    let cr ← check ctx r .bool
+    return (.bool, .binop op cl cr .bool)
   | "==" | "!=" =>
-    let lt ← sameType ctx l r
+    let (lt, cl, cr) ← sameType ctx l r
     requireCap ctx span "eq" lt s!"`{op}`"
-    return .bool
+    need span lt s!"the operands of `{op}`"
+    return (.bool, .binop op cl cr lt)
   | "<" | "<=" | ">" | ">=" =>
-    let lt ← sameType ctx l r
+    let (lt, cl, cr) ← sameType ctx l r
     requireCap ctx span "order" lt s!"`{op}`"
-    return .bool
+    need span lt s!"the operands of `{op}`"
+    return (.bool, .binop op cl cr lt)
   | "+" | "-" | "*" | "/" | "%" =>
-    let lt ← sameType ctx l r
+    let (lt, cl, cr) ← sameType ctx l r
     match ← zonk lt with
-    | .nat => return .nat
-    | .int => return .int
-    | .unknown => return .unknown
-    | .mvar _ => return lt
+    | .nat => return (.nat, .binop op cl cr .nat)
+    | .int => return (.int, .binop op cl cr .int)
+    | .unknown => return (.unknown, .error)
+    | .mvar _ =>
+      need span lt s!"the operands of `{op}`"
+      return (lt, .binop op cl cr lt)
     | t =>
       report ctx span Code.typeMismatch s!"`{op}` expects Nat or Int operands, found `{t.render}`"
-      return .unknown
+      return (.unknown, .error)
   | _ =>
     let _ ← infer ctx l
     let _ ← infer ctx r
-    return .unknown
+    return (.unknown, .error)
 
 partial def inferRecordLit (ctx : Ctx) (span : Span) (name : List String)
-    (fields : Array (String × Expr)) (base : Option Expr) : M TyV := do
+    (fields : Array (String × Expr)) (base : Option Expr) : M (TyV × CExpr) := do
   let t ← convTy ctx (.named span name #[])
   let loosely : M Unit := do
     for (_, x) in fields do
@@ -991,75 +1129,86 @@ partial def inferRecordLit (ctx : Ctx) (span : Span) (name : List String)
     match (← get).types.get? k with
     | some (.record fs _) =>
       let mut seen : List String := []
+      let mut given : List (String × CExpr) := []
       for (fname, x) in fields do
         if seen.contains fname then
           report ctx x.span Code.arity s!"field `{fname}` is given twice in `{d}` literal"
         seen := fname :: seen
         match fs.toList.lookup fname with
-        | some ft => check ctx x ft
+        | some ft => given := given ++ [(fname, ← check ctx x ft)]
         | none =>
           report ctx x.span Code.arity s!"record `{d}` has no field `{fname}`"
           let _ ← infer ctx x
-      match base with
-      | some b => check ctx b t
-      | none =>
-        let missing := (fs.toList.filter fun (f, _) => !seen.contains f).map (·.1)
-        if !missing.isEmpty then
-          report ctx span Code.arity
-            s!"missing field(s) {", ".intercalate (missing.map fun f => s!"`{f}`")} in `{d}` literal"
-      return t
+      let cbase ← match base with
+        | some b => pure (some (← check ctx b t))
+        | none =>
+          let missing := (fs.toList.filter fun (f, _) => !seen.contains f).map (·.1)
+          if !missing.isEmpty then
+            report ctx span Code.arity
+              s!"missing field(s) {", ".intercalate (missing.map fun f => s!"`{f}`")} in `{d}` literal"
+          pure none
+      -- 欄は宣言の順に並べる(出力を決定的にする)
+      let ordered := fs.toList.filterMap fun (f, _) => (given.lookup f).map fun c => (f, c)
+      return (t, .record k ordered cbase)
     | some (.enum ..) =>
       report ctx span Code.typeMismatch s!"`{d}` is an enum, not a record"
       loosely
-      return .unknown
+      return (.unknown, .error)
     | none =>
       loosely
-      return .unknown
+      return (.unknown, .error)
   | _ =>
     loosely
-    return .unknown
+    return (.unknown, .error)
 
-/-- パターンを期待される型で検査し、束縛する名前と型を返す。 -/
-partial def checkPat (ctx : Ctx) (expected : TyV) (p : Pattern) : M (List (String × TyV)) := do
+/-- パターンを期待される型で検査し、束縛する名前と型、Core のパターンを返す。 -/
+partial def checkPat (ctx : Ctx) (expected : TyV) (p : Pattern) : M (List (String × TyV) × CPat) := do
   match p with
-  | .wild _ => return []
-  | .bind _ n => return [(n, expected)]
+  | .wild _ => return ([], .wild)
+  | .bind _ n => return ([(n, expected)], .bind n)
   | .lit span l =>
     expectTy ctx span expected (litTy l)
-    return []
+    return ([], .lit l)
   | .tuple span elems =>
     let ms ← elems.toList.mapM fun _ => fresh
     expectTy ctx span expected (.tuple ms)
     let mut binds : List (String × TyV) := []
+    let mut cps : List CPat := []
     for (q, m) in elems.toList.zip ms do
-      binds := (← checkPat ctx m q) ++ binds
-    return binds
+      let (bs, cp) ← checkPat ctx m q
+      binds := bs ++ binds
+      cps := cps ++ [cp]
+    return (binds, .tuple cps)
   | .ctor span name args =>
     match name with
     | ["Some"] =>
       let m ← fresh
       expectTy ctx span expected (.option m)
-      ctorArgs ctx span "Some" [m] args
+      let (bs, cps) ← ctorArgs ctx span "Some" [m] args
+      return (bs, .builtin "Some" cps)
     | ["None"] =>
       let m ← fresh
       expectTy ctx span expected (.option m)
-      ctorArgs ctx span "None" [] args
+      let (bs, cps) ← ctorArgs ctx span "None" [] args
+      return (bs, .builtin "None" cps)
     | ["Ok"] =>
       let m ← fresh
       let err ← fresh
       expectTy ctx span expected (.result m err)
-      ctorArgs ctx span "Ok" [m] args
+      let (bs, cps) ← ctorArgs ctx span "Ok" [m] args
+      return (bs, .builtin "Ok" cps)
     | ["Err"] =>
       let m ← fresh
       let err ← fresh
       expectTy ctx span expected (.result m err)
-      ctorArgs ctx span "Err" [err] args
+      let (bs, cps) ← ctorArgs ctx span "Err" [err] args
+      return (bs, .builtin "Err" cps)
     | _ =>
       match ← lookupEntry name with
       | some (e, [v]) =>
         if !e.decl.kind.isType then
           report ctx span Code.typeMismatch s!"`{renderPath name}` is not a constructor (expected `Enum.Variant`)"
-          return []
+          return ([], .wild)
         let t ← convTy ctx (.named span (name.take (name.length - 1)) #[])
         match ← zonk t with
         | .named key d =>
@@ -1068,32 +1217,87 @@ partial def checkPat (ctx : Ctx) (expected : TyV) (p : Pattern) : M (List (Strin
             match vs.toList.lookup v with
             | some argTys =>
               expectTy ctx span expected t
-              ctorArgs ctx span s!"{d}.{v}" argTys args
+              let (bs, cps) ← ctorArgs ctx span s!"{d}.{v}" argTys args
+              return (bs, .variant key v cps)
             | none =>
               report ctx span Code.arity s!"enum `{d}` has no variant `{v}`"
-              return []
+              return ([], .wild)
           | _ =>
             report ctx span Code.typeMismatch s!"`{d}` is not an enum"
-            return []
-        | _ => return []
+            return ([], .wild)
+        | _ => return ([], .wild)
       | some (e, _) =>
         report ctx span Code.typeMismatch
           s!"`{renderPath name}` is not a constructor (expected `Enum.Variant`, found {e.decl.kind.describe} `{e.decl.name}`)"
-        return []
-      | none => return []   -- E011 は Resolve が報告済み
+        return ([], .wild)
+      | none => return ([], .wild)   -- E011 は Resolve が報告済み
 
 partial def ctorArgs (ctx : Ctx) (span : Span) (what : String) (tys : List TyV)
-    (args : Array Pattern) : M (List (String × TyV)) := do
+    (args : Array Pattern) : M (List (String × TyV) × List CPat) := do
   if tys.length != args.size then
     report ctx span Code.arity
       s!"`{what}` takes {tys.length} argument(s) in a pattern, found {args.size}"
-    return []
+    return ([], [])
   let mut binds : List (String × TyV) := []
+  let mut cps : List CPat := []
   for (q, t) in args.toList.zip tys do
-    binds := (← checkPat ctx t q) ++ binds
-  return binds
+    let (bs, cp) ← checkPat ctx t q
+    binds := bs ++ binds
+    cps := cps ++ [cp]
+  return (binds, cps)
 
 end
+
+/-! ## Core の型の確定(zonk) -/
+
+mutual
+partial def zonkExpr (e : CExpr) : M CExpr := do
+  match e with
+  | .lit l ty => return .lit l (← zonk ty)
+  | .var _ | .global _ | .error => return e
+  | .call k args => return .call k (← args.mapM zonkExpr)
+  | .callLocal f args => return .callLocal (← zonkExpr f) (← args.mapM zonkExpr)
+  | .method tn n recv args rt => return .method tn n (← zonkExpr recv) (← args.mapM zonkExpr) (← zonk rt)
+  | .builtin n args ty => return .builtin n (← args.mapM zonkExpr) (← zonk ty)
+  | .variant k v args => return .variant k v (← args.mapM zonkExpr)
+  | .field r k n => return .field (← zonkExpr r) k n
+  | .binop op l r ty => return .binop op (← zonkExpr l) (← zonkExpr r) (← zonk ty)
+  | .unop op a => return .unop op (← zonkExpr a)
+  | .ite c t el => return .ite (← zonkExpr c) (← zonkExpr t) (← zonkExpr el)
+  | .match_ s st arms => return .match_ (← zonkExpr s) (← zonk st) (← arms.mapM zonkArm)
+  | .let_ n ty v b => return .let_ n (← zonk ty) (← zonkExpr v) (← zonkExpr b)
+  | .record k fs base =>
+    let fs' ← fs.mapM fun (f, x) => do return (f, ← zonkExpr x)
+    let base' ← match base with
+      | some b => pure (some (← zonkExpr b))
+      | none => pure none
+    return .record k fs' base'
+  | .list es ty => return .list (← es.mapM zonkExpr) (← zonk ty)
+  | .tuple es => return .tuple (← es.mapM zonkExpr)
+  | .lambda ps b =>
+    let ps' ← ps.mapM fun (n, t) => do return (n, ← zonk t)
+    return .lambda ps' (← zonkExpr b)
+  | .quant q bs b =>
+    let bs' ← bs.mapM fun (n, t) => do return (n, ← zonk t)
+    return .quant q bs' (← zonkExpr b)
+
+partial def zonkArm (a : CArm) : M CArm := do
+  let .mk p g b := a
+  let g' ← match g with
+    | some x => pure (some (← zonkExpr x))
+    | none => pure none
+  return .mk p g' (← zonkExpr b)
+end
+
+/-- 宣言の終わり: 型が要る位置にメタ変数が残っていれば E014。 -/
+def finishDecl (ctx : Ctx) : M Unit := do
+  let pending := (← get).pending
+  modify fun s => { s with pending := #[] }
+  for (span, t, what) in pending do
+    let t' ← zonk t
+    if hasMeta t' then
+      report ctx span Code.typeMismatch
+        s!"cannot infer the type of {what} (`{t'.render}`); add a type annotation"
 
 /-! ## 宣言 -/
 
@@ -1111,48 +1315,103 @@ def checkDerives (ctx : Ctx) (d : Decl) (q : String) : M Unit := do
           requireCap ctx d.span cap t s!"`derive {cap}` on `{d.name}` (variant `{v}`)"
   | none => pure ()
 
-def checkDecl (m : Module) (d : Decl) : M Unit := do
+/-- 宣言を検査し、Core の宣言にする(`protocol` の殻など、Core に対応物が無い宣言は `none`)。 -/
+def checkDecl (m : Module) (d : Decl) : M (Option Core.Decl) := do
   let ctx := declCtx m d
   let q := renderPath (m.name ++ [d.name])
-  match d.kind with
-  | .record | .state | .enum => checkDerives ctx d q
-  | .scenario =>
-    if let some b := d.body then
-      let _ ← infer ctx b
-  | .claimBundle =>
-    for (item, e) in d.items do
-      match e with
-      | .var span segs =>
-        match ← lookupEntry segs with
-        | some (en, []) =>
-          if en.decl.kind != .claim && en.decl.kind != .claimBundle then
+  let out : Option Core.Decl ← match d.kind with
+    | .record | .state =>
+      checkDerives ctx d q
+      match (← get).types.get? q with
+      | some (.record fs _) =>
+        pure (some (.record q d.name (d.kind == .state) fs.toList d.derives.toList))
+      | _ => pure none
+    | .enum =>
+      checkDerives ctx d q
+      match (← get).types.get? q with
+      | some (.enum vs _) => pure (some (.enum q d.name vs.toList d.derives.toList))
+      | _ => pure none
+    | .typeAlias =>
+      match d.aliasOf with
+      | some t => pure (some (.typeAlias q d.name (← convTy ctx t)))
+      | none => pure none
+    | .scenario =>
+      match d.body with
+      | some b =>
+        let (t, cb) ← infer ctx b
+        need d.span t s!"the result of scenario `{d.name}`"
+        pure (some (.scenario q d.name t cb))
+      | none => pure none
+    | .claimBundle =>
+      let mut items : List (String × String) := []
+      for (item, e) in d.items do
+        match e with
+        | .var span segs =>
+          match ← lookupEntry segs with
+          | some (en, []) =>
+            if en.decl.kind != .claim && en.decl.kind != .claimBundle then
+              report ctx span Code.notAClaim
+                s!"item `{item}` of claim bundle `{d.name}` refers to {en.decl.kind.describe} `{en.decl.name}`; items must be claims (or nested claim bundles)"
+            else
+              items := items ++ [(item, en.qualified)]
+          | some (en, _) =>
             report ctx span Code.notAClaim
-              s!"item `{item}` of claim bundle `{d.name}` refers to {en.decl.kind.describe} `{en.decl.name}`; items must be claims (or nested claim bundles)"
-        | some (en, _) =>
-          report ctx span Code.notAClaim
-            s!"item `{item}` of claim bundle `{d.name}` must name a claim, found member path under {en.decl.kind.describe} `{en.decl.name}`"
-        | none => pure ()   -- E011 は Resolve が報告済み
-      | _ =>
-        report ctx e.span Code.notAClaim
-          s!"item `{item}` of claim bundle `{d.name}` must be the name of a claim"
-  | k =>
-    if isFnLike k then
-      let some fi := (← get).fns.get? q | return
-      let c := { ctx with locals := fi.params.toList }
-      if let some b := d.body then check c b fi.ret
+              s!"item `{item}` of claim bundle `{d.name}` must name a claim, found member path under {en.decl.kind.describe} `{en.decl.name}`"
+          | none => pure ()   -- E011 は Resolve が報告済み
+        | _ =>
+          report ctx e.span Code.notAClaim
+            s!"item `{item}` of claim bundle `{d.name}` must be the name of a claim"
+      pure (some (.claimBundle q d.name items))
+    | k =>
+      if isFnLike k then
+        match (← get).fns.get? q with
+        | some fi =>
+          let c := { ctx with locals := fi.params.toList }
+          let cb ← match d.body with
+            | some b => pure (some (← check c b fi.ret))
+            | none => pure none
+          let params := fi.params.toList.map fun (n, t) => ({ name := n, ty := t } : Core.Param)
+          pure (some (.fn q d.name k params fi.ret cb))
+        | none => pure none
+      else pure none
+  finishDecl ctx
+  -- Core の型を確定する(メタ変数は上で E014 にしたので、残っていても backend には届かない)
+  match out with
+  | some (.typeAlias k n t) => return some (.typeAlias k n (← zonk t))
+  | some (.record k n st fs ds) =>
+    let fs' ← fs.mapM fun (f, t) => do return (f, ← zonk t)
+    return some (.record k n st fs' ds)
+  | some (.enum k n vs ds) =>
+    let vs' ← vs.mapM fun (v, ts) => do return (v, ← ts.mapM zonk)
+    return some (.enum k n vs' ds)
+  | some (.fn k n kind ps ret body) =>
+    let ps' ← ps.mapM fun p => do return ({ p with ty := ← zonk p.ty } : Core.Param)
+    let body' ← match body with
+      | some b => pure (some (← zonkExpr b))
+      | none => pure none
+    return some (.fn k n kind ps' (← zonk ret) body')
+  | some (.scenario k n t b) => return some (.scenario k n (← zonk t) (← zonkExpr b))
+  | other => return other
 
 end Typecheck
 
-/-- コンパイル単位全体の型検査・capability 検査・選択/順序の検査。診断を返す(空なら合格)。
-名前解決(`resolveAll`)が通った後に呼ぶ。 -/
-def typecheckAll (mods : Array Module) : Array Diagnostic :=
-  let run : Typecheck.M Unit := do
+/-- コンパイル単位全体の型検査・capability 検査・選択/順序の検査と、Core IR への elaboration。
+診断(空なら合格)と Core のモジュール列を返す。名前解決(`resolveAll`)が通った後に呼ぶ。 -/
+def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module :=
+  let run : Typecheck.M (Array Core.Module) := do
     for m in mods do Typecheck.collect m
     for m in mods do
       for d in m.decls do Typecheck.buildInfo m d
     for m in mods do
-      for d in m.decls do Typecheck.checkDecl m d
-  let ((), st) := run.run {}
-  st.diags
+      for d in m.decls do Typecheck.checkNestedRecursion m d
+    let mut out : Array Core.Module := #[]
+    for m in mods do
+      let mut decls : Array Core.Decl := #[]
+      for d in m.decls do
+        if let some cd ← Typecheck.checkDecl m d then decls := decls.push cd
+      out := out.push { file := m.file, name := m.name, decls }
+    return out
+  let (cmods, st) := run.run {}
+  (st.diags, cmods)
 
 end Naru

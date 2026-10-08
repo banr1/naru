@@ -54,6 +54,12 @@ def typeMismatch := "E014"
 def arity := "E015"
 /-- claim bundle の項目が claim(または入れ子の claim bundle)でない。 -/
 def notAClaim := "E016"
+/-- 生成モジュールの構造の誤り: モジュール同士の循環参照、同名のモジュール(backend)。 -/
+def moduleStructure := "E017"
+/-- match の腕の形: 最後の腕のガード、Nat / Int / String の match に無条件の腕が無い(網羅性の穴)。 -/
+def matchShape := "E018"
+/-- コンテナ(Option / List / Set / Table / Result / tuple)越しに自分を参照する record / enum。 -/
+def nestedRecursion := "E019"
 end Code
 
 end Naru

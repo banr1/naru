@@ -1,0 +1,29 @@
+// 回帰用(条件ではない): match の腕の形の穴を E018 で拒否する。
+// `lake exe naru check-reject tests/reject/match_shape.naru E018` が PASS。
+module Reject.MatchShape
+
+enum Shape { Dot, Line(Nat, Nat) } derive eq
+
+// 最後の腕にガード: ガードが偽ならどの腕も一致しない
+fn lastGuarded(s: Shape) -> Nat {
+  match s {
+    Shape.Dot => 0,
+    Shape.Line(a, b) if a > b => a - b,
+  }
+}
+
+// Nat の match に無条件の腕が無い(リテラルでは覆えない)
+fn natLiterals(n: Nat) -> Nat {
+  match n {
+    0 => 0,
+    1 => 1,
+  }
+}
+
+// 再帰 fn でも同じ(backend の if 連鎖の最後に穴が開く形)
+fn guardedOnly(n: Nat, b: Bool) -> Nat {
+  match n {
+    0 if b => 0,
+    k if k > 0 => guardedOnly(k - 1, b),
+  }
+}

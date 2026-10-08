@@ -14,7 +14,9 @@ IDEAL.md「前提」の MVP 構文を Rust / TypeScript / Python / Go 利用者�
   **局所名(引数・`let`・lambda・`forall` / `exists` の束縛)は小文字か `_` で始める**(大文字は E010)。
   これで大文字始まりの経路は常に大域名を指し、読みが一意になる。
 - 組み込み名(primitive 型名と `Some` `None` `Ok` `Err`、自由関数 `sort` `choose` `pick`)は再宣言できない(E012)。
-  `choose` / `pick` は常に E003(無条件の選択は naru に無い)。
+  `choose` / `pick` は常に E003(無条件の選択は naru に無い)。record の欄名・enum の variant 名に Lean が自動生成する
+  名前(`mk` `rec` `recOn` `casesOn` `noConfusion` `below` `brecOn` `sizeOf` …)は使えない(E012)。
+  それ以外の名前は Lean の予約語(`from` `at` `end` …)でもよい(backend が `«»` で逃がす)。
 - 数値: 10 進 Nat リテラル。Int が期待される位置(`let x: Int = 5`、`i > 0`、`i + 1`)では Int として読む。
   Nat の値を Int にするのは `n.toInt()`(暗黙の変換は無い。単項 `-` は Int 専用)。文字列: `"…"`(`\n` `\t` `\"` `\\`)。
 - 予約語: `module import type record enum derive input fn state protocol predicate condition regime property claim bundle scenario observer let if else match forall exists in implies true false`。
@@ -28,7 +30,8 @@ import X.Y              // 任意個。現状は名前空間の宣言のみで�
 type Slot = Nat                                   // 型別名
 record Block { slot: Slot, parent: Option<BlockId> } derive eq, order
 state Store { head: Block, seen: List<Block> }    // record と同じ形。protocol の状態に使う
-enum Phase { Tick, Deliver } derive eq, order     // variant は `Name` または `Name(T1, T2)`
+enum Phase { Tick, Deliver } derive eq, order     // variant は `Name` または `Name(T1, T2)`。自分への再帰は直接の引数・欄でだけ
+                                                  // (`Option<Self>` / `List<Self>` 越しは E019。rose tree は相互再帰の enum で書く)
 input proposer(slot: Slot) -> ValidatorId         // 本体なし。非決定性の明示(環境からの入力)
 fn head(st: Store) -> BlockId { … }               // runtime 関数。本体はブロック式
 observer confirmed(st: Store) -> Nat { … }        // simulation の出力。fn と同形
@@ -96,7 +99,8 @@ Store { head: b, ..st }                  // record update(`..base` は末尾)
 { let x = e; let y: T = e; x + y }       // ブロック。`let` は `;` 必須。末尾の式が値
 if c { a } else { b }                    // else 必須。else if 可。頭部では record literal 不可
 match e { Some(x) if x > 0 => x, Some(_) => 0, None => 0 }   // ガード付き arm。`,` 区切り(本体がブロックなら `,` 省略可)。
-                                         // arm は 1 つ以上(無ければ E014)。網羅性はまだ検査しない(backend の段で Lean が拒否する)
+                                         // arm は 1 つ以上(無ければ E014)。最後の arm にガードは置けず、Nat / Int / String の
+                                         // match には無条件の `_` か変数の arm が要る(E018)。他の型の網羅性は backend の段で Lean が検査する
 |x, y| x + y                             // lambda(Rust 風)。`||` は引数なし
 forall b: Block { … }  exists t: Time { … }   // 量化(spec 専用。本体はブロック)
 ```
@@ -106,7 +110,7 @@ forall b: Block { … }  exists t: Time { … }   // 量化(spec 専用。本体
 `_`、変数(小文字)、リテラル、`Ctor(p1, p2)` / `Enum.Variant`、`(p1, p2)`。
 構築子は `Some` / `None` / `Ok` / `Err` と `Enum.Variant`(引数の数は宣言どおり。違えば E015)。
 
-## stdlib(組み込みのメソッド表。`Typecheck.lean` が正本)
+## stdlib(組み込みのメソッド表。`Typecheck.lean` が正本、Lean 側の実装は `stdlib/Model/NaruStd`)
 
 naru で書いた stdlib ができるまで、型検査がここに書いた署名で型を与える。`T` `U` `K` `V` `E` は型変数。
 メソッドの無い型(record / enum)に `x.f()` と書くと、`f` がユーザ宣言なら `f(x)` の糖衣、無ければ E015。
@@ -152,7 +156,7 @@ IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有�
 
 | 形 | 受理する書き方 |
 |---|---|
-| 構造的再帰 | 仮引数(またはそれより小さい値)を `match` し、**構築子パターンの中**で束縛した名前を再帰呼出しの同じ測度の位置に渡す。`Tree.Node(l, _, r) => sum(l) + sum(r)`、`Chain.Link(_, Some(next)) => len(next)` |
+| 構造的再帰 | 仮引数(またはそれより小さい値)を `match` し、**構築子パターンの中**で束縛した名前を再帰呼出しの同じ測度の位置に渡す。`Tree.Node(l, _, r) => sum(l) + sum(r)`、`Chain.Link(_, next) => len(next)`(`Option<Chain>` 越しの再帰型は E019 なので、部分項は直接の引数から取る) |
 | 明示 fuel | `Nat` の仮引数 `n`(型別名でもよい)を、`n ≥ k` が分かる分岐の中で `n - k`(k ≥ 1 のリテラル)として渡す。分かる分岐: `if n == 0 { … } else { ここ }`、`if n > 0 { ここ }`、`n != 0`、`n >= k`、`k < n`、`!(…)`、`&&` の then 側、`||` の else 側、`else if n == 1 { … } else { ここ }` の連鎖(n ≥ 2)、`match n { 0 => …, k => ここ }`(`k` は `n` の別名。`_` でもよい。**ガードの無い**リテラルの腕が 0 から連続して覆った値の次が下限: `0 => …, 1 => …, k =>` なら k ≥ 2。`0 if c => …` はガードが偽なら 0 が落ちてくるので数えない)、腕のガード `k if k > 0 => …` |
 
 - サイクル(相互再帰を含む)の各関数に測度(仮引数の位置)を 1 つずつ割り当て、サイクル内の**すべての**呼出しで
@@ -185,12 +189,62 @@ IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有�
 | E014 | 型の不一致・推論できない型・値でないものの値としての使用 | 済 |
 | E015 | 無い欄・無いメソッド・引数の数や名前の不一致 | 済 |
 | E016 | claim bundle の項目が claim でない | 済 |
+| E017 | 生成モジュールの構造: モジュール同士の循環参照・同名のモジュール(backend) | 済(`Backend/Model.lean`) |
+| E018 | match の腕の形: 最後の腕にガード / `Nat` `Int` `String` の match に無条件の腕が無い(網羅性の穴) | 済(`Typecheck.lean`) |
+| E019 | コンテナ(Option / List / Set / Table / Result / tuple)越しに自分に戻る record / enum(Lean の deriving が入れ子の帰納型に使えない) | 済(`Typecheck.lean`) |
 
 名前解決(E011〜E013、E001)に誤りがあれば型検査には進まない(未解決名の波及を避ける)。
 型検査(E003〜E006、E014〜E016)に誤りがあれば停止性検査(E002)には進まない(呼出し先の署名が要る)。
+診断が 1 つでもあれば backend には進まない(`generated/` は書き換えない)。
+
+E014 には「型が決まらない」も含む: `let` の値・lambda の引数・`[]` / `None` / `Set.empty()` などの空のコレクション・
+比較の被演算子の型が、宣言の終わりまでにその使われ方から決まらなければ `cannot infer the type of …; add a type annotation`。
+
+## CLI(`lake exe naru`)
+
+| コマンド | 意味 |
+|---|---|
+| `compile` | `dsl/**/*.naru`(パス順)を検査し、Model を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean` を作り直す)。C1 の検証コマンド |
+| `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model を出力し、無ければ検査だけ(`checked N module(s)`) |
+| `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
+| `simulate <scenario.naru>` | 未実装(exit 2) |
+
+リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む)。
+
+## Core IR と Model backend
+
+型検査(`Typecheck.lean`)は検査と同時に Surface AST を Typed Core IR(`Core.lean`)に elaborate する。名前は解決済み、
+UFCS と名前付き引数は展開済み、ブロックは `let` の入れ子、型が要る位置には解決済みの型を持つ。backend は Core だけを読む。
+
+Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす(spec 宣言は Statements backend の仕事)。
+
+| naru | 生成 Lean |
+|---|---|
+| `module A.B` | ファイル `generated/Model/A/B.lean`、Lean モジュール `Model.A.B`。宣言は `Model.A.B.name` と完全修飾で参照。他モジュールの参照は `import`(循環は E017) |
+| `type T = U` | `abbrev Model.A.B.T : Type := U`(参照は展開した型で書く) |
+| `record` / `state` | `structure … deriving DecidableEq, Ord, Repr`(`derive eq` → `DecidableEq` + `Ord`、`derive order` → `Ord`。`Repr` は常に。`finite` はまだ何も生成しない。`Ord` は `Set` / `Table` の正規化に使う隠れた全順序で、欄・variant の宣言順の辞書式)。欄名と局所名は常に `«»` で囲む(予約語の一覧に頼らない) |
+| `enum` | `inductive`(variant の引数は `a0 a1 …`) |
+| `fn` / `observer` / `scenario` | `def`。再帰は `Totality` の測度で `termination_by n` + `decreasing_by`(fuel)/ `termination_by structural p`(構造的)。相互再帰は `mutual … end` |
+| `input f(x: T) -> U` | Lean の宣言にならない。それを(推移的に)使う fn / observer / scenario の先頭の引数 `f'`(名前 + `'`)になり、呼出しで引き回す |
+| 型 | `Nat Int Bool String Unit` はそのまま、`Option<T>` → `Option T`、`List<T>` → `List T`、`Result<T, E>` → `NaruStd.Result T E`、`Set<T>` → `NaruStd.Set T`、`Table<K, V>` → `NaruStd.Table K V`、tuple → `×`。引数 0 個の関数型は値として扱う(`f()` は `f`) |
+| `==` `<` 等 | `==` / `!=` はそのまま。`<` 等は `Nat` / `Int` / `String` なら `Decidable.decide (a < b)`、他は `Ord.compare a b == .lt` 等(`Ord` だけで決める)。生成コードが使う Lean の組み込み名は完全修飾し(`Option.some` / `Min.min` …)、naru の局所名に捕獲されない |
+| stdlib メソッド | `stdlib/Model/NaruStd/*.lean` の関数(`Set` / `Table` は要素の `Ord` で昇順に正規化した重複なしリスト。`DecidableEq` が集合の等しさに一致する)と Lean core の `List` / `Option` |
+| `match` のガード | Lean に無いので、最初のガード付き腕 i の前の腕はそのまま、`\| _ =>` の中で `match (match s with \| p_i => if g then some b else none \| _ => none) with \| some g' => g' \| none => REST`(REST = i 以外の腕の match。`p_i` が必ず一致する形 — `_` / 変数 / `()` / variant 1 つだけの enum — なら `\| _ => none` は出さない)。再帰 fn の `Nat` の match にガードがあれば `if _h' : v == k && g then … else …` の連鎖 |
+| 再帰 fn の `if` と `Nat` の `match` | `if _h' : c then`(事実を証明に残す。`_h'` は naru で書けない名前)。`Nat` の局所変数 v の match は `match _hm' : v with`(等式を証明に残す)にし、bind / `_` の腕は `_ + m`(m = 先行するガード無しリテラル腕が 0 から覆った値の次。m = 0 なら `_`)+ `let k : Nat := v`(束縛名は match の変数にせず別名にする) |
+
+生成ファイルの先頭 5 行はコメント: `naru-compiler: <版> sha256:<compiler/**/*.lean の hash>`、`naru-stdlib: <版> sha256:<stdlib 全ファイルの hash>`、
+`naru-source: <ファイル> sha256:<そのファイルの hash>`、`naru-unit: sha256:<全ソースの hash>`。
+同じソースと stdlib からは同じバイト列を生成する(表の反復順・時刻・環境に依存しない)。
+
+既知の制限(backend): naru は enum / Option / Bool / tuple の match の網羅性を検査しないので、網羅していない match は
+Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の穴を塞ぐので、生成コードの `panic!` は到達しない位置にだけある)。
+到達しない腕(先行する腕が必ず一致する)は Lean の「redundant alternative」で拒否される。ガード 1 つにつき残りの腕が
+2 回生成される。ヘッダとコメントにはソースのパスが渡された文字列のまま入る(既定の `compile` は `dsl/…` の相対パス)。
 
 ## まだ無いもの
 
-E007・Core IR・Model / Statements backend・`import` の意味(現状は全ファイルが 1 つの大域表)・
-型引数付きのユーザ宣言(`record R<T>`)・Constants と interface binding の構文・naru で書いた stdlib(現状は上の表)・
-未確定のメタ変数の報告(`[]` や `None` の型が最後まで決まらなくても誤りにしない)。
+E007・Statements backend(predicate / … / claim bundle は生成しない)・`simulate`・`import` の意味(現状は全ファイルが
+1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数型の引数
+(`fn f(g: (Nat) -> Nat)`)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文・naru で書いた
+stdlib(現状は上の表と Lean 側の `NaruStd`)・`derive finite` の生成・enum / Option / Bool / tuple の match の網羅性検査
+(Lean に任せている)。

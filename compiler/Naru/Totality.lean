@@ -347,10 +347,19 @@ partial def search (edges : Array CallSite) (members : List FnNode) (acc : List 
 def hint : String :=
   "naru accepts only structural recursion (recurse on a value bound by a `match` pattern of a parameter) and explicit fuel (a `Nat` parameter `n` passed as `n - 1` under a guard such as `if n == 0 { … } else { … }`); every call around the cycle must make the same measure smaller"
 
-def analyze (nodes : Array FnNode) (sites : Array CallSite) : Array Diagnostic := Id.run do
+/-- 受理した再帰のサイクル(強連結成分)。backend が `mutual` ブロックと `termination_by` を作るのに使う。 -/
+structure Recursion where
+  /-- 成分の fn の修飾名(宣言の順)。 -/
+  members : List String
+  /-- fn の修飾名 → 測度に選んだ仮引数の位置。 -/
+  measures : List (String × Nat)
+deriving Inhabited
+
+def analyze (nodes : Array FnNode) (sites : Array CallSite) : Array Diagnostic × Array Recursion := Id.run do
   let adj := adjacency sites
   let mut done : HashSet String := {}
   let mut diags : Array Diagnostic := #[]
+  let mut recs : Array Recursion := #[]
   for f in nodes do
     if done.contains f.q then continue
     let r := reachFrom adj f.q
@@ -362,7 +371,9 @@ def analyze (nodes : Array FnNode) (sites : Array CallSite) : Array Diagnostic :
     let mq := members.map (·.q)
     let edges := sites.filter fun s => mq.contains s.caller && mq.contains s.callee
     let (res, _) := (search edges members []).run 100000
-    if res.isSome then continue
+    if let some assignment := res then
+      recs := recs.push { members := mq, measures := mq.filterMap fun q => (assignment.lookup q).map (q, ·) }
+      continue
     for g in members do
       let site := edges.find? (·.caller == g.q)
       let span := (site.map (·.span)).getD g.span
@@ -376,12 +387,13 @@ def analyze (nodes : Array FnNode) (sites : Array CallSite) : Array Diagnostic :
       diags := diags.push
         { file := g.file, span, code := Code.nonTotal,
           msg := s!"{g.kind.describe} `{g.name}` {shape}, but no argument is shown to get smaller on every recursive call{bareNote}. {hint}" }
-  return diags
+  return (diags, recs)
 
 end Totality
 
-/-- コンパイル単位全体の停止性検査(E002)。型検査(`typecheckAll`)が通った後に呼ぶ。 -/
-def totalityAll (mods : Array Module) : Array Diagnostic :=
+/-- コンパイル単位全体の停止性検査(E002)。型検査(`typecheckAll`)が通った後に呼ぶ。
+診断(空なら合格)と、受理した再帰のサイクル(backend 用)を返す。 -/
+def totalityAll (mods : Array Module) : Array Diagnostic × Array Totality.Recursion :=
   let build : Typecheck.M Unit := do
     for m in mods do Typecheck.collect m
     for m in mods do

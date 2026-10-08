@@ -12,3 +12,14 @@ srcDir = "compiler"
 name = "naru"
 root = "Main"
 srcDir = "compiler"
+
+# Model 用 stdlib(Lean 側)。生成 Model が import する。mathlib に依存しない。
+[[lean_lib]]
+name = "NaruStd"
+srcDir = "stdlib/Model"
+
+# 生成 Model(`lake exe naru compile` が `generated/Model.lean` と `generated/Model/**.lean` を出力する)。
+# 機械生成専用。`lake build Model` でビルドする(C6)。
+[[lean_lib]]
+name = "Model"
+srcDir = "generated"
