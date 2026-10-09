@@ -32,7 +32,7 @@ runtime 宣言は Model backend(`Backend/Model.lean`)の仕事で、ここでは
 既知の制限: Bool の値が要る位置(fn の実引数・`let` の値・コレクション)に量化や spec 宣言の呼出し(Prop)を書くと Lean が拒否する
 (Prop は Bool に戻せない)。spec 宣言の中では Prop は論理演算・`if` の条件・`match` のガード・`let` の Prop の束縛にだけ置く。
 `∀` / `∃` は Lean の型の全要素を回るので、`Set` / `Table` を含む型(`NaruStd.Set` は昇順・重複なしのリストだが、その不変条件は
-型に入っていない)の量化は正規化されていない表現も含む(SYNTAX.md「Statements backend」の既知の制限)。
+型に入っていない)の量化は正規化されていない表現も含む(`docs/architecture.md`「Statements backend」の既知の制限)。
 本体の無い spec 宣言と解決できない claim bundle の項目は `False` に落ちるが、パーサ(本体必須)と E016 が退けるので到達しない。
 -/
 
@@ -191,7 +191,7 @@ partial def emitMatchProp (env : Env) (c : PCtx) (ind : Nat) (s : Core.Expr) (st
     | _, _ => none
   let hasGuard := arms.any fun | .mk _ g _ => g.isSome
   -- ガード付きの `Nat` の match は Model の `emitNatChain`(`if _h' :` の連鎖)に相当する形をまだ出さない(再帰 + ガード付き Nat match の
-  -- spec 宣言は停止性の証明が通らないことがある: SYNTAX.md「Statements backend」)
+  -- spec 宣言は停止性の証明が通らないことがある: `docs/architecture.md`「Statements backend」)
   if hasGuard then emitMatchGuardedProp env c ind s st arms
   else emitMatchPlainProp env c ind s arms natVar
 
@@ -323,8 +323,8 @@ def emitStatements (mods : Array Core.Module) (recs : Array Totality.Recursion) 
       "".intercalate (sp.map fun n => s!"import {stmtModule n}\n")
     let groups := orderGroups env (m.decls.toList.filter isSpecDecl)
     let body := if groups.isEmpty then "" else "\n" ++ "\n\n".intercalate (groups.map (emitSpecGroup env)) ++ "\n"
-    let content := header info m.file hash ++ imports ++
-      s!"\n/-! naru module `{renderPath m.name}` ({m.file}): spec declarations (predicate / condition / regime / property / claim / claim bundle) -/\n" ++ body
+    let content := header info (info.display m.file) hash ++ imports ++
+      s!"\n/-! naru module `{renderPath m.name}` ({info.display m.file}): spec declarations (predicate / condition / regime / property / claim / claim bundle) -/\n" ++ body
     files := files.push (stmtPath m.name, content)
   let rootImports := "".intercalate (specMods.map fun m => s!"import {stmtModule m.name}\n")
   let root := header info "all sources" info.unitHash ++ rootImports ++

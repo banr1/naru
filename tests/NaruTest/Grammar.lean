@@ -4,13 +4,13 @@ import NaruTest.Common
 /-!
 # `naru_test grammar` — tree-sitter 文法の検査(IDEAL.md C16)
 
-`editors/tree-sitter-naru/` の文法が naru の正本(`compiler/Naru/Parser.lean`・`compiler/SYNTAX.md`)に追従していることを、
+`editors/tree-sitter-naru/` の文法が naru の正本(`compiler/Naru/Parser.lean`・`docs/language.md`)に追従していることを、
 tree-sitter CLI(0.27)を子プロセスで呼んで確かめる。リポジトリのルートで実行する。
 
 1. `tree-sitter generate` の出力が追跡対象の `src/` と一致する(`grammar.js` と `tree-sitter.json` を一時ディレクトリに写して
    generate し、`src/` 配下の全ファイルをバイト単位で比べる。`src/` は手で編集しない: IDEAL.md「不変条件」)。
 2. `tree-sitter build` が exit 0(共有ライブラリを一時ディレクトリに出す)。
-3. `dsl/`・`tests/accept/`・`tests/reject/` 配下のすべての `.naru`(E010 を期待する反例は除く)の `tree-sitter parse -q` が
+3. `naru.toml` のソースルート(`specs/consensus/`)・`tests/accept/`・`tests/reject/` 配下のすべての `.naru`(E010 を期待する反例は除く)の `tree-sitter parse -q` が
    exit 0 で、出力に ERROR / MISSING が無い。
 4. `tests/accept/editors_syntax.naru` への `tree-sitter query queries/highlights.scm` で、`tests/accept/editors_syntax.captures`
    に書いた(行、捕捉名、字句)がすべて出て、捕捉名に keyword / type / constructor / comment / string / number / function /
@@ -103,13 +103,17 @@ def expectsSyntaxError (path : String) : IO Bool := do
   return (src.splitOn "E010").length > 1
 
 def checkParse : M Unit := do
+  let roots ← match ← sourceRoots with
+    | .ok rs => pure (rs.map (·.toString))
+    | .error e => fail e; return
   let mut files : List String := []
-  for dir in ["dsl", "tests/accept", "tests/reject"] do
+  let dirs := roots ++ ["tests/accept", "tests/reject"]
+  for dir in dirs do
     for f in ← listNaru dir do
       if dir == "tests/reject" && (← expectsSyntaxError f) then continue
       files := files ++ [f]
   if files.isEmpty then
-    fail "no .naru sources found under dsl/, tests/accept/, tests/reject/"
+    fail s!"no .naru sources found under {", ".intercalate dirs}"
     return
   let cwd ← IO.currentDir
   let abs := files.map fun f => (cwd / System.FilePath.mk f).toString

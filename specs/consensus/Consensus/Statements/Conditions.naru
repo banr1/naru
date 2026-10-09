@@ -1,0 +1,336 @@
+// verified-consensus の移植: DecoupledConsensusStatements/Generic/Conditions.lean(execution conditions、synchrony と
+// participation の述語、committee の条件、proposer recurrence の条件)。
+//
+// - `E : Env V`(Δ / t_GST / electorate / awake)→ `s.e`(ProtocolEnv)と `envAwake(s, v, t)`(Interface.naru)。
+//   `I : Interface P` の欄 → Interface.naru の宣言、`C : Constants` の欄 → Constants.naru の fn。
+// - `structure … : Prop where`(欄が複数)→ `&&` で束ねた condition。`extends` → 親の condition を `&&` に含める。
+//   `ScheduleWellFormed` / `UnforgeableRun` / `RunWellFormed` が共有する欄(`sorted` / `nodup` / `honest_only`)は
+//   `EventsSorted` / `EventsNodup` / `HonestOnly` に切り出す。
+// - `rho.events.Pairwise (fun e f => e.key ≤ f.key)` / `rho.events.Nodup` → 添字 `i < j` の 2 要素の量化(`get?`)。
+// - `awakeIn E H a b`(`∃ u, …` で filter する noncomputable な集合)は naru の `filter`(Bool)では書けないので、
+//   集合を特徴付ける `AwakeInExactly(s, h, a, b, w)`(`w` の要素 ⟺ `[a, b)` のどこかで awake)を書き、`WindowMajority` /
+//   `FreshMajority` はその集合 `w` を `exists members: List + toSet()` で量化して重みを取る(有限集合なので存在し、
+//   正規形は一意。Accountability.naru と同じ書き方)。
+// - `Finset.univ \ H` → `validators(s.e.electorate).diff(h)`(electorate の外の重みは 0。Weights.naru の冒頭)。
+// - `(I.committee s).card` → `committee(k).size()`、`∩` → `inter`。
+// - 手書きの型が暗黙に保証する前提は、naru では condition として claim の premise に書く(`SetupWellFormed` / `RunDomain`):
+//   `Setup` / `Env` / `HealConfig` / `HeightConfig` / `Electorate` の証明の欄(Δ_pos / t_GST_nonneg / R_ge_three / η_SG_ge_one /
+//   K_ge_four / D_ge_two / timeout_rounds / committee_nonempty / outage_window / weight_pos。Model の各ファイルの冒頭が
+//   「Statements の premise にする」とした欄)、`Finset` が型で保証する正規形(naru の `Set` / `Table` は昇順・重複なしの不変条件を
+//   型に持たないので、量化される `rho.honest` / `committee(k)` / electorate の鍵は `xs == sort(xs, by = …).toSet()` で正規形を
+//   要求する。`docs/architecture.md`「Statements backend」の既知の制限)、validator の型 `V` が electorate そのものであること(naru の
+//   `ValidatorId` は Nat 全体なので、proposer / committee / honest が electorate に含まれることを要求する)。
+module Consensus.Statements.Conditions
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+import Consensus.Execution.Node
+import Consensus.Execution.Run
+import Consensus.Statements.Execution
+import Consensus.Statements.Interface
+import Consensus.Statements.Constants
+
+// ── The domain the handwritten types guarantee: well-formed setup and run ──
+
+// A validator set in naru's normal form (ascending, no duplicates): what the handwritten `Finset V` gives by type.
+// `sort(by = …)` keeps duplicates and `toSet()` normalizes, so a set equals its own normalization exactly when it is normal.
+fn normalizedValidators(xs: Set<ValidatorId>) -> Bool { xs == sort(xs, by = |v| v).toSet() }
+
+// The setup domain of the handwritten model: Δ > 0 and t_GST ≥ 0 (`Env`), R ≥ 3 and η_SG ≥ 1 (`HealConfig`), K ≥ 4 and
+// D ≥ 2 (`HeightConfig`), the timeout is a whole number of rounds and at least two rounds (`timeout_rounds`), every
+// committee is nonempty (`committee_nonempty`), the outage window is nonempty only when a round is long enough
+// (`outage_window`), every electorate weight is positive (`Electorate.weight_pos`); and what the handwritten types give
+// for free: the electorate's keys and every committee are normal sets, and every committee member and proposer is in
+// the electorate (the validator type `V` is the electorate).
+condition SetupWellFormed(s: Setup) {
+  0 < s.e.delta
+    && 0 <= s.e.tGST
+    && 3 <= s.hc.r
+    && 1 <= s.hc.etaSG
+    && 4 <= s.cfg.k
+    && 2 <= s.cfg.d
+    && s.cfg.timeoutDelay % s.hc.r == 0
+    && 2 * s.hc.r <= s.cfg.timeoutDelay
+    && 4 <= s.hc.r * s.hc.etaSG
+    && normalizedValidators(validators(s.e.electorate))
+    && (forall v: ValidatorId {
+         validators(s.e.electorate).contains(v) implies 0 < weightOfValidator(s.e.electorate, v)
+       })
+    && (forall k: Slot {
+         !committee(k).isEmpty()
+           && normalizedValidators(committee(k))
+           && committee(k).subset(validators(s.e.electorate))
+           && validators(s.e.electorate).contains(proposer(k))
+       })
+}
+
+// The run domain of the handwritten model: the honest set is a normal set of electorate members (`Finset V`).
+condition RunDomain(s: Setup, rho: NamedRun) {
+  normalizedValidators(rho.honest) && rho.honest.subset(validators(s.e.electorate))
+}
+
+// ── Execution conditions ──
+
+// A public time is an integer multiple of the environment's time unit.
+condition PublicTime(e: ProtocolEnv, t: Time) { exists k: Nat { t == k.toInt() * e.delta } }
+
+// The event list is sorted by event key (time, then phase).
+condition EventsSorted(rho: NamedRun) {
+  forall i: Nat { forall j: Nat {
+    i < j implies match (rho.events.get?(i), rho.events.get?(j)) {
+      (Some(a), Some(b)) => eventKey(a) <= eventKey(b),
+      _ => true,
+    }
+  } }
+}
+
+// The event list has no duplicates.
+condition EventsNodup(rho: NamedRun) {
+  forall i: Nat { forall j: Nat {
+    i < j implies match (rho.events.get?(i), rho.events.get?(j)) {
+      (Some(a), Some(b)) => a != b,
+      _ => true,
+    }
+  } }
+}
+
+// Every event is at an honest node.
+condition HonestOnly(rho: NamedRun) {
+  forall ev: NamedEvent { rho.events.contains(ev) implies rho.honest.contains(eventNode(ev)) }
+}
+
+// The event schedule is sorted, finite, honest-only, and total on public times.
+condition ScheduleWellFormed(s: Setup, rho: NamedRun) {
+  0 <= rho.horizon
+    && EventsSorted(rho)
+    && EventsNodup(rho)
+    && (forall ev: NamedEvent {
+         rho.events.contains(ev) implies 0 <= eventTime(ev) && eventTime(ev) <= rho.horizon
+       })
+    && HonestOnly(rho)
+    && (forall v: ValidatorId { forall t: Time {
+         rho.events.contains(NamedEvent.Tick(v, t)) implies PublicTime(s.e, t)
+       } })
+    && (forall v: ValidatorId { forall t: Time {
+         rho.honest.contains(v) && PublicTime(s.e, t) && 0 <= t && t <= rho.horizon
+           implies rho.events.contains(NamedEvent.Tick(v, t))
+       } })
+}
+
+// Delivered objects satisfy the wire, dependency, and freshness checks.
+condition DeliveryWellFormed(s: Setup, rho: NamedRun) {
+  forall i: Nat { forall v: ValidatorId { forall o: NamedObject { forall t: Time {
+    rho.events.get?(i) == Some(NamedEvent.Deliver(v, o, t)) implies
+      wellFormed(o)
+        && depsPresent(worldAt(stateBefore(s, rho, i), v).st, o)
+        && !processed(worldAt(stateBefore(s, rho, i), v).st, o)
+  } } } }
+}
+
+// Signatures are unforgeable: an object attributed to an honest validator — processed directly or carried by a processed
+// object — was emitted by that validator.
+condition UnforgeableSignatures(s: Setup, rho: NamedRun) {
+  (forall v: ValidatorId { forall o: NamedObject { forall t: Time {
+    Processes(s, rho, v, o, t) implies
+      forall u: ValidatorId {
+        rho.honest.contains(u) && author(o) == Some(u) implies exists t2: Time { t2 <= t && Emits(s, rho, u, o, t2) }
+      }
+  } } })
+    && (forall v: ValidatorId { forall o: NamedObject { forall t: Time {
+         Processes(s, rho, v, o, t) implies
+           forall o2: NamedObject {
+             Carries(o, o2) implies
+               forall u: ValidatorId {
+                 rho.honest.contains(u) && author(o2) == Some(u)
+                   implies exists t2: Time { t2 <= t && Emits(s, rho, u, o2, t2) }
+               }
+           }
+       } } })
+}
+
+// A run with sorted events, honest-only events, a nonnegative horizon, and unforgeable signatures.
+condition UnforgeableRun(s: Setup, rho: NamedRun) {
+  UnforgeableSignatures(s, rho) && EventsSorted(rho) && HonestOnly(rho) && 0 <= rho.horizon
+}
+
+// The non-network execution premises and the interface idealization.
+condition ExecutionValid(s: Setup, rho: NamedRun) {
+  ScheduleWellFormed(s, rho) && DeliveryWellFormed(s, rho) && UnforgeableSignatures(s, rho) && Idealization(s, rho)
+}
+
+// A sorted run with a nonnegative horizon and the interface's idealization; reads are taken at times in [0, horizon].
+condition RunWellFormed(s: Setup, rho: NamedRun) {
+  0 <= rho.horizon && EventsSorted(rho) && Idealization(s, rho)
+}
+
+// No evidence occurs between two certificates assembled from the run.
+condition SlashableBound(s: Setup, rho: NamedRun) {
+  forall c: NamedBlock { forall c2: NamedBlock {
+    InRun(s, rho, c) && InRun(s, rho, c2) implies !Evidence(s, c, c2)
+  } }
+}
+
+// ── Network conditions ──
+
+// Broadcast and accepted-object relay complete within the post-GST bound, except for objects the receiver's state at the
+// deadline excludes (a block that conflicts with the receiver's finalized block).
+condition PartialSynchrony(s: Setup, rho: NamedRun) {
+  (forall v: ValidatorId { forall o: NamedObject { forall t: Time {
+    rho.honest.contains(v) && Emits(s, rho, v, o, t) implies
+      forall w: ValidatorId {
+        let deadline = t.max(s.e.tGST) + s.e.delta;
+        rho.honest.contains(w)
+          && deadline <= rho.horizon
+          && !excludes(worldAt(stateBeforeTime(s, rho, deadline), w).st, o)
+          implies exists t2: Time { t <= t2 && t2 < deadline && exists j: Nat { HandlesAt(s, rho, j, w, o, t2) } }
+      }
+  } } })
+    && (forall v: ValidatorId { forall i: Nat { forall o: NamedObject { forall t: Time {
+         rho.honest.contains(v) && AcceptsAt(s, rho, i, v, o, t) implies
+           forall w: ValidatorId {
+             let deadline = t.max(s.e.tGST) + s.e.delta;
+             rho.honest.contains(w)
+               && !processed(worldAt(stateBefore(s, rho, i + 1), w).st, o)
+               && deadline <= rho.horizon
+               && !excludes(worldAt(stateBeforeTime(s, rho, deadline), w).st, o)
+               implies exists t2: Time { t <= t2 && t2 < deadline && exists j: Nat { HandlesAt(s, rho, j, w, o, t2) } }
+           }
+       } } } })
+}
+
+// The same broadcast and relay guarantees on a finite healthy prefix, with the same exclusion.
+condition HealthyPrefixDelivery(s: Setup, rho: NamedRun, cut: Time) {
+  (forall v: ValidatorId { forall o: NamedObject { forall t: Time {
+    rho.honest.contains(v) && Emits(s, rho, v, o, t) implies
+      forall w: ValidatorId {
+        let deadline = t + s.e.delta;
+        rho.honest.contains(w)
+          && deadline <= cut
+          && !excludes(worldAt(stateBeforeTime(s, rho, deadline), w).st, o)
+          implies exists t2: Time { t <= t2 && t2 < deadline && exists j: Nat { HandlesAt(s, rho, j, w, o, t2) } }
+      }
+  } } })
+    && (forall v: ValidatorId { forall i: Nat { forall o: NamedObject { forall t: Time {
+         rho.honest.contains(v) && AcceptsAt(s, rho, i, v, o, t) implies
+           forall w: ValidatorId {
+             let deadline = t + s.e.delta;
+             rho.honest.contains(w)
+               && !processed(worldAt(stateBefore(s, rho, i + 1), w).st, o)
+               && deadline <= cut
+               && !excludes(worldAt(stateBeforeTime(s, rho, deadline), w).st, o)
+               implies exists t2: Time { t <= t2 && t2 < deadline && exists j: Nat { HandlesAt(s, rho, j, w, o, t2) } }
+           }
+       } } } })
+}
+
+// ── Participation conditions ──
+
+// Honest validators awake at the specified time (手書き `awakeAt`).
+fn awakeAt(s: Setup, h: Set<ValidatorId>, t: Time) -> Set<ValidatorId> { h.filter(|v| envAwake(s, v, t)) }
+
+// The validators outside the honest set (手書き `Finset.univ \ H`; electorate の外は重み 0).
+fn faulty(s: Setup, h: Set<ValidatorId>) -> Set<ValidatorId> { validators(s.e.electorate).diff(h) }
+
+// An honest validator awake at some time in the half-open interval [a, b) (手書き `awakeIn` の所属).
+condition AwakeIn(s: Setup, h: Set<ValidatorId>, a: Time, b: Time, v: ValidatorId) {
+  h.contains(v) && exists u: Time { a <= u && u < b && envAwake(s, v, u) }
+}
+
+// `w` is exactly the set of honest validators awake at some time in [a, b) (手書きの `awakeIn E H a b` そのもの).
+condition AwakeInExactly(s: Setup, h: Set<ValidatorId>, a: Time, b: Time, w: Set<ValidatorId>) {
+  forall v: ValidatorId { w.contains(v) == AwakeIn(s, h, a, b, v) }
+}
+
+// Honest awake weight in a window exceeds faulty weight.
+condition WindowMajority(s: Setup, h: Set<ValidatorId>, window: Time, t: Time) {
+  exists members: List<ValidatorId> {
+    let awakeInWindow = members.toSet();
+    AwakeInExactly(s, h, t - window, t, awakeInWindow)
+      && weightOf(s.e.electorate, faulty(s, h)) < weightOf(s.e.electorate, awakeInWindow)
+  }
+}
+
+// Every honest validator is awake at every time from GST to the run horizon.
+condition FullParticipation(s: Setup, rho: NamedRun) {
+  forall v: ValidatorId { forall t: Time {
+    rho.honest.contains(v) && s.e.tGST <= t && t <= rho.horizon implies envAwake(s, v, t)
+  } }
+}
+
+// Faulty validators hold less than one third of the total weight.
+condition BelowOneThird(s: Setup, h: Set<ValidatorId>) {
+  3 * weightOf(s.e.electorate, faulty(s, h)) < totalWeight(s.e.electorate)
+}
+
+// Fresh majority (outage participation, time form): the honest weight awake at `t − lag` (the fresh validators)
+// outweighs the faulty weight plus the stale honest weight, i.e. honest validators awake somewhere in
+// [t − window, t − lag) but not at `t − lag`.
+condition FreshMajority(s: Setup, h: Set<ValidatorId>, t: Time) {
+  exists members: List<ValidatorId> {
+    let awakeInWindow = members.toSet();
+    let fresh = awakeAt(s, h, t - participationLag(s));
+    AwakeInExactly(s, h, t - participationWindow(s), t - participationLag(s), awakeInWindow)
+      && weightOf(s.e.electorate, faulty(s, h).union(awakeInWindow.diff(fresh))) < weightOf(s.e.electorate, fresh)
+  }
+}
+
+// ── Committee and proposer conditions ──
+
+// Every slot committee has a strict honest majority by count.
+condition HonestCommittees(h: Set<ValidatorId>) {
+  forall k: Slot { committee(k).size() < 2 * committee(k).inter(h).size() }
+}
+
+// The opening slot `k` and the following `proposerSlots − 1` slots all have honest proposers.
+condition MultiProposerAt(s: Setup, h: Set<ValidatorId>, k: Slot) {
+  Opening(s, k) && forall j: Nat { j < proposerSlots() implies h.contains(proposer(k + j)) }
+}
+
+// Tier 1, single-proposer recurrence: from `t0`, every trigger time whose `gap`-period window ends inside the run sees an
+// honest proposal strictly after it and within the window. Confirmed growth needs nothing more.
+condition SingleProposerRecurrence(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
+  forall t: Time {
+    t0 <= t && t + gap.toInt() * period(s) <= rho.horizon implies
+      exists k: Slot {
+        t < proposalTime(s.e, k) && proposalTime(s.e, k) <= t + gap.toInt() * period(s)
+          && rho.honest.contains(proposer(k))
+      }
+  }
+}
+
+// Tier 2, multi-proposer recurrence: within `gap` periods of every time from `start` a multi-proposer window starts: an
+// opening slot and the following `proposerSlots − 1` slots all have honest proposers; recovery uses it. Only windows from
+// `start` that end inside the run count.
+condition MultiProposerRecurrence(s: Setup, rho: NamedRun, start: Time, gap: Nat) {
+  forall t: Time {
+    start <= t && t + gap.toInt() * period(s) <= rho.horizon implies
+      exists k: Slot {
+        t < proposalTime(s.e, k) && proposalTime(s.e, k) <= t + gap.toInt() * period(s)
+          && MultiProposerAt(s, rho.honest, k)
+      }
+  }
+}
+
+// Tier 3, strong multi-proposer recurrence: as tier 2, and every opening in the two periods before that window also has
+// an honest proposer; finality uses it. Only windows from `start` that end inside the run count.
+condition StrongMultiProposerRecurrence(s: Setup, rho: NamedRun, start: Time, gap: Nat) {
+  forall t: Time {
+    start <= t && t + gap.toInt() * period(s) <= rho.horizon implies
+      exists k: Slot {
+        t + 2 * period(s) <= proposalTime(s.e, k)
+          && proposalTime(s.e, k) <= t + gap.toInt() * period(s)
+          && MultiProposerAt(s, rho.honest, k)
+          && forall k2: Slot {
+               Opening(s, k2)
+                 && proposalTime(s.e, k) - 2 * period(s) <= proposalTime(s.e, k2)
+                 && proposalTime(s.e, k2) < proposalTime(s.e, k)
+                 implies rho.honest.contains(proposer(k2))
+             }
+      }
+  }
+}

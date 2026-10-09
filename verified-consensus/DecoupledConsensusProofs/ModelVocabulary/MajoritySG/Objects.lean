@@ -1,2 +1,0 @@
-module
-public import DecoupledConsensusInternal.ModelVocabulary.MajoritySG.Objects

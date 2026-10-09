@@ -5,11 +5,12 @@ import NaruTest.Lsp
 import NaruTest.ZedInstall
 import NaruTest.Golden
 import NaruTest.Statements
+import NaruTest.Repo
 
 /-!
-# `NaruTest` — エディタ対応(C16〜C19)・golden test(C10)・生成 Statements(C8 / C9)の検査ドライバ(ライブラリ側)
+# `NaruTest` — エディタ対応(C16〜C19)・golden test(C10)・生成 Statements(C8 / C9)・リポジトリの構成(C21 / C23 / C25)の検査ドライバ(ライブラリ側)
 
-IDEAL.md「前提」のとおり Lean で書く。実行ファイルは `NaruTestMain.lean`(`lake exe naru_test <群>`)。
+IDEAL.md「前提」のとおり Lean で書く。実行ファイルは `NaruTestMain.lean`(`lake exe naru_test <群>`)。走らせ方は `docs/testing.md`。
 
 - `grammar` — tree-sitter 文法(`editors/tree-sitter-naru/`)の検査(C16)。`NaruTest/Grammar.lean`。
 - `zed` — Zed 拡張(`editors/zed-naru/`)の検査(C17)。`NaruTest/Zed.lean`。
@@ -17,5 +18,6 @@ IDEAL.md「前提」のとおり Lean で書く。実行ファイルは `NaruTes
 - `zed-install` — 人間の Zed に `editors/zed-naru/` を Dev Extension として入れる(C19)。`NaruTest/ZedInstall.lean`。
 - `golden` — 手書き Model と生成 Model を 1 つの Lean プログラムで実行する golden test(C10)。`NaruTest/Golden.lean`(本体は `tests/golden/Golden.lean`)。
 - `statements` — 生成 Statements の import 閉包と `sorry`(C8)、claim surface の 13 の欄名(C9)。`NaruTest/Statements.lean`。
-- 共通部品(`ok:` / `FAIL:` の蓄積、子プロセス)は `NaruTest/Common.lean`。
+- `repo` — README の構成表・リンク・クイックスタート(C21)、`third_party/verified-consensus` の submodule(C23)、`docs/` の文書(C25)。`NaruTest/Repo.lean`。
+- 共通部品(`ok:` / `FAIL:` の蓄積、子プロセス、`naru.toml` のソースルート)は `NaruTest/Common.lean`。
 -/

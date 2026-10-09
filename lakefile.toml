@@ -18,7 +18,7 @@ srcDir = "compiler"
 name = "NaruStd"
 srcDir = "stdlib/Model"
 
-# 生成 Model(`lake exe naru compile` が `generated/Model.lean` と `generated/Model/**.lean` を出力する)。
+# 生成 Model(`lake exe naru compile` が `naru.toml` のソースルート(`specs/consensus`)から `generated/Model.lean` と `generated/Model/**.lean` を出力する)。
 # 機械生成専用。`lake build Model` でビルドする(C6)。
 [[lean_lib]]
 name = "Model"
@@ -30,14 +30,16 @@ srcDir = "generated"
 name = "Statements"
 srcDir = "generated"
 
-# scenario の実行ファイル(C7)。`lake exe naru simulate <dsl/…/scenario.naru>` が `generated/Simulate.lean`(`main`。追跡対象外)を
-# 書いてから `lake build naru_simulate` で生成 Model ごと native にビルドし、`.lake/build/bin/naru_simulate` を実行する。
+# scenario の実行ファイル(C7)。`lake exe naru simulate <specs/consensus/…/scenario.naru>` が `.lake/naru/simulate/Simulate.lean`(`main`。
+# 追跡対象外。C26: `generated/` には `naru compile` の決定的な出力だけを置く)を書いてから `lake build naru_simulate` で生成 Model ごと
+# native にビルドし、`.lake/build/bin/naru_simulate` を実行する。
 [[lean_exe]]
 name = "naru_simulate"
 root = "Simulate"
-srcDir = "generated"
+srcDir = ".lake/naru/simulate"
 
-# 検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)/ `golden`(C10)/ `statements`(C8 / C9)。Lean で書く(前提)。
+# 検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)/ `golden`(C10)/ `statements`(C8 / C9)/
+# `repo`(C21 / C23 / C25)。Lean で書く(前提)。
 # 検査本体は lean_lib `NaruTest`(`tests/NaruTest.lean` + `tests/NaruTest/*.lean`)、入口は `tests/NaruTestMain.lean`。
 [[lean_lib]]
 name = "NaruTest"

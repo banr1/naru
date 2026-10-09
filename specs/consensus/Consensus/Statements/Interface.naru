@@ -1,0 +1,107 @@
+// verified-consensus の移植: DecoupledConsensusStatements/Generic/Interface.lean(`Interface` / `Output` / `readAt`)と
+// DecoupledConsensusStatements/Instantiation.lean の `interface S` / `env S`(`actionRound`)、
+// DecoupledConsensusStatements/Instantiation/Proposals.lean(`proposerReadAt` / `proposedBlockAt`)。
+// IDEAL.md 用語「Interface」: 生成 Model と statements をつなぐ対応付け(confirmed / stable / finalized / proposer /
+// committee … が Model のどの関数を指すか)。
+//
+// - 手書きの `Interface P` は関数欄の record で、naru の record は関数欄を持てない(`docs/language.md`「型」)。instantiation は
+//   `interface S` の 1 つだけなので、各欄を `Setup` を取る宣言に写す: 値を返す欄は runtime の `fn`(Model に出る)、
+//   Prop の欄は spec 宣言(Statements に出る)。
+// - `Output P = P.State → Block`(出力の getter)は 3 つしか無いので enum `Output` で名指しし、`readAt P rho g v t` は
+//   `outputAt(g, s, rho, v, t)`。
+// - `env S` の `awake v t = (S.node v).awake (actionRound S t)` → `envAwake(s, v, t)`(`awake` は Schedule.naru の input)。
+//   `Δ` / `t_GST` / `electorate` は `s.e` の欄そのもの。
+// - `Certificate = NamedBlock`。
+module Consensus.Statements.Interface
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.NamedBlocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.Grades
+import Consensus.Protocol.Handlers
+import Consensus.Protocol.Evidence
+import Consensus.Protocol.Duties.Proposals
+import Consensus.Execution.Setup
+import Consensus.Execution.Node
+import Consensus.Execution.Run
+import Consensus.Statements.Execution
+import Consensus.Statements.Accountability
+
+// The three user-facing outputs, as getters on the node state (手書き `Interface.confirmed` / `stable` / `finalized`).
+enum Output { Confirmed, Stable, Finalized } derive eq
+
+// The output `g` read at node `v` and time `t` (手書き `readAt P rho g v t` with `interface S`'s getters:
+// `get_confirmed n.st.core` / `get_stable n.st.core` / `n.st.core.F`).
+fn outputAt(g: Output, s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Block {
+  let st = storeAt(s, rho, v, t).core;
+  match g {
+    Output.Confirmed => getConfirmed(st),
+    Output.Stable => getStable(st),
+    Output.Finalized => st.f,
+  }
+}
+
+// The prepared read of slot `k`'s proposer at the proposal time: strict read, clock staged, and cache prepared.
+fn proposerReadAt(s: Setup, rho: NamedRun, k: Slot) -> NamedNodeState {
+  confirmationReadAt(s, rho, proposer(k), proposalTime(s.e, k))
+}
+
+// The block the named proposal duty computes, with the full pool-and-carried attestation rows and source label, if the
+// parent body is retained (手書き `proposedBlockAt`; `NamedProfile.gradeContract n.cache` は naru では `n.cache` そのもの).
+fn proposedBlockAt(s: Setup, rho: NamedRun, k: Slot) -> Option<NamedBlock> {
+  let n = proposerReadAt(s, rho, k);
+  proposalWith(n.cache, ProposalRowSource.PoolAndCarried, s.e, s.hc, setupNode(proposer(k)), n.st)
+}
+
+// The block the proposal duty produces for slot `k` on the prepared read, erased (手書き `interface.proposedBlock`).
+fn proposedBlock(s: Setup, rho: NamedRun, k: Slot) -> Option<Block> {
+  proposedBlockAt(s, rho, k).map(|b| eraseBlock(b))
+}
+
+// Round `r` owns the half-open action window [a_r, a_{r+1}); times below a_0 clamp to round 0 (手書き `actionRound`).
+// 手書きの Int の `/` は被除数が非負(t ≥ a_0 = 6Δ)で除数が正なので床除算 `fdiv` と一致する。
+fn actionRound(s: Setup, t: Time) -> Round {
+  if t < setupActionTime(s, 0) { 0 }
+  else { (t - 6 * s.e.delta).fdiv(setupActionTime(s, 1) - setupActionTime(s, 0)).toNat() }
+}
+
+// Who is awake when, on the public environment (手書き `env.awake`): the node's round participation at the action round.
+fn envAwake(s: Setup, v: ValidatorId, t: Time) -> Bool { awake(v, actionRound(s, t)) }
+
+// Slots at which a period opens; used only by the recurrence premises (手書き `interface.opening`).
+predicate Opening(s: Setup, k: Slot) { exists r: Round { k == openingSlot(s.hc, r) } }
+
+// Certificate `c` finalizes target `target` (手書き `interface.finalizes`).
+predicate Finalizes(s: Setup, c: NamedBlock, target: Block) {
+  exists h: Height { NamedFinalizedAt(s.e, s.cfg, c, target, h) }
+}
+
+// The certificate roots satisfy the model's collision-free idealization (手書き `interface.collisionFree`).
+predicate CollisionFree(c: NamedBlock, c2: NamedBlock) { RootInjectiveOnAncestors(eraseBlock(c), eraseBlock(c2)) }
+
+// Two certificates contain slashable evidence (手書き `interface.evidence`).
+predicate Evidence(s: Setup, c: NamedBlock, c2: NamedBlock) {
+  HasSlashableWeightBetween(s.e, chainAttestations(eraseBlock(c)), chainAttestations(eraseBlock(c2)))
+}
+
+// Two node states hold slashable evidence against each other (手書き `interface.slashable`).
+predicate SlashableStates(s: Setup, n: NamedNodeState, n2: NamedNodeState) {
+  HasSlashableWeightBetween(s.e, storeAttestations(n.st.core), storeAttestations(n2.st.core))
+}
+
+// Certificate `c` is attributable to blocks in the run (手書き `interface.inRun`).
+predicate InRun(s: Setup, rho: NamedRun, c: NamedBlock) { BlockInRun(s, rho, c) }
+
+// The hash idealization the protocol assumes on the blocks of a run (手書き `interface.idealization`).
+predicate Idealization(s: Setup, rho: NamedRun) { NamedRootCollisionFree(s, rho) }
+
+// Two reads of the run, at any nodes and any times, hold evidence attributable to `v`; the evidence-holding nodes need
+// not be honest (手書き `interface.slashes`).
+predicate Slashes(s: Setup, rho: NamedRun, v: ValidatorId) {
+  exists u: ValidatorId { exists u2: ValidatorId { exists t: Time { exists t2: Time {
+    SlashableBetween(storeAttestations(storeAt(s, rho, u, t).core), storeAttestations(storeAt(s, rho, u2, t2).core), v)
+  } } } }
+}

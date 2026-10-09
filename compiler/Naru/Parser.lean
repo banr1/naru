@@ -4,7 +4,7 @@ import Naru.Ast
 /-!
 # 構文解析(再帰下降)
 
-文法の全体は `compiler/SYNTAX.md`。バックトラックせず、先読み(高々 2 トークン)だけで決める。
+文法の全体は `docs/language.md`。バックトラックせず、先読み(高々 2 トークン)だけで決める。
 `if` / `match` の頭部では record literal を許さない(`if x { … }` との衝突を避ける。Rust と同じ)。
 -/
 

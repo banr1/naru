@@ -7,6 +7,7 @@ import Naru.Resolve
 import Naru.Typecheck
 import Naru.Totality
 import Naru.Driver
+import Naru.Config
 import Naru.Sha256
 import Naru.Backend.Model
 import Naru.Backend.Statements

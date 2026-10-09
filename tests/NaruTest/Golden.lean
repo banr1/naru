@@ -4,11 +4,11 @@ import NaruTest.Common
 # `naru_test golden` — C10 の golden test のドライバ
 
 `tests/golden/Golden.lean`(手書き Model と生成 Model を 1 つの Lean プログラムから import し、同じ fixture を両側で畳み込んで
-MISMATCH を数える)を、verified-consensus の `LEAN_PATH`(mathlib と手書き Model の olean)にルートの `.lake/build/lib/lean`
-(生成 Model `Model` と `NaruStd`)を足して `lean --run` で走らせ、出力の `ok` / `FAIL` / `MISMATCH total` を検査項目にする。
+MISMATCH を数える)を、`third_party/verified-consensus`(submodule)の `LEAN_PATH`(mathlib と手書き Model の olean)にルートの
+`.lake/build/lib/lean`(生成 Model `Model` と `NaruStd`)を足して `lean --run` で走らせ、出力の `ok` / `FAIL` / `MISMATCH total` を検査項目にする。
 
-- 先に `lake build Model`(生成 Model)を走らせる。手書き Model は `verified-consensus/.lake/build` にビルド済みであること
-  (無ければ `cd verified-consensus && lake build DecoupledConsensusModel`。周回は verified-consensus を変えない)。
+- 先に `lake build Model`(生成 Model)を走らせる。手書き Model は `third_party/verified-consensus/.lake/build` にビルド済みであること
+  (無ければ `cd third_party/verified-consensus && lake build DecoupledConsensusModel`。周回は verified-consensus を変えない)。
 - `lake exe naru_test golden [--finality-horizon N]`。N は FinalityLiveness の prefix の horizon(t = 0 … N、N + 1 tick)。既定は C10 が
   求める 100(手書き側 interpreter で約 8 分)。Witness 自身の horizon 33729 は両 Model とも実行不能(周回 21 の計測)。
   C10 の証拠は引数なし(= horizon 100)の PASS。他の N で PASS しても C10 の証拠にはならない(`note:` を出す。回帰は `--finality-horizon 40`)。
@@ -16,7 +16,7 @@ MISMATCH を数える)を、verified-consensus の `LEAN_PATH`(mathlib と手書
 
 namespace NaruTest.Golden
 
-def vcDir : System.FilePath := "verified-consensus"
+def vcDir : System.FilePath := "third_party" / "verified-consensus"
 def goldenFile : System.FilePath := "tests" / "golden" / "Golden.lean"
 /-- C10 の FinalityLiveness の prefix の horizon(IDEAL.md: `horizon = 100`、t = 0〜100、101 tick)。 -/
 def c10Horizon : Nat := 100
@@ -38,13 +38,13 @@ def checks (horizon : Nat) : M Unit := do
   if b.exitCode == 0 then ok "lake build Model" else fail s!"lake build Model: exit {b.exitCode}\n{tail b.stderr}"
   -- 2. 手書き Model の olean
   let inst := vcDir / ".lake" / "build" / "lib" / "lean" / "DecoupledConsensusModel" / "Execution" / "Instance.olean"
-  if ← inst.pathExists then ok "verified-consensus: DecoupledConsensusModel/Execution/Instance.olean exists"
-  else fail s!"{inst} not found (cd verified-consensus && lake build DecoupledConsensusModel)"
+  if ← inst.pathExists then ok s!"{vcDir}: DecoupledConsensusModel/Execution/Instance.olean exists"
+  else fail s!"{inst} not found (cd {vcDir} && lake build DecoupledConsensusModel)"
   -- 3. LEAN_PATH = verified-consensus の環境 + ルートの build
   let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"] (cwd := some vcDir)
   let vcPath := e.stdout.trimAscii.toString
-  if e.exitCode == 0 && !vcPath.isEmpty then ok "lake env printenv LEAN_PATH (verified-consensus)"
-  else fail s!"lake env printenv LEAN_PATH in verified-consensus: exit {e.exitCode}\n{tail e.stderr}"
+  if e.exitCode == 0 && !vcPath.isEmpty then ok s!"lake env printenv LEAN_PATH ({vcDir})"
+  else fail s!"lake env printenv LEAN_PATH in {vcDir}: exit {e.exitCode}\n{tail e.stderr}"
   let rootLib ← IO.FS.realPath (".lake" / "build" / "lib" / "lean")
   let leanPath := vcPath ++ ":" ++ rootLib.toString
   -- 4. golden を 1 つの Lean プログラムとして実行

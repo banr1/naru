@@ -5,12 +5,12 @@ import Model
 /-!
 # tests/golden/Golden.lean — C10 の golden test(同一 Lean プログラム)
 
-手書き Model(`verified-consensus/DecoupledConsensusModel`、mathlib の上)と生成 Model(`generated/Model` + `NaruStd`)を **1 つの Lean
+手書き Model(`third_party/verified-consensus/DecoupledConsensusModel`、mathlib の上)と生成 Model(`generated/Model` + `NaruStd`)を **1 つの Lean
 プログラム**から import し、同じ fixture(run)を両側で畳み込んで、各 event の前後の両 node の読みと tick が emit した object を
 行の列にして突き合わせ、MISMATCH を数える。IDEAL.md C10 の検証そのもの(ドライバは `lake exe naru_test golden`)。
 
-実行(リポジトリのルートで。`lake build Model` 済みで、verified-consensus の Model の olean がビルド済みであること):
-  LEAN_PATH="$(cd verified-consensus && lake env printenv LEAN_PATH):$PWD/.lake/build/lib/lean" \
+実行(リポジトリのルートで。`lake build Model` 済みで、third_party/verified-consensus の Model の olean がビルド済みであること):
+  LEAN_PATH="$(cd third_party/verified-consensus && lake env printenv LEAN_PATH):$PWD/.lake/build/lib/lean" \
     lean --run tests/golden/Golden.lean [--finality-horizon N]
 出力: case ごとに `ok <case>: n lines agree` か `FAIL <case>: …` と `MISMATCH …` の行、最後に `MISMATCH total: N`。exit 0 ⇔ N = 0。
 
@@ -20,7 +20,7 @@ fixture(case):
   Outage(horizon 45)は全 horizon。StrongRecovery は Witness の seed `rho 30`(本番の `rho eventCount` = 約 5,743 tick は両 Model とも実行不能)。
   FinalityLiveness は同じ Setup と同じ tick 列の先頭から `--finality-horizon N` までの prefix(t = 0 … N、N + 1 tick)。既定の N は C10 が
   求める 100(Witness の全 horizon 33729 = 33,730 tick は両 Model とも実行不能: 周回 21 の計測)。
-- `scenario:<name>` — naru の scenario(`dsl/scenarios/*.naru`)が fn として公開する Setup と run を生成 Model からそのまま取り、手書き側は
+- `scenario:<name>` — naru の scenario(`specs/consensus/scenarios/*.naru`)が fn として公開する Setup と run を生成 Model からそのまま取り、手書き側は
   同じ run を書き写したもの。basic / outage / strongRecovery / twoNodes(複数ノード)/ equivocation(twoFaced と oneVote)。
 - `scenario:<name>/observe <label>` — scenario の `observe` の行(`naru simulate` の出力そのもの)が、golden が生成 Model で畳み込んだ同じ
   run の読みと一致すること(scenario 本体が公開 fn の Setup / run を使っていることの結び付け。両側とも生成 Model)。

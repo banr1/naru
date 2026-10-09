@@ -1,2 +1,0 @@
-module
-public import DecoupledConsensusProofs.Execution.ModelVocabulary

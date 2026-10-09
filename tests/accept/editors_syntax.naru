@@ -1,4 +1,4 @@
-// 受理例 3: `compiler/SYNTAX.md` の全構文を 1 ファイルに書いたもの。エディタ対応(C16)の検査 `lake exe naru_test grammar` が
+// 受理例 3: `docs/language.md` の全構文を 1 ファイルに書いたもの。エディタ対応(C16)の検査 `lake exe naru_test grammar` が
 // tree-sitter 文法でこのファイルを解析し、`queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出ることを
 // 確かめる。コンパイラでも `lake exe naru compile tests/accept/editors_syntax.naru` が exit 0 になること(構文を増やしたらここにも足す)。
 // 予約語の一覧: module import type record enum derive input fn state protocol predicate condition regime property claim bundle
@@ -180,7 +180,7 @@ scenario basic {
   observe slotProposer(1);
 }
 
-// 名前の大文字 / 小文字は、式の先頭の段とパターンの 1 段の名前でだけ区別する(SYNTAX.md「字句」)。
+// 名前の大文字 / 小文字は、式の先頭の段とパターンの 1 段の名前でだけ区別する(`docs/language.md`「字句」)。
 // 欄名・variant・UFCS のメソッド名は慣例に反して大小を入れ替えても構文としては通る(reviewer の周回 11 の指摘)。
 enum Flag { on, off } derive eq
 record Odd { Big: Nat } derive eq

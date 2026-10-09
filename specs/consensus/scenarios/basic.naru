@@ -1,0 +1,54 @@
+// naru の実行 fixture(C7): verified-consensus の Witnesses の WeakGenesis に対応する run を、移植した protocol(specs/consensus/Consensus)で
+// 動かし、observer の値を表示する。`lake exe naru simulate specs/consensus/scenarios/basic.naru`。observer は Scenarios.Trace(trace.naru)。
+//
+// - 非決定性(環境のオラクル `proposer` / `committee` / `newRoot` / `awake`)は scenario の先頭の `input` 束縛で与える。
+//   WeakGenesis: Δ = 1、GST 0、proposer 0、committee {0}、重み 2 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、
+//   new_root(s) = s + 1、awake ⇔ v = 0、node 0 の tick が t = 0 … 30(31 tick。配達は無い)。
+// - Setup と run は fn `basicSetup` / `basicRun` で公開する(golden test `tests/golden/Golden.lean` が生成 Model から同じ run を取り、
+//   手書き Model と突き合わせる。C10)。scenario 本体はそれを呼ぶだけ。
+// - 出力は observer を通す(state を直接 dump しない): 各 tick の後の client-facing な読み(confirmed / stable / finalized の root)。
+//   期待値は手書き Model の Witnesses の docstring と同じ: 提案は t = 4, 8, …, 28(root 2 … 8)、投票は 5, 9, …、
+//   attestation は 6, 18, 30 で、confirmed が slot ごとに進み(t = 10 / 14 / 18 / 22 / 26 / 30 で root 2 … 7)、stable は t = 26 から
+//   root 4、finalized は 0 のまま(tests/golden/protocol_generated.lean の WeakGenesis の読みと同じ)。
+module Scenarios.Basic
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ChainState
+import Consensus.Execution.Setup
+import Consensus.Execution.Run
+import Scenarios.Trace
+
+// The WeakGenesis setup: Δ = 1, GST 0, weights 2 / 1 (validators 0 / 1), R = 3, η = 2, K = 4, D = 2, timeout 6.
+fn basicSetup() -> Setup {
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
+  Setup {
+    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  }
+}
+
+// The WeakGenesis run: node `v0` (the only honest node) ticks at t = 0 … 30; no deliveries.
+fn basicRun(v0: ValidatorId) -> NamedRun {
+  NamedRun { honest: Set.singleton(v0), horizon: 30, events: List.range(31).map(|t| NamedEvent.Tick(v0, t.toInt())) }
+}
+
+scenario basic {
+  input proposer(slot) = ValidatorId { value: 0 };
+  input committee(slot) = Set.singleton(ValidatorId { value: 0 });
+  input newRoot(node, slot) = BlockId { value: slot + 1 };
+  input awake(node, round) = node.value == 0;
+  let v0 = ValidatorId { value: 0 };
+  let s = basicSetup();
+  let rho = basicRun(v0);
+  observe trace(s, rho, v0);
+  observe readsAt(s, rho, v0, 30);
+}

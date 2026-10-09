@@ -43,8 +43,16 @@ structure Meta where
   stdlibHash : String
   /-- コンパイル単位(全ソース)の hash。 -/
   unitHash : String
-  /-- ソースファイル → sha256。 -/
+  /-- ソースファイル(渡されたパス)→ sha256。 -/
   fileHashes : List (String × String)
+  /-- 生成物に書くパスから落とす接頭辞(ソースルート + `/`。IDEAL.md C1: ヘッダのパスはソースルートからの相対)。
+  空なら渡されたパスのまま。 -/
+  sourcePrefix : String := ""
+
+/-- 生成物に書くソースのパス(ソースルートからの相対)。 -/
+def Meta.display (info : Meta) (file : String) : String :=
+  if !info.sourcePrefix.isEmpty && file.startsWith info.sourcePrefix then (file.drop info.sourcePrefix.length).toString
+  else file
 
 structure Env where
   decls : HashMap String Core.Decl := {}
@@ -716,7 +724,7 @@ def emitModel (mods : Array Core.Module) (recs : Array Totality.Recursion) (info
       s!"-- naru input `{d.name}`: supplied by the environment as parameter `{inputBinder d.key}` of every function that uses it"
     let bodyParts := inputsNote ++ groups.map (emitGroup env)
     let body := if bodyParts.isEmpty then "" else "\n" ++ "\n\n".intercalate bodyParts ++ "\n"
-    let content := header info m.file hash ++ imports ++ s!"\n/-! naru module `{renderPath m.name}` ({m.file}) -/\n" ++ body
+    let content := header info (info.display m.file) hash ++ imports ++ s!"\n/-! naru module `{renderPath m.name}` ({info.display m.file}) -/\n" ++ body
     files := files.push (modulePath m.name, content)
   -- ルート `Model.lean`: 全モジュールを import する
   let rootImports := "".intercalate (mods.toList.map fun m => s!"import {leanModule m.name}\n")

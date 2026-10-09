@@ -4,14 +4,15 @@ import Naru
 /-!
 # `naru_test statements` — C8 / C9 の検査ドライバ
 
-生成 Statements(`generated/Statements.lean` と `generated/Statements/**.lean`。`lake exe naru compile` が `dsl/` から出す)について:
+生成 Statements(`generated/Statements.lean` と `generated/Statements/**.lean`。`lake exe naru compile` が `naru.toml` のソースルート
+(`specs/consensus/`)から出す)について:
 
 - C8: `lake build Statements` が exit 0。`Statements` からの import 閉包(`lake env lean --deps-json` で取る。ソースの文字列から
   推測しない。`Init` / `NaruStd` は生成物の外なのでその先は辿らない)が `Init` / `NaruStd` / 生成 Model(`Model.*`)/ 生成 Statements
   (`Statements.*`)だけから成り、Proofs を含まない。`generated/Statements/` 配下の全ファイルがその閉包にある(リストされない第 2 の
   statements が無い)。閉包の生成ファイル(Statements と Model)すべてに語 `sorry` が無い(`grep -rw sorry` と同じ判定)。
   C9 の claim bundle を持つモジュールが閉包にある(中身の無い閉包で通さない)。
-- C9: `dsl/` の naru ソースに claim bundle `Consensus` がちょうど 1 つあり、その項目のラベルが verified-consensus の 13 claims
+- C9: ソースルートの naru ソースに claim bundle `Consensus` がちょうど 1 つあり、その項目のラベルが verified-consensus の 13 claims
   (IDEAL.md 用語「claim surface」)と同名で、生成 Lean の `structure` の欄(`getStructureFields`。`run_cmd` の検査スクリプトを
   `.lake/naru/test/statements/SurfaceShape.lean` に書いて `lake env lean` で走らせる)がその項目と同じ順で並ぶ。13 の欄名を列挙する。
 
@@ -97,7 +98,7 @@ def surfaceShapeScript (structName : String) : String :=
   "    IO.println s!\"field: {f}\"\n"
 
 def checks : M Unit := do
-  -- 1. `dsl/` から `generated/` を作り直す(Model と Statements)
+  -- 1. ソースルートから `generated/` を作り直す(Model と Statements)
   let c ← runProc "lake" #["exe", "naru", "compile"]
   if c.exitCode == 0 then ok "lake exe naru compile" else fail s!"lake exe naru compile: exit {c.exitCode}\n{tail c.stderr}"
   -- 2. 生成 Statements のビルド(生成 Model も)
@@ -145,13 +146,19 @@ def checks : M Unit := do
       if n > 0 then sorries := sorries ++ [s!"{f} ({n})"]
   if sorries.isEmpty then ok s!"no `sorry` in the generated files of the closure ({allFiles.length} file(s) scanned: Statements and Model)"
   else fail s!"`sorry` in generated files: {sorries}"
-  -- 6. naru ソースの claim bundle(C9)
-  let sources ← listFiles "dsl" "naru"
-  let (diags, checked) ← compileFiles sources
-  if !diags.isEmpty then
-    fail s!"dsl/ has {diags.size} diagnostic(s); cannot read its claim bundle"
-    return
-  let decls : List Core.Decl := checked.core.toList.flatMap fun (m : Core.Module) => m.decls.toList
+  -- 6. naru ソースの claim bundle(C9)。各ソースルート(naru.toml)を 1 単位として検査し、宣言を集める
+  let roots ← match ← sourceRoots with
+    | .ok rs => pure rs
+    | .error e => fail e; return
+  let mut decls : List Core.Decl := []
+  for root in roots do
+    let sources ← listFiles root "naru"
+    let (diags, checked) ← compileFiles sources
+    if !diags.isEmpty then
+      fail s!"{root}/ has {diags.size} diagnostic(s); cannot read its claim bundle"
+      return
+    decls := decls ++ checked.core.toList.flatMap fun (m : Core.Module) => m.decls.toList
+  let rootsShown := ", ".intercalate (roots.map fun r => s!"{r}/")
   let bundles : List Core.Decl := decls.filter fun (d : Core.Decl) =>
     match d with
     | .claimBundle _ n _ => n == bundleName
@@ -159,7 +166,7 @@ def checks : M Unit := do
   match bundles with
   | [Core.Decl.claimBundle key _ items] =>
     let labels := items.map (·.1)
-    ok s!"dsl/ declares claim bundle `{bundleName}` ({key}) with {labels.length} item(s)"
+    ok s!"{rootsShown} declares claim bundle `{bundleName}` ({key}) with {labels.length} item(s)"
     -- その bundle を持つ生成 Statements モジュールが閉包にある(中身の無い閉包で C8 を通さない)
     let bundleModule := "Statements." ++ ".".intercalate ((key.splitOn ".").dropLast)
     if seen.contains bundleModule then ok s!"the module of the claim bundle (`{bundleModule}`) is in the import closure of Statements"
@@ -184,8 +191,8 @@ def checks : M Unit := do
     else if fields == labels then
       ok s!"generated `{structName}` has the same {fields.length} fields in the same order as the claim bundle: {", ".intercalate fields}"
     else fail s!"fields of generated `{structName}` {fields} ≠ items of the claim bundle {labels}"
-  | [] => fail s!"dsl/ declares no claim bundle named `{bundleName}` (C9 needs one whose items are the {claimSurface.length} claims of verified-consensus: {", ".intercalate claimSurface})"
-  | bs => fail s!"dsl/ declares {bs.length} claim bundles named `{bundleName}`; C9 needs exactly one"
+  | [] => fail s!"{rootsShown} declares no claim bundle named `{bundleName}` (C9 needs one whose items are the {claimSurface.length} claims of verified-consensus: {", ".intercalate claimSurface})"
+  | bs => fail s!"{rootsShown} declares {bs.length} claim bundles named `{bundleName}`; C9 needs exactly one"
 
 def run : IO UInt32 := runGroup "statements" checks
 

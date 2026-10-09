@@ -1,6 +1,6 @@
 // tree-sitter 文法 for naru(`.naru`)。
 //
-// これは naru の正本ではない。正本は `compiler/Naru/Parser.lean` と `compiler/SYNTAX.md` で、この文法は
+// これは naru の正本ではない。正本は `compiler/Naru/Parser.lean` と `docs/language.md` で、この文法は
 // エディタ(Zed)のシンタックスハイライトと括弧対応のための第二のパーサとして正本に追従させる(IDEAL.md C16)。
 // 意味検査(型・phase・停止性)は持たない。診断はすべて `naru lsp` を通してコンパイラが出す。
 //
@@ -17,7 +17,7 @@
 //   小文字は値 / 変数)。欄名・メソッド名・名前付き引数・2 段目以降の経路・enum の variant は大小を問わない。
 //
 // 変更したら `tree-sitter generate` で `src/` を作り直し(`src/` は追跡対象で、手で編集しない)、
-// `lake exe naru_test grammar` を通す。構文を増やす周回は `SYNTAX.md`・パーサと同じ周回でここも直す。
+// `lake exe naru_test grammar` を通す。構文を増やす周回は `docs/language.md`・パーサと同じ周回でここも直す。
 
 const MAX_COMMENT_DEPTH = 8;
 

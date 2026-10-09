@@ -1,0 +1,6 @@
+# naru の設定(IDEAL.md C24)。`naru compile` / `naru simulate` / `naru lsp` と検査ドライバ `naru_test` が読む。
+# sources: コンパイル単位のソースルート。各ルート配下の **/*.naru が 1 つの単位で、モジュール名はルートからの相対パスに対応する
+#          (specs/consensus/Consensus/Objects/Time.naru は Consensus.Objects.Time)。
+# generated: `naru compile` が Model / Statements を書く生成先。
+sources = ["specs/consensus"]
+generated = "generated"

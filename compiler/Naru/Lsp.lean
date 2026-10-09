@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Naru.Driver
+import Naru.Config
 
 /-!
 # 言語サーバー(`naru lsp`、IDEAL.md C18)
@@ -9,9 +10,10 @@ import Naru.Driver
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
   `didSave` / `didClose`。それ以外のリクエストには `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
-- 検査の単位: 開いた文書が `dsl/` 配下(パスの祖先に `dsl` という名のディレクトリがある)なら、その `dsl/**/*.naru`
-  全体を 1 つのコンパイル単位にし、開いている文書はディスクではなくバッファの内容で検査する。それ以外の文書は単独で検査する。
-  どちらも `Driver.compileSources`(CLI の `compile` と同じ検査)。
+- 検査の単位: 開いた文書のパスの祖先で最も近い `naru.toml`(`Naru/Config.lean`)を読み、その `sources` のソースルート配下
+  なら、そのルートの `**/*.naru` 全体を 1 つのコンパイル単位にし、開いている文書はディスクではなくバッファの内容で検査する。
+  それ以外の文書(`naru.toml` が無い・どのルートの配下でもない)は単独で検査する。どちらも `Driver.compileSources`
+  (CLI の `compile` と同じ検査)。cwd には依らない(C24)。
 - 診断: `textDocument/publishDiagnostics`。コンパイラの `Diagnostic`(1 始まりの行・列)を 0 始まりの位置に直し、範囲は
   その位置から始まるトークン 1 つ分(識別子・数・文字列・記号)、severity はエラー、`code` は `E0xx`、`source` は `naru`。
   他のファイルに出た診断はそのファイルの URI へ送り、前回その単位で診断を送った URI のうち今回空になったものには空を送って消す。
@@ -132,27 +134,26 @@ structure Doc where
   /-- URI から取ったファイルパス(`file://` でなければ URI そのまま)。診断の `file` と突き合わせる。 -/
   path : String
   text : String
+  /-- 文書が属するソースルート(`naru.toml` の `sources`。開いたときに決める)。無ければ単独の文書。 -/
+  root : Option String := none
 
 def pathOfUri (uri : String) : String :=
   match System.Uri.fileUriToPath? uri with
   | some p => p.toString
   | none => uri
 
-/-- `dsl/` 配下なら、最も近い祖先の `dsl` ディレクトリ。 -/
-def unitRoot (path : String) : Option String := Id.run do
-  let mut p : System.FilePath := path
-  let mut fuel := path.length
-  while fuel > 0 do
-    fuel := fuel - 1
-    match p.parent with
-    | none => return none
-    | some q =>
-      if q.fileName == some "dsl" then return some q.toString
-      p := q
-  return none
+/-- 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下ならそのルート(絶対パス)。
+`naru.toml` が無い・読めない・どのルートの配下でもなければ none(単独の文書)。 -/
+def unitRoot (path : String) : IO (Option String) := do
+  let some cfgPath ← findConfigFrom path | return none
+  match ← readConfig cfgPath with
+  | .error e =>
+    IO.eprintln s!"naru lsp: {cfgPath}: {e} (checking {path} on its own)"
+    return none
+  | .ok cfg => return (cfg.rootOf path).map fun (root, _) => root.toString
 
-/-- 検査の単位の鍵: `dsl` のルート、または単独の文書のパス。 -/
-def unitKey (path : String) : String := (unitRoot path).getD path
+/-- 検査の単位の鍵: ソースルート、または単独の文書のパス。 -/
+def unitKey (doc : Doc) : String := doc.root.getD doc.path
 
 structure State where
   out : IO.FS.Stream
@@ -180,10 +181,10 @@ def publish (uri : String) (diags : Array Json) : M Unit :=
 
 def log (msg : String) : M Unit := IO.eprintln s!"naru lsp: {msg}"
 
-/-- 文書の単位のソース列。`dsl` 配下ならディスクの `dsl/**/*.naru` 全体(開いている文書はバッファの内容、
+/-- 文書の単位のソース列。ソースルート配下ならディスクのそのルートの `**/*.naru` 全体(開いている文書はバッファの内容、
 ディスクに無い開いた文書も含める)、それ以外はその文書だけ。 -/
 def unitSources (st : State) (doc : Doc) : IO (List (String × String)) := do
-  match unitRoot doc.path with
+  match doc.root with
   | none => return [(doc.path, doc.text)]
   | some root =>
     let files ← listFiles root "naru"
@@ -193,7 +194,7 @@ def unitSources (st : State) (doc : Doc) : IO (List (String × String)) := do
       | some d => out := out ++ [(f, d.text)]
       | none => out := out ++ [(f, ← IO.FS.readFile f)]
     for d in st.docs do
-      if unitRoot d.path == some root && !files.contains d.path then
+      if d.root == some root && !files.contains d.path then
         out := out ++ [(d.path, d.text)]
     return out
 
@@ -216,7 +217,7 @@ def check (doc : Doc) (closed : Option String := none) : M Unit := do
     match groups.findIdx? (·.1 == d.file) with
     | some i => groups := groups.modify i fun (f, a) => (f, a.push j)
     | none => groups := groups.push (d.file, #[j])
-  let key := unitKey doc.path
+  let key := unitKey doc
   let prev := ((st.published.find? (·.1 == key)).map (·.2)).getD #[]
   let mut sent : Array String := #[]
   let mut nonEmpty : Array String := #[]
@@ -234,7 +235,8 @@ def check (doc : Doc) (closed : Option String := none) : M Unit := do
   modify fun s => { s with published := (s.published.filter (·.1 != key)).push (key, nonEmpty) }
 
 def openDoc (uri text : String) : M Unit := do
-  let doc : Doc := { uri, path := pathOfUri uri, text }
+  let path := pathOfUri uri
+  let doc : Doc := { uri, path, text, root := ← unitRoot path }
   modify fun s => { s with docs := (s.docs.filter (fun (d : Doc) => d.uri != uri)).push doc }
   check doc
 
@@ -265,9 +267,9 @@ def closeDoc (uri : String) : M Unit := do
   | some doc =>
     set { st with docs := st.docs.filter (fun (d : Doc) => d.uri != uri) }
     publish uri #[]
-    let key := unitKey doc.path
+    let key := unitKey doc
     let st ← get
-    match st.docs.find? (fun d => unitKey d.path == key) with
+    match st.docs.find? (fun d => unitKey d == key) with
     | some other => check other (closed := some uri)
     | none =>
       let prev := ((st.published.find? (·.1 == key)).map (·.2)).getD #[]

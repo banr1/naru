@@ -2,7 +2,7 @@
 # 1 行 = <行番号(1 始まり)> TAB <捕捉名> TAB <字句>。`lake exe naru_test grammar` が `tree-sitter query` の出力にすべて現れることを確かめる。
 # 行番号はソースを読んで書く(query の出力を写さない)。ソースの行を動かしたらここも直す。
 # コメント(行コメント・入れ子のブロックコメント)
-1	comment	// 受理例 3: `compiler/SYNTAX.md` の全構文を 1 ファイルに書いたもの。エディタ対応(C16)の検査 `lake exe naru_test grammar` が
+1	comment	// 受理例 3: `docs/language.md` の全構文を 1 ファイルに書いたもの。エディタ対応(C16)の検査 `lake exe naru_test grammar` が
 6	comment	/* ブロックコメントは /* 入れ子 /* にできる */ */ ここはまだ外側のコメント // 行コメントの印は無効 */
 34	comment	// 末尾 `?` 付きの識別子(宣言とメソッド)
 # module / import

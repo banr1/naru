@@ -1,0 +1,51 @@
+// naru の実行 fixture(C10): verified-consensus の Witnesses の Outage に対応する run。`lake exe naru simulate specs/consensus/scenarios/outage.naru`。
+//
+// - Outage: Δ = 1、GST 44(run のほぼ全体が GST 前)、proposer は slot 1 だけ node 0 でそれ以外は node 1(node 1 は眠っていて tick しない
+//   ので、slot 2 以降は提案が出ない)、committee {0}、重み 3 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、new_root(s) = s + 1、
+//   awake ⇔ v = 0、node 0 の tick が t = 0 … 45(46 tick。配達は無い)。
+// - Setup と run は fn `outageSetup` / `outageRun` で公開する(golden test `tests/golden/Golden.lean` が使う。C10)。
+// - 期待値(tests/golden/protocol_generated.lean の Outage の読み。周回 10 で手書き Model と一致): slot 1 の block(root 2)だけが提案され
+//   (t = 4)、confirmed は t = 10 から root 2、stable は t = 26 から root 2、finalized は 0 のまま。以後 t = 45 まで変わらない。
+module Scenarios.Outage
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ChainState
+import Consensus.Execution.Setup
+import Consensus.Execution.Run
+import Scenarios.Trace
+
+// The Outage setup: Δ = 1, GST 44, weights 3 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+fn outageSetup() -> Setup {
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 3).insert(v1, 1) };
+  Setup {
+    e: ProtocolEnv { delta: 1, tGST: 44, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  }
+}
+
+// The Outage run: node `v0` ticks at t = 0 … 45; no deliveries.
+fn outageRun(v0: ValidatorId) -> NamedRun {
+  NamedRun { honest: Set.singleton(v0), horizon: 45, events: List.range(46).map(|t| NamedEvent.Tick(v0, t.toInt())) }
+}
+
+scenario outage {
+  input proposer(slot) = ValidatorId { value: if slot == 1 { 0 } else { 1 } };
+  input committee(slot) = Set.singleton(ValidatorId { value: 0 });
+  input newRoot(node, slot) = BlockId { value: slot + 1 };
+  input awake(node, round) = node.value == 0;
+  let v0 = ValidatorId { value: 0 };
+  let s = outageSetup();
+  let rho = outageRun(v0);
+  observe trace(s, rho, v0);
+  observe heldAt(s, rho, v0, 45);
+  observe readsAt(s, rho, v0, 45);
+}

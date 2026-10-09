@@ -13,8 +13,8 @@ import NaruTest.Common
 3. `tests/reject/` の各反例を `didOpen` すると、`naru compile` と同じ E 番号・同じ行(・列)の診断がその URI に返り、
    反例の先頭コメントが名指しする E 番号(`期待: … E001`)がその中にある。`didClose` で空になる。
 4. BMP 外の文字(絵文字)を含む単独の文書(ディスクに無い)で、診断の列が UTF-16 単位で、範囲がトークン 1 つ分の幅になる。
-5. `dsl/` の移植ソースをすべて `didOpen` しても診断は 0 件(他の URI にも非空の診断は来ない)。
-6. `dsl/Consensus/Objects/Time.naru` を `didChange` で壊す: 末尾に未解決名を使う fn を足すとその行に E011 が出る。
+5. `naru.toml` のソースルート(`specs/consensus/`)の移植ソースをすべて `didOpen` しても診断は 0 件(他の URI にも非空の診断は来ない)。
+6. `<ルート>/Consensus/Objects/Time.naru` を `didChange` で壊す: 末尾に未解決名を使う fn を足すとその行に E011 が出る。
    `slotStart` を改名すると、それを使う他のファイル(Parameters / Grades)の URI に E011 が出る(開いている文書のバッファで
    単位全体を検査している)。その状態で Parameters を `didClose` すると空になり、同じ単位の再検査でも非空が送り直されない。
    Parameters を `didOpen` し直すと E011 が戻る。Time を元に戻すとそれらが空になって消える。`didSave` でも空のまま。
@@ -293,8 +293,12 @@ def checks (env : Env) : M Unit := do
     let some got ← barrier env | return
     let _ ← agrees "emoji probe: didClose" got #[] [emojiUri]
   | ds => fail s!"emoji probe: naru compile should report exactly 1 diagnostic, got {ds.length}"
-  -- 5. dsl/ の移植ソース
-  let dslFiles ← Naru.listFiles "dsl" "naru"
+  -- 5. ソースルート(naru.toml)の移植ソース
+  let unitRoot ← match ← sourceRoots with
+    | .ok (r :: _) => pure r.toString
+    | .ok [] => fail "naru.toml lists no source root"; return
+    | .error e => fail e; return
+  let dslFiles ← Naru.listFiles unitRoot "naru"
   let mut nDsl := 0
   for p in dslFiles do
     let abs := (env.root / p).toString
@@ -303,9 +307,9 @@ def checks (env : Env) : M Unit := do
     let some got ← barrier env | return
     if ← agrees s!"{p}: didOpen" got #[] [uri] then nDsl := nDsl + 1
   if nDsl == dslFiles.length then
-    ok s!"dsl/: {nDsl} files didOpen → 0 diagnostics (none for other URIs either)"
-  -- 6. didChange(dsl/ の単位: 開いた文書のバッファで検査する)
-  let targetRel := "dsl/Consensus/Objects/Time.naru"
+    ok s!"{unitRoot}/: {nDsl} files didOpen → 0 diagnostics (none for other URIs either)"
+  -- 6. didChange(ソースルートの単位: 開いた文書のバッファで検査する)
+  let targetRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let target := (env.root / targetRel).toString
   let targetUri := System.Uri.pathToUri target
   let orig ← IO.FS.readFile target
@@ -330,7 +334,7 @@ def checks (env : Env) : M Unit := do
   let expected := expectedOf (withTarget renamed)
   let others := expected.filter (·.1 != targetUri)
   if others.isEmpty then
-    fail s!"{targetRel}: renaming slotStart should make naru compile report diagnostics in other dsl/ files"
+    fail s!"{targetRel}: renaming slotStart should make naru compile report diagnostics in other files of {unitRoot}/"
   didChange env targetUri 3 renamed
   let some got ← barrier env | return
   if ← agrees s!"{targetRel}: didChange (rename slotStart)" got expected [targetUri] then
@@ -369,7 +373,7 @@ def checks (env : Env) : M Unit := do
     let some got ← barrier env | return
     if ← agrees s!"{p}: didClose" got #[] [uri] then nClosed := nClosed + 1
   if nClosed == dslFiles.length then
-    ok s!"dsl/: didClose on all {nClosed} files → empty diagnostics for each"
+    ok s!"{unitRoot}/: didClose on all {nClosed} files → empty diagnostics for each"
   -- 8. shutdown / exit
   let id ← env.nextId.modifyGet fun n => (n, n + 1)
   request c id "shutdown" Json.null

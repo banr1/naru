@@ -3,20 +3,21 @@ import Naru
 /-!
 # `naru` CLI
 
-- `naru compile` — `dsl/` 配下の全 `.naru` を検査し、Model(`generated/Model`)と Statements(`generated/Statements`)を
-  `generated/` に出力する(C1)。
+- `naru compile` — `naru.toml`(リポジトリのルート。`Naru/Config.lean`)の各ソースルート配下の全 `.naru` を 1 つのコンパイル単位
+  として検査し、Model(`<generated>/Model`)と Statements(`<generated>/Statements`)を生成先に出力する(C1)。
 - `naru compile [--out <dir>] <files...>` — 指定ファイルを検査する。`--out` があればそこに Model と Statements を出力する
   (無ければ検査だけ。反例ソースの検査や受理例の確認に使う)。
   診断があれば標準エラーに `file:line:col: error[E0xx]: …` を出して exit 1。
 - `naru check-reject <file.naru> <Exxx>` — 反例が `Exxx` で拒否されることを検査する。
 - `naru lsp` — 標準入出力で言語サーバー(LSP)として動き、コンパイラの診断を返す(C18。`Naru/Lsp.lean`)。
-- `naru simulate <dsl/…/scenario.naru>` — `dsl/` 全体を検査して `generated/` に Model を作り直し(`compile` と同じ)、
-  そのファイルの scenario を実行する `generated/Simulate.lean`(`main`)を書いて `lake build naru_simulate` →
-  `.lake/build/bin/naru_simulate` を実行する(C7。「naru を実行する」= 生成 Lean を native 実行する)。
-  出力は scenario の `observe` の行(observer の値を `Repr` で表示)。
+- `naru simulate <ソースルート配下の scenario.naru>` — そのルート全体を検査して生成先に Model を作り直し(`compile` と同じ)、
+  そのファイルの scenario を実行する `.lake/naru/simulate/Simulate.lean`(`main`)を書いて `lake build naru_simulate` →
+  `.lake/build/bin/naru_simulate` を実行する(C7。「naru を実行する」= 生成 Lean を native 実行する。C26: 生成先には
+  `compile` の決定的な出力だけを置く)。出力は scenario の `observe` の行(observer の値を `Repr` で表示)。
 
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
+ソースのパスはソースルートからの相対で書く(ルートのディレクトリ名を含まない: C1 / C24)。
 `--out <dir>` は `<dir>/Model.lean` と `<dir>/Model/`、`<dir>/Statements.lean` と `<dir>/Statements/` を作り直す(他は触らない)。
 -/
 
@@ -32,12 +33,42 @@ def stdlibDir : System.FilePath := "stdlib" / "Model"
 
 def compilerDir : System.FilePath := "compiler"
 
+/-- `naru simulate` が書く実行入口(追跡対象外。C26)。 -/
+def simulateDir : System.FilePath := ".lake" / "naru" / "simulate"
+
 def usage : String :=
-  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <dsl/.../scenario.naru>"
+  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru under a source root of naru.toml>"
 
 -- `listFiles`(ディレクトリ配下の `.naru` / `.lean` の列挙)は `Naru.Driver`(言語サーバーも使う)。
 
-def defaultSources : IO (List String) := listFiles "dsl" "naru"
+/-- `naru.toml`(cwd)を読む。無ければ・壊れていれば説明して none。 -/
+def loadConfig (who : String) : IO (Option Config) := do
+  let path : System.FilePath := configFileName
+  if !(← path.pathExists) then
+    IO.eprintln s!"{who}: {configFileName} not found (run from the repository root; it lists the source roots `sources` and the output directory `generated`)"
+    return none
+  match ← readConfig path with
+  | .ok cfg => return some cfg
+  | .error e =>
+    IO.eprintln s!"{who}: {configFileName}: {e}"
+    return none
+
+/-- コンパイル単位: ソースルートと、その配下の `.naru`(パス順)。 -/
+structure Unit' where
+  root : System.FilePath
+  files : List String
+
+/-- `naru.toml` の各ソースルートを単位にする(ルートが無ければ空の単位)。 -/
+def unitsOf (cfg : Config) : IO (List Unit') := do
+  let mut out : List Unit' := []
+  for root in cfg.rootPaths do
+    out := out ++ [{ root, files := ← listFiles root "naru" }]
+  return out
+
+/-- ルートの接頭辞(`<root>/`)。生成物のパスはこれを落として書く。 -/
+def prefixOf (root : System.FilePath) : String :=
+  let r := root.toString
+  if r.endsWith "/" then r else r ++ "/"
 
 def hashFile (path : String) : IO String := do
   return sha256Hex (← IO.FS.readBinFile path)
@@ -60,9 +91,12 @@ def writeGenerated (outDir : System.FilePath) (files : Array (String × String))
     if let some parent := path.parent then IO.FS.createDirAll parent
     IO.FS.writeFile path content
 
-/-- 生成ファイルのヘッダに入れる版と hash(ソースは与えられた順、stdlib とコンパイラはパス順)。
+/-- 生成ファイルのヘッダに入れる版と hash(ソースは与えられた順、stdlib とコンパイラはパス順)。単位の hash はソースルートからの
+相対パス(`sourcePrefix` を落としたもの)で計算するので、ルートのディレクトリ名に依らない(C24)。
 stdlib が見つからなければ `none`(リポジトリのルートで実行していない)。 -/
-def buildMeta (who : String) (files : List String) : IO (Option Backend.Model.Meta) := do
+def buildMeta (who : String) (files : List String) (sourcePrefix : String := "") : IO (Option Backend.Model.Meta) := do
+  let display (f : String) : String :=
+    if !sourcePrefix.isEmpty && f.startsWith sourcePrefix then (f.drop sourcePrefix.length).toString else f
   let mut fileHashes : List (String × String) := []
   for f in files do fileHashes := fileHashes ++ [(f, ← hashFile f)]
   let stdlibFiles ← listFiles stdlibDir "lean"
@@ -76,24 +110,90 @@ def buildMeta (who : String) (files : List String) : IO (Option Backend.Model.Me
   for f in compilerFiles do compilerHashes := compilerHashes ++ [(f, ← hashFile f)]
   return some
     { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
-      stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit fileHashes, fileHashes }
+      stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit (fileHashes.map fun (p, h) => (display p, h)),
+      fileHashes, sourcePrefix }
 
-/-- 検査済みの単位から Model と Statements を生成して `out` に書く(`compile` と `simulate` が共用)。`who` は診断の接頭辞。 -/
-def generateLean (who : String) (out : System.FilePath) (checked : Checked)
-    (info : Backend.Model.Meta) : IO UInt32 := do
-  let fail (d : Diagnostic) : IO UInt32 := do
+/-- 検査済みの単位から Model と Statements の生成ファイル(生成先からの相対パス、内容)を作る。`who` は診断の接頭辞。 -/
+def emitLean (who : String) (checked : Checked) (info : Backend.Model.Meta) :
+    IO (Option (Array (String × String) × Array (String × String))) := do
+  let fail (d : Diagnostic) : IO (Option (Array (String × String) × Array (String × String))) := do
     IO.eprintln d.render
     IO.eprintln s!"{who}: 1 error(s)"
-    return 1
+    return none
   match Backend.Model.emitModel checked.core checked.recursions info with
   | .error d => fail d
   | .ok model =>
     match Backend.Statements.emitStatements checked.core checked.recursions info with
     | .error d => fail d
-    | .ok statements =>
-      writeGenerated out (model ++ statements)
-      IO.println s!"compiled {checked.mods.size} module(s); wrote {model.size} Model file(s) and {statements.size} Statements file(s) under {out}/"
-      return 0
+    | .ok statements => return some (model, statements)
+
+/-- 1 つの単位を検査して生成ファイルにする。診断があれば標準エラーに出して none。 -/
+def compileUnit (who : String) (u : Unit') :
+    IO (Option (Checked × Backend.Model.Meta × Array (String × String) × Array (String × String))) := do
+  let (diags, checked) ← compileFiles u.files
+  if !diags.isEmpty then
+    for d in diags do IO.eprintln d.render
+    IO.eprintln s!"{who}: {diags.size} error(s)"
+    return none
+  let some info ← buildMeta who u.files (prefixOf u.root) | return none
+  let some (model, statements) ← emitLean who checked info | return none
+  return some (checked, info, model, statements)
+
+/-- 複数の単位の生成ファイルを 1 つの生成先に束ねる。各単位のルートファイル(`Model.lean` / `Statements.lean`)は、全単位の
+モジュールを import するものに置き換える。同じパスのファイルが 2 つの単位から出たら誤り(同名のモジュール)。 -/
+def mergeUnits (who : String) (units : List (Backend.Model.Meta × Array (String × String) × Array (String × String))) :
+    IO (Option (Array (String × String))) := do
+  match units with
+  | [(_, model, statements)] => return some (model ++ statements)
+  | _ =>
+    let mut files : Array (String × String) := #[]
+    let mut modelMods : List String := []
+    let mut stmtMods : List String := []
+    let mut unitHashes : List (String × String) := []
+    for (info, model, statements) in units do
+      -- 単位の位置(ルート名ではない)で束ねる: ルートのディレクトリ名に依らない(C24)
+      unitHashes := unitHashes ++ [(toString unitHashes.length, info.unitHash)]
+      for (rel, content) in model ++ statements do
+        if rel == "Model.lean" || rel == "Statements.lean" then continue
+        if files.any (·.1 == rel) then
+          IO.eprintln s!"{who}: two source roots generate the same file {rel}; give the modules different names"
+          return none
+        files := files.push (rel, content)
+        let modName := ((rel.dropEnd ".lean".length).toString.replace "/" ".")
+        if rel.startsWith "Model/" then modelMods := modelMods ++ [modName]
+        else if rel.startsWith "Statements/" then stmtMods := stmtMods ++ [modName]
+    let some (info, _, _) := units.head? | return none
+    let all := { info with unitHash := hashUnit unitHashes }
+    let modelRoot := Backend.Model.header all "all sources" all.unitHash ++
+      "".intercalate (modelMods.map fun m => s!"import {m}\n") ++
+      "\n/-! Generated Model: one Lean module per naru module. Build with `lake build Model`. -/\n"
+    let stmtRoot := Backend.Model.header all "all sources" all.unitHash ++
+      "".intercalate (stmtMods.map fun m => s!"import {m}\n") ++
+      "\n/-! Generated Statements: one Lean module per naru module that declares predicates / conditions / regimes / properties / claims / claim bundles. Imports only NaruStd and the generated Model (never Proofs). Build with `lake build Statements`. -/\n"
+    return some (files.push ("Model.lean", modelRoot) |>.push ("Statements.lean", stmtRoot))
+
+/-- `naru.toml` の全単位を検査して生成先に書く(`compile` と `simulate` が共用)。成功なら検査済みの単位の列。 -/
+def compileAll (who : String) (cfg : Config) : IO (Option (List (Unit' × Checked))) := do
+  let units ← unitsOf cfg
+  if units.all (·.files.isEmpty) then
+    IO.eprintln s!"{who}: no .naru sources under the source roots of {configFileName} ({", ".intercalate (cfg.rootPaths.map (·.toString))})"
+    return none
+  let mut results : List (Unit' × Checked) := []
+  let mut generated : List (Backend.Model.Meta × Array (String × String) × Array (String × String)) := []
+  let mut nModel := 0
+  let mut nStatements := 0
+  for u in units do
+    if u.files.isEmpty then continue
+    let some (checked, info, model, statements) ← compileUnit who u | return none
+    results := results ++ [(u, checked)]
+    generated := generated ++ [(info, model, statements)]
+    nModel := nModel + model.size
+    nStatements := nStatements + statements.size
+  let some files ← mergeUnits who generated | return none
+  writeGenerated cfg.generatedPath files
+  let nMods := results.foldl (init := 0) fun n (_, c) => n + c.mods.size
+  IO.println s!"compiled {nMods} module(s) from {results.length} source root(s); wrote {nModel} Model file(s) and {nStatements} Statements file(s) under {cfg.generatedPath}/"
+  return some results
 
 def runCompile (args : List String) : IO UInt32 := do
   -- `--out <dir>` を取り出す
@@ -112,13 +212,13 @@ def runCompile (args : List String) : IO UInt32 := do
       files := files ++ [f]
       rest := more
     | [] => pure ()
-  let explicit := !files.isEmpty
-  if !explicit then
-    files ← defaultSources
-    if outDir.isNone then outDir := some "generated"
   if files.isEmpty then
-    IO.eprintln "naru compile: no .naru sources given and none found under dsl/"
-    return 2
+    if outDir.isSome then
+      IO.eprintln "naru compile: `--out` needs explicit files (without files, the output directory comes from naru.toml)"
+      return 2
+    let some cfg ← loadConfig "naru compile" | return 2
+    let some _ ← compileAll "naru compile" cfg | return 1
+    return 0
   let (diags, checked) ← compileFiles files
   if !diags.isEmpty then
     for d in diags do IO.eprintln d.render
@@ -130,52 +230,55 @@ def runCompile (args : List String) : IO UInt32 := do
     return 0
   | some out =>
     let some info ← buildMeta "naru compile" files | return 2
-    generateLean "naru compile" out checked info
+    let some (model, statements) ← emitLean "naru compile" checked info | return 1
+    writeGenerated out (model ++ statements)
+    IO.println s!"compiled {checked.mods.size} module(s); wrote {model.size} Model file(s) and {statements.size} Statements file(s) under {out}/"
+    return 0
 
-/-- scenario の実行。`file` は `dsl/` 配下の `.naru`(検査の単位は `dsl/` 全体 = `generated/` の元)。
-1. 単位を検査し(診断があれば exit 1)、`generated/` に Model と Statements を作り直す(`compile` と同じ)。
+/-- scenario の実行。`file` は `naru.toml` のソースルート配下の `.naru`(検査の単位はそのルート全体 = 生成先の元)。
+1. 全単位を検査し(診断があれば exit 1)、生成先に Model と Statements を作り直す(`compile` と同じ)。
 2. そのファイルの scenario(1 つ以上。無ければ exit 2)を順に `NaruStd.runScenario` で表示する
-   `generated/Simulate.lean`(`main`)を書く(追跡対象外)。
+   `.lake/naru/simulate/Simulate.lean`(`main`)を書く(追跡対象外)。
 3. `lake build naru_simulate`(lakefile の lean_exe。Model を native にビルドする)→ `.lake/build/bin/naru_simulate`
    を実行し、その exit code で終わる。 -/
 def runSimulate (file : String) : IO UInt32 := do
-  -- `./dsl/…` とリポジトリの絶対パス `<cwd>/dsl/…` は `dsl/…` に正規化する
-  let cwdPrefix := (← IO.currentDir).toString ++ "/"
-  let rel :=
-    if file.startsWith "./" then (file.drop 2).toString
-    else if file.startsWith cwdPrefix then (file.drop cwdPrefix.length).toString
-    else file
-  if !(rel.startsWith "dsl/") then
-    IO.eprintln s!"naru simulate: `{file}` is not under dsl/; simulate runs the scenarios of a dsl/ source (the unit that `compile` writes to generated/)"
+  let some cfg ← loadConfig "naru simulate" | return 2
+  if !(← (System.FilePath.mk file).pathExists) then
+    IO.eprintln s!"naru simulate: `{file}` not found"
     return 2
-  let files ← defaultSources
-  if !files.contains rel then
-    IO.eprintln s!"naru simulate: `{rel}` not found under dsl/"
-    return 2
-  let (diags, checked) ← compileFiles files
-  if !diags.isEmpty then
-    for d in diags do IO.eprintln d.render
-    IO.eprintln s!"naru simulate: {diags.size} error(s)"
-    return 1
+  let target ← IO.FS.realPath file
+  -- どの単位のどのファイルか(渡されたパスの書き方に依らず、実際のパスで比べる)
+  let units ← unitsOf cfg
+  let mut found : Option (Unit' × String) := none
+  for u in units do
+    for f in u.files do
+      if (← IO.FS.realPath f) == target then found := some (u, f)
+  let some (unit, rel) := found
+    | IO.eprintln s!"naru simulate: `{file}` is not under a source root of {configFileName} ({", ".intercalate (cfg.rootPaths.map (·.toString))}); simulate runs the scenarios of a source that `compile` writes to {cfg.generatedPath}/"
+      return 2
+  let some results ← compileAll "naru simulate" cfg | return 1
+  let some (_, checked) := results.find? fun (u, _) => u.root == unit.root
+    | IO.eprintln s!"naru simulate: `{rel}` was not read"; return 2
   let some m := checked.mods.find? (·.file == rel)
     | IO.eprintln s!"naru simulate: `{rel}` was not read"; return 2
   let scenarios := m.decls.filter (·.kind == .scenario)
   if scenarios.isEmpty then
     IO.eprintln s!"naru simulate: `{rel}` declares no scenario"
     return 2
-  let some info ← buildMeta "naru simulate" files | return 2
-  let code ← generateLean "naru simulate" "generated" checked info
-  if code != 0 then return code
+  let some info ← buildMeta "naru simulate" unit.files (prefixOf unit.root) | return 2
   let names := scenarios.toList.map (·.name)
   let calls := names.map fun n =>
     s!"  NaruStd.runScenario \"{n}\" {Backend.Model.leanName (renderPath (m.name ++ [n]))}\n"
   -- Model と同じヘッダ(コンパイラ版・stdlib 版・ソース hash: C1)を付ける
+  let shown := info.display rel
   let runner :=
-    Backend.Model.header info rel ((info.fileHashes.lookup rel).getD "") ++
-    s!"-- naru simulate: runs the scenario(s) of {rel} and prints their `observe` lines (`lake build naru_simulate && .lake/build/bin/naru_simulate`).\n" ++
+    Backend.Model.header info shown ((info.fileHashes.lookup rel).getD "") ++
+    s!"-- naru simulate: runs the scenario(s) of {shown} and prints their `observe` lines (`lake build naru_simulate && .lake/build/bin/naru_simulate`).\n" ++
     "import Model\n\ndef main : IO Unit := do\n" ++ "".intercalate calls
-  IO.FS.writeFile ("generated" / "Simulate.lean") runner
-  IO.println s!"naru simulate: building generated/Simulate.lean (scenario {", ".intercalate names} of {rel}) with `lake build naru_simulate`"
+  IO.FS.createDirAll simulateDir
+  let runnerPath := simulateDir / "Simulate.lean"
+  IO.FS.writeFile runnerPath runner
+  IO.println s!"naru simulate: building {runnerPath} (scenario {", ".intercalate names} of {rel}) with `lake build naru_simulate`"
   let build ← IO.Process.output { cmd := "lake", args := #["build", "naru_simulate"] }
   if build.exitCode != 0 then
     IO.eprint build.stdout
