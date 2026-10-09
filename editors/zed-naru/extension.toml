@@ -20,7 +20,7 @@ repository = "file:///Users/banriyanahama/workspace/naru"
 # 比較は editors/tree-sitter-naru ディレクトリ全体なので、queries/highlights.scm だけを変えた周回の次も付け替えが要る。
 [grammars.naru]
 repository = "file:///Users/banriyanahama/workspace/naru"
-rev = "714ca42cea1ba25d4eab76c52b581186e1aef1b4"
+rev = "24bb31b9628d8f36b8ec79e936533689a7c4f886"
 path = "editors/tree-sitter-naru"
 
 # 言語サーバー。src/lib.rs が `naru lsp` を起動する。naru 実行ファイルの探し方は src/lib.rs の冒頭
