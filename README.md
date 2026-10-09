@@ -80,10 +80,12 @@ lake exe naru_test lsp          # 言語サーバー(C18)
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface(C8 / C9)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
+lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 12 分
 ```
 
 `naru_test golden` は verified-consensus の手書き Model(mathlib)を interpreter で走らせるので、引数なし(FinalityLiveness の horizon 100)で約 9 分かかります。
-短い予行は `lake exe naru_test golden --finality-horizon 40`(約 30 秒)。`naru_test zed-install`(C19)は起動中の Zed を操作して Dev Extension を
+短い予行は `lake exe naru_test golden --finality-horizon 40`(約 30 秒)。`naru_test regression` はコードを変えたときの最終検証で、`/tmp` のスクリプトや
+過去の出力に頼らず全項目を走らせます。`naru_test zed-install`(C19)は起動中の Zed を操作して Dev Extension を
 入れ直すので、普段の回帰には含めません。詳しくは [docs/testing.md](docs/testing.md)。
 
 ## Zed 拡張について

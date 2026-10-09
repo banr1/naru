@@ -1,0 +1,127 @@
+// 受理例(C34): ガード付き match のパターン束縛は、その腕のガードと本体だけで有効で、ガード不成立後の腕の
+// 外側の同名の束縛(仮引数・外側の let・scrutinee の中の名前)を捕捉しない。通常の Model・fuel 再帰を含む Model・
+// Statements の 3 つの経路で同じ意味を保つ。
+// `lake exe naru_test regression` が、このファイルを生成・ビルドし、`tests/golden/` の外の検査プログラム
+// (`NaruTest/Regression.lean` が書く)で実際の戻り値と命題の真偽を照合する。必須の期待結果:
+//   runtimeShadow(0, 7) = true、specShadow(0, 7) が真、fuelShadow(0, 7) = 7(IDEAL.md C34)。
+// 対照(偽になる入力): runtimeShadow(7, 0) = false、¬ specShadow(7, 0)、fuelShadow(101, 7) = 101。
+module Accept.GuardShadow
+
+// 通常の Model: 仮引数 x と同名のパターン束縛。ガード不成立の後の `_ => x == 0` は仮引数の x を見る。
+fn runtimeShadow(x: Nat, y: Nat) -> Bool {
+  match y {
+    x if x == 0 => false,
+    _ => x == 0,
+  }
+}
+
+// 外側の let と同名のパターン束縛(通常の Model)。
+fn letShadow(y: Nat) -> Bool {
+  let x = 0;
+  match y {
+    x if x == 0 => false,
+    _ => x == 0,
+  }
+}
+
+// scrutinee の中の名前と同名のパターン束縛(通常の Model): ガード不成立の後の `_ => y` は仮引数の y。
+fn scrutShadow(y: Nat) -> Nat {
+  match y + 1 {
+    y if y == 0 => 0,
+    _ => y,
+  }
+}
+
+// ガード不成立から複数の腕への継続(通常の Model): 2 つのガードがどちらも不成立なら仮引数の x。
+fn multiShadow(x: Nat, y: Nat) -> Nat {
+  match y {
+    x if x == 0 => 1,
+    x if x == 1 => 2,
+    _ => x,
+  }
+}
+
+// fuel 再帰を含む Model(再帰 fn の Nat の match は `if` の連鎖に落ちる): 仮引数 x と同名のパターン束縛。
+// fuelShadow(0, 7) = 7(ガード不成立 → 仮引数の x)。fuelShadow(101, 7) = 101(ガード成立 → 腕の x = 101 で再帰 → 100 で不成立 → 101)。
+fn fuelShadow(n: Nat, x: Nat) -> Nat {
+  match n {
+    x if x > 100 => fuelShadow(x - 1, x),
+    _ => x,
+  }
+}
+
+// fuel 再帰 + 複数のガードの継続: fuelMulti(0, 7) = 7、fuelMulti(150, 7) = 0(2 つ目の腕で x を 0 にして再帰)。
+fn fuelMulti(n: Nat, x: Nat) -> Nat {
+  match n {
+    x if x > 200 => fuelMulti(x - 1, x),
+    x if x > 100 => fuelMulti(x - 1, 0),
+    _ => x,
+  }
+}
+
+// Statements: 仮引数 x と同名のパターン束縛。specShadow(0, 7) は真(ガード不成立 → 仮引数の x == 0)、specShadow(7, 0) は偽(ガード成立)。
+predicate specShadow(x: Nat, y: Nat) {
+  match y {
+    x if x == 0 => false,
+    _ => x == 0,
+  }
+}
+
+// Statements: ガード成立の腕の本体が腕の束縛を見る。specBody(0, 7) は真(腕の x = 7)、specBody(7, 0) は偽。
+predicate specBody(x: Nat, y: Nat) {
+  match y {
+    x if x > 0 => x == 7,
+    _ => false,
+  }
+}
+
+// Statements: 複数のガードの継続。specMulti(5, 7) は真、specMulti(5, 1) は偽(2 つ目のガードが成立)。
+predicate specMulti(x: Nat, y: Nat) {
+  match y {
+    x if x == 0 => false,
+    x if x == 1 => false,
+    _ => x == 5,
+  }
+}
+
+// Statements: ガード無しの腕の後のガード付き腕(前の腕はそのまま、`| _ =>` の中)。specLead(0, Some(7)) は真、specLead(0, None) は真、specLead(7, Some(0)) は偽。
+predicate specLead(x: Nat, y: Option<Nat>) {
+  match y {
+    None => x == 0,
+    Some(x) if x == 0 => false,
+    Some(_) => x == 0,
+  }
+}
+
+// Statements: 外側の let と scrutinee の中の名前と同名のパターン束縛。specLet(7) は真、specScrut(7) は真。
+predicate specLet(y: Nat) {
+  let x = 0;
+  match y {
+    x if x == 0 => false,
+    _ => x == 0,
+  }
+}
+predicate specScrut(y: Nat) {
+  match y + 1 {
+    y if y == 0 => false,
+    _ => y == 7,
+  }
+}
+
+// scenario から観測できる形(simulate の表示と同じ): observer は fn を呼ぶだけ。
+observer shadowValues() -> List<Nat> {
+  [
+    (if runtimeShadow(0, 7) { 1 } else { 0 }),
+    (if letShadow(7) { 1 } else { 0 }),
+    scrutShadow(7),
+    multiShadow(5, 7),
+    fuelShadow(0, 7),
+    fuelShadow(101, 7),
+    fuelMulti(0, 7),
+    fuelMulti(150, 7),
+  ]
+}
+
+scenario shadow {
+  observe shadowValues();
+}

@@ -217,7 +217,10 @@ partial def emitMatchPlainProp (env : Env) (c : PCtx) (ind : Nat) (s : Core.Expr
     if let .lit (.nat k) := p then covered := k :: covered
   return out
 
-/-- ガード付きの腕を持つ match(上の説明)。 -/
+/-- ガード付きの腕を持つ match(上の説明)。最初のガード付き腕 `p_i if g => b` は
+`(match s with | p_i => g → b | _ => True) ∧ (¬ (match s with | p_i => g | _ => False) → REST)` に落とす。
+REST(i 以外の腕の match)はどの腕の中にも置かない: `p_i` の束縛はその腕のガードと本体だけで有効で、REST の同名の
+外側の束縛(仮引数・`let`・scrutinee の中の名前)を捕捉してはならない(C34)。 -/
 partial def emitMatchGuardedProp (env : Env) (c : PCtx) (ind : Nat) (s : Core.Expr) (st : TyV) (arms : List Core.Arm) : String := Id.run do
   let scrut := emitP env c.ectx ind s
   let mut lead : List Core.Arm := []
@@ -236,11 +239,14 @@ partial def emitMatchGuardedProp (env : Env) (c : PCtx) (ind : Nat) (s : Core.Ex
     let tailInd := if lead.isEmpty then ind else ind + 2
     let c' := c.unbind (patVars p)
     let restArms := lead ++ after
-    let restAt (i : Nat) : String :=
-      if restArms.isEmpty then "False" else "(" ++ emitMatchProp env c (i + 1) s st restArms ++ ")"
-    let gs := propP env c' (tailInd + 4) g
-    let inner := s!"match {scrut} with\n{indent (tailInd + 2)}| {pat p} =>\n{indent (tailInd + 4)}({gs} → {propP env c' (tailInd + 4) b}) ∧ (¬ {gs} → {restAt (tailInd + 4)})"
-      ++ (if irrefutable env p then "" else s!"\n{indent (tailInd + 2)}| _ =>\n{indent (tailInd + 4)}{restAt (tailInd + 4)}")
+    -- REST は外側の文脈 c で出す(p の束縛の外)
+    let restStr : String :=
+      if restArms.isEmpty then "False" else "(" ++ emitMatchProp env c (tailInd + 3) s st restArms ++ ")"
+    let wild (body : String) : String :=
+      if irrefutable env p then "" else s!"\n{indent (tailInd + 3)}| _ =>\n{indent (tailInd + 5)}{body}"
+    let hit := s!"(match {scrut} with\n{indent (tailInd + 3)}| {pat p} =>\n{indent (tailInd + 5)}{propP env c' (tailInd + 5) g} → {propP env c' (tailInd + 5) b}{wild "True"})"
+    let matched := s!"(match {scrut} with\n{indent (tailInd + 3)}| {pat p} =>\n{indent (tailInd + 5)}{emitProp env c' (tailInd + 5) g}{wild "False"})"
+    let inner := s!"{hit} ∧\n{indent tailInd}(¬ {matched} →\n{indent (tailInd + 2)}{restStr})"
     if lead.isEmpty then return inner
     return s!"match {scrut} with" ++ "".intercalate (lead.map (armStr ind)) ++ s!"\n{indent ind}| _ =>\n{indent (ind + 2)}{inner}"
   | _ => return "False"

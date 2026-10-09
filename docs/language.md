@@ -116,7 +116,9 @@ Store { head: b, ..st }                  // record update(`..base` は末尾)
 if c { a } else { b }                    // else 必須。else if 可。頭部では record literal 不可
 match e { Some(x) if x > 0 => x, Some(_) => 0, None => 0 }   // ガード付き arm。`,` 区切り(本体がブロックなら `,` 省略可)。
                                          // arm は 1 つ以上(無ければ E014)。最後の arm にガードは置けず、Nat / Int / String の
-                                         // match には無条件の `_` か変数の arm が要る(E018)。他の型の網羅性は backend の段で Lean が検査する
+                                         // match には無条件の `_` か変数の arm が要る(E018)。他の型の網羅性は backend の段で Lean が検査する。
+                                         // パターンの束縛はその arm のガードと本体だけで有効: ガードが偽なら次の arm へ進み、そこでは
+                                         // 外側の同名の束縛(仮引数・let・scrutinee の中の名前)が見える(C34。検体は tests/accept/guard_shadow.naru)
 |x, y| x + y                             // lambda(Rust 風)。`||` は引数なし
 forall b: Block { … }  exists t: Time { … }   // 量化(spec 専用。本体はブロック)
 ```

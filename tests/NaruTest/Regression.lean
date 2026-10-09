@@ -1,0 +1,380 @@
+import Naru
+import NaruTest.Common
+import NaruTest.Grammar
+import NaruTest.Zed
+import NaruTest.Lsp
+import NaruTest.Golden
+import NaruTest.Statements
+import NaruTest.Repo
+
+/-!
+# `naru_test regression` — 非対話の回帰・最終検証の入口(IDEAL.md C36)
+
+リポジトリのルートで `lake exe naru_test regression` と実行する(約 12 分。末尾の C10 の golden(horizon 100)が約 9 分)。
+`/tmp` のスクリプトや過去の端末出力に頼らず、この 1 コマンドが次を順に走らせ、1 つでも期待と違えば `FAIL:` を出して exit 1。
+出力は段ごとに `== 段` の見出しと `ok:` / `FAIL:`(所要秒つき)。一時ファイルは `.lake/naru/test/regression/`(追跡対象外)。
+
+1. compiler / naru_test のビルド(`lake build naru naru_test`)。
+2. 受理例 `tests/accept/*.naru` の `naru compile`(exit 0)と、反例 `tests/reject/*.naru` の `naru check-reject`(先頭コメントが名指しする E 番号)。
+3. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18)の各群と、golden の短い予行(`--finality-horizon 40`)。
+4. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
+   ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
+5. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
+   `statements` 群(C8 の依存境界 / C9 の claim surface)。
+6. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。`tests/accept/guard_shadow.naru` は C34 の検体: 生成した
+   Model / Statements を import する検査プログラム(`c34Program`。期待結果は `c34Values` / `c34Props` / `c34Equations`)を `lean --run` し、
+   実際の戻り値の行が期待とすべて一致し、命題の真偽(真になる入力と、偽になる対照入力の否定)を Lean kernel が `example` で検査する。
+7. C7 の simulate: ソースルート配下の scenario を持つ全ファイルの `naru simulate`(exit 0。`basic.naru` の出力に time / node / confirmed /
+   stable / finalized)、ルート外のファイルと scenario の無いファイルは exit 2、C26(生成先に追跡対象外のファイルが無い、`.gitignore` に `Simulate` の行が無い)。
+8. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
+   (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
+9. `repo` 群(C21 / C23 / C25)、C28 / C22 / C27。
+10. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
+
+`zed-install`(C19。人間の Zed を操作する)と C20(画面観測)は非対話回帰に入れない(IDEAL.md C36)。
+-/
+
+namespace NaruTest.Regression
+
+def workDir : System.FilePath := ".lake" / "naru" / "test" / "regression"
+def acceptDir : System.FilePath := "tests" / "accept"
+def rejectDir : System.FilePath := "tests" / "reject"
+def compilerDir : System.FilePath := "compiler"
+
+/-! ## 補助 -/
+
+def heading (title : String) : M Unit := IO.println s!"== {title}"
+
+def elapsed (start : Nat) : IO String := do
+  let now ← IO.monoMsNow
+  let ms := now - start
+  return s!"{ms / 1000}.{(ms % 1000) / 100}s"
+
+/-- 子プロセスを 1 項目として走らせ、exit code を期待と照合する。 -/
+def step (label : String) (cmd : String) (args : Array String) (expectExit : UInt32 := 0)
+    (cwd : Option System.FilePath := none) (env : Array (String × Option String) := #[]) : M IO.Process.Output := do
+  let t ← IO.monoMsNow
+  let r ← runProc cmd args cwd env
+  let shown := s!"{cmd} {" ".intercalate args.toList}"
+  if r.exitCode == expectExit then ok s!"{label}: `{shown}` exit {r.exitCode} ({← elapsed t})"
+  else fail s!"{label}: `{shown}` exit {r.exitCode} (expected {expectExit})\n{tail r.stdout 1500}\n{tail r.stderr 1500}"
+  return r
+
+/-- 別の群を同じプロセスで走らせ、その PASS / FAIL を 1 項目にする。 -/
+def subgroup (label : String) (run : IO UInt32) : M Unit := do
+  let t ← IO.monoMsNow
+  IO.println s!"-- {label}"
+  let code ← run
+  if code == 0 then ok s!"{label}: PASS ({← elapsed t})" else fail s!"{label}: FAIL (exit {code})"
+
+/-- ディレクトリ配下の全ファイル(パス順)。 -/
+def allFiles (dir : System.FilePath) : IO (List String) := do
+  if !(← dir.isDir) then return []
+  let all ← dir.walkDir
+  let mut out : Array String := #[]
+  for p in all do
+    if !(← p.isDir) then out := out.push p.toString
+  return (out.qsort (· < ·)).toList
+
+/-- ディレクトリ配下の全ファイルの (パス, sha256)。 -/
+def shaSnapshot (dir : System.FilePath) : IO (List (String × String)) := do
+  (← allFiles dir).mapM fun (f : String) => do
+    let bytes ← IO.FS.readBinFile (System.FilePath.mk f)
+    return (f, Naru.sha256Hex bytes)
+
+def contains (s : String) (sub : String) : Bool := (s.splitOn sub).length > 1
+
+/-- `<root>/` の接頭辞。 -/
+def prefixOf (root : System.FilePath) : String :=
+  let r := root.toString
+  if r.endsWith "/" then r else r ++ "/"
+
+/-! ## C34 の検体の期待結果(`tests/accept/guard_shadow.naru`) -/
+
+def c34Source : String := (acceptDir / "guard_shadow.naru").toString
+def c34Module : String := "Accept.GuardShadow"
+
+/-- 実際の戻り値: (表示ラベル, Lean の式, 期待する表示)。検査プログラムは `ラベル = 値` の行を表示し、期待の行と照合する。
+IDEAL.md C34 の必須: `runtimeShadow(0, 7) = true`、`fuelShadow(0, 7) = 7`。 -/
+def c34Values : List (String × String × String) :=
+  [ ("runtimeShadow(0, 7)", "runtimeShadow 0 7", "true"),
+    ("runtimeShadow(7, 0)", "runtimeShadow 7 0", "false"),
+    ("letShadow(7)", "letShadow 7", "true"),
+    ("scrutShadow(7)", "scrutShadow 7", "7"),
+    ("multiShadow(5, 7)", "multiShadow 5 7", "5"),
+    ("fuelShadow(0, 7)", "fuelShadow 0 7", "7"),
+    ("fuelShadow(101, 7)", "fuelShadow 101 7", "101"),
+    ("fuelMulti(0, 7)", "fuelMulti 0 7", "7"),
+    ("fuelMulti(150, 7)", "fuelMulti 150 7", "0"),
+    ("shadowValues()", "shadowValues", "[1, 1, 7, 5, 7, 101, 7, 0]") ]
+
+/-- 命題の真偽(Lean kernel が `example` で検査する): (命題, tactic)。真になる入力と、偽になる対照入力の否定。
+IDEAL.md C34 の必須: `specShadow(0, 7)` が真。 -/
+def c34Props : List (String × String) :=
+  [ ("specShadow 0 7", "unfold specShadow; decide"),
+    ("¬ specShadow 7 0", "unfold specShadow; decide"),
+    ("specBody 0 7", "unfold specBody; decide"),
+    ("¬ specBody 7 0", "unfold specBody; decide"),
+    ("specMulti 5 7", "unfold specMulti; decide"),
+    ("¬ specMulti 5 1", "unfold specMulti; decide"),
+    ("specLead 0 (some 7)", "unfold specLead; decide"),
+    ("specLead 0 none", "unfold specLead; decide"),
+    ("¬ specLead 7 (some 0)", "unfold specLead; decide"),
+    ("specLet 7", "unfold specLet; decide"),
+    ("specScrut 7", "unfold specScrut; decide") ]
+
+/-- 戻り値の等式(Lean kernel が検査する): (等式, tactic)。再帰 fn は等式補題で展開する。 -/
+def c34Equations : List (String × String) :=
+  [ ("runtimeShadow 0 7 = true", "decide"),
+    ("runtimeShadow 7 0 = false", "decide"),
+    ("letShadow 7 = true", "decide"),
+    ("scrutShadow 7 = 7", "decide"),
+    ("multiShadow 5 7 = 5", "decide"),
+    ("fuelShadow 0 7 = 7", "simp [fuelShadow]"),
+    ("fuelShadow 101 7 = 101", "simp [fuelShadow]"),
+    ("fuelMulti 0 7 = 7", "simp [fuelMulti]"),
+    ("fuelMulti 150 7 = 0", "simp [fuelMulti]") ]
+
+/-- 検査プログラム(生成した Model / Statements を import し、`example` と `main` で確かめる)。 -/
+def c34Program : String :=
+  let examples := (c34Props ++ c34Equations).map fun (p, tac) => s!"example : {p} := by {tac}\n"
+  let prints := c34Values.map fun (label, expr, _) => s!"  IO.println s!\"{label} = \{{expr}}\"\n"
+  s!"-- naru_test regression (C34): generated from NaruTest/Regression.lean. Imports the Model / Statements generated from {c34Source}.\n" ++
+  s!"import Model.{c34Module}\nimport Statements.{c34Module}\n\nopen Model.{c34Module}\nopen Statements.{c34Module}\n\n" ++
+  "-- 命題の真偽と戻り値の等式(Lean kernel が検査する)\n" ++ "".intercalate examples ++
+  "\n-- 実際の戻り値(表示して期待の行と照合する)\ndef main : IO Unit := do\n" ++ "".intercalate prints
+
+def c34ExpectedLines : List String := c34Values.map fun (label, _, v) => s!"{label} = {v}"
+
+/-! ## 段 -/
+
+/-- 2. 受理例と反例。 -/
+def checkAcceptReject : M Unit := do
+  heading "accept / reject"
+  let accepts ← Naru.listFiles acceptDir "naru"
+  for f in accepts do
+    let _ ← step s!"accept {f}" "lake" #["exe", "naru", "compile", f]
+  if accepts.isEmpty then fail s!"{acceptDir}: no .naru files" else ok s!"{acceptDir}: {accepts.length} files compile"
+  let rejects ← Naru.listFiles rejectDir "naru"
+  for f in rejects do
+    match NaruTest.Lsp.namedCode (← IO.FS.readFile f) with
+    | none => fail s!"{f}: the header comment names no E number"
+    | some code =>
+      let _ ← step s!"reject {f} ({code})" "lake" #["exe", "naru", "check-reject", f, code]
+  if rejects.isEmpty then fail s!"{rejectDir}: no .naru files" else ok s!"{rejectDir}: {rejects.length} files"
+
+/-- 4. C1: 決定性とヘッダ。 -/
+def checkDeterminism (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
+  heading "C1 determinism"
+  let _ ← step "compile 1" "lake" #["exe", "naru", "compile"]
+  let s1 ← shaSnapshot generated
+  let _ ← step "compile 2" "lake" #["exe", "naru", "compile"]
+  let s2 ← shaSnapshot generated
+  if s1.isEmpty then fail s!"{generated}: no generated files"
+  else if s1 == s2 then ok s!"C1: {s1.length} generated files, sha256 identical across two runs"
+  else
+    let differ := (s1.zip s2).filter (fun (a, b) => a != b) |>.map (·.1.1)
+    fail s!"C1: sha256 differs across two runs ({differ.length} files): {differ.take 5}"
+  -- ヘッダ
+  let mut bad : List String := []
+  let mut contents : List (String × String) := []
+  for (f, _) in s2 do
+    let c ← IO.FS.readFile f
+    contents := contents ++ [(f, c)]
+    let head := "\n".intercalate ((c.splitOn "\n").take 5)
+    if !(contains head "naru-compiler: " && contains head "naru-stdlib: " && contains head "naru-source: ") then bad := bad ++ [f]
+  if bad.isEmpty then ok s!"C1: all {s2.length} files have naru-compiler / naru-stdlib / naru-source in the first 5 lines"
+  else fail s!"C1: header missing in {bad}"
+  -- ソースのパスはルートからの相対(ルートのディレクトリ名で始まらない)
+  let mut rooted : List String := []
+  for (f, c) in contents do
+    for l in c.splitOn "\n" do
+      if l.startsWith "-- naru-source: " then
+        let p := (l.drop "-- naru-source: ".length).toString
+        if roots.any fun r => p.startsWith (prefixOf r) then rooted := rooted ++ [f]
+  if rooted.isEmpty then ok s!"C1: no naru-source path starts with a source root ({", ".intercalate (roots.map prefixOf)})"
+  else fail s!"C1: naru-source paths start with the source root in {rooted}"
+  -- 各ソースの sha256 がヘッダにある
+  let all := "\n".intercalate (contents.map (·.2))
+  let mut nSrc := 0
+  let mut missing : List String := []
+  for r in roots do
+    for f in (← Naru.listFiles r "naru") do
+      nSrc := nSrc + 1
+      let rel := if f.startsWith (prefixOf r) then (f.drop (prefixOf r).length).toString else f
+      let h := Naru.sha256Hex (← IO.FS.readBinFile f)
+      if !(contains all s!"naru-source: {rel} sha256:{h}") then missing := missing ++ [f]
+  if nSrc == 0 then fail "C1: no sources under the source roots"
+  else if missing.isEmpty then ok s!"C1: {nSrc} sources, each `naru-source: <root-relative path> sha256:<hash>` appears in the generated headers"
+  else fail s!"C1: source hash not found in the headers for {missing}"
+
+/-- 5. C6 / C8 のビルドと grep、statements 群。 -/
+def checkBuilds (generated : System.FilePath) : M Unit := do
+  heading "C6 / C8 builds"
+  let _ ← step "C6 lake build Model" "lake" #["build", "Model"]
+  let modelDir := generated / "Model"
+  let modelRoot := generated / "Model.lean"
+  let g ← step "C6 grep (expect no match)" "grep" #["-rwE", "noncomputable|unsafe|axiom|sorry|partial", modelDir.toString, modelRoot.toString] (expectExit := 1)
+  if g.exitCode == 0 then IO.println (tail g.stdout 1000)
+  let _ ← step "C8 lake build Statements" "lake" #["build", "Statements"]
+  let g2 ← step "C8 grep sorry (expect no match)" "grep" #["-rw", "sorry", (generated / "Statements.lean").toString, (generated / "Statements").toString] (expectExit := 1)
+  if g2.exitCode == 0 then IO.println (tail g2.stdout 1000)
+  subgroup "naru_test statements (C8 / C9)" NaruTest.Statements.run
+
+/-- 6. 受理例の生成 Lean の型検査と、C34 の検体の意味。 -/
+def checkGeneratedAccepts (leanPath : String) : M Unit := do
+  heading "generated Lean of the accept examples (+ C34 semantics)"
+  let accepts ← Naru.listFiles acceptDir "naru"
+  for src in accepts do
+    let name := ((System.FilePath.mk src).fileStem).getD src
+    let out := workDir / "accept" / name
+    if ← out.isDir then IO.FS.removeDirAll out
+    IO.FS.createDirAll out
+    let outAbs ← IO.FS.realPath out
+    let lp := s!"{outAbs}:{leanPath}"
+    let _ ← step s!"accept {name}: generate" "lake" #["exe", "naru", "compile", "--out", out.toString, src]
+    for sub in ["Model", "Statements"] do
+      for f in (← Naru.listFiles (out / sub) "lean") do
+        let rel := (f.drop (out.toString.length + 1)).toString
+        let olean := (rel.dropEnd ".lean".length).toString ++ ".olean"
+        let _ ← step s!"accept {name}: lean {rel}" "lean" #[s!"--root={outAbs}", "-o", (outAbs / olean).toString, rel]
+          (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
+    if src == c34Source then
+      let prog := out / "Check.lean"
+      IO.FS.writeFile prog c34Program
+      let r ← step "C34: lean --run Check.lean" "lean" #["--run", "Check.lean"] (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
+      let lines := (r.stdout.splitOn "\n").filter (!·.isEmpty)
+      let mut good := true
+      for e in c34ExpectedLines do
+        if lines.contains e then ok s!"C34: {e}"
+        else
+          good := false
+          fail s!"C34: expected `{e}`, got {lines.filter fun l => l.startsWith ((e.splitOn " = ").head!)}"
+      let extra := lines.filter fun l => !c34ExpectedLines.contains l
+      if !extra.isEmpty then
+        good := false
+        fail s!"C34: unexpected output lines {extra}"
+      if good && r.exitCode == 0 then
+        ok s!"C34: {c34Values.length} return values agree, {c34Props.length} propositions and {c34Equations.length} equations checked by the Lean kernel ({c34Source})"
+  if !accepts.contains c34Source then fail s!"C34: {c34Source} is missing"
+
+/-- 7. C7 の simulate と C26。 -/
+def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
+  heading "C7 simulate / C26"
+  let mut scenarioFiles : List String := []
+  let mut plainFile : Option String := none
+  for r in roots do
+    for f in (← Naru.listFiles r "naru") do
+      let text ← IO.FS.readFile f
+      let hasScenario := (text.splitOn "\n").any (·.startsWith "scenario ")
+      if hasScenario then scenarioFiles := scenarioFiles ++ [f]
+      else if plainFile.isNone then plainFile := some f
+  if scenarioFiles.isEmpty then fail "C7: no file under the source roots declares a scenario"
+  let words := ["time", "node", "confirmed", "stable", "finalized"]
+  let mut basicSeen := false
+  for f in scenarioFiles do
+    let r ← step s!"C7 simulate {f}" "lake" #["exe", "naru", "simulate", f]
+    if (System.FilePath.mk f).fileName == some "basic.naru" then
+      basicSeen := true
+      let missing := words.filter fun w => !(contains r.stdout w)
+      if missing.isEmpty then ok s!"C7: {f} prints {", ".intercalate words}"
+      else fail s!"C7: {f}: output lacks {missing}\n{tail r.stdout 800}"
+  if !basicSeen then fail "C7: no `basic.naru` scenario under the source roots"
+  ok s!"C7: {scenarioFiles.length} scenario files simulated"
+  let _ ← step "C7 simulate outside the source roots (exit 2)" "lake" #["exe", "naru", "simulate", (acceptDir / "smoke.naru").toString] (expectExit := 2)
+  match plainFile with
+  | some f => let _ ← step s!"C7 simulate a file without scenario (exit 2)" "lake" #["exe", "naru", "simulate", f] (expectExit := 2)
+  | none => fail "C7: every file under the source roots declares a scenario (no probe for exit 2)"
+  -- C26
+  let st ← runProc "git" #["status", "--porcelain", "--ignored", "--", generated.toString ++ "/"]
+  let stray := ((st.stdout.splitOn "\n").filter (!·.isEmpty)).filter fun l => !(l.startsWith " M")
+  if st.exitCode == 0 && stray.isEmpty then ok s!"C26: git status --porcelain --ignored -- {generated}/ has no untracked / ignored file after simulate"
+  else fail s!"C26: untracked / ignored files under {generated}/ (exit {st.exitCode}): {stray}"
+  let ignore ← IO.FS.readFile ".gitignore"
+  let simLines := (ignore.splitOn "\n").filter (contains · "Simulate")
+  if simLines.isEmpty then ok "C26: .gitignore has no line containing `Simulate`" else fail s!"C26: .gitignore mentions Simulate: {simLines}"
+  let runner : System.FilePath := ".lake" / "naru" / "simulate" / "Simulate.lean"
+  if ← runner.pathExists then ok s!"C26: the simulate runner is {runner}" else fail s!"C26: {runner} not found after simulate"
+
+/-- 8. C24: 直書きの不在と別名のコピー。 -/
+def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
+  heading "C24 naru.toml"
+  let g ← step "C24 grep compiler/ for a hard-coded root name (expect no match)" "grep" #["-rn", "\"dsl\\|\"specs", compilerDir.toString] (expectExit := 1)
+  if g.exitCode == 0 then IO.println (tail g.stdout 1000)
+  let some root := roots.head? | fail "C24: naru.toml lists no source root"; return
+  let aliasDir := workDir / "alias"
+  if ← aliasDir.isDir then IO.FS.removeDirAll aliasDir
+  IO.FS.createDirAll workDir
+  let _ ← step "C24 alias: copy the source root" "cp" #["-R", root.toString, aliasDir.toString]
+  let before ← shaSnapshot generated
+  let cfgPath : System.FilePath := Naru.configFileName
+  let original ← IO.FS.readFile cfgPath
+  let others := roots.tail.map fun r => s!", \"{r}\""
+  let alt := s!"sources = [\"./{aliasDir}/\"{"".intercalate others}]\ngenerated = \"{generated}\"\n"
+  try
+    IO.FS.writeFile cfgPath alt
+    let _ ← step "C24 alias: compile with the alias root (written with ./ and a trailing /)" "lake" #["exe", "naru", "compile"]
+    let after ← shaSnapshot generated
+    if before == after && !before.isEmpty then ok s!"C24: {before.length} generated files have the same sha256 with the alias root"
+    else fail s!"C24: generated files differ with the alias root ({(before.zip after).filter (fun (a, b) => a != b) |>.map (·.1.1) |>.take 5})"
+  finally
+    IO.FS.writeFile cfgPath original
+  let _ ← step "C24: naru.toml restored" "git" #["diff", "--exit-code", "--stat", cfgPath.toString]
+  let _ ← step "C24: compile with the restored naru.toml" "lake" #["exe", "naru", "compile"]
+  let restored ← shaSnapshot generated
+  if restored == before then ok "C24: generated files restored (sha256 identical)" else fail "C24: generated files differ after restoring naru.toml"
+
+/-- 9. C28 / C22 / C27。 -/
+def checkLayout : M Unit := do
+  heading "C28 / C22 / C27"
+  let r ← step "C28 git ls-files tests/golden" "git" #["ls-files", "tests/golden"]
+  if r.stdout.trimAscii.toString == "tests/golden/Golden.lean" then ok "C28: tests/golden has only Golden.lean"
+  else fail s!"C28: tests/golden lists {r.stdout.trimAscii}"
+  let _ ← step "C22 cmp LICENSE" "cmp" #["LICENSE", "third_party/verified-consensus/LICENSE"]
+  let a ← step "C27 linguist-generated" "git" #["check-attr", "linguist-generated", "generated/Model.lean", "editors/tree-sitter-naru/src/parser.c"]
+  let setLines := (a.stdout.splitOn "\n").filter (·.endsWith "linguist-generated: set")
+  if setLines.length == 2 then ok "C27: generated/Model.lean and editors/tree-sitter-naru/src/parser.c are linguist-generated"
+  else fail s!"C27: linguist-generated: {a.stdout.trimAscii}"
+  let b ← step "C27 linguist-vendored" "git" #["check-attr", "linguist-vendored", "third_party/README.md", "third_party/verified-consensus"]
+  let vLines := (b.stdout.splitOn "\n").filter (·.endsWith "linguist-vendored: set")
+  if vLines.length == 2 then ok "C27: third_party/README.md and third_party/verified-consensus are linguist-vendored"
+  else fail s!"C27: linguist-vendored: {b.stdout.trimAscii}"
+
+def checks : M Unit := do
+  let t0 ← IO.monoMsNow
+  heading "build"
+  let _ ← step "lake build naru naru_test" "lake" #["build", "naru", "naru_test"]
+  let (roots, generated) ← match ← sourceRoots with
+    | .ok rs =>
+      match ← Naru.readConfig Naru.configFileName with
+      | .ok cfg => pure (rs, cfg.generatedPath)
+      | .error e => fail e; return
+    | .error e => fail e; return
+  ok s!"naru.toml: sources {roots}, generated {generated}"
+  checkAcceptReject
+  heading "editor support groups"
+  subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
+  subgroup "naru_test zed (C17)" NaruTest.Zed.run
+  subgroup "naru_test lsp (C18)" NaruTest.Lsp.run
+  heading "golden rehearsal"
+  subgroup "naru_test golden --finality-horizon 40 (rehearsal, not the C10 evidence)" (NaruTest.Golden.run 40)
+  checkDeterminism roots generated
+  checkBuilds generated
+  let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]
+  let leanPath := e.stdout.trimAscii.toString
+  if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
+  checkGeneratedAccepts leanPath
+  checkSimulate roots generated
+  checkConfig roots generated
+  heading "repository"
+  subgroup "naru_test repo (C21 / C23 / C25)" (NaruTest.Repo.run none)
+  checkLayout
+  let st ← runProc "git" #["status", "--short"]
+  IO.println s!"git status --short:\n{st.stdout}"
+  heading "C10 golden (horizon 100)"
+  subgroup "naru_test golden (C10)" (NaruTest.Golden.run NaruTest.Golden.c10Horizon)
+  IO.println s!"regression: total {← elapsed t0}"
+
+def run : IO UInt32 := runGroup "naru_test regression" checks
+
+end NaruTest.Regression

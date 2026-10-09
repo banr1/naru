@@ -384,24 +384,28 @@ partial def emitMatchPlain (env : Env) (c : ECtx) (ind : Nat) (s : Core.Expr) (a
     if let .lit (.nat k) := p then covered := k :: covered
   return out
 
-/-- 再帰する fn の中の、ガード付きの `Nat` の match → `if` の連鎖。 -/
+/-- 再帰する fn の中の、ガード付きの `Nat` の match → `if` の連鎖。束縛の腕 `k if g => b` の別名 `let k : Nat := v` は
+その腕のガードと本体の中にだけ置く(`if _h' : (let k := v; g) then let k := v; b else REST`)。`let` を `if` の前に出すと
+ガード不成立後の REST(後続の腕)で `k` が外側の同名の束縛(仮引数・`let`)を隠してしまう(C34)。 -/
 partial def emitNatChain (env : Env) (c : ECtx) (ind : Nat) (v : String) (arms : List Core.Arm) : String :=
   match arms with
   | [] => s!"(panic! \"naru: match on `{v}` is not exhaustive\")"
   | .mk p g b :: rest =>
     let vn := localName v
     let body := emitE env c (ind + 2) b
-    let chain (cond : String) : String :=
+    let chain (cond : String) (body : String) : String :=
       s!"if _h' : {cond} then\n{indent (ind + 2)}{body}\n{indent ind}else\n{indent (ind + 2)}{emitNatChain env c (ind + 2) v rest}"
     let guardStr := g.map (emitE env c (ind + 2))
-    let alias (k : String) : String :=
-      if k == v then "" else s!"let {localName k} : Nat := {vn}\n{indent ind}"
+    -- 別名(腕の中だけ): 束縛名が v 自身なら不要
+    let aliasDecl (k : String) : String := s!"let {localName k} : Nat := {vn}"
     match p, guardStr with
-    | .lit (.nat k), some gs => chain s!"({vn} == ({k} : Nat)) && ({gs})"
-    | .lit (.nat k), none => chain s!"{vn} == ({k} : Nat)"
-    | .bind k, some gs => alias k ++ chain gs
-    | .bind k, none => alias k ++ body
-    | .wild, some gs => chain gs
+    | .lit (.nat k), some gs => chain s!"({vn} == ({k} : Nat)) && ({gs})" body
+    | .lit (.nat k), none => chain s!"{vn} == ({k} : Nat)" body
+    | .bind k, some gs =>
+      if k == v then chain gs body
+      else chain s!"({aliasDecl k}; {gs})" s!"{aliasDecl k}\n{indent (ind + 2)}{body}"
+    | .bind k, none => if k == v then body else s!"{aliasDecl k}\n{indent ind}{body}"
+    | .wild, some gs => chain gs body
     | .wild, none => body
     | _, _ => s!"(panic! \"naru: unsupported pattern in a match on Nat\")"
 
