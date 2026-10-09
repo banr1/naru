@@ -387,6 +387,20 @@ Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 M
 受理例は `tests/accept/statements.naru`(量化・`let`・`if`・`match`・比較・input・入れ子の bundle・再帰)。生成 Lean の型検査は、生成 Model の olean を
 `--out` のディレクトリに作ってから(knowledge「生成コードの回帰」)。
 
+verified-consensus の Statements の移植は `dsl/Consensus/Statements/`(8 ファイル。手書きの Generic + Instantiation の構成に沿う: `Execution`(run の
+観測述語 `Emits` / `Processes` / `Handles` / `Carries` / `HandlesAt` / `AcceptsAt` / `BlockInRun` / `NamedRootCollisionFree`)、`Accountability`(`SlashableBetween` /
+`HasSlashableWeightBetween` / `RootInjectiveOnAncestors` / `NamedFinalizedAt`)、`Interface`(enum `Output` と `outputAt` / `proposedBlock` / `envAwake` の
+fn、`Opening` / `Finalizes` / `CollisionFree` / `Evidence` / `InRun` / `Idealization` / `Slashes`)、`Constants`(定数の fn と `ConstantsValid`)、
+`Properties`、`Conditions`(`SetupWellFormed` / `RunDomain` を含む)、`Regimes`、`Claims`(13 の claim と `claim bundle Consensus`))。書き方の約束:
+手書きの型引数 `P` / `I : Interface P` / `C : Constants` / `E : Env V` は instantiation が 1 つなので `s: Setup` の引数に、関数欄の record(`Interface` /
+`Constants`)は `Setup` を取る fn / spec 宣言に、`structure … : Prop`(欄が複数)と `extends` は `&&` に、`∀ x ∈ S, …` は `forall x: T { S.contains(x) implies … }`
+に、Prop の `Preceq` / `Compatible` / `Slashable` は Model の Bool の fn に、noncomputable な `Finset.filter`(`awakeIn`)と `∃ S : Finset V` は
+`exists members: List<T> { let w = members.toSet(); … }`(`toSet()` が正規形を作るので、上の既知の制限に当たらない)に写す。手書きの型が暗黙に
+保証すること — `Setup` の証明の欄(Δ > 0、R ≥ 3 …)、`Finset` の正規形(量化される `rho.honest` / `committee(k)` / electorate の鍵。上の既知の制限に当たる
+ので `xs == sort(xs, by = …).toSet()` で要求する)、validator の型が electorate そのものであること(proposer / committee / honest の所属)— は naru の
+record に無いので、condition `SetupWellFormed(s)` と `RunDomain(s, rho)` を各 claim の premise に足す(claim の形は
+`SetupWellFormed(s) && RunDomain(s, rho) && <regime> implies <結論>`。`RecoveredBy` が量化する `source` にも `RunDomain`)。
+
 既知の制限: `∀` / `∃` は Lean の型の全要素を回る。`NaruStd.Set` / `NaruStd.Table` は昇順・重複なしのリストだが、その不変条件は型に
 入っていないので、`Set` / `Table` を含む型(`Run` の `honest` など)の量化は正規化されていない表現(重複・未整列)も含み、そこでは `size` や
 `==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、
@@ -398,6 +412,6 @@ E007・`protocol` 宣言の意味と stdlib の generic な `Event` / `Run`(「s
 1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と関数を持つ record
 (関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文(C15 の `generated/Statements/Review.lean`)・
 naru で書いた stdlib(現状は上の表と Lean 側の `NaruStd`)・Statements 用の stdlib(Safety / Liveness の一般概念・条件・regime。型引数が
-入るまでは `dsl/` に monomorphic に書く)・verified-consensus の Statements の移植(`dsl/` の claim bundle `Consensus`。C8 / C9)・
+入るまでは `dsl/Consensus/Statements/` に monomorphic に書いてある)・
 `derive finite` / `derive repr` の生成・enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)・Bool の値が要る位置に
 置いた Prop(量化・spec 宣言の呼出し)の診断(いまは Lean が拒否する)・`Set` / `Table` の不変条件の型への取り込み(上の既知の制限)。

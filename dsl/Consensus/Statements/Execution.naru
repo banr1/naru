@@ -1,0 +1,144 @@
+// verified-consensus の移植: DecoupledConsensusModel/Generic/Run.lean の Prop 側(`Run.emits` / `processes` / `handlesAt` /
+// `acceptsAt`)、DecoupledConsensusModel/Execution/Instance.lean(`handles` / `spec.carries`)、
+// DecoupledConsensusModel/Execution/Run.lean の `NamedRun.directBlockInRun` / `blockInRun` / `NamedRootCollisionFree`。
+// Run.naru / Node.naru の冒頭が「Statements の移植で書く」とした、run の観測述語。
+//
+// - `rho.events[i]? = some e` → `rho.events.get?(i) == Some(e)`、`o ∈ xs` → `xs.contains(o)`、`∃ i : Nat` → `exists i: Nat`。
+// - `Generic.Run.stateBefore P rho i v`(node の状態)→ `worldAt(stateBefore(s, rho, i), v)`、その `P.processed` /
+//   `P.depsPresent` / `P.excludes` は node の `.st` に Node.naru の fn を当てる。
+// - `(NamedNode.tick S v n t).2`(tick が出す object)→ runtime の fn `tickEmits`(Model に出る)。
+// - `handles` の局所 `blockCall B before` → predicate `BlockCall`。
+module Consensus.Statements.Execution
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.NamedBlocks
+import Consensus.Protocol.Handlers
+import Consensus.Execution.Objects
+import Consensus.Execution.Setup
+import Consensus.Execution.Node
+import Consensus.Execution.Run
+
+// The objects the tick of node `v` in state `n` at time `t` emits (手書き `(NamedNode.tick S v n t).2`).
+fn tickEmits(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> List<NamedObject> {
+  match nodeTick(s, v, n, t) {
+    (_, out) => out,
+  }
+}
+
+// ── Generic/Run.lean: what a run emits and processes ──
+
+// An object appears in a tick's output (self-emission).
+predicate Emits(s: Setup, rho: NamedRun, v: ValidatorId, o: NamedObject, t: Time) {
+  exists i: Nat {
+    rho.events.get?(i) == Some(NamedEvent.Tick(v, t)) && emittedAt(s, rho, i, v, t).contains(o)
+  }
+}
+
+// An outer object has a direct processing occurrence when it is emitted or delivered. Delivery records the handler
+// call even when the handler rejects; carried children are covered by `UnforgeableSignatures` (carried) and `HandlesAt`.
+predicate Processes(s: Setup, rho: NamedRun, v: ValidatorId, o: NamedObject, t: Time) {
+  Emits(s, rho, v, o, t) || exists i: Nat { rho.events.get?(i) == Some(NamedEvent.Deliver(v, o, t)) }
+}
+
+// ── Execution/Instance.lean: the handler-call relation and structural containment ──
+
+// A block handler call for `b` at the node of `ev`: a delivery of `b` (the store before the call is the node's store),
+// or a tick that emits `b` (the store before the call is the clock-staged store).
+predicate BlockCall(s: Setup, n: NamedNodeState, ev: NamedEvent, b: NamedBlock, before: NamedStore) {
+  (exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Block(b), t) && before == n.st })
+    || (exists t: Time {
+         ev == NamedEvent.Tick(eventNode(ev), t)
+           && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.Block(b))
+           && before == setClock(s.e, n.st, t)
+       })
+}
+
+// In state `n`, event `ev` makes the node handle object `o`: directly (emitted by the tick, or delivered), or carried
+// inside a block when that block enters the relevant named collection. It records a call, not whether the handler
+// accepts the object.
+predicate Handles(s: Setup, n: NamedNodeState, ev: NamedEvent, o: NamedObject) {
+  match o {
+    NamedObject.Block(b) =>
+      (exists t: Time {
+        ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.Block(b))
+      })
+        || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Block(b), t) },
+    NamedObject.GfVote(u) =>
+      ((exists t: Time {
+         ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.GfVote(u))
+       })
+        || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.GfVote(u), t) })
+        || exists b: NamedBlock { exists j: Nat { exists before: NamedStore {
+             BlockCall(s, n, ev, b, before)
+               && !before.core.tree.contains(eraseBlock(b))
+               && postCore(s, before, b).core.tree.contains(eraseBlock(b))
+               && namedGfVotes(b).get?(j) == Some(u)
+           } } },
+    NamedObject.Attest(a) =>
+      ((exists t: Time {
+         ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.Attest(a))
+       })
+        || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Attest(a), t) })
+        || exists b: NamedBlock { exists j: Nat { exists before: NamedStore {
+             BlockCall(s, n, ev, b, before)
+               && !before.bodies.contains(b)
+               && postCore(s, before, b).bodies.contains(b)
+               && namedAttestations(b).get?(j) == Some(a)
+           } } },
+  }
+}
+
+// An object structurally contains another object: a block carries its Goldfish votes and attestation rows.
+predicate Carries(o: NamedObject, o2: NamedObject) {
+  match o {
+    NamedObject.Block(b) =>
+      namedGfVotes(b).any(|u| o2 == NamedObject.GfVote(u)) || namedAttestations(b).any(|a| o2 == NamedObject.Attest(a)),
+    NamedObject.GfVote(_) => false,
+    NamedObject.Attest(_) => false,
+  }
+}
+
+// The handler call recorded at index `i`. A handler call may reject the object; the false-to-true `processed`
+// transition belongs to `AcceptsAt`.
+predicate HandlesAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObject, t: Time) {
+  exists ev: NamedEvent {
+    rho.events.get?(i) == Some(ev) && eventNode(ev) == v && eventTime(ev) == t
+      && Handles(s, worldAt(stateBefore(s, rho, i), v), ev, o)
+  }
+}
+
+// An accepted call is a handler call that flips `processed` from false to true.
+predicate AcceptsAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObject, t: Time) {
+  HandlesAt(s, rho, i, v, o, t)
+    && !processed(worldAt(stateBefore(s, rho, i), v).st, o)
+    && processed(worldAt(stateBefore(s, rho, i + 1), v).st, o)
+}
+
+// ── Execution/Run.lean: the blocks a run puts in play ──
+
+// Full directly delivered or prefix-held bodies, before ancestor closure.
+predicate DirectBlockInRun(s: Setup, rho: NamedRun, b: NamedBlock) {
+  runObjects(rho).contains(NamedObject.Block(b))
+    || exists v: ValidatorId {
+         rho.honest.contains(v) && exists i: Nat { worldAt(stateBefore(s, rho, i), v).st.bodies.contains(b) }
+       }
+}
+
+// Full ancestors retain their own signed payloads in the run scope.
+predicate BlockInRun(s: Setup, rho: NamedRun, a: NamedBlock) {
+  exists b: NamedBlock { DirectBlockInRun(s, rho, b) && namedPreceq(a, b) }
+}
+
+// Root collision freedom across every block the run puts in play: two named blocks below blocks in the run with one
+// root are the same block (the hash idealization; IDEAL.md「理想化」).
+predicate NamedRootCollisionFree(s: Setup, rho: NamedRun) {
+  forall b: NamedBlock { forall c: NamedBlock {
+    BlockInRun(s, rho, b) && BlockInRun(s, rho, c) implies
+      forall a: NamedBlock { forall d: NamedBlock {
+        (namedPreceq(a, b) || namedPreceq(a, c)) && (namedPreceq(d, b) || namedPreceq(d, c))
+          && namedRoot(a) == namedRoot(d)
+          implies a == d
+      } }
+  } }
+}

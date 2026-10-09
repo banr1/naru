@@ -1,0 +1,170 @@
+// verified-consensus の移植: DecoupledConsensusStatements/Generic/Constants.lean(`Constants` / `Constants.Valid`)と
+// DecoupledConsensusStatements/Instantiation.lean の `constants S`、Instantiation/RoundTimes.lean(`roundPeriod` /
+// `nextRound` / `roundAt` / `boundedPhaseStartLag` / `recoveryRound` / `healingBoundaryTime`)、Instantiation/Deadlines.lean
+// (`finalityStartup` / `finalityDeadline`)、Instantiation/OutageWindow.lean(`roundLength` / `roundAfter` / `nextAction`)。
+// IDEAL.md 用語「Constants」: Statements が参照する時間・閾値などの定数。
+//
+// - 手書きの `Constants` は関数欄を持つ record(naru の record は関数欄を持てない)で、instantiation は `constants S` の
+//   1 つだけなので、各欄を `Setup` を取る runtime の fn に写す(Model に出る。値は手書きの `constants S` の式そのもの)。
+//   引数を取る欄(`prefixEnd : Time → Nat → Time` …)は引数を増やした fn。定数 `proposerSlots := 3` は引数 0 個の fn。
+// - 手書きの `Constants.Valid`(証明の欄の structure)→ condition `ConstantsValid`(`&&` で束ねる)。
+// - 手書きの `Setup` / `Env` / `HealConfig` / `HeightConfig` / `Electorate` の証明の欄(Δ_pos / R_ge_three / K_ge_four …)は
+//   naru の Model に無いので、Conditions.naru の condition `SetupWellFormed` に集め、Claims.naru の各 claim の premise にする。
+// - `Int.toNat (t - a₀) ⌈/⌉ roundPeriod`(`Nat.ceilDiv`)→ `ceilDiv(a, b) = (a + b - 1) / b`(除数 0 では両方 0)。
+//   `Int.ediv` と `/` は除数が正の位置(`SetupWellFormed` の Δ > 0、R ≥ 3)で使われているので、被除数の符号に依らず
+//   床除算 `fdiv` と一致する(`roundAfter` の被除数 `tRead − 6Δ + L − 1` は負になりうる)。
+// - `S.a r` → `setupActionTime(s, r)`、`S.cfg.K` / `D` → `s.cfg.k` / `d`、`S.hc.R` / `η_SG` → `s.hc.r` / `etaSG`、
+//   `S.cfg.timeoutDelay / S.hc.R - 2`(切り捨て)→ `extraRounds(s)`。
+module Consensus.Statements.Constants
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Weights
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Protocol.Grades
+import Consensus.Protocol.ChainState
+import Consensus.Execution.Setup
+
+// ── Instantiation/RoundTimes.lean ──
+
+// Natural-number ceiling division (手書き `Nat.ceilDiv`): (a + b − 1) / b.
+fn ceilDiv(a: Nat, b: Nat) -> Nat { (a + b - 1) / b }
+
+// `period` is one SG round: R slots of 4Δ, i.e. a_1 − a_0 = 4ΔR (手書き `constants.period`).
+fn period(s: Setup) -> Time { setupActionTime(s, 1) - setupActionTime(s, 0) }
+
+// The positive action period in Nat form (手書き `roundPeriod`).
+fn roundPeriod(s: Setup) -> Nat { period(s).toNat() }
+
+// The first round whose action time is at or after `t`: max 0 ⌈(t − a_0) / period⌉ (手書き `nextRound`).
+fn nextRound(s: Setup, t: Time) -> Round { ceilDiv((t - setupActionTime(s, 0)).toNat(), roundPeriod(s)) }
+
+// The public historical name for `nextRound` (手書き `roundAt`).
+fn roundAt(s: Setup, t: Time) -> Round { nextRound(s, t) }
+
+// The bounded phase-start lag in rounds (手書き `boundedPhaseStartLag`).
+fn boundedPhaseStartLag(gap: Nat, extra: Nat) -> Nat { (4 * gap + 12 + 2 * extra) + 3 * gap + 10 + 2 * extra }
+
+// The recovery round starts after the rounded reference time, the bounded phase-start lag, the two progress lags, the SG
+// lookback, and the recurrence gap (手書き `recoveryRound`).
+fn recoveryRound(s: Setup, t0: Time, gap: Nat, extra: Nat) -> Round {
+  roundAt(s, t0) + 1
+    + (1 + (s.cfg.d + s.cfg.k + 5) * boundedPhaseStartLag(gap, extra))
+    + 2 * boundedPhaseStartLag(gap, extra)
+    + (1 + s.hc.etaSG).max(gap + 3)
+    + gap
+}
+
+// The public boundary after the opening slot and its two vote-duty slots (手書き `healingBoundaryTime`).
+fn healingBoundaryTime(s: Setup, q: Round) -> Time { voteTime(s.e, openingSlot(s.hc, q) + 2) }
+
+// The extra timeout rounds beyond two (手書きの `S.cfg.timeoutDelay / S.hc.R - 2`、切り捨て).
+fn extraRounds(s: Setup) -> Nat { s.cfg.timeoutDelay / s.hc.r - 2 }
+
+// ── Instantiation/Deadlines.lean ──
+
+// The concrete startup lag for finality liveness, in rounds (手書き `Instantiation.finalityStartup`).
+fn finalityStartupRound(s: Setup, gap: Round, extra: Nat) -> Round {
+  1 + (s.cfg.d + s.cfg.k + 5) * (7 * gap + 22 + 4 * extra) + 3 * (7 * gap + 22 + 4 * extra) + gap + 5
+}
+
+// The concrete finality deadline after a known common finalized frontier, in rounds (手書き `Instantiation.finalityDeadline`).
+fn finalityDeadlineRound(s: Setup, gap: Round, extra: Nat) -> Round {
+  (s.cfg.d + s.cfg.k + 2) * (4 * (7 * gap + 22 + 4 * extra) + 4 * gap + 7 + (s.cfg.d + s.cfg.k + 5) * (gap + 1))
+}
+
+// ── Instantiation/OutageWindow.lean ──
+
+// The round length of the healing schedule, a_{r+1} − a_r = 4·R·Δ (手書き `roundLength`).
+fn roundLength(s: Setup) -> Time { 4 * s.e.delta * s.hc.r.toInt() }
+
+// The first round whose action is at or after `tRead`: the least `r` with `tRead ≤ a_r` (手書き `roundAfter`).
+fn roundAfter(s: Setup, tRead: Time) -> Round {
+  (tRead - 6 * s.e.delta + roundLength(s) - 1).fdiv(roundLength(s)).toNat()
+}
+
+// The first round action at or after `tRead` (手書き `nextAction`).
+fn nextAction(s: Setup, tRead: Time) -> Time { setupActionTime(s, roundAfter(s, tRead)) }
+
+// ── Instantiation.lean: `constants S`, one fn per field of the generic `Constants` ──
+
+// Width of the awake-history window used by `WindowMajority`: η_SG rounds.
+fn participationWindow(s: Setup) -> Time { s.hc.etaSG.toInt() * period(s) }
+
+// Time offset of the sleepy and outage reference sample: one SG action round.
+fn participationLag(s: Setup) -> Time { period(s) }
+
+// Number of consecutive proposer slots, including the opening slot.
+fn proposerSlots() -> Nat { 3 }
+
+// End time of the source prefix at reference time `t0` and recurrence gap `gap`.
+fn prefixEnd(s: Setup, t0: Time, gap: Nat) -> Time {
+  setupActionTime(s, recoveryRound(s, t0, gap, extraRounds(s)))
+}
+
+// Time at which the continuation counts as recovered, from reference time `t0` and recurrence gap `gap`.
+fn recoveryEnd(s: Setup, t0: Time, gap: Nat) -> Time {
+  healingBoundaryTime(s, recoveryRound(s, t0, gap, extraRounds(s)))
+}
+
+// Maximum recurrence gap, measured in periods.
+fn maxGap(s: Setup) -> Nat { s.cfg.k }
+
+// Delay from a proposal at its proposal time to confirmed inclusion: the confirmed inclusion delay.
+fn confirmationDelay(s: Setup) -> Time { 6 * s.e.delta }
+
+// The confirmed growth delay for recurrence gap `gap`: gap · period + confirmationDelay.
+fn growthDelay(s: Setup, gap: Nat) -> Time { gap.toInt() * period(s) + 6 * s.e.delta }
+
+// Delay from a proposal at its proposal time to stable inclusion: the stable inclusion delay.
+fn stableInclusionDelay(s: Setup) -> Time {
+  6 * s.e.delta + ((1 + s.hc.etaSG).toInt() * period(s) + 2 * s.e.delta)
+}
+
+// The stable growth delay for recurrence gap `gap`: gap · period + stableInclusionDelay.
+fn stableGrowthDelay(s: Setup, gap: Nat) -> Time { gap.toInt() * period(s) + stableInclusionDelay(s) }
+
+// Delay from a proposal at its proposal time to stable inclusion under a fresh majority: the fast stable inclusion delay.
+fn fastStableInclusionDelay(s: Setup) -> Time { 6 * s.e.delta + (2 * period(s) + 2 * s.e.delta) }
+
+// Protocol-specific finality startup delay for recurrence gap `gap`: the finalized startup delay.
+fn finalityStartup(s: Setup, gap: Nat) -> Time {
+  healingBoundaryTime(s, finalityStartupRound(s, gap, extraRounds(s)) + 1) - setupActionTime(s, 0)
+}
+
+// Protocol-specific finality inclusion deadline after startup for recurrence gap `gap`: the finalized inclusion delay.
+fn finalityDeadline(s: Setup, gap: Nat) -> Time {
+  healingBoundaryTime(s, finalityDeadlineRound(s, gap, extraRounds(s)) + 1) - setupActionTime(s, 0) + 3 * s.e.delta
+}
+
+// Earliest permitted outage start for the stable output read at time `tRead`.
+fn outageStart(s: Setup, tRead: Time) -> Time { nextAction(s, tRead) + period(s) + s.e.delta }
+
+// The time after which votes formed for the stable output read at `tRead` may expire.
+fn expiry(s: Setup, tRead: Time) -> Time {
+  earlyTime(s.e, s.hc, roundOf(s.hc, slotOf(s.e, nextAction(s, tRead))) + s.hc.etaSG + 1, GradePhase.G2)
+}
+
+// ── Generic/Constants.lean: `Constants.Valid` ──
+
+// The constants are well formed: a positive period, nonnegative windows and delays, a recovery end after the prefix end,
+// and a nonempty outage window. `maxGap ≥ 2` is a sanity bound; the finality premise is satisfiable only for `maxGap ≥ 5`.
+condition ConstantsValid(s: Setup) {
+  0 < period(s)
+    && 0 <= participationWindow(s)
+    && 0 <= participationLag(s)
+    && 0 < proposerSlots()
+    && 2 <= maxGap(s)
+    && (forall gap: Nat {
+         0 <= confirmationDelay(s)
+           && 0 <= growthDelay(s, gap)
+           && 0 <= stableGrowthDelay(s, gap)
+           && 0 <= stableInclusionDelay(s)
+           && 0 <= fastStableInclusionDelay(s)
+           && 0 <= finalityStartup(s, gap)
+           && 0 <= finalityDeadline(s, gap)
+       })
+    && (forall t0: Time { forall gap: Nat { prefixEnd(s, t0, gap) <= recoveryEnd(s, t0, gap) } })
+    && (forall tRead: Time { outageStart(s, tRead) < expiry(s, tRead) })
+}

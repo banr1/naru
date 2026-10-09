@@ -1,0 +1,123 @@
+// verified-consensus の移植: DecoupledConsensusStatements/Generic/Properties.lean(output observations、`SafeFrom` /
+// `AccountablySafeFrom` / `LiveFrom` / `IncludedFrom` / `PersistsFrom` / `OutputOrder` とその補助)。
+//
+// - 型引数 `P` / `I : Interface P` → `s: Setup`(instantiation は 1 つ)、出力 `g : Output P` → enum `Output`、
+//   `readAt P rho g v t` → `outputAt(g, s, rho, v, t)`(Interface.naru)。
+// - `Block.Compatible` / `Preceq` / `Prec`(Prop)→ Model の `compatible` / `preceq` / `prec`(Bool)。
+// - `∀ u ∈ rho.honest, …` → `forall u: ValidatorId { rho.honest.contains(u) && … implies … }`。
+// - 欄 2 つの `structure … : Prop`(`SafeFrom` / `OutputOrder`)→ `&&` で束ねた property。
+// - `t'` / `t₀` / `b₀` / `T` → `t2` / `t0` / `b0` / `tRead`(局所名は小文字始まり)。
+module Consensus.Statements.Properties
+
+import Consensus.Objects.Identifiers
+import Consensus.Objects.Time
+import Consensus.Objects.Blocks
+import Consensus.Objects.Parameters
+import Consensus.Protocol.Schedule
+import Consensus.Execution.Setup
+import Consensus.Execution.Run
+import Consensus.Statements.Interface
+
+// Two outputs do not conflict across honest reads from `t0` to the horizon.
+property ConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Time) {
+  forall u: ValidatorId { forall v: ValidatorId { forall t: Time { forall t2: Time {
+    rho.honest.contains(u) && rho.honest.contains(v)
+      && t0 <= t && t <= rho.horizon && t0 <= t2 && t2 <= rho.horizon
+      implies compatible(outputAt(g1, s, rho, u, t), outputAt(g2, s, rho, v, t2))
+  } } } }
+}
+
+// No two honest reads of `g` conflict from `t0` on.
+property AgreeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) { ConsistentFrom(s, rho, g, g, t0) }
+
+// Each honest node's reads of `g` only extend from `t0` on.
+property MonotoneFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
+  forall v: ValidatorId { forall t: Time { forall t2: Time {
+    rho.honest.contains(v) && t0 <= t && t <= t2 && t2 <= rho.horizon
+      implies preceq(outputAt(g, s, rho, v, t), outputAt(g, s, rho, v, t2))
+  } } }
+}
+
+// Safety of `g` from `t0`: honest reads never conflict and each honest node's reads only extend.
+property SafeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
+  AgreeFrom(s, rho, g, t0) && MonotoneFrom(s, rho, g, t0)
+}
+
+// Compatible output reads, or slashable evidence in the two read states.
+property AccountablyConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Time) {
+  forall u: ValidatorId { forall v: ValidatorId { forall t: Time { forall t2: Time {
+    rho.honest.contains(u) && rho.honest.contains(v)
+      && t0 <= t && t <= rho.horizon && t0 <= t2 && t2 <= rho.horizon
+      implies compatible(outputAt(g1, s, rho, u, t), outputAt(g2, s, rho, v, t2))
+        || SlashableStates(s, worldAt(readAt(s, rho, t), u), worldAt(readAt(s, rho, t2), v))
+  } } } }
+}
+
+// Accountable safety of `g` from `t0`: honest reads are compatible, or the two read states hold slashable evidence.
+property AccountablySafeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
+  AccountablyConsistentFrom(s, rho, g, g, t0)
+}
+
+// One output is below another at every node and time.
+property Prefix(s: Setup, rho: NamedRun, g1: Output, g2: Output) {
+  forall v: ValidatorId { forall t: Time { preceq(outputAt(g1, s, rho, v, t), outputAt(g2, s, rho, v, t)) } }
+}
+
+// The finalized, stable, and confirmed outputs are ordered by prefix.
+property OutputOrder(s: Setup, rho: NamedRun) {
+  Prefix(s, rho, Output.Finalized, Output.Stable) && Prefix(s, rho, Output.Stable, Output.Confirmed)
+}
+
+// Block `b` is in every honest read of `g` at time `t`.
+property InBy(s: Setup, rho: NamedRun, g: Output, b: Block, t: Time) {
+  forall v: ValidatorId { rho.honest.contains(v) implies preceq(b, outputAt(g, s, rho, v, t)) }
+}
+
+// The honest proposal of slot `k` is `b`, through the interface.
+property HonestProposalAt(s: Setup, rho: NamedRun, k: Slot, b: Block) {
+  rho.honest.contains(proposer(k)) && proposedBlock(s, rho, k) == Some(b)
+}
+
+// A block proposed by an honest proposer strictly after `t`.
+property HonestAfter(s: Setup, rho: NamedRun, t: Time, b: Block) {
+  exists k: Slot { t < proposalTime(s.e, k) && HonestProposalAt(s, rho, k, b) }
+}
+
+// Liveness of `g` from `t0`: from every time `t ≥ t0`, some block proposed by an honest proposer after `t` is strictly
+// above every honest read at `t` and in every honest read by `t + d`.
+property LiveFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
+  forall t: Time {
+    t0 <= t && t + d <= rho.horizon implies
+      exists b: Block {
+        HonestAfter(s, rho, t, b)
+          && (forall v: ValidatorId { rho.honest.contains(v) implies prec(outputAt(g, s, rho, v, t), b) })
+          && InBy(s, rho, g, b, t + d)
+      }
+  }
+}
+
+// Inclusion into `g` from `t0`: every block proposed by an honest proposer after `t0` is in every honest read within `d`
+// of its proposal.
+property IncludedFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
+  forall k: Slot {
+    t0 < proposalTime(s.e, k) && rho.honest.contains(proposer(k)) && proposalTime(s.e, k) + d <= rho.horizon implies
+      exists b: Block { HonestProposalAt(s, rho, k, b) && InBy(s, rho, g, b, proposalTime(s.e, k) + d) }
+  }
+}
+
+// Persistence of `g`: every block in an honest read of `g` at `tRead` is in every honest read of `g` at every time from
+// `b0` to the horizon.
+property PersistsFrom(s: Setup, rho: NamedRun, g: Output, tRead: Time, b0: Time) {
+  forall v: ValidatorId { forall b: Block { forall t: Time {
+    rho.honest.contains(v) && preceq(b, outputAt(g, s, rho, v, tRead)) && b0 <= t && t <= rho.horizon
+      implies InBy(s, rho, g, b, t)
+  } } }
+}
+
+// A proposed block is in no honest read before its proposal time.
+property NoFutureRead(s: Setup, rho: NamedRun, g: Output) {
+  forall v: ValidatorId { forall t: Time { forall k: Slot { forall b: Block {
+    rho.honest.contains(v) && HonestProposalAt(s, rho, k, b) && t < proposalTime(s.e, k)
+      implies !preceq(b, outputAt(g, s, rho, v, t))
+  } } } }
+}

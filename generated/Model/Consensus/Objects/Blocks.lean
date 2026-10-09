@@ -2,7 +2,7 @@
 -- naru-compiler: 0.1.0 sha256:47aedd3ac83cc8ab549c24319a6b88adcf403dfdbd1e0dbfa2045dfc1a92cf4c
 -- naru-stdlib: 0.1.0 sha256:d1d34650e87bf08cf6aac85f86741a685c27048c1edbd48d4dd09202b35233af
 -- naru-source: dsl/Consensus/Objects/Blocks.naru sha256:89f19b2fb296fea4982eb393f278a56a5c07aeedfe8694254a3ac681636c2dfb
--- naru-unit: sha256:4597ab2ac5ca1453f97bbd6af9c908f308fc84995eae15fc49c8c8b0808e4a4c
+-- naru-unit: sha256:8cb04fad463b6bc6378b77337cde558607b77bc4a77cb24ecaad524a134bcd48
 import NaruStd
 import Model.Consensus.Objects.Identifiers
 
