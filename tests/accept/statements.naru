@@ -1,0 +1,119 @@
+// 受理例: Statements backend(spec 宣言 → `generated/Statements`)の網羅例。
+// `lake exe naru compile tests/accept/statements.naru` が exit 0 で、`--out <dir>` に出した
+// `Statements/Accept/Statements.lean` が Lean で型検査を通ること(knowledge「生成コードの回帰」)。
+// 量化(forall / exists)、implies の連鎖、Prop と値の let、Bool の条件と Prop の条件の if、ガード無し / ガード付きの match、
+// Nat / Int と order の record の比較、== / !=、input を使う spec 宣言、引数の無い claim、入れ子の claim bundle、
+// 再帰する spec 宣言(match / if で保護した明示 fuel)。
+module Accept.Statements
+
+type Slot = Nat
+type Time = Int
+
+record ValidatorId { value: Nat } derive eq, order
+record Block { slot: Slot, parent: Option<Slot>, author: ValidatorId } derive eq, order
+record Run { honest: Set<ValidatorId>, horizon: Time, blocks: List<Block> } derive eq
+
+input proposer(slot: Slot) -> ValidatorId
+input awake(v: ValidatorId, t: Time) -> Bool
+
+fn isHonest(rho: Run, v: ValidatorId) -> Bool { rho.honest.contains(v) }
+
+fn heldAt(rho: Run, s: Slot) -> List<Block> { rho.blocks.filter(|b| b.slot == s) }
+
+// input を使う fn(生成 Model では先頭の引数 `proposer'` になる)
+fn proposedBy(s: Slot) -> ValidatorId { proposer(s) }
+
+fn awakeCount(rho: Run, t: Time) -> Nat { rho.honest.filter(|v| awake(v, t)).size() }
+
+// forall と Set の所属。input を推移的に使う(Statements でも先頭の引数 `proposer'`)
+predicate HonestProposers(rho: Run) {
+  forall s: Slot { isHonest(rho, proposedBy(s)) }
+}
+
+// exists と && と ==
+predicate SomeBlockAt(rho: Run, s: Slot) {
+  exists b: Block { b.slot == s && rho.blocks.contains(b) }
+}
+
+// let: 値(Bool)の束縛と Prop(量化)の束縛、Bool の条件の if
+predicate Ordered(rho: Run) {
+  let positive = rho.horizon > 0;
+  let all = forall b: Block { rho.blocks.contains(b) implies b.slot.toInt() <= rho.horizon };
+  if positive { all } else { true }
+}
+
+// Bool の条件の if、Nat の比較、stdlib のメソッド(= true に落ちる)
+predicate AwakeMajority(rho: Run, t: Time) {
+  if rho.honest.isEmpty() { false } else { 2 * awakeCount(rho, t) > rho.honest.size() }
+}
+
+// Prop の条件の if((c → a) ∧ (¬ c → b))
+predicate OrderedOrEmpty(rho: Run) {
+  if HonestProposers(rho) { Ordered(rho) } else { rho.blocks.isEmpty() }
+}
+
+// ガード無しの match(腕の本体が Prop)
+predicate ParentBelow(b: Block) {
+  match b.parent {
+    Some(p) => p < b.slot,
+    None => b.slot == 0,
+  }
+}
+
+// order の record の比較(Ord.compare)と != / ==
+predicate AuthorOrdered(b: Block, c: Block) {
+  b.author <= c.author && b != c && !(b.author == c.author)
+}
+
+// ガード付きの match((g → b) ∧ (¬ g → REST))
+predicate GuardedSlot(b: Block) {
+  match b.parent {
+    Some(p) if p > 0 => p < b.slot,
+    Some(_) => true,
+    None => false,
+  }
+}
+
+// ガード無しの腕の後にガード付きの腕(前の腕はそのまま、`| _ =>` の中で入れ子の match)
+predicate GuardedAfterPlain(b: Block) {
+  match b.parent {
+    None => b.slot == 0,
+    Some(p) if p > 0 => p < b.slot,
+    Some(_) => true,
+  }
+}
+
+// 再帰する spec 宣言(明示 fuel): match で保護した fuel(`match _hm' : n with` と `_ + 1`)
+predicate BlocksBelow(n: Nat, rho: Run) {
+  match n {
+    0 => true,
+    k => SomeBlockAt(rho, k) && BlocksBelow(k - 1, rho),
+  }
+}
+
+// 再帰する spec 宣言(明示 fuel): if で保護した fuel(`if _h' : … then`)
+predicate ParentsBelow(n: Nat, b: Block) {
+  if n == 0 { true } else { ParentBelow(b) && ParentsBelow(n - 1, b) }
+}
+
+condition Synchronous(delta: Time) { delta > 0 }
+
+regime Sleepy(rho: Run, t0: Time) {
+  Ordered(rho) && HonestProposers(rho) && forall t: Time { t >= t0 implies AwakeMajority(rho, t) }
+}
+
+property Live(rho: Run, t0: Time) {
+  forall s: Slot { s.toInt() >= t0 implies SomeBlockAt(rho, s) }
+}
+
+// claim: 引数あり(regime → property)、引数なし、input を使うもの
+claim liveness(rho: Run, t0: Time) { Sleepy(rho, t0) implies Live(rho, t0) }
+
+claim positiveDelta { Synchronous(1) }
+
+claim proposerHonest(rho: Run) { HonestProposers(rho) implies !(rho.honest.isEmpty()) }
+
+claim bundle Safety { proposerHonest }
+
+// 項目のラベル(live / positiveDelta / safety)が生成 structure の欄名(claim surface)になる
+claim bundle Consensus { live: liveness, positiveDelta, safety: Safety }

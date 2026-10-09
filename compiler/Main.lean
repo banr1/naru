@@ -3,8 +3,9 @@ import Naru
 /-!
 # `naru` CLI
 
-- `naru compile` — `dsl/` 配下の全 `.naru` を検査し、Model を `generated/` に出力する(C1)。
-- `naru compile [--out <dir>] <files...>` — 指定ファイルを検査する。`--out` があればそこに Model を出力する
+- `naru compile` — `dsl/` 配下の全 `.naru` を検査し、Model(`generated/Model`)と Statements(`generated/Statements`)を
+  `generated/` に出力する(C1)。
+- `naru compile [--out <dir>] <files...>` — 指定ファイルを検査する。`--out` があればそこに Model と Statements を出力する
   (無ければ検査だけ。反例ソースの検査や受理例の確認に使う)。
   診断があれば標準エラーに `file:line:col: error[E0xx]: …` を出して exit 1。
 - `naru check-reject <file.naru> <Exxx>` — 反例が `Exxx` で拒否されることを検査する。
@@ -16,7 +17,7 @@ import Naru
 
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
-`--out <dir>` は `<dir>/Model.lean` と `<dir>/Model/` を作り直す(他は触らない)。
+`--out <dir>` は `<dir>/Model.lean` と `<dir>/Model/`、`<dir>/Statements.lean` と `<dir>/Statements/` を作り直す(他は触らない)。
 -/
 
 open Naru
@@ -45,12 +46,14 @@ def hashFile (path : String) : IO String := do
 def hashUnit (entries : List (String × String)) : String :=
   sha256HexOfString ("".intercalate (entries.map fun (p, h) => s!"{p}\n{h}\n"))
 
-/-- Model を `outDir` に書く。`outDir/Model.lean` と `outDir/Model/` を作り直す(古い生成物を残さない)。 -/
-def writeModel (outDir : System.FilePath) (files : Array (String × String)) : IO Unit := do
-  let modelDir := outDir / "Model"
-  if ← modelDir.isDir then IO.FS.removeDirAll modelDir
-  let rootFile := outDir / "Model.lean"
-  if ← rootFile.pathExists then IO.FS.removeFile rootFile
+/-- 生成物を `outDir` に書く。`outDir/Model.lean` と `outDir/Model/`、`outDir/Statements.lean` と `outDir/Statements/` を
+作り直す(古い生成物を残さない)。 -/
+def writeGenerated (outDir : System.FilePath) (files : Array (String × String)) : IO Unit := do
+  for sub in ["Model", "Statements"] do
+    let dir := outDir / sub
+    if ← dir.isDir then IO.FS.removeDirAll dir
+    let rootFile := outDir / (sub ++ ".lean")
+    if ← rootFile.pathExists then IO.FS.removeFile rootFile
   IO.FS.createDirAll outDir
   for (rel, content) in files do
     let path := outDir / rel
@@ -75,18 +78,22 @@ def buildMeta (who : String) (files : List String) : IO (Option Backend.Model.Me
     { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
       stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit fileHashes, fileHashes }
 
-/-- 検査済みの単位から Model を生成して `out` に書く(`compile` と `simulate` が共用)。`who` は診断の接頭辞。 -/
-def generateModel (who : String) (out : System.FilePath) (checked : Checked)
+/-- 検査済みの単位から Model と Statements を生成して `out` に書く(`compile` と `simulate` が共用)。`who` は診断の接頭辞。 -/
+def generateLean (who : String) (out : System.FilePath) (checked : Checked)
     (info : Backend.Model.Meta) : IO UInt32 := do
-  match Backend.Model.emitModel checked.core checked.recursions info with
-  | .error d =>
+  let fail (d : Diagnostic) : IO UInt32 := do
     IO.eprintln d.render
     IO.eprintln s!"{who}: 1 error(s)"
     return 1
-  | .ok generated =>
-    writeModel out generated
-    IO.println s!"compiled {checked.mods.size} module(s); wrote {generated.size} file(s) under {out}/"
-    return 0
+  match Backend.Model.emitModel checked.core checked.recursions info with
+  | .error d => fail d
+  | .ok model =>
+    match Backend.Statements.emitStatements checked.core checked.recursions info with
+    | .error d => fail d
+    | .ok statements =>
+      writeGenerated out (model ++ statements)
+      IO.println s!"compiled {checked.mods.size} module(s); wrote {model.size} Model file(s) and {statements.size} Statements file(s) under {out}/"
+      return 0
 
 def runCompile (args : List String) : IO UInt32 := do
   -- `--out <dir>` を取り出す
@@ -123,10 +130,10 @@ def runCompile (args : List String) : IO UInt32 := do
     return 0
   | some out =>
     let some info ← buildMeta "naru compile" files | return 2
-    generateModel "naru compile" out checked info
+    generateLean "naru compile" out checked info
 
 /-- scenario の実行。`file` は `dsl/` 配下の `.naru`(検査の単位は `dsl/` 全体 = `generated/` の元)。
-1. 単位を検査し(診断があれば exit 1)、`generated/` に Model を作り直す(`compile` と同じ)。
+1. 単位を検査し(診断があれば exit 1)、`generated/` に Model と Statements を作り直す(`compile` と同じ)。
 2. そのファイルの scenario(1 つ以上。無ければ exit 2)を順に `NaruStd.runScenario` で表示する
    `generated/Simulate.lean`(`main`)を書く(追跡対象外)。
 3. `lake build naru_simulate`(lakefile の lean_exe。Model を native にビルドする)→ `.lake/build/bin/naru_simulate`
@@ -157,7 +164,7 @@ def runSimulate (file : String) : IO UInt32 := do
     IO.eprintln s!"naru simulate: `{rel}` declares no scenario"
     return 2
   let some info ← buildMeta "naru simulate" files | return 2
-  let code ← generateModel "naru simulate" "generated" checked info
+  let code ← generateLean "naru simulate" "generated" checked info
   if code != 0 then return code
   let names := scenarios.toList.map (·.name)
   let calls := names.map fun n =>

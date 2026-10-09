@@ -49,7 +49,7 @@ structure Meta where
 structure Env where
   decls : HashMap String Core.Decl := {}
   moduleOf : HashMap String (List String) := {}
-  /-- fn / observer / scenario の修飾名 → 推移的に使う input の修飾名(名前順)。 -/
+  /-- fn / observer / scenario / spec 宣言の修飾名 → 推移的に使う input の修飾名(名前順)。 -/
   inputs : HashMap String (List String) := {}
   /-- 再帰する fn の修飾名 → (成分の fn、測度の仮引数の位置、成分に Nat の測度があるか)。 -/
   recs : HashMap String (List String × Nat × Bool) := {}
@@ -461,6 +461,13 @@ def isRuntimeValue : Core.Decl → Bool
   | .scenario .. => true
   | _ => false
 
+/-- input を(推移的に)使いうる宣言: runtime の値(fn / observer / scenario)と spec 宣言(predicate / … / claim bundle)。
+`buildEnv` はこれらの入力の推移閉包を計算する(Model backend が読むのは runtime の分だけ。spec の分は Statements backend が読む)。 -/
+def usesInputs : Core.Decl → Bool
+  | .fn _ _ k .. => k != .input
+  | .scenario .. | .claimBundle .. => true
+  | _ => false
+
 def isTypeDecl : Core.Decl → Bool
   | .typeAlias .. | .record .. | .enum .. => true
   | _ => false
@@ -635,10 +642,10 @@ def buildEnv (mods : Array Core.Module) (recs : Array Totality.Recursion) : Env 
   for m in mods do
     for d in m.decls do
       env := { env with decls := env.decls.insert d.key d, moduleOf := env.moduleOf.insert d.key m.name }
-  -- input の推移閉包(不動点)
+  -- input の推移閉包(不動点)。spec 宣言も含める(claim bundle は項目の claim が使う input の和)
   let all := mods.toList.flatMap fun m => m.decls.toList
   let inputKeys := (all.filter isInput).map (·.key)
-  let valueKeys := (all.filter isRuntimeValue).map (·.key)
+  let valueKeys := (all.filter usesInputs).map (·.key)
   let mut table : List (String × List String) := valueKeys.map fun k => (k, [])
   let direct (d : Core.Decl) : List String := d.refs.filter inputKeys.contains
   let mut changed := true

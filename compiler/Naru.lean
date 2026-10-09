@@ -9,4 +9,5 @@ import Naru.Totality
 import Naru.Driver
 import Naru.Sha256
 import Naru.Backend.Model
+import Naru.Backend.Statements
 import Naru.Lsp

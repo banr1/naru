@@ -213,7 +213,7 @@ scenario basic {
   NaruStd.observe "readsAt(…)" (Model.A.B.readsAt committee' proposer' … «s» «rho» «v0» 30) :: (… :: ([]))`。束縛した input は
   本体の先頭の `let f'`(fn の引数名 `f'` と同じ名前)になり、呼出しがそれを引き回す。observer の戻り型が `List<T>` なら
   `NaruStd.observeList`。`NaruStd.Observation` / `observe` / `observeList` / `runScenario` は `stdlib/Model/NaruStd/Observe.lean`。
-- `lake exe naru simulate dsl/scenarios/basic.naru`: `dsl/**/*.naru` 全体を検査して `generated/` に Model を作り直し(`compile` と同じ。
+- `lake exe naru simulate dsl/scenarios/basic.naru`: `dsl/**/*.naru` 全体を検査して `generated/` に Model と Statements を作り直し(`compile` と同じ。
   ファイルは `dsl/` 配下に限る: exit 2。`./dsl/…` とリポジトリの絶対パスは `dsl/…` に正規化する)、そのファイルの scenario(無ければ exit 2)を順に `NaruStd.runScenario` で表示する
   `generated/Simulate.lean`(`main`。C1 のヘッダ付き。追跡対象外)を書き、`lake build naru_simulate`(lakefile の lean_exe。
   Model を native にビルド)→ `.lake/build/bin/naru_simulate` を実行する(「naru を実行する」= 生成 Lean を実行する)。
@@ -254,7 +254,7 @@ scenario basic {
 | E014 | 型の不一致・推論できない型・値でないものの値としての使用(`observe` に observer の呼出し以外、input でないものの束縛、も) | 済 |
 | E015 | 無い欄・無いメソッド・引数の数や名前の不一致(閉じていない scenario: 使う input の未束縛・束縛の順序・仮引数の数、も) | 済 |
 | E016 | claim bundle の項目が claim でない | 済 |
-| E017 | 生成モジュールの構造: モジュール同士の循環参照・同名のモジュール(backend) | 済(`Backend/Model.lean`) |
+| E017 | 生成モジュールの構造: モジュール同士の循環参照(runtime の参照は Model、spec の参照は Statements)・同名のモジュール(backend) | 済(`Backend/Model.lean`、`Backend/Statements.lean`) |
 | E018 | match の腕の形: 最後の腕にガード / `Nat` `Int` `String` の match に無条件の腕が無い(網羅性の穴) | 済(`Typecheck.lean`) |
 | E019 | コンテナ(Option / List / Set / Table / Result / tuple)越しに自分に戻る record / enum(Lean の deriving が入れ子の帰納型に使えない) | 済(`Typecheck.lean`) |
 
@@ -269,8 +269,8 @@ E014 には「型が決まらない」も含む: `let` の値・lambda の引数
 
 | コマンド | 意味 |
 |---|---|
-| `compile` | `dsl/**/*.naru`(パス順)を検査し、Model を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean` を作り直す)。C1 の検証コマンド |
-| `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model を出力し、無ければ検査だけ(`checked N module(s)`) |
+| `compile` | `dsl/**/*.naru`(パス順)を検査し、Model と Statements を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean`、`generated/Statements.lean` と `generated/Statements/**.lean` を作り直す)。C1 の検証コマンド |
+| `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model と Statements を出力し、無ければ検査だけ(`checked N module(s)`) |
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
 | `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`Naru/Lsp.lean`)。下の「言語サーバー」 |
 | `simulate <dsl/…/scenario.naru>` | `dsl/` 全体を検査して `generated/` を作り直し、そのファイルの scenario を native 実行して observer の値を表示する(C7。上の「scenario と simulate」)。診断があれば exit 1、`dsl/` 外・scenario 無しは exit 2、`lake build naru_simulate` の失敗は exit 1、それ以外は実行ファイルの exit code |
@@ -293,13 +293,14 @@ Zed 拡張(`editors/zed-naru/`)が起動し、開いた `.naru` の診断を表�
   その単位の診断をすべて消す。
 - 意味検査はすべてコンパイラ側(この層は診断の運搬だけ: IDEAL.md「不変条件」)。
 
-### エディタ対応の検査(`lake exe naru_test`)
+### 検査ドライバ(`lake exe naru_test`: エディタ対応・golden test・生成 Statements)
 
 | 群 | 意味 |
 |---|---|
 | `grammar` | tree-sitter 文法(`editors/tree-sitter-naru/`)の検査(C16): `tree-sitter generate` の出力が追跡対象の `src/` と一致、`tree-sitter build` が exit 0、`dsl/`・`tests/accept/`・`tests/reject/` の全 `.naru`(E010 を期待する反例は除く)が ERROR / MISSING なしに解析できる、`tests/accept/editors_syntax.naru` への `queries/highlights.scm` の捕捉が `tests/accept/editors_syntax.captures` の行に出る、その受理例がコンパイラの検査を通る、`editors/zed-naru/languages/naru/highlights.scm` が `queries/highlights.scm` と同一 |
 | `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17): 5 ファイル(`extension.toml`・`languages/naru/config.toml`・`highlights.scm`・`Cargo.toml`・`src/lib.rs`)がある、`extension.toml` の `id = "naru"`・`[grammars.naru]` の `repository`(このリポジトリの `file://` URL)/ `rev`(40 桁の SHA)/ `path = "editors/tree-sitter-naru"`・`[language_servers.naru]` の `name` と `languages`、`config.toml` の `name` / `grammar` / `path_suffixes` / `language_servers`、`rev` がこのリポジトリのコミットで `git diff --exit-code <rev> HEAD -- editors/tree-sitter-naru` が空、`rev` の文法(`git archive`)を `tree-sitter build` して作業ツリーの `highlights.scm` が `tree-sitter query` でロードできる、`src/lib.rs` が設定 → `PATH` → `.lake/build/bin/naru` の順で `naru lsp` を起動する形、`cargo build --release --target wasm32-wasip2` が exit 0。一時ファイルは `.lake/naru/test/zed/`、cargo の成果物は `editors/zed-naru/target/` |
 | `lsp` | 言語サーバー `naru lsp` の検査(C18): `lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と LSP を話す。`initialize` の応答に全文同期がある、未対応のリクエスト(`textDocument/hover`)が `MethodNotFound`(この応答を、通知の処理の終わりを待つ barrier にも使う)、`tests/reject/` の各反例の `didOpen` で `naru compile` と同じ E 番号・行・列の診断(先頭コメントが名指しする E 番号を含む)がその URI に返り `didClose` で空になる、絵文字を含む単独文書で列が UTF-16 単位・範囲がトークン 1 つ分、`dsl/` の全ファイルの `didOpen` で 0 件、`dsl/Consensus/Objects/Time.naru` の `didChange` で末尾に足した未解決名の E011 がその行に出る・`slotStart` の改名で他のファイル(Parameters / Grades)の URI に E011 が出る・壊れたまま Parameters を `didClose` すると空のまま・開き直すと戻る・Time を戻すと消える、`didSave` で 0 件のまま、全ファイルの `didClose` で空、`shutdown` が `null`、`exit` で exit 0。期待値はコンパイラ(`compileSources`)から取る |
+| `statements` | 生成 Statements の検査(C8 / C9): `lake exe naru compile` で `generated/` を作り直し、`lake build Statements` が exit 0、`Statements` からの import 閉包(`lake env lean --deps-json`。ソースの文字列から推測しない)が `Init` / `NaruStd` / 生成 Model / 生成 Statements だけから成り(Proofs を含まない)、`generated/Statements/` 配下の全ファイルがその閉包にある、閉包の全ファイルに字句 `sorry` が無い、`dsl/` に claim bundle `Consensus` がちょうど 1 つあってその項目が verified-consensus の 13 claims と同名、生成 `structure` の欄(`run_cmd` の `getStructureFields`。スクリプトは `.lake/naru/test/statements/SurfaceShape.lean`)が項目と同じ順で並び 13 名を列挙する |
 | `zed-install` | 起動中の人間の Zed に `editors/zed-naru/` を Dev Extension として入れる(C19): `lake build naru` の後、`~/Library/Application Support/Zed/extensions/installed/naru` が無ければ `zed: install dev extension`(フォルダ選択ダイアログに ⌘⇧G でパスを貼る)、この拡張への symlink なら `zed: rebuild dev extension`(Dev Extension が 2 つ以上なら picker で `naru`)を `osascript`(System Events。文字列はクリップボード経由、前面が Zed であることを確かめてから送る)で実行し、`Zed.log` に操作の開始以後 `compiled grammar naru`・`finished compiling extension <installed/naru>`(install では Zed は拡張のソースのパスで記録するのでそれも受理)・`extensions updated.` の `loading 1` / `reloading 1` が足され、`failed to compile` / `Failed to install dev extension` が 0 件、`installed/naru` が `editors/zed-naru` への symlink、`extension.wasm` と `grammars/naru.wasm` の mtime が操作の開始以後、`grammars/naru/` の checkout が `extension.toml` の `rev`。`grammars/naru.wasm` は操作の前に消す(Zed は `parser.c` より新しい wasm があると文法のコンパイルを飛ばす)。スクリーンショットと AppleScript は `.lake/naru/test/zed-install/` |
 
 ## エディタ対応(tree-sitter 文法)
@@ -332,7 +333,7 @@ node の名前(`queries/highlights.scm` が使う): 宣言は `<kind>_declaratio
 型検査(`Typecheck.lean`)は検査と同時に Surface AST を Typed Core IR(`Core.lean`)に elaborate する。名前は解決済み、
 UFCS と名前付き引数は展開済み、ブロックは `let` の入れ子、型が要る位置には解決済みの型を持つ。backend は Core だけを読む。
 
-Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす(spec 宣言は Statements backend の仕事)。
+Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす(spec 宣言は次の「Statements backend」)。
 
 | naru | 生成 Lean |
 |---|---|
@@ -358,10 +359,45 @@ Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の�
 到達しない腕(先行する腕が必ず一致する)は Lean の「redundant alternative」で拒否される。ガード 1 つにつき残りの腕が
 2 回生成される。ヘッダとコメントにはソースのパスが渡された文字列のまま入る(既定の `compile` は `dsl/…` の相対パス)。
 
+## Statements backend(`generated/Statements`)
+
+Statements backend(`Backend/Statements.lean`)は spec 宣言だけを Lean に落とす。naru モジュール `A.B` に spec 宣言があれば
+ファイル `generated/Statements/A/B.lean`(Lean モジュール `Statements.A.B`)になり、ルート `generated/Statements.lean` がそれらを import する。
+生成 Statements が import するのは `NaruStd`・生成 Model(`Model.A.B`)・他の生成 Statements(`Statements.X.Y`。循環は E017)だけで、
+Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 Model ← Statements ← Proofs。C8 の検査は `lake exe naru_test statements`)。
+`lake build Statements` でビルドする。
+
+| naru | 生成 Lean |
+|---|---|
+| `predicate` / `condition` / `regime` / `property` / `claim` | `def Statements.A.B.name (params) : Prop := …`。本体は Bool の式を Prop に読み替える(下)。再帰(`Totality` が受理した明示 fuel / 構造的再帰)は Model と同じ `if _h' :`・`match _hm' :` と `_ + m`・`termination_by` / `decreasing_by`(ガード付きの `Nat` の match を fuel に使う形(Model の `if` の連鎖)はまだ出さない) |
+| `claim bundle C { a, b: claimX, nested: D }` | `structure Statements.A.B.C : Prop where` の欄 `a : ∀ (params of a), Statements.A.B.a params`(仮引数が無ければ `Statements.A.B.a`)、`b : ∀ …, Statements.A.B.claimX …`、`nested : Statements.A.B.D`。欄名は項目のラベル(claim surface。C9 はこの欄名を数える) |
+| `input` | Model と同じく Lean の宣言にならない。それを(推移的に)使う spec 宣言は先頭に引数 `name'` を持ち、呼出しで引き回す。claim bundle は項目が使う input の和を引数に持つ(`structure Consensus (awake' : …) (proposer' : …) : Prop`) |
+| `&&` `\|\|` `!` `implies` | `∧` `∨` `¬` `→` |
+| `==` `!=` | `a = b` / `a ≠ b`。どちらかが Prop(量化・spec 宣言の呼出し・Prop に束ねた局所名を含む)なら `↔` / `¬ (… ↔ …)` |
+| `<` `<=` `>` `>=` | `Nat` / `Int` / `String` は `<` `≤` `>` `≥`、他の `order` 型は `Ord.compare a b = Ordering.lt` / `≠ Ordering.gt` / `= Ordering.gt` / `≠ Ordering.lt`(Model と同じく `Ord` だけで決める) |
+| `forall x: T { … }` / `exists x: T { … }` | `∀ («x» : T), …` / `∃ («x» : T), …` |
+| `true` / `false` | `True` / `False` |
+| spec 宣言の呼出し `P(x)` | `Statements.A.B.P x`(Prop) |
+| それ以外の Bool の値(fn の呼出し、stdlib の `all` / `any` / `contains` / `isEmpty` …、欄、局所名、Bool の `let`) | `(e) = true`(`e` は Model backend と同じ Lean) |
+| `if c { a } else { b }` | 条件が Bool の値なら `if c = true then a else b`(再帰する宣言では `if _h' : c = true then`)、条件が Prop なら `(c → a) ∧ (¬ c → b)` |
+| `let x = e; body` | `let «x» : T := e`(値)。型が Bool で `e` が Prop を含むなら `let «x» : Prop := e` とし、以後 `x` は Prop として読む |
+| `match` | 腕の本体を Prop にする。ガードは Model と同じ構造: 最初のガード付き腕 i より前の腕はそのまま、`\| _ =>` の中で `match s with \| p_i => (g → b) ∧ (¬ g → REST) \| _ => REST`(REST = i 以外の腕の match。`p_i` が必ず一致する形なら `\| _ => REST` は出さない)。ガード 1 つにつき残りの腕が 2 回現れ、到達しない腕は Lean が拒否する(Model と同じ既知の制限) |
+| 値の位置(fn の実引数・欄・コレクションの要素 …)の式 | Model backend と同じ Lean(`emitE`)。Prop(量化・spec 宣言の呼出し)をここに書くと Lean が拒否する(Prop は Bool に戻せない: 既知の制限) |
+
+受理例は `tests/accept/statements.naru`(量化・`let`・`if`・`match`・比較・input・入れ子の bundle・再帰)。生成 Lean の型検査は、生成 Model の olean を
+`--out` のディレクトリに作ってから(knowledge「生成コードの回帰」)。
+
+既知の制限: `∀` / `∃` は Lean の型の全要素を回る。`NaruStd.Set` / `NaruStd.Table` は昇順・重複なしのリストだが、その不変条件は型に
+入っていないので、`Set` / `Table` を含む型(`Run` の `honest` など)の量化は正規化されていない表現(重複・未整列)も含み、そこでは `size` や
+`==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、
+stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に整形性の前提を付ける(どちらも naru の表現力は変えない)。
+
 ## まだ無いもの
 
-E007・Statements backend(predicate / … / claim bundle は生成しない)・`protocol` 宣言の意味と stdlib の generic な `Event` / `Run`
-(「scenario と simulate」)・`import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)・
-型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と関数を持つ record(関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・
-Constants と interface binding の構文・naru で書いた stdlib(現状は上の表と Lean 側の `NaruStd`)・`derive finite` / `derive repr` の生成・
-enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)。
+E007・`protocol` 宣言の意味と stdlib の generic な `Event` / `Run`(「scenario と simulate」)・`import` の意味(現状は全ファイルが
+1 つの大域表。backend は参照からモジュールの依存を計算する)・型引数付きのユーザ宣言(`record R<T>`)・関数を返す fn と関数を持つ record
+(関数型は仮引数にだけ)・`let` のパターン(`let (a, b) = …`)・Constants と interface binding の構文(C15 の `generated/Statements/Review.lean`)・
+naru で書いた stdlib(現状は上の表と Lean 側の `NaruStd`)・Statements 用の stdlib(Safety / Liveness の一般概念・条件・regime。型引数が
+入るまでは `dsl/` に monomorphic に書く)・verified-consensus の Statements の移植(`dsl/` の claim bundle `Consensus`。C8 / C9)・
+`derive finite` / `derive repr` の生成・enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)・Bool の値が要る位置に
+置いた Prop(量化・spec 宣言の呼出し)の診断(いまは Lean が拒否する)・`Set` / `Table` の不変条件の型への取り込み(上の既知の制限)。
