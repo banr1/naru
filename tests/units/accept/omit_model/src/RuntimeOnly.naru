@@ -1,0 +1,7 @@
+// 受理例(C38): runtime 宣言だけのモジュール。`Model/Units/Omit/RuntimeOnly.lean`(record `Point` と fn `bump`)が生成され、
+// Statements ファイルは生成されない。他のモジュールの input の署名(`Inputs.origin` / `Inputs.scale`)がこの `Point` を参照する。
+module Units.Omit.RuntimeOnly
+
+record Point { x: Nat } derive eq
+
+fn bump(p: Point) -> Point { Point { x: p.x + 1 } }

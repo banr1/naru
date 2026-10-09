@@ -1,0 +1,10 @@
+// 受理例(C38): input だけのモジュール。input は Lean の宣言にならない(使う fn / spec 宣言の引数になる)ので、Model ファイルも
+// Statements ファイルも生成されない。`origin` の戻り型と `scale` の引数の型は別モジュール(RuntimeOnly)のユーザー定義型 `Point`:
+// この input を使う `User` の生成 Model / Statements は `Model.Units.Omit.Inputs` ではなく `Model.Units.Omit.RuntimeOnly` を import する。
+module Units.Omit.Inputs
+
+input seed() -> Nat
+
+input origin(n: Nat) -> Point
+
+input scale(p: Point) -> Nat

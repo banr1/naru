@@ -1,8 +1,11 @@
-// 設定変更プロジェクト(IDEAL.md C7 / C24 / C26 の検体)の唯一のモジュール。`naru.toml` は `sources = ["src"]`、`generated = "generated"`。
+// 設定変更プロジェクト(IDEAL.md C7 / C24 / C26 の検体)の runtime モジュール。`naru.toml` は `sources = ["src"]`、`generated = "generated"`。
 // `lake exe naru_test regression` が複製(`.lake/naru/test/regression/c7/`)の上で `value()` の本体の 1 を 2 に書き換え、`naru.toml` の
 // `generated` を "custom" に変えて `naru simulate src/Counter.naru` を走らせる。observer `current()` の行(`current() = 1` / `current() = 2`)が
 // 設定した生成先・Lake が読む Model・実行ファイルが同じ設定と現在のソースに対応することの観測で、ソースを不正にすると exit 非 0 で
 // この行を表示しない。値を決める行は下の 1 行だけ。
+// C38: observer `shifted()` は input だけのモジュール `Inputs` の `offset()`(scenario が 10 に束縛)を足す(`shifted() = 11` / `12`:
+// 既定以外の生成先でも input を渡した値を照合する)。`Inputs` と spec だけの `Rules` には Model ファイルができず、この `Model/Counter.lean` と
+// `Statements/{Counter,Rules}.lean` だけが生成される(ルートの集約ファイルはそれらだけを import する)。
 module Counter
 
 fn value() -> Nat { 1 }
@@ -12,6 +15,10 @@ predicate AtLeast(n: Nat) { n <= value() }
 
 observer current() -> Nat { value() }
 
+observer shifted() -> Nat { value() + offset() }
+
 scenario counter {
+  input offset() = 10;
   observe current();
+  observe shifted();
 }

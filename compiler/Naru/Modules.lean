@@ -9,7 +9,8 @@ import Naru.Backend.Statements
 
 - 同名のモジュール(2 つ以上のファイルが同じ `module A.B` を宣言する): それぞれのファイルの `module` 行(名前の位置)に E017。
   生成 Lean は 1 モジュール 1 ファイルなので同名は共存できない。構文解析の直後(名前解決の前)に検査する。
-- モジュールの循環: 生成 Model の import グラフ(`Backend.Model.modelGraph`: 出力する runtime 宣言が参照する他のモジュール)と
+- モジュールの循環: 生成 Model の import グラフ(`Backend.Model.modelGraph`: 出力する runtime 宣言が参照する、他のモジュールの出力される宣言。
+  input への参照は辺にならない)と
   生成 Statements の import グラフ(`Backend.Statements.specGraph`: spec 宣言が参照する他のモジュールの spec 宣言)のそれぞれで、
   循環に関与する辺 `A → B`(`A` から `B` へ参照があり、`B` から `A` に戻れる)ごとに、`A` の中でその参照を作る最初の宣言の、
   `B` の宣言への最初の参照(名前解決の索引 `Resolve.Ref`: 値の位置・型の位置の名前)の行・列に E017 を 1 つ出す。参照が
@@ -21,7 +22,7 @@ import Naru.Backend.Statements
 -/
 
 namespace Naru.Modules
-open Backend.Model (Env buildEnv declRefs emitted modelGraph)
+open Backend.Model (Env buildEnv declRefs emitted emittedKey modelGraph)
 open Backend.Statements (specGraph isSpecKey isSpecDecl)
 
 /-- 同名のモジュール: 同じ名前を宣言するすべてのファイルの `module` 行に E017(他の所在を列挙する)。 -/
@@ -101,10 +102,11 @@ def cyclesOf (env : Env) (mods : Array Module) (core : Array Core.Module) (refs 
   return out
 
 /-- モジュールの循環(E017): 生成 Model の import グラフと生成 Statements の import グラフのそれぞれで、循環に関与する辺ごとに 1 つ。
-名前解決と型検査を通った Core と、名前解決の参照の索引から計算する。 -/
+名前解決と型検査を通った Core と、名前解決の参照の索引から計算する。Model の辺を作るのは出力される runtime 宣言(`emitted`)から
+出力される宣言(`emittedKey`。input への参照は辺にならない: C38)への参照、Statements の辺は spec 宣言から spec 宣言への参照。 -/
 def cycles (mods : Array Module) (core : Array Core.Module) (refs : Array Resolve.Ref) : Array Diagnostic :=
   let env := buildEnv core #[]
-  cyclesOf env mods core refs (modelGraph env core) emitted (fun _ => true) "module" "refers" ++
+  cyclesOf env mods core refs (modelGraph env core) emitted (emittedKey env) "module" "refers" ++
     cyclesOf env mods core refs (specGraph env core) isSpecDecl (isSpecKey env) "the spec declarations of module" "refer"
 
 end Naru.Modules

@@ -12,6 +12,11 @@ spec 宣言(predicate / … / claim bundle)は Statements backend の仕事で�
 出力の規則(決定性のため、表に依存する順序は使わず、ソースの順と名前の順だけで並べる):
 - naru モジュール `A.B` → Lean モジュール `Model.A.B`(ファイル `Model/A/B.lean`)。宣言は `Model.A.B.name` と
   完全修飾で参照する(Lean core の名前と衝突しない)。モジュール同士の参照は `import` になるので循環は E017。
+- Model ファイルを出すのは、実際に Lean の runtime 宣言(`emitted`: type / record / state / enum / fn / observer / scenario)を出力する
+  モジュールだけ(`modelModules`。IDEAL.md C38)。spec 宣言だけ・input だけ・宣言の無いモジュールからはコメントと import だけのファイルを
+  作らない。`import` も出力される宣言への参照からだけ数える(`moduleDeps`: input は Lean の宣言にならないので、input の宣言元のモジュールは
+  import せず、その署名が参照する型のモジュールを import する)。ルート `Model.lean` は集約ファイルの例外で、宣言が無くても生成し、
+  存在する Model モジュールだけを import する。意味検査(名前解決・phase・同名のモジュール)は出力の省略にかかわらず全入力を対象にする。
 - 1 モジュールの中では宣言を依存順に並べる。互いに参照する宣言(相互再帰の enum / fn)は `mutual … end`。
 - 型: `Nat` `Int` `Bool` `String` `Unit` はそのまま、`Option<T>` → `Option T`、`List<T>` → `List T`、
   `Result<T, E>` → `NaruStd.Result T E`、`Set<T>` → `NaruStd.Set T`、`Table<K, V>` → `NaruStd.Table K V`、
@@ -488,6 +493,18 @@ def isTypeDecl : Core.Decl → Bool
 def emitted (d : Core.Decl) : Bool :=
   d.phase == .runtime && !(isInput d) && (isTypeDecl d || isRuntimeValue d)
 
+/-- 修飾名 `k` の宣言が Model に Lean の宣言として出力されるか(input・spec 宣言・未知の名前は false)。生成 Model / Statements の `import` と
+共通の循環検査(`Modules.lean`)は、この宣言への参照だけをモジュール同士の依存に数える(C38: input の宣言元に生成実体が無くても import しない)。 -/
+def emittedKey (env : Env) (k : String) : Bool :=
+  match env.decls.get? k with
+  | some d => emitted d
+  | none => false
+
+/-- Model ファイルになるモジュール(runtime 宣言を 1 つ以上出力するもの。ソースの順)。それ以外(spec だけ・input だけ・宣言なし)は
+ファイルを出さず、ルート `Model.lean` も import しない(C38)。 -/
+def modelModules (mods : Array Core.Module) : List Core.Module :=
+  mods.toList.filter fun m => m.decls.any emitted
+
 /-- input の修飾名 → それを引き回す引数の型(`(T1 → … → U)`。仮引数 0 個なら `U`)。 -/
 def inputTy (env : Env) (ik : String) : String :=
   match env.decls.get? ik with
@@ -639,20 +656,23 @@ def header (info : Meta) (source hash : String) : String :=
   s!"-- naru-source: {source} sha256:{hash}\n" ++
   s!"-- naru-unit: sha256:{info.unitHash}\n"
 
-/-- モジュールの出力する宣言(`emitted`)が参照する他のモジュール(名前順、重複なし)= 生成 Model の `import`。 -/
+/-- モジュールの出力する宣言(`emitted`)が参照する、他のモジュールの出力される宣言(`emittedKey`)のモジュール(名前順、重複なし)
+= 生成 Model の `import`。input への参照は数えない(input は Lean の宣言にならず、宣言元のモジュールに Model ファイルが無いこともある。
+その署名が参照する型は `declRefs` が含めるので、型のモジュールは import する)。 -/
 def moduleDeps (env : Env) (m : Core.Module) : List (List String) := Id.run do
   let mut out : List (List String) := []
   for d in m.decls do
     if !(emitted d) then continue
     for r in declRefs env d do
+      if !(emittedKey env r) then continue
       if let some other := env.moduleOf.get? r then
         if other != m.name && !out.contains other then out := out ++ [other]
   return out.mergeSort fun a b => renderPath a ≤ renderPath b
 
-/-- 生成 Model のモジュール同士の依存グラフ: (モジュール名, import する他のモジュール)。`emitModel` の import と、生成前の共通検査
+/-- 生成 Model のモジュール同士の依存グラフ: (Model ファイルになるモジュール名, import する他のモジュール)。`emitModel` の import と、生成前の共通検査
 (`Modules.lean`、E017: 循環)は同じこの関数で計算する(生成の規則を変えるときは両方が自動で揃う)。 -/
 def modelGraph (env : Env) (mods : Array Core.Module) : List (List String × List (List String)) :=
-  mods.toList.map fun m => (m.name, moduleDeps env m)
+  (modelModules mods).map fun m => (m.name, moduleDeps env m)
 
 def buildEnv (mods : Array Core.Module) (recs : Array Totality.Recursion) : Env := Id.run do
   let mut env : Env := {}
@@ -707,7 +727,12 @@ def findCycle (deps : List (List String × List (List String))) : Option (List (
           stack := (n, path ++ [n]) :: stack
   return none
 
-/-- Core のモジュール列から生成ファイル(`generated/` からの相対パス、内容)を作る。
+/-- ルート `Model.lean` の説明(複数のソースルートを束ねる `Main.lean` の `mergeUnits` も同じ文を書く)。 -/
+def rootNote : String :=
+  "/-! Generated Model: one Lean module per naru module that declares runtime types / functions / observers / scenarios (modules with only spec declarations, only inputs, or no declarations produce no Model file; this root imports exactly the generated Model modules). Build with `lake build Model`. -/\n"
+
+/-- Core のモジュール列から生成ファイル(`generated/` からの相対パス、内容)を作る。Model ファイルになるのは runtime 宣言を出力する
+モジュールだけ(`modelModules`。C38)で、ルート `Model.lean` はそれらだけを import する。
 同名のモジュールと import の循環(E017)は生成前の共通検査(`Modules.lean`。`Driver.compileSources` が走らせ、実在する行・列に出す)が
 退けるのでここには届かない。ここの検査は安全網(届けばコンパイラの不変条件の破れ。位置なし)。 -/
 def emitModel (mods : Array Core.Module) (recs : Array Totality.Recursion) (info : Meta) :
@@ -727,7 +752,8 @@ def emitModel (mods : Array Core.Module) (recs : Array Totality.Recursion) (info
     throw { file := (first.map (·.file)).getD "", span := {}, code := Code.moduleStructure,
             msg := s!"internal: modules refer to each other in a cycle ({" → ".intercalate names}) (the common module check should have reported this before generation)" }
   let mut files : Array (String × String) := #[]
-  for m in mods do
+  let outMods := modelModules mods
+  for m in outMods do
     let hash := (info.fileHashes.lookup m.file).getD ""
     let imports := "import NaruStd\n" ++ "".intercalate (((deps.lookup m.name).getD []).map fun n => s!"import {leanModule n}\n")
     let groups := orderGroups env (m.decls.toList.filter emitted)
@@ -737,10 +763,9 @@ def emitModel (mods : Array Core.Module) (recs : Array Totality.Recursion) (info
     let body := if bodyParts.isEmpty then "" else "\n" ++ "\n\n".intercalate bodyParts ++ "\n"
     let content := header info (info.display m.file) hash ++ imports ++ s!"\n/-! naru module `{renderPath m.name}` ({info.display m.file}) -/\n" ++ body
     files := files.push (modulePath m.name, content)
-  -- ルート `Model.lean`: 全モジュールを import する
-  let rootImports := "".intercalate (mods.toList.map fun m => s!"import {leanModule m.name}\n")
-  let root := header info "all sources" info.unitHash ++ rootImports ++
-    "\n/-! Generated Model: one Lean module per naru module. Build with `lake build Model`. -/\n"
+  -- ルート `Model.lean`(集約ファイルの例外: 宣言が無くても生成する): 存在する Model モジュールだけを import する
+  let rootImports := "".intercalate (outMods.map fun m => s!"import {leanModule m.name}\n")
+  let root := header info "all sources" info.unitHash ++ rootImports ++ "\n" ++ rootNote
   files := files.push ("Model.lean", root)
   return files
 

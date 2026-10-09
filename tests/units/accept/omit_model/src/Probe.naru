@@ -1,0 +1,10 @@
+// 受理例(C38): 別モジュール(Inputs)の input だけを通して RuntimeOnly の `Point` に依存する。このファイルは `Point` を名指ししない
+// (`origin` の戻り型と `scale` の引数の型が `Point`)。生成 Model / Statements は input の引数 `origin'` / `scale'` の型に
+// `Model.Units.Omit.RuntimeOnly.Point` を書くので、input の署名が参照する型のモジュール RuntimeOnly を import しなければならない
+// (宣言元の `import Model.Units.Omit.Inputs` はそのファイルが無いので出ない)。`naru_test regression` がこの import と型検査、
+// input を渡した `probe` の値(seed 4 → origin → x = 5 → scale → 50)を照合する。
+module Units.Omit.Probe
+
+fn probe() -> Nat { scale(origin(seed())) }
+
+predicate Probed(n: Nat) { probe() == n }

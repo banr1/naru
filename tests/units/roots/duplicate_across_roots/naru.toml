@@ -1,0 +1,7 @@
+# ソースルートをまたぐ同名のモジュールの反例(IDEAL.md C38 / C18): ルート `a` の spec だけのモジュールとルート `b` の runtime だけのモジュールが
+# 同じ `module Units.Roots.Same` を宣言する。生成の省略で生成パスは衝突しない(片方は Statements だけ、片方は Model だけ)が、意味検査は全入力が
+# 対象: `naru compile`(cwd = このディレクトリの複製。`naru_test regression` が走らせる)は全ルートの module を束ねた共通検査で両方の `module` 行
+# (行末の `// E017` の印)に E017 を出して exit 1 になり、生成先 `generated/` には何も書かない。言語サーバーの単位は 1 つのルートなので、
+# この反例は CLI だけが検出する。
+sources = ["a", "b"]
+generated = "generated"

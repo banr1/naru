@@ -153,4 +153,120 @@ def listUnits (kind : String) : IO (List UnitFixture) := do
     out := out ++ [u]
   return out
 
+/-! ## 生成 Model / Statements の省略の規則(IDEAL.md C38)
+
+Model ファイルは Lean の runtime 宣言を実際に出力するモジュール(`Backend.Model.emitted` な宣言が 1 つ以上)にだけ、Statements ファイルは
+spec 宣言のあるモジュールにだけでき、ルートの集約ファイル `Model.lean` / `Statements.lean` は宣言が無くても生成されて、存在する生成モジュールだけを
+import する。`statements` 群(`generated/`)と `regression`(`tests/units/accept/omit_model` と設定変更プロジェクトの `custom/`)が同じ
+`checkOmission` で、生成ファイルの有無・ルートの import・全 import の実在・全宣言の出現を Core と照合する。 -/
+
+/-- 生成ファイルの `import` 行のモジュール名(ファイルの順)。 -/
+def importsOf (content : String) : List String :=
+  (content.splitOn "\n").filterMap fun l =>
+    if l.startsWith "import " then some ((l.drop "import ".length).toString.trimAscii.toString) else none
+
+/-- 生成 Lean の宣言の頭(`def` / `structure` / `inductive` / `abbrev` で始まる行)の完全修飾名。 -/
+def declHeads (content : String) : List String :=
+  (content.splitOn "\n").filterMap fun l =>
+    ["def ", "structure ", "inductive ", "abbrev "].findSome? fun kw =>
+      if l.startsWith kw then ((l.drop kw.length).toString.splitOn " ").head? else none
+
+/-- 生成モジュール名 → 生成先からの相対パス(`Model.A.B` → `Model/A/B.lean`。`«»` は外す)。 -/
+def modulePathOf (m : String) : String :=
+  ((m.replace "«" "").replace "»" "").replace "." "/" ++ ".lean"
+
+/-- モジュールが Model ファイルを出さない理由(出すなら none): 宣言なし / input だけ / spec 宣言(と input)だけ。 -/
+def omissionReason (m : Naru.Core.Module) : Option String :=
+  if m.decls.any Naru.Backend.Model.emitted then none
+  else if m.decls.isEmpty then some "no declarations"
+  else if m.decls.all Naru.Backend.Model.isInput then some "only inputs"
+  else if m.decls.any Naru.Backend.Model.isInput then some "only spec declarations and inputs"
+  else some "only spec declarations"
+
+/-- C38: 生成先 `out` の Model / Statements が Core のモジュール・宣言と対応することを照合する(`label` は項目の接頭辞):
+- Model ファイルは runtime 宣言を出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけある(Core に無いモジュールの
+  ファイル・旧構成の生成物も無い)。
+- ルート `Model.lean` / `Statements.lean` はあり(宣言が無くても)、存在する生成モジュールをちょうど import する。
+- 生成ファイルの全 `import` が `NaruStd` か実在する生成ファイル(存在しない生成モジュールへの import は 0 件)。
+- 出力される runtime 宣言のすべてが Model ファイルに、spec 宣言のすべてが Statements ファイルに宣言の頭として現れる(ファイル数の減少で欠落を見逃さない)。
+返り値: (Model ファイルになった生成モジュール名, 省いた naru モジュール名と理由)。 -/
+def checkOmission (label : String) (out : System.FilePath) (core : Array Naru.Core.Module) :
+    M (List String × List (String × String)) := do
+  let mut present : List String := []
+  let mut specPresent : List String := []
+  let mut omitted : List (String × String) := []
+  let mut bad : List String := []
+  let mut missingDecls : List String := []
+  let mut nRuntime := 0
+  let mut nSpec := 0
+  for m in core do
+    let modelFile := out / System.FilePath.mk (Naru.Backend.Model.modulePath m.name)
+    let stmtFile := out / System.FilePath.mk (Naru.Backend.Statements.stmtPath m.name)
+    let wantModel := (omissionReason m).isNone
+    let wantSpec := m.decls.any Naru.Backend.Statements.isSpecDecl
+    let hasModel ← modelFile.pathExists
+    let hasStmt ← stmtFile.pathExists
+    if hasModel != wantModel then
+      bad := bad ++ [if wantModel then s!"{modelFile} is missing (the module outputs runtime declarations)"
+                     else s!"{modelFile} exists although the module outputs no runtime declaration"]
+    if hasStmt != wantSpec then
+      bad := bad ++ [if wantSpec then s!"{stmtFile} is missing (the module has spec declarations)"
+                     else s!"{stmtFile} exists although the module has no spec declaration"]
+    match omissionReason m with
+    | none => present := present ++ [Naru.Backend.Model.leanModule m.name]
+    | some why => omitted := omitted ++ [(Naru.renderPath m.name, why)]
+    if wantSpec then specPresent := specPresent ++ [Naru.Backend.Statements.stmtModule m.name]
+    if wantModel && hasModel then
+      let heads := declHeads (← IO.FS.readFile modelFile)
+      for d in m.decls do
+        if Naru.Backend.Model.emitted d then
+          nRuntime := nRuntime + 1
+          let want := Naru.Backend.Model.leanName d.key
+          if !(heads.contains want) then missingDecls := missingDecls ++ [s!"{want} ({modelFile})"]
+    if wantSpec && hasStmt then
+      let heads := declHeads (← IO.FS.readFile stmtFile)
+      for d in m.decls do
+        if Naru.Backend.Statements.isSpecDecl d then
+          nSpec := nSpec + 1
+          let want := Naru.Backend.Statements.stmtName d.key
+          if !(heads.contains want) then missingDecls := missingDecls ++ [s!"{want} ({stmtFile})"]
+  -- 生成先のファイル集合は期待とちょうど一致する(Core に無いモジュールのファイル・旧構成の生成物が無い)
+  let expectedFiles := present.map modulePathOf ++ specPresent.map modulePathOf ++ ["Model.lean", "Statements.lean"]
+  let mut actual : List String := []
+  for sub in ["Model", "Statements"] do
+    let files ← Naru.listFiles (out / sub) "lean"
+    actual := actual ++ files.map fun (f : String) => (f.drop (out.toString.length + 1)).toString
+    if ← (out / (sub ++ ".lean")).pathExists then actual := actual ++ [sub ++ ".lean"]
+  let stray := actual.filter fun f => !expectedFiles.contains f
+  let absent := expectedFiles.filter fun f => !actual.contains f
+  if bad.isEmpty && stray.isEmpty && absent.isEmpty then
+    ok s!"{label}: Model files exactly for the {present.length} module(s) with runtime declarations and Statements files exactly for the {specPresent.length} module(s) with spec declarations ({actual.length} files); no Model file for {omitted.length} module(s): {omitted.map fun (n, why) => s!"{n} ({why})"}"
+  else fail s!"{label}: generated file layout: {bad ++ stray.map (fun f => s!"stray {f}") ++ absent.map (fun f => s!"absent {f}")}"
+  -- ルートの集約ファイル: 宣言が無くても生成され、存在する生成モジュールをちょうど import する
+  for (sub, want) in [("Model", present), ("Statements", specPresent)] do
+    let rootFile := out / (sub ++ ".lean")
+    if !(← rootFile.pathExists) then
+      fail s!"{label}: {rootFile} is missing (the root aggregate file is generated even without declarations)"
+    else
+      let imps := importsOf (← IO.FS.readFile rootFile)
+      if imps.mergeSort (· ≤ ·) == want.mergeSort (· ≤ ·) then
+        ok s!"{label}: {rootFile} imports exactly the {want.length} generated {sub} module(s)"
+      else fail s!"{label}: {rootFile} imports {imps} but the generated {sub} modules are {want}"
+  -- 全 import が実在する
+  let mut unresolved : List String := []
+  let mut nImports := 0
+  for f in actual do
+    for i in importsOf (← IO.FS.readFile (out / f)) do
+      nImports := nImports + 1
+      if i == "NaruStd" || i.startsWith "NaruStd." then continue
+      if !(← (out / System.FilePath.mk (modulePathOf i)).pathExists) then unresolved := unresolved ++ [s!"{f}: import {i}"]
+  if unresolved.isEmpty then
+    ok s!"{label}: all {nImports} imports of the {actual.length} generated files resolve to NaruStd or an existing generated file (0 imports of a non-existent generated module)"
+  else fail s!"{label}: imports of non-existent generated modules: {unresolved} ({nImports} imports scanned)"
+  -- 宣言の欠落なし(宣言の無い単位では 0 件: ルートの集約ファイルだけが生成される)
+  if missingDecls.isEmpty then
+    ok s!"{label}: all {nRuntime} emitted runtime declaration(s) appear in the Model files and all {nSpec} spec declaration(s) in the Statements files (no declaration lost with the omitted files)"
+  else fail s!"{label}: declarations missing from the generated files: {missingDecls.take 10} ({nRuntime} runtime / {nSpec} spec expected)"
+  return (present, omitted)
+
 end NaruTest

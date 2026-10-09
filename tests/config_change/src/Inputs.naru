@@ -1,0 +1,5 @@
+// 設定変更プロジェクト(IDEAL.md C38 の検体): input だけのモジュール。Lean の宣言を出力しないので、有効な生成先(既定の `generated/` でも
+// 設定した `custom/` でも)に `Model/Inputs.lean` は生成されず、`Counter`(observer `shifted()`)/ `Rules` の生成 Lean は引数 `offset'` で受け取る。
+module Inputs
+
+input offset() -> Nat

@@ -1,0 +1,4 @@
+// 反例(C38 / C18): runtime 宣言のモジュール(Model ファイルを出す)が、Claims.naru と同じモジュール名を宣言する。
+module Units.Omit.Same   // E017
+
+fn one() -> Nat { 1 }

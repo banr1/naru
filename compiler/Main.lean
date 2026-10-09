@@ -18,7 +18,9 @@ import Naru
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
 ソースのパスはソースルートからの相対で書く(ルートのディレクトリ名を含まない: C1 / C24)。
-`--out <dir>` は `<dir>/Model.lean` と `<dir>/Model/`、`<dir>/Statements.lean` と `<dir>/Statements/` を作り直す(他は触らない)。
+生成先(`naru.toml` の `generated` も `--out <dir>` も同じ `writeGenerated`)は `Model.lean` と `Model/`、`Statements.lean` と `Statements/` を
+丸ごと作り直す(他は触らない)ので、旧パスの生成物や、以前の規則で出ていた不要なファイルは残らない(C38)。Model ファイルは runtime 宣言を
+出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけでき、ルートの集約ファイルは存在するものだけを import する。
 
 ホーム(リポジトリのルート)と Lake: `naru.toml` は cwd のものを読む。stdlib / コンパイラ(ヘッダの hash)、`naru simulate` の実行入口と
 `lake build`、Lake が読む生成ソースの link は、実行ファイル `<ホーム>/.lake/build/bin/naru` の場所から求めたホームのもの(`findHome`)。
@@ -197,7 +199,8 @@ def linkGenerated (who : String) (home : Home) (generated : System.FilePath) : I
   return true
 
 /-- 複数の単位の生成ファイルを 1 つの生成先に束ねる。各単位のルートファイル(`Model.lean` / `Statements.lean`)は、全単位の
-モジュールを import するものに置き換える。同じパスのファイルが 2 つの単位から出たら誤り(同名のモジュール)。 -/
+モジュールを import するものに置き換える。同じパスのファイルが 2 つの単位から出たら誤り(同名のモジュール。`compileAll` の共通検査が先に
+E017 で退けるので、ここは安全網)。 -/
 def mergeUnits (who : String) (units : List (Backend.Model.Meta × Array (String × String) × Array (String × String))) :
     IO (Option (Array (String × String))) := do
   match units with
@@ -222,11 +225,9 @@ def mergeUnits (who : String) (units : List (Backend.Model.Meta × Array (String
     let some (info, _, _) := units.head? | return none
     let all := { info with unitHash := hashUnit unitHashes }
     let modelRoot := Backend.Model.header all "all sources" all.unitHash ++
-      "".intercalate (modelMods.map fun m => s!"import {m}\n") ++
-      "\n/-! Generated Model: one Lean module per naru module. Build with `lake build Model`. -/\n"
+      "".intercalate (modelMods.map fun m => s!"import {m}\n") ++ "\n" ++ Backend.Model.rootNote
     let stmtRoot := Backend.Model.header all "all sources" all.unitHash ++
-      "".intercalate (stmtMods.map fun m => s!"import {m}\n") ++
-      "\n/-! Generated Statements: one Lean module per naru module that declares predicates / conditions / regimes / properties / claims / claim bundles. Imports only NaruStd and the generated Model (never Proofs). Build with `lake build Statements`. -/\n"
+      "".intercalate (stmtMods.map fun m => s!"import {m}\n") ++ "\n" ++ Backend.Statements.rootNote
     return some (files.push ("Model.lean", modelRoot) |>.push ("Statements.lean", stmtRoot))
 
 /-- `naru.toml` の全単位を検査して生成先に書き、Lake が読む生成ソースの link をその生成先に向ける(`compile` と `simulate` が共用)。
@@ -247,6 +248,15 @@ def compileAll (who : String) (home : Home) (cfg : Config) : IO (Option (List (U
     generated := generated ++ [(info, model, statements)]
     nModel := nModel + model.size
     nStatements := nStatements + statements.size
+  -- C18 / C38: ソースルートをまたぐ同名のモジュール(E017)。各単位の検査は単位の中の同名しか見ないので、全単位の module を束ねて同じ共通検査
+  -- (`Modules.duplicates`)に掛け、各ファイルの `module` 行に出す。生成の省略で生成パスがぶつからない組(spec だけ + runtime だけ、input だけ、
+  -- 宣言なし)も意味検査としては同名で退ける(`mergeUnits` のパスの衝突は安全網)
+  let allMods := results.foldl (init := (#[] : Array Module)) fun acc (_, c) => acc ++ c.mods
+  let dups := Modules.duplicates allMods
+  if !dups.isEmpty then
+    for d in dups do IO.eprintln d.render
+    IO.eprintln s!"{who}: {dups.size} error(s)"
+    return none
   let some files ← mergeUnits who generated | return none
   writeGenerated cfg.generatedPath files
   if !(← linkGenerated who home cfg.generatedPath) then return none

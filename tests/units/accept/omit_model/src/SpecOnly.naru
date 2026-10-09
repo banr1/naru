@@ -1,0 +1,9 @@
+// 受理例(C38): spec 宣言だけのモジュール。`Statements/Units/Omit/SpecOnly.lean` は生成され(runtime の `bump` を使うので
+// `Model.Units.Omit.RuntimeOnly` を import する)、`Model/Units/Omit/SpecOnly.lean` は生成されない(コメントと import だけの Model ファイルを作らない)。
+module Units.Omit.SpecOnly
+
+predicate Shifted(p: Point) { bump(p).x > p.x }
+
+claim alwaysShifted(p: Point) { Shifted(p) }
+
+claim bundle Shifting { alwaysShifted }

@@ -203,9 +203,13 @@ claim bundle Guarantees { helper }   // E016(fn は項目にできない)
 
 同名のモジュールと、モジュール同士の循環参照(runtime 宣言の参照は生成 Model の import、spec 宣言の参照は生成 Statements の import になる)。
 生成前の共通検査(`compiler/Naru/Modules.lean`)が出すので、CLI と言語サーバーが同じ行・列に出す。複数ファイルの検体は `tests/units/reject/`
-(`module_duplicate` / `runtime_cycle` / `spec_cycle` / `inferred_cycle`。[testing.md](testing.md))。
+(`module_duplicate` / `runtime_cycle` / `spec_cycle` / `inferred_cycle` / `omitted_duplicate`。[testing.md](testing.md))。
 
-- 同名のモジュール: 同じ名前を宣言するすべてのファイルの `module` 行(名前の位置)に 1 つずつ。メッセージが他の所在を列挙する。
+- 同名のモジュール: 同じ名前を宣言するすべてのファイルの `module` 行(名前の位置)に 1 つずつ。メッセージが他の所在を列挙する。出力の省略
+  (Model ファイルを出さない spec だけのモジュールなど。C38)にかかわらず全入力が対象で、`naru compile` のソースルートが複数ならルートをまたぐ同名も
+  (全ルートの module を束ねて)同じ検査で出す(`tests/units/roots/duplicate_across_roots`。言語サーバーの単位は 1 つのルート)。
+- 循環の辺を作るのは、出力される宣言への参照だけ。input への参照は辺にならない(input は Lean の宣言にならず、その宣言元のモジュールは import しない。
+  input の署名が参照する型のモジュールへの依存は辺になる)。
 - 循環: 循環に関与する辺 `A → B`(`A` の宣言が `B` の宣言を参照し、`B` から `A` に戻れる)ごとに、`A` の中でその参照を作る最初の宣言の、
   `B` への最初の参照(呼出し・型の位置の名前など)の行・列に 1 つ。メッセージが宣言と参照先、循環の経路を示す。循環のすべての辺に出るので、
   どれか 1 つの辺を解消すれば関係するファイルすべての診断が消える(言語サーバーでは `didChange` で関係する URI すべてが空になる)。

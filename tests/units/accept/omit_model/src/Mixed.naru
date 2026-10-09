@@ -1,0 +1,7 @@
+// 受理例(C38): runtime と spec が混在するモジュール。`Model/Units/Omit/Mixed.lean`(fn `twice`)と
+// `Statements/Units/Omit/Mixed.lean`(predicate `Even`。`Model.Units.Omit.Mixed` を import する)の両方が生成される。
+module Units.Omit.Mixed
+
+fn twice(n: Nat) -> Nat { n * 2 }
+
+predicate Even(n: Nat) { twice(n) == n + n }

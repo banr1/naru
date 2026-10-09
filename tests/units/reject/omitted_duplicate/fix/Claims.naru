@@ -1,0 +1,4 @@
+// 重複を解消した Claims(C38 / C18): 別のモジュール名を宣言する。didChange でこの内容にすると Claims / Runtime の E017 が消える。
+module Units.Omit.SameSpec
+
+predicate Positive(n: Nat) { n > 0 }

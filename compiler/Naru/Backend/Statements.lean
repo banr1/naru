@@ -26,7 +26,9 @@ runtime 宣言は Model backend(`Backend/Model.lean`)の仕事で、ここでは
   `label : ∀ (params of the claim), Statements.X.claim params`(仮引数が無ければ `Statements.X.claim`)、入れ子の bundle は
   `label : Statements.X.bundle`。欄の名前は項目のラベル(claim surface。C9 はこの欄名を数える)。
 - `input` は Model と同じく Lean の宣言にならない。それを(推移的に)使う spec 宣言は先頭に引数 `name'` を持ち、呼出しで引き回す。
-  claim bundle は項目が使う input の和を引数に持つ。
+  claim bundle は項目が使う input の和を引数に持つ。input の宣言元のモジュールは import しない(そのモジュールに Model ファイルが無いことがある。
+  C38)。input の署名が参照する型のモジュールは import する。生成 Model を import するのは、出力される runtime 宣言(`Model.emittedKey`)への
+  参照があるモジュールだけ。ルート `Statements.lean` は集約ファイルの例外で、spec 宣言のあるモジュールが無くても生成する。
 - 生成ファイルの先頭 5 行は Model と同じヘッダ(コンパイラ版・stdlib 版・ソース hash・単位 hash)。
 
 Prop と Bool の境界(C35): Bool の値が要る位置(fn / メソッドの実引数・欄・コレクションの要素・lambda の本体・scrutinee・算術 / 比較の
@@ -297,8 +299,9 @@ def emitSpecGroup (env : Env) (g : List Core.Decl) : String :=
 
 /-! ## モジュール -/
 
-/-- モジュールの spec 宣言(と、それが使う input の署名)が参照する他のモジュール: (runtime のモジュール, spec のモジュール)。
-名前順、重複なし。 -/
+/-- モジュールの spec 宣言(と、それが使う input の署名)が参照する他のモジュール: (出力される runtime 宣言のモジュール = 生成 Model の import,
+spec のモジュール = 生成 Statements の import)。名前順、重複なし。input への参照は数えない(input は Lean の宣言にならず、宣言元に Model ファイルが
+無いこともある。C38)。 -/
 def specModuleDeps (env : Env) (m : Core.Module) : List (List String) × List (List String) := Id.run do
   let mut rt : List (List String) := []
   let mut sp : List (List String) := []
@@ -308,7 +311,7 @@ def specModuleDeps (env : Env) (m : Core.Module) : List (List String) × List (L
       if let some other := env.moduleOf.get? r then
         if isSpecKey env r then
           if other != m.name && !sp.contains other then sp := sp ++ [other]
-        else
+        else if emittedKey env r then
           if !rt.contains other then rt := rt ++ [other]
   return (rt.mergeSort fun a b => renderPath a ≤ renderPath b, sp.mergeSort fun a b => renderPath a ≤ renderPath b)
 
@@ -321,9 +324,13 @@ def specModules (mods : Array Core.Module) : List Core.Module :=
 def specGraph (env : Env) (mods : Array Core.Module) : List (List String × List (List String)) :=
   (specModules mods).map fun m => (m.name, (specModuleDeps env m).2)
 
+/-- ルート `Statements.lean` の説明(`Main.lean` の `mergeUnits` も同じ文を書く)。 -/
+def rootNote : String :=
+  "/-! Generated Statements: one Lean module per naru module that declares predicates / conditions / regimes / properties / claims / claim bundles (this root imports exactly the generated Statements modules). Imports only NaruStd and the generated Model (never Proofs). Build with `lake build Statements`. -/\n"
+
 /-- Core のモジュール列から生成 Statements(`generated/` からの相対パス、内容)を作る。spec 宣言のあるモジュールだけ
-ファイルになり、ルート `Statements.lean` がそれらを import する。同名のモジュールと spec の循環(E017)は生成前の共通検査
-(`Modules.lean`)が退けるので届かない(ここの循環検査は安全網)。 -/
+ファイルになり、ルート `Statements.lean`(集約ファイルの例外: spec 宣言が無くても生成する)がそれらだけを import する。同名のモジュールと
+spec の循環(E017)は生成前の共通検査(`Modules.lean`)が退けるので届かない(ここの循環検査は安全網)。 -/
 def emitStatements (mods : Array Core.Module) (recs : Array Totality.Recursion) (info : Meta) :
     Except Diagnostic (Array (String × String)) := do
   let env := buildEnv mods recs
@@ -346,8 +353,7 @@ def emitStatements (mods : Array Core.Module) (recs : Array Totality.Recursion) 
       s!"\n/-! naru module `{renderPath m.name}` ({info.display m.file}): spec declarations (predicate / condition / regime / property / claim / claim bundle) -/\n" ++ body
     files := files.push (stmtPath m.name, content)
   let rootImports := "".intercalate (specMods.map fun m => s!"import {stmtModule m.name}\n")
-  let root := header info "all sources" info.unitHash ++ rootImports ++
-    "\n/-! Generated Statements: one Lean module per naru module that declares predicates / conditions / regimes / properties / claims / claim bundles. Imports only NaruStd and the generated Model (never Proofs). Build with `lake build Statements`. -/\n"
+  let root := header info "all sources" info.unitHash ++ rootImports ++ "\n" ++ rootNote
   files := files.push ("Statements.lean", root)
   return files
 

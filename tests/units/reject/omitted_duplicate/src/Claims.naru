@@ -1,0 +1,7 @@
+// 反例(C38 / C18): spec 宣言だけのモジュール(Model ファイルを出さない)が、Runtime.naru と同じモジュール名を宣言する。
+// 出力を省くモジュールでも同名のモジュールは共通の意味検査(全入力が対象)が退ける: 両方のファイルの `module` 行に E017。
+// 行末の `// E017` はその行に E017 が出る印。
+// 期待: `lake exe naru compile tests/units/reject/omitted_duplicate/src/Claims.naru tests/units/reject/omitted_duplicate/src/Runtime.naru` が exit 非 0 で E017
+module Units.Omit.Same   // E017
+
+predicate Positive(n: Nat) { n > 0 }

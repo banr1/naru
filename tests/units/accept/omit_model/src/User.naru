@@ -1,0 +1,25 @@
+// 受理例(C38): 別モジュール(Inputs)の input を runtime と spec の宣言から使う。Inputs には生成実体が無いが、input は引数
+// `seed'` / `origin'` / `scale'` として受け渡され、その署名が参照する型 `Point` のモジュール RuntimeOnly を import する
+// (`import Model.Units.Omit.Inputs` は出ない: そのファイルは存在しない)。scenario は input に値を与えて observer を表示する
+// (`naru_test regression` が `current() = 5` と、input を渡した `start` / `size` の値、`Seeded` / `Shifted` の真偽を照合する)。
+module Units.Omit.User
+
+fn start() -> Point { origin(seed()) }
+
+fn size(p: Point) -> Nat { scale(p) + p.x }
+
+predicate Seeded(p: Point) { p.x == seed() }
+
+claim startSeeded { Seeded(start()) }
+
+observer current() -> Nat { start().x }
+
+observer scaled() -> Nat { size(start()) }
+
+scenario run {
+  input seed() = 4;
+  input origin(n) = Point { x: n + 1 };
+  input scale(p) = p.x * 10;
+  observe current();
+  observe scaled();
+}

@@ -1,0 +1,7 @@
+# 複数ファイルの受理例(IDEAL.md C38): Model backend は Lean の runtime 宣言を実際に出力するモジュールにだけ Model ファイルを出す。
+# `src/**/*.naru` が 1 つのコンパイル単位: `RuntimeOnly`(runtime だけ → Model だけ)、`SpecOnly`(spec だけ → Statements だけ)、
+# `Mixed`(両方 → 両方)、`Inputs`(input だけ → どちらも無し)、`Empty`(宣言なし → どちらも無し)、`User`(Inputs の input を runtime / spec から
+# 使う。input の宣言元に生成実体が無くても引数として受け渡し、input の署名が参照する型のモジュール RuntimeOnly を import する)。
+# `naru_test regression` が生成ファイルの有無・ルートの集約ファイルの import・宣言の構造・Lean のビルドと input を渡した実際の値を照合し、
+# `naru_test lsp` は全ファイルの didOpen で診断 0 件を確かめる。
+sources = ["src"]

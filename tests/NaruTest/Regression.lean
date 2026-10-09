@@ -31,6 +31,22 @@ import NaruTest.Repo
    Beta の runtime を、Beta の spec が Alpha の spec を使う: Model と Statements の import グラフを別々に見るので循環しない)は exit 0 で、`--out` に生成した
    Model / Statements の全ファイル(ルートの集約ファイルを含む)が import の順に Lean で型検査できる。LSP が同じ箇所に返し `fix/` の didChange で消えることは
    `lsp` 群が照合する。
+   C38 の Model の生成省略(`checkOmissionUnit`): 受理例 `accept/omit_model`(runtime だけ / spec だけ / 両方 / input だけ / 宣言なし / 別モジュールの input を
+   runtime と spec から使う `User`。input の戻り型・引数の型は別モジュールのユーザー定義型)を `--out` に生成し、`NaruTest.checkOmission` で Model ファイルは
+   runtime 宣言を出力するモジュールにだけ・Statements ファイルは spec 宣言のあるモジュールにだけあり、ルートの集約ファイルは存在するモジュールをちょうど
+   import し、全 import が実在し(存在しない生成モジュールへの import 0 件)、全宣言が現れることを Core と照合する。省いたモジュールと理由が期待
+   (`c38Omitted`)と一致し、`User` の生成 Model / Statements は input の宣言元 `Inputs` を import せず署名の型のモジュール `RuntimeOnly` を import して
+   input を引数 `origin'` / `seed'` / `scale'` に持つ。生成 Lean 8 ファイルを import 順に型検査し、検査プログラム(`c38Program`)を `lean --run` して
+   input を渡した `start` / `size` の値、scenario `run` の観測(`current() = 5` / `scaled() = 55`)、input を引数に持つ命題の真偽(6 件)を照合する。
+   旧構成の生成物・不要な空ファイル(spec だけ / input だけ / 宣言なしのモジュールのコメントだけの Model ファイル、旧パス、古いルート、ビルドの残骸)を置いた
+   生成先に再生成すると(直後と、同じ入力でもう一度)クリーンな生成先とパス集合・sha256 まで一致し、置いたファイルは残らず、省略と import 解決が成立する。
+   `Probe`(`Point` を名指しせず input の署名だけを通して RuntimeOnly に依存する)の生成 Model / Statements が `RuntimeOnly` を import する(署名の型の
+   import は input だけを通して入る)。ルートの集約ファイルの例外: 宣言なし / runtime だけ / spec だけの 1 ファイルの単位でも `Model.lean` と `Statements.lean`
+   は生成され、無い側は import 0 件でディレクトリも作られない。ソースルートをまたぐ同名のモジュール(`tests/units/roots/duplicate_across_roots`: ルート `a` の
+   spec だけとルート `b` の runtime だけ。生成パスは衝突しない)は複製を cwd にした `naru compile` が両方の `module` 行に E017 を出して exit 1、生成先にも
+   Lake の link にも触れない。
+   反例 `reject/omitted_duplicate`(spec だけのモジュールと runtime のモジュールが同名)は他の反例と同じ規則で E017 の位置・CLI / LSP の一致を照合し、
+   `fix/` を当てると診断 0 で Claims が Model を出さないモジュールであることを確かめる。
 4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件、`tests/units/` の検体を含む)の各群、golden の短い予行(`--finality-horizon 40`)、
    C10 の比較器回帰(`golden --comparator`: `tests/golden/Golden.lean --comparator-check`。emitted objects の共通表現について、同じ意味の両表現が
    一致する検体と、各フィールド・入れ子・親関係・Option・variant・リスト順序を一つだけ変えた検体がすべて不一致になること、`none` と root 99 /
@@ -39,7 +55,7 @@ import NaruTest.Repo
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
    ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
 6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
-   `statements` 群(C8 の依存境界 / C9 の claim surface)。
+   `statements` 群(C8 の依存境界 / C9 の claim surface / C37 / C38: `generated/` の省略の規則を移植ソースの Core と照合する)。
 7. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。生成ファイルは `<lib>/<モジュールのパス>.lean` で、
    宣言は `<lib>.<モジュール名>.*`(モジュール名の一般規則、C37)。`tests/accept/guard_shadow.naru` は C34 の検体、`tests/accept/prop_bool.naru` は
    C35 の検体: 生成した Model / Statements を import する検査プログラム(`semanticsProgram`。期待結果は `c34Values` / `c34Props` / `c34Equations`、
@@ -63,6 +79,11 @@ import NaruTest.Repo
     ルートの `lake build Model Statements` が exit 0 で、その実行ファイルが `current() = 2` を表示する(C24: lakefile の手修正なし)。
     現在のソースを不正にすると exit 1(E011)で observer の行を表示せず、`custom/` も書き換えない(C7)。最後にルートの `naru compile` で
     link をルートの生成先に戻して `lake build Model Statements`。
+    C38(既定以外の生成先でも同じ規則): プロジェクトは runtime の `Counter`(observer `shifted()` が input だけのモジュール `Inputs` の `offset()` を
+    足し、scenario が 10 に束縛する: `shifted() = 11` / `12` も各実行で照合)、spec だけの `Rules`、input だけの `Inputs` から成り、`custom/` に置いた
+    旧構成の Model ファイル(`Model/Rules.lean` / `Model/Inputs.lean` / 旧パス)が再生成で消え、同じ入力での再生成の繰り返しが同じ出力になり、
+    `checkOmission` で Model は `Counter` だけ・Statements は `Counter` と `Rules`・ルートの import と全 import の実在・全宣言の出現を照合し、
+    ルートの `lake build Model Statements` と実行ファイルがその生成先で通る。
 11. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
     (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
 12. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
@@ -77,6 +98,8 @@ def workDir : System.FilePath := ".lake" / "naru" / "test" / "regression"
 def acceptDir : System.FilePath := "tests" / "accept"
 def rejectDir : System.FilePath := "tests" / "reject"
 def compilerDir : System.FilePath := "compiler"
+/-- Lake が読む生成ソース(lakefile の lean_lib `Model` / `Statements` の `srcDir`)。`naru compile` / `simulate` が有効な生成先への symlink にする。 -/
+def lakeGeneratedLink : System.FilePath := ".lake" / "naru" / "generated"
 
 /-! ## 補助 -/
 
@@ -331,6 +354,13 @@ def generatedOrder (out : System.FilePath) (rels : List String) : IO (List Strin
       remaining := []
   return done
 
+/-- C38 の受理例の単位(`tests/units/accept/`): `RuntimeOnly`(runtime だけ)/ `SpecOnly`(spec だけ)/ `Mixed`(両方)/ `Inputs`(input だけ。`origin` の
+戻り型と `scale` の引数の型は RuntimeOnly の `Point`)/ `Empty`(宣言なし)/ `User`(Inputs の input を runtime と spec から使う。scenario が input に値を与える)。 -/
+def c38Unit : String := "omit_model"
+/-- C38 の反例の単位(`tests/units/reject/`): spec だけのモジュール(Model ファイルを出さない)と runtime のモジュールが同じモジュール名を宣言する(E017。
+診断の位置・LSP との一致は `checkModuleUnits` と `lsp` 群が他の反例と同じ規則で照合する)。 -/
+def c38Reject : String := "omitted_duplicate"
+
 /-- 3''. C18 の複数ファイルの検体(`tests/units/`、docstring の 3): 反例は `compile <files>`(出力指定なし)と `compile --out <dir> <files>` がともに
 exit 1 で同じ E017 を出し、`--out` には何も書かれず、診断の (ファイル, 行, 番号) の集合が行末の印と一致し、各診断の列が実在する識別子(メッセージが
 名指しする名前)を指す。受理例は exit 0 で、`--out` に生成した Model / Statements が Lean で型検査できる。 -/
@@ -381,8 +411,8 @@ def checkModuleUnits (leanPath : String) : M Unit := do
     if !apiDiags.isEmpty && apiDiags == cliDiags then
       ok s!"{label}: the CLI's (file, line, column, code) equal compileSources on the same unit (the positions naru_test lsp expects from the server)"
     else fail s!"{label}: CLI {cliDiags} vs compileSources {apiDiags}"
-  for name in ["module_duplicate", "runtime_cycle", "spec_cycle", "inferred_cycle"] do
-    if !(rejects.any (·.name == name)) then fail s!"C18: {unitsDir}/reject/{name} is missing"
+  for name in ["module_duplicate", "runtime_cycle", "spec_cycle", "inferred_cycle", c38Reject] do
+    if !(rejects.any (·.name == name)) then fail s!"C18 / C38: {unitsDir}/reject/{name} is missing"
   let accepts ← listUnits "accept"
   for u in accepts do
     let label := s!"units/accept/{u.name}"
@@ -409,8 +439,246 @@ def checkModuleUnits (leanPath : String) : M Unit := do
       if r.exitCode == 0 then nLean := nLean + 1
     if nLean == rels.length && nLean ≥ 4 then ok s!"{label}: all {nLean} generated Lean files type-check in import order (the imports between the generated modules resolve)"
     else fail s!"{label}: only {nLean} of {rels.length} generated Lean files type-checked"
-  for name in ["dependency_ok", "cross_phase_ok"] do
-    if !(accepts.any (·.name == name)) then fail s!"C18: {unitsDir}/accept/{name} is missing"
+  for name in ["dependency_ok", "cross_phase_ok", c38Unit] do
+    if !(accepts.any (·.name == name)) then fail s!"C18 / C38: {unitsDir}/accept/{name} is missing"
+
+/-! ## C38 の検体: Model の生成省略(`tests/units/accept/omit_model`、反例 `tests/units/reject/omitted_duplicate`) -/
+
+def c38Prefix : String := "Units.Omit"
+
+/-- Model ファイルになる生成モジュール(名前順)。`Probe` は `Point` を名指しせず input の署名だけを通して RuntimeOnly に依存する。 -/
+def c38Present : List String := ["Mixed", "Probe", "RuntimeOnly", "User"].map fun n => s!"Model.{c38Prefix}.{n}"
+/-- Model ファイルを出さないモジュールと理由。 -/
+def c38Omitted : List (String × String) :=
+  [ (s!"{c38Prefix}.Empty", "no declarations"), (s!"{c38Prefix}.Inputs", "only inputs"), (s!"{c38Prefix}.SpecOnly", "only spec declarations") ]
+
+/-- 検査プログラム: 生成した Model / Statements を import し、input を渡した実際の値(`start` / `size`)、scenario の観測(`NaruStd.runScenario`)、
+input を引数に持つ命題の真偽を Lean kernel が検査する。 -/
+def c38Program : String :=
+  s!"-- naru_test regression (C38): generated from NaruTest/Regression.lean. Imports the Model / Statements generated from tests/units/accept/{c38Unit}.\n" ++
+  s!"import Model\nimport Statements\n\nopen Model.{c38Prefix}\nopen Statements.{c38Prefix}\n\n" ++
+  "-- 命題の真偽(input は引数として渡す)\n" ++
+  "example : User.Seeded 4 { x := 4 } := by unfold User.Seeded; decide\n" ++
+  "example : ¬ User.Seeded 4 { x := 5 } := by unfold User.Seeded; decide\n" ++
+  "example : User.startSeeded (origin' := fun n => { x := n }) (seed' := 4) := by unfold User.startSeeded User.Seeded User.start; decide\n" ++
+  "example : ¬ User.startSeeded (origin' := fun n => { x := n + 1 }) (seed' := 4) := by unfold User.startSeeded User.Seeded User.start; decide\n" ++
+  "example : SpecOnly.Shifted { x := 1 } := by unfold SpecOnly.Shifted; decide\n" ++
+  "example : Mixed.Even 3 := by unfold Mixed.Even; decide\n" ++
+  "example : Probe.Probed (origin' := fun n => { x := n + 1 }) (scale' := fun p => p.x * 10) (seed' := 4) 50 := by unfold Probe.Probed Probe.probe; decide\n\n" ++
+  "-- 実際の値(input を渡す)と scenario の観測\n" ++
+  "def main : IO Unit := do\n" ++
+  "  IO.println s!\"start(seed = 4, origin = n + 1).x = {(User.start (origin' := fun n => { x := n + 1 }) (seed' := 4)).x}\"\n" ++
+  "  IO.println s!\"size(scale = p.x * 10, p = 5) = {User.size (scale' := fun p => p.x * 10) { x := 5 }}\"\n" ++
+  "  IO.println s!\"probe(seed = 4, origin = n + 1, scale = p.x * 10) = {Probe.probe (origin' := fun n => { x := n + 1 }) (scale' := fun p => p.x * 10) (seed' := 4)}\"\n" ++
+  "  NaruStd.runScenario \"run\" User.run\n"
+
+/-- `lean --run` の出力(行頭の空白を除く)に期待する行。 -/
+def c38Lines : List String :=
+  [ "start(seed = 4, origin = n + 1).x = 5", "size(scale = p.x * 10, p = 5) = 55", "probe(seed = 4, origin = n + 1, scale = p.x * 10) = 50",
+    "scenario run", "current() = 5", "scaled() = 55" ]
+
+/-- ファイルの `import` 行(無ければ空)。 -/
+def importsOfFile (p : System.FilePath) : IO (List String) := do
+  if ← p.pathExists then return importsOf (← IO.FS.readFile p) else return []
+
+/-- 生成先からの相対パスの (パス, sha256)。 -/
+def relSnapshot (dir : System.FilePath) : IO (List (String × String)) := do
+  (← shaSnapshot dir).mapM fun (f, h) => pure ((f.drop (prefixOf dir).length).toString, h)
+
+/-- 旧構成の生成物・不要な空ファイルを生成先に置く(以前の規則が出していたコメントと import だけの Model ファイル、旧パス、古いルート、ビルドの残骸)。 -/
+def plantStale (out : System.FilePath) : IO (List String) := do
+  let stale : List (String × String) :=
+    [ (s!"Model/{c38Prefix.replace "." "/"}/SpecOnly.lean", s!"-- stale: the old rule wrote this comment-only Model file\nimport NaruStd\n\n/-! naru module `{c38Prefix}.SpecOnly` -/\n"),
+      (s!"Model/{c38Prefix.replace "." "/"}/Inputs.lean", "-- stale: comment-only Model file of an input-only module\nimport NaruStd\n"),
+      (s!"Model/{c38Prefix.replace "." "/"}/Empty.lean", "-- stale: Model file of a module without declarations\nimport NaruStd\n"),
+      ("Model/Old/Gone.lean", "-- stale: a generated file of a module that no longer exists\nimport NaruStd\n"),
+      (s!"Statements/{c38Prefix.replace "." "/"}/RuntimeOnly.lean", "-- stale: Statements file of a runtime-only module\nimport NaruStd\n"),
+      (s!"Model/{c38Prefix.replace "." "/"}/User.olean", "stale build output"),
+      ("Model.lean", s!"-- stale root\nimport Model.{c38Prefix}.SpecOnly\nimport Model.Old.Gone\n") ]
+  for (rel, content) in stale do
+    let p := out / rel
+    if let some parent := p.parent then IO.FS.createDirAll parent
+    IO.FS.writeFile p content
+  return stale.map (·.1)
+
+/-- 3'''. C38: 受理例 `omit_model` を `--out` に生成して `checkOmission`(ファイルの有無・ルートの import・全 import の実在・全宣言の出現)、
+Model / Statements ファイルの集合と省いたモジュールの理由が期待と一致、input を使う生成 Lean の import と引数(宣言元 Inputs は import せず、
+署名の型のモジュール RuntimeOnly を import する)、生成 Lean を import 順に型検査し、input を渡した実際の値・scenario の観測・命題の真偽を照合する。
+クリーンな生成先の出力と、旧構成の生成物・不要な空ファイルを置いた生成先への再生成(直後と、同じ入力でもう一度)の出力がパス集合・内容まで一致し、
+その両方で省略と import 解決が成立し、置いた旧ファイルが残らない。反例 `omitted_duplicate` は `fix/` を当てた単位が診断 0 で、Claims が Model を出さない
+モジュールであることを確かめる(E017 の位置と CLI / LSP の一致は `checkModuleUnits` と `lsp` 群)。
+ルートの集約ファイルの例外: 宣言なし / runtime だけ / spec だけの 1 ファイルの単位でも `Model.lean` と `Statements.lean` は生成され、無い側は import 0 件で
+ディレクトリも作られない。ソースルートをまたぐ同名のモジュール(`tests/units/roots/duplicate_across_roots`: ルート `a` の spec だけと ルート `b` の runtime だけ。
+生成パスは衝突しない)は `naru compile`(cwd = 複製)が両方の `module` 行に E017 を出して exit 1 になり、生成先にも Lake の link にも触れない。 -/
+def checkOmissionUnit (leanPath : String) (generated : System.FilePath) : M Unit := do
+  heading s!"C38 Model omission (tests/units/accept/{c38Unit}: runtime-only / spec-only / mixed / input-only / empty, inputs used across modules)"
+  let accepts ← listUnits "accept"
+  let some u := accepts.find? (·.name == c38Unit) | fail s!"C38: {unitsDir}/accept/{c38Unit} is missing"; return
+  let files := u.files.toArray
+  let base := workDir / "c38"
+  if ← base.isDir then IO.FS.removeDirAll base
+  IO.FS.createDirAll base
+  -- 1. クリーンな生成先
+  let clean := base / "clean"
+  let _ ← step "C38: compile --out (clean output dir)" "lake" (#["exe", "naru", "compile", "--out", clean.toString] ++ files)
+  let cleanSnap ← relSnapshot clean
+  let (diags, checked) ← Naru.compileFiles u.files
+  if !diags.isEmpty then
+    fail s!"C38: {c38Unit} has {diags.size} diagnostic(s)"
+    return
+  if checked.core.size == u.files.length then ok s!"C38: {u.files.length} source files → {checked.core.size} Core modules (the module without declarations is checked too)"
+  else fail s!"C38: {u.files.length} source files but {checked.core.size} Core modules"
+  let (present, omitted) ← checkOmission "C38 clean" clean checked.core
+  if present.mergeSort (· ≤ ·) == c38Present then ok s!"C38: the Model modules are exactly {c38Present}"
+  else fail s!"C38: Model modules {present} (expected {c38Present})"
+  let omittedSorted := omitted.mergeSort fun a b => a.1 ≤ b.1
+  if omittedSorted == c38Omitted then ok s!"C38: no Model file for exactly {c38Omitted.map fun (n, why) => s!"{n} ({why})"}"
+  else fail s!"C38: omitted {omittedSorted} (expected {c38Omitted})"
+  -- 2. input を使う生成 Lean: 宣言元(Inputs)は import せず、署名の型のモジュール(RuntimeOnly)を import し、input は引数になる
+  let dir := c38Prefix.replace "." "/"
+  let userModel ← IO.FS.readFile (clean / s!"Model/{dir}/User.lean")
+  let userStmt ← IO.FS.readFile (clean / s!"Statements/{dir}/User.lean")
+  let specOnlyStmt ← IO.FS.readFile (clean / s!"Statements/{dir}/SpecOnly.lean")
+  let inputsMod := s!"Model.{c38Prefix}.Inputs"
+  let runtimeMod := s!"Model.{c38Prefix}.RuntimeOnly"
+  let userMod := s!"Model.{c38Prefix}.User"
+  if (importsOf userModel) == ["NaruStd", runtimeMod] then
+    ok s!"C38: Model/{dir}/User.lean imports NaruStd and {runtimeMod} (the type of the inputs' signatures) and not {inputsMod} (the input-only module has no Model file)"
+  else fail s!"C38: Model/{dir}/User.lean imports {importsOf userModel} (expected [NaruStd, {runtimeMod}])"
+  if (importsOf userStmt) == ["NaruStd", runtimeMod, userMod] then
+    ok s!"C38: Statements/{dir}/User.lean imports NaruStd, {runtimeMod} and {userMod}, not {inputsMod}"
+  else fail s!"C38: Statements/{dir}/User.lean imports {importsOf userStmt} (expected [NaruStd, {runtimeMod}, {userMod}])"
+  if (importsOf specOnlyStmt) == ["NaruStd", runtimeMod] && !(← (clean / s!"Model/{dir}/SpecOnly.lean").pathExists) then
+    ok s!"C38: Statements/{dir}/SpecOnly.lean imports {runtimeMod} for the runtime fn it uses, and Model/{dir}/SpecOnly.lean does not exist"
+  else fail s!"C38: Statements/{dir}/SpecOnly.lean imports {importsOf specOnlyStmt} or Model/{dir}/SpecOnly.lean exists"
+  let startLine := (userModel.splitOn "\n").find? (·.startsWith s!"def {userMod}.start ")
+  let sizeLine := (userModel.splitOn "\n").find? (·.startsWith s!"def {userMod}.size ")
+  let seededLine := (userStmt.splitOn "\n").find? (·.startsWith s!"def Statements.{c38Prefix}.User.Seeded ")
+  let binder (l : Option String) (b : String) : Bool := (l.map fun s => contains s b).getD false
+  if binder startLine s!"(origin' : (Nat → {runtimeMod}.Point))" && binder startLine "(seed' : Nat)" &&
+      binder sizeLine s!"(scale' : ({runtimeMod}.Point → Nat))" && binder seededLine "(seed' : Nat)" then
+    ok s!"C38: the inputs of another module are passed as parameters `origin'` / `seed'` / `scale'` with their signature types from {runtimeMod} (fn `start` / `size`, predicate `Seeded`)"
+  else fail s!"C38: input parameters not found: start {startLine}, size {sizeLine}, Seeded {seededLine}"
+  -- Probe は `Point` を名指ししない: 署名の型の import は input の署名だけを通して入る(宣言元 Inputs は import しない)
+  let probeMod := s!"Model.{c38Prefix}.Probe"
+  let probeSrc ← IO.FS.readFile (u.dir / "src" / "Probe.naru")
+  -- コードの部分だけ(行の `//` より前)を見る: コメントは `Point` を説明してよい
+  let probeCode := "\n".intercalate ((probeSrc.splitOn "\n").map fun l => (l.splitOn "//").head!)
+  let probeModel ← IO.FS.readFile (clean / s!"Model/{dir}/Probe.lean")
+  let probeStmt ← IO.FS.readFile (clean / s!"Statements/{dir}/Probe.lean")
+  let probeLine := (probeModel.splitOn "\n").find? (·.startsWith s!"def {probeMod}.probe ")
+  if !(contains probeCode "Point") && importsOf probeModel == ["NaruStd", runtimeMod] && importsOf probeStmt == ["NaruStd", probeMod, runtimeMod] &&
+      binder probeLine s!"(origin' : (Nat → {runtimeMod}.Point))" && binder probeLine s!"(scale' : ({runtimeMod}.Point → Nat))" && binder probeLine "(seed' : Nat)" then
+    ok s!"C38: the code of Probe.naru never names `Point`, yet Model/{dir}/Probe.lean imports {runtimeMod} (and Statements/{dir}/Probe.lean imports {probeMod} and {runtimeMod}): the module of the inputs' signature types is imported through the inputs alone, never {inputsMod}"
+  else fail s!"C38: Probe: code names Point = {contains probeCode "Point"}, Model imports {importsOf probeModel}, Statements imports {importsOf probeStmt}, probe line {probeLine}"
+  -- 3. 生成 Lean を import 順に型検査し、検査プログラムで input を渡した値・scenario の観測・命題を照合する
+  let cleanAbs ← IO.FS.realPath clean
+  let lp := s!"{cleanAbs}:{leanPath}"
+  let mut rels : List String := []
+  for sub in ["Model", "Statements"] do
+    rels := rels ++ ((← Naru.listFiles (clean / sub) "lean").map fun f => (f.drop (clean.toString.length + 1)).toString) ++ [sub ++ ".lean"]
+  let ordered ← generatedOrder clean rels
+  let mut nLean := 0
+  for rel in ordered do
+    let olean := (rel.dropEnd ".lean".length).toString ++ ".olean"
+    let r ← step s!"C38: lean {rel}" "lean" #[s!"--root={cleanAbs}", "-o", (cleanAbs / olean).toString, rel]
+      (cwd := some cleanAbs) (env := #[("LEAN_PATH", some lp)])
+    if r.exitCode == 0 then nLean := nLean + 1
+  if nLean == rels.length && nLean == 10 then ok s!"C38: all {nLean} generated Lean files type-check in import order (4 Model + root, 4 Statements + root)"
+  else fail s!"C38: only {nLean} of {rels.length} generated Lean files type-checked (expected 10)"
+  IO.FS.writeFile (cleanAbs / "Check.lean") c38Program
+  let r ← step "C38: lean --run Check.lean (inputs passed as arguments, scenario run, propositions checked by the kernel)" "lean" #["--run", "Check.lean"]
+    (cwd := some cleanAbs) (env := #[("LEAN_PATH", some lp)])
+  let lines := (r.stdout.splitOn "\n").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+  let missing := c38Lines.filter fun l => !lines.contains l
+  let extra := lines.filter fun l => !c38Lines.contains l
+  if r.exitCode == 0 && missing.isEmpty && extra.isEmpty then
+    ok s!"C38: the values with the inputs passed and the scenario's observations are exactly {c38Lines}; 7 propositions checked by the Lean kernel"
+  else fail s!"C38: Check.lean exit {r.exitCode}: missing {missing}, unexpected {extra}"
+  -- 4. 旧構成の生成物・不要な空ファイルが残る生成先からの再生成(直後と、同じ入力でもう一度): クリーンな出力と一致し、旧ファイルは残らない
+  let stale := base / "stale"
+  IO.FS.createDirAll stale
+  let planted ← plantStale stale
+  let _ ← step "C38: compile --out (stale files planted: comment-only Model files, an old path, an old root, a build leftover)" "lake"
+    (#["exe", "naru", "compile", "--out", stale.toString] ++ files)
+  let snap1 ← relSnapshot stale
+  let remaining ← planted.filterM fun (rel : String) => do
+    if rel == "Model.lean" then pure false else (stale / rel).pathExists
+  if remaining.isEmpty then ok s!"C38: none of the {planted.length - 1} planted stale files remains after regeneration: {planted.filter (· != "Model.lean")}"
+  else fail s!"C38: stale files remain after regeneration: {remaining}"
+  if snap1 == cleanSnap && !cleanSnap.isEmpty then ok s!"C38: regeneration over the stale dir gives the same {snap1.length} paths and sha256 as the clean dir"
+  else fail s!"C38: stale regeneration differs from the clean output: only stale {(snap1.filter (!cleanSnap.contains ·)).take 5 |>.map (·.1)}, only clean {(cleanSnap.filter (!snap1.contains ·)).take 5 |>.map (·.1)}"
+  let _ ← step "C38: compile --out again with the same input" "lake" (#["exe", "naru", "compile", "--out", stale.toString] ++ files)
+  let snap2 ← relSnapshot stale
+  if snap2 == cleanSnap then ok s!"C38: the repeated regeneration gives the same {snap2.length} paths and sha256 again"
+  else fail "C38: the repeated regeneration differs"
+  let _ ← checkOmission "C38 stale (after the repeated regeneration)" stale checked.core
+  -- 5. ルートの集約ファイルの例外: 生成モジュールが片側 0 件・両側 0 件の 1 ファイルの単位でも `Model.lean` / `Statements.lean` は生成され、
+  --    無い側は import 0 件でディレクトリも作られない
+  let singles : List (String × System.FilePath × Bool × Bool) :=
+    [ ("empty", u.dir / "src" / "Empty.naru", false, false),
+      ("runtime-only", u.dir / "src" / "RuntimeOnly.naru", true, false),
+      ("spec-only", unitsDir / "reject" / c38Reject / "fix" / "Claims.naru", false, true) ]
+  for (name, src, wantModel, wantSpec) in singles do
+    let out := base / s!"single-{name}"
+    let _ ← step s!"C38 root aggregate ({name}): compile --out {src}" "lake" #["exe", "naru", "compile", "--out", out.toString, src.toString]
+    let (ds, c) ← Naru.compileFiles [src.toString]
+    if !ds.isEmpty then
+      fail s!"C38 root aggregate ({name}): {src} has {ds.size} diagnostic(s)"
+      continue
+    let _ ← checkOmission s!"C38 root aggregate ({name})" out c.core
+    let mImps ← importsOfFile (out / "Model.lean")
+    let sImps ← importsOfFile (out / "Statements.lean")
+    let mDir ← (out / "Model").isDir
+    let sDir ← (out / "Statements").isDir
+    let shown (b : Bool) : String := if b then "exists" else "absent"
+    if (← (out / "Model.lean").pathExists) && (← (out / "Statements.lean").pathExists) &&
+        mImps.length == (if wantModel then 1 else 0) && sImps.length == (if wantSpec then 1 else 0) && mDir == wantModel && sDir == wantSpec then
+      ok s!"C38 root aggregate ({name}): Model.lean ({mImps.length} import(s)) and Statements.lean ({sImps.length} import(s)) both exist; Model/ {shown mDir}, Statements/ {shown sDir}"
+    else fail s!"C38 root aggregate ({name}): Model.lean imports {mImps}, Statements.lean imports {sImps}, Model/ {shown mDir}, Statements/ {shown sDir} (expected Model {wantModel}, Statements {wantSpec})"
+  -- 6. ソースルートをまたぐ同名のモジュール: 生成パスが衝突しない組(spec だけ + runtime だけ)でも CLI の compile-all が全ルートの module を束ねた
+  --    共通検査で E017 を出し、生成先にも Lake の link にも触れない(言語サーバーの単位は 1 つのルートなので CLI だけが検出する)
+  let rootsFixture := unitsDir / "roots" / "duplicate_across_roots"
+  let rootsCopy := base / "roots"
+  if !(← rootsFixture.isDir) then fail s!"C38: {rootsFixture} is missing"
+  else
+    let _ ← step "C38 cross-root duplicate: copy the fixture" "cp" #["-R", rootsFixture.toString, rootsCopy.toString]
+    let copyAbs ← IO.FS.realPath rootsCopy
+    let naruBin := (← IO.FS.realPath ".") / ".lake" / "build" / "bin" / "naru"
+    let r ← step "C38 cross-root duplicate: naru compile (naru.toml with sources a and b) exits 1" naruBin.toString #["compile"] (expectExit := 1) (cwd := some copyAbs)
+    let d := parseFileDiags r.stderr
+    let mut want : List (String × Nat × String) := []
+    for rel in ["a/Same.naru", "b/Same.naru"] do
+      for (l, c) in markedDiagnostics (← IO.FS.readFile (copyAbs / rel)) do want := want ++ [(rel, l, c)]
+    let got := sortFileMarks (d.map fun (f, l, _, c, _) => (f, l, c)).eraseDups
+    if !d.isEmpty && d.all (fun (_, _, _, c, _) => c == "E017") && got == sortFileMarks want.eraseDups then
+      ok s!"C38 cross-root duplicate: E017 at the `module` lines of both roots ({got.map fun (f, l, c) => s!"{c}@{f}:{l}"}) although their outputs would not collide (spec-only vs runtime-only)"
+    else fail s!"C38 cross-root duplicate: diagnostics {d.map fun (f, l, c, e, _) => s!"{e}@{f}:{l}:{c}"} vs marks {want}"
+    if !(← (copyAbs / "generated").pathExists) then ok "C38 cross-root duplicate: nothing was written to the project's generated dir"
+    else fail "C38 cross-root duplicate: generated/ was written despite the error"
+    try
+      let t ← IO.FS.realPath lakeGeneratedLink
+      let g ← IO.FS.realPath generated
+      if t == g then ok s!"C38 cross-root duplicate: {lakeGeneratedLink} still points at {g}"
+      else fail s!"C38 cross-root duplicate: {lakeGeneratedLink} -> {t} (expected {g})"
+    catch e => fail s!"C38 cross-root duplicate: {lakeGeneratedLink}: {e}"
+  -- 7. 反例: fix/ を当てた単位は診断 0 で、Claims は Model ファイルを出さないモジュール
+  let rejects ← listUnits "reject"
+  match rejects.find? (·.name == c38Reject) with
+  | none => fail s!"C38: {unitsDir}/reject/{c38Reject} is missing"
+  | some d =>
+    let fixedFiles := d.files.map fun f => match d.fixes.lookup f with
+      | some _ => (f, true)
+      | none => (f, false)
+    let mut sources : List (String × String) := []
+    for (f, fixed) in fixedFiles do
+      let text ← if fixed then pure ((d.fixes.lookup f).get!) else IO.FS.readFile f
+      sources := sources ++ [(f, text)]
+    let (ds, c) := Naru.compileSources sources
+    let specOnly := c.core.toList.filter fun (m : Naru.Core.Module) => (omissionReason m).isSome
+    if ds.isEmpty && specOnly.length == 1 then
+      ok s!"C38: {c38Reject} with fix/ applied has 0 diagnostics and its module `{Naru.renderPath specOnly.head!.name}` outputs no Model file ({(omissionReason specOnly.head!).getD ""}); the duplicate name is still E017 for the CLI (with / without --out) and the LSP (checked with the other reject units)"
+    else fail s!"C38: {c38Reject} with fix/: {ds.size} diagnostic(s), {specOnly.length} module(s) without Model output"
 
 /-- 3'. Core の健全性(C35): 全受理例(単独の単位)と各ソースルート(1 単位)を `compileFiles` で検査し、診断が無く、生成対象 Core の
 全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件(`Core.Module.unsound`)。 -/
@@ -557,9 +825,10 @@ def checkRenameStructure (roots : List System.FilePath) : M Unit := do
 
 /-! ## C7 / C24 / C26 の検体: 設定変更プロジェクト(`tests/config_change/`) -/
 
-/-- 設定変更プロジェクト: `naru.toml`(`sources = ["src"]`、`generated = "generated"`)と `src/Counter.naru`(fn `value()` の値を observer
-`current()` が表示する scenario `counter` と spec 宣言 1 つ)。回帰は複製を `.lake/naru/test/regression/c7/` に作り、その複製を cwd にして
-`<ルート>/.lake/build/bin/naru` を直接呼ぶ(`naru.toml` は cwd のもの、stdlib・Lake・実行入口・link はホーム = ルートのもの)。 -/
+/-- 設定変更プロジェクト: `naru.toml`(`sources = ["src"]`、`generated = "generated"`)と `src/Counter.naru`(fn `value()` の値(+ input `offset()`)を
+observer `current()` が表示する scenario `counter` と spec 宣言 1 つ)、`src/Rules.naru`(spec だけ)、`src/Inputs.naru`(input だけ。C38)。回帰は複製を
+`.lake/naru/test/regression/c7/` に作り、その複製を cwd にして `<ルート>/.lake/build/bin/naru` を直接呼ぶ(`naru.toml` は cwd のもの、stdlib・Lake・
+実行入口・link はホーム = ルートのもの)。 -/
 def c7Fixture : System.FilePath := "tests" / "config_change"
 def c7Project : System.FilePath := workDir / "c7"
 def c7Source : String := "src/Counter.naru"
@@ -567,8 +836,9 @@ def c7Source : String := "src/Counter.naru"
 def c7ValueLine (n : Nat) : String := s!"fn value() -> Nat \{ {n} }"
 /-- `naru simulate` の出力に現れる observer の行。 -/
 def c7Observed (n : Nat) : String := s!"current() = {n}"
-/-- Lake が読む生成ソース(lakefile の lean_lib `Model` / `Statements` の `srcDir`)。`naru compile` / `simulate` が有効な生成先への symlink にする。 -/
-def lakeGeneratedLink : System.FilePath := ".lake" / "naru" / "generated"
+/-- scenario が input `offset()` に与える値(C38: observer `shifted()` = `value() + offset()`)。 -/
+def c7Offset : Nat := 10
+def c7Shifted (n : Nat) : String := s!"shifted() = {n + c7Offset}"
 
 /-- `naru.toml` の `generated` の行を書き換える(コメントは触らない)。 -/
 def setGenerated (text : String) (dir : String) : String :=
@@ -613,6 +883,10 @@ def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
     if contains out (c7Observed n) && !(contains out (c7Observed other)) then
       ok s!"{label}: prints `{c7Observed n}` and not `{c7Observed other}`"
     else fail s!"{label}: expected `{c7Observed n}` without `{c7Observed other}`\n{tail out 600}"
+    -- C38: input だけのモジュールの `offset()`(scenario が {c7Offset} に束縛)を足す observer も現在の値に対応する
+    if contains out (c7Shifted n) && !(contains out (c7Shifted other)) then
+      ok s!"{label}: prints `{c7Shifted n}` (value {n} + input offset {c7Offset} passed by the scenario) and not `{c7Shifted other}`"
+    else fail s!"{label}: expected `{c7Shifted n}` without `{c7Shifted other}`\n{tail out 600}"
   let expectLink (label : String) (want : System.FilePath) : M Unit := do
     try
       let t ← IO.FS.realPath lakeGeneratedLink
@@ -626,14 +900,23 @@ def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
   else fail s!"C7: {gen}/Model/Counter.lean is missing"
   expectLink "C24 after the baseline" gen
   let genSnapshot ← shaSnapshot gen
-  -- 2. 値 2・generated = "custom": 古い既定の生成先(値 1)とビルドキャッシュ(値 1 の Model / 実行ファイル)が残る
+  -- 2. 値 2・generated = "custom": 古い既定の生成先(値 1)とビルドキャッシュ(値 1 の Model / 実行ファイル)が残る。
+  -- C38: 設定した生成先には旧構成の生成物(spec だけ / input だけのモジュールの Model ファイル、旧パス)を置いておき、再生成で消えることを見る
   setup 2 "custom"
+  for rel in ["Model/Rules.lean", "Model/Inputs.lean", "Model/Stale/Old.lean"] do
+    let p := custom / rel
+    if let some parent := p.parent then IO.FS.createDirAll parent
+    IO.FS.writeFile p "-- stale: a Model file the old rule wrote (comment and import only)\nimport NaruStd\n"
   let r2 ← simulate "C7: simulate (generated = \"custom\", value 2; the old generated/ and the build cache remain)" 0
   expectValue "C7 with the old default dir and build cache left" r2.stdout 2 1
   if (← shaSnapshot gen) == genSnapshot then ok s!"C7: the old {gen}/ is untouched (still the value-1 output; simulate wrote only custom/)"
   else fail s!"C7: {gen}/ changed although naru.toml points at custom/"
   if ← (custom / "Model" / "Counter.lean").pathExists then ok s!"C7: {custom}/Model/Counter.lean generated"
   else fail s!"C7: {custom}/Model/Counter.lean is missing"
+  let staleRels : List String := ["Model/Rules.lean", "Model/Inputs.lean", "Model/Stale/Old.lean"]
+  let staleLeft ← staleRels.filterM fun (rel : String) => (custom / rel).pathExists
+  if staleLeft.isEmpty then ok s!"C38: the stale Model files planted under {custom}/ (spec-only Rules, input-only Inputs, an old path) are gone after regeneration"
+  else fail s!"C38: stale files remain under {custom}/: {staleLeft}"
   expectLink "C24 after switching to custom" custom
   -- 3. 既定の生成先・値 1 に戻す(ビルドキャッシュと実行ファイルを値 1 に戻す)
   setup 1 "generated"
@@ -652,6 +935,10 @@ def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
   let s2 ← shaSnapshot custom
   if !s1.isEmpty && s1 == s2 then ok s!"C26: after simulate, {custom}/ holds exactly the {s1.length} files naru compile writes (sha256 identical to a fresh compile)"
   else fail s!"C26: {custom}/ after simulate differs from a fresh compile: simulate {(s1.map (·.1)).take 5}, compile {(s2.map (·.1)).take 5}"
+  let _ ← step "C38: naru compile again in the project (same input)" naruBin #["compile"] (cwd := some proj)
+  let s3 ← shaSnapshot custom
+  if s3 == s2 then ok s!"C38: the repeated regeneration of {custom}/ gives the same {s3.length} paths and sha256"
+  else fail s!"C38: the repeated regeneration of {custom}/ differs"
   let nonLean := (s1.map (·.1)).filter fun f => !f.endsWith ".lean"
   let runners := (← allFiles proj).filter fun f => (System.FilePath.mk f).fileName == some "Simulate.lean"
   if nonLean.isEmpty && runners.isEmpty then ok s!"C26: no runner / temporary file under {proj}/ (only .lean output)"
@@ -661,6 +948,17 @@ def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
     if contains (← IO.FS.readFile runner) "Model.Counter" then ok s!"C26: the runner is still {runner} and runs the project's scenario"
     else fail s!"C26: {runner} does not mention Model.Counter"
   else fail s!"C26: {runner} not found"
+  -- C38: 既定以外の生成先でも同じ省略の規則: Model は Counter だけ(spec だけの Rules、input だけの Inputs は無い)、Statements は Counter と Rules、
+  -- ルートの集約ファイルは存在するものだけを import し、全 import が実在し、全宣言が現れる(Core と照合)
+  let projSources ← Naru.listFiles (proj / "src") "naru"
+  let (pd, pc) ← Naru.compileFiles projSources
+  if !pd.isEmpty then fail s!"C38: the config-change project has {pd.size} diagnostic(s)"
+  else
+    let (present, omitted) ← checkOmission "C38 custom/" custom pc.core
+    let omittedSorted := omitted.mergeSort fun a b => a.1 ≤ b.1
+    if present == ["Model.Counter"] && omittedSorted == [("Inputs", "only inputs"), ("Rules", "only spec declarations")] then
+      ok s!"C38: in the non-default generated dir {custom}/ the Model modules are exactly [Model.Counter]; Inputs (only inputs) and Rules (only spec declarations) have no Model file, Statements/Rules.lean exists"
+    else fail s!"C38: {custom}/: Model modules {present}, omitted {omittedSorted}"
   -- C24: Lake が読む生成ソースは有効な生成先(custom/)で、Model / Statements がビルドでき、実行ファイルが現在の値を表示する
   expectLink "C24 effective generated dir" custom
   let _ ← step "C24: lake build Model Statements at the root (reads the project's custom/ through the link)" "lake" #["build", "Model", "Statements"]
@@ -903,6 +1201,7 @@ def checks : M Unit := do
   checkRejectDiagnostics
   checkCoreSoundness roots
   checkModuleUnits leanPath
+  checkOmissionUnit leanPath generated
   heading "editor support groups"
   subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
   subgroup "naru_test zed (C17)" NaruTest.Zed.run

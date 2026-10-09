@@ -20,6 +20,11 @@ import Naru
   claim bundle `Consensus` は `Consensus.Spec.*` のモジュールにある。生成先に改名前のディレクトリが無く、生成ファイルのどれも
   改名前のモジュール名(`Model.` / `Statements.` + 旧名)に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある。
   (改名前後の宣言構造の照合と、一般規則が旧名の形の利用者モジュールにも適用される検体は `naru_test regression`。)
+- C38: 生成先の Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけあり、
+  ルート `Model.lean` / `Statements.lean` は存在する生成モジュールをちょうど import し、生成ファイルの全 import が実在し、出力される runtime 宣言と
+  spec 宣言のすべてが生成ファイルに宣言として現れる(`NaruTest.checkOmission`。Core と照合する)。`generated/Model/Consensus/Spec/` には混在モジュールの
+  Model が残り、spec だけのモジュール(Claims / Accountability / Properties / Regimes)の Model は無い(Model 側を丸ごと消して代用しない)。
+  最小検体(spec のみ / runtime のみ / 混在 / input のみ / 宣言なし)は `naru_test regression`(`tests/units/accept/omit_model`)。
 
 実行は `lake exe naru_test statements`(リポジトリのルート)。先に `lake exe naru compile` で `generated/` を作り直す。
 -/
@@ -220,6 +225,7 @@ def checks : M Unit := do
     | .ok rs => pure rs
     | .error e => fail e; return
   let mut decls : List Core.Decl := []
+  let mut cores : Array Core.Module := #[]
   for root in roots do
     let sources ← listFiles root "naru"
     let (diags, checked) ← compileFiles sources
@@ -227,10 +233,23 @@ def checks : M Unit := do
       fail s!"{root}/ has {diags.size} diagnostic(s); cannot read its claim bundle"
       return
     decls := decls ++ checked.core.toList.flatMap fun (m : Core.Module) => m.decls.toList
+    cores := cores ++ checked.core
     -- C37: 移植ソースの所在と module 宣言
     checkSpecSources root sources checked.core
   -- C37: 生成先の配置とモジュール名
   checkGeneratedNames seen
+  -- C38: Model ファイルは runtime 宣言を出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけ。ルートの集約ファイルは
+  -- 存在するモジュールだけを import し、全 import が実在し、全宣言が現れる(ファイル数の減少で欠落を見逃さない)
+  let (present, omitted) ← checkOmission "C38 generated/" generatedDir cores
+  let nRuntime := cores.toList.foldl (init := 0) fun n (m : Core.Module) => n + (m.decls.filter Backend.Model.emitted).size
+  if !present.isEmpty && nRuntime > 0 then ok s!"C38: the port generates {present.length} Model module(s) with {nRuntime} runtime declaration(s) in total (the omission did not empty the Model)"
+  else fail s!"C38: no Model module / runtime declaration generated from the port"
+  -- Model 側の `Consensus/Spec/` を丸ごと消して代用していない: 混在モジュール(runtime の fn / enum も持つ)の Model は残り、spec だけのモジュールの Model は無い
+  let specModel ← listFiles (generatedDir / "Model" / System.FilePath.mk specDir) "lean"
+  let specOmitted := omitted.filter fun (n, _) => n.startsWith specModulePrefix
+  if !specModel.isEmpty && !specOmitted.isEmpty then
+    ok s!"C38: generated/Model/{specDir}/ keeps {specModel.length} file(s) for the modules with runtime declarations and omits {specOmitted.length} spec-only module(s): {specOmitted.map (·.1)}"
+  else fail s!"C38: generated/Model/{specDir}/ has {specModel.length} file(s), omitted {specOmitted.length} (expected both at least 1: mixed modules keep their Model, spec-only modules have none)"
   let rootsShown := ", ".intercalate (roots.map fun r => s!"{r}/")
   let bundles : List Core.Decl := decls.filter fun (d : Core.Decl) =>
     match d with

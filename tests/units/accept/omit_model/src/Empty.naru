@@ -1,0 +1,2 @@
+// 受理例(C38): 宣言の無いモジュール。Model ファイルも Statements ファイルも生成されず、ルートの集約ファイルも import しない。
+module Units.Omit.Empty

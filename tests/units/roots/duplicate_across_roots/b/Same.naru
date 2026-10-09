@@ -1,0 +1,4 @@
+// 反例(C38 / C18): ルート `b` の runtime だけのモジュール(Model ファイルを出す)。ルート `a` の `a/Same.naru` と同じモジュール名。
+module Units.Roots.Same   // E017
+
+fn one() -> Nat { 1 }

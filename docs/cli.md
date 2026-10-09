@@ -31,7 +31,7 @@ generated = "generated"
 
 | コマンド | 意味 |
 |---|---|
-| `compile` | `naru.toml` の各ソースルートを 1 単位として検査し(パス順)、Model と Statements を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean`、`generated/Statements.lean` と `generated/Statements/**.lean` を作り直す)。C1 の検証コマンド |
+| `compile` | `naru.toml` の各ソースルートを 1 単位として検査し(パス順)、Model と Statements を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean`、`generated/Statements.lean` と `generated/Statements/**.lean` を丸ごと作り直す: 旧パスの生成物や以前の規則の不要なファイルは残らない)。Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけでき、ルートの `Model.lean` / `Statements.lean` は存在するものだけを import する(C38。[architecture.md](architecture.md))。ソースルートが複数のとき、ルートをまたぐ同名のモジュールは全ルートの module を束ねた共通検査が各 `module` 行に E017 を出して exit 1(生成先に触れない)。C1 の検証コマンド |
 | `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model と Statements を出力し、無ければ検査だけ(`checked N module(s)`) |
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
 | `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`compiler/Naru/Lsp.lean`)。下の「言語サーバー」 |

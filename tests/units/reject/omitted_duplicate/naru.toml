@@ -1,0 +1,4 @@
+# 複数ファイルの反例(IDEAL.md C38 / C18): 2 つのファイルが同じ名前のモジュール `Units.Omit.Same` を宣言し、片方(Claims)は spec 宣言だけで
+# Model ファイルを出さない。出力の省略にかかわらず同名のモジュールは共通の意味検査が E017 で退ける(CLI の出力指定あり / なしと LSP が
+# 両方の `module` 行の同じ位置に返し、CLI は exit 非 0)。`src/**/*.naru` が 1 つのコンパイル単位。`fix/Claims.naru` は別の名前にして解消する。
+sources = ["src"]

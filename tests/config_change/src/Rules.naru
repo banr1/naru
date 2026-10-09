@@ -1,0 +1,5 @@
+// 設定変更プロジェクト(IDEAL.md C38 の検体): spec 宣言だけのモジュール。`Statements/Rules.lean` は生成され(`Model.Counter` を import する)、
+// `Model/Rules.lean` は生成されない(コメントと import だけの Model ファイルを作らない)。既定以外の生成先 `custom/` でも同じ規則。
+module Rules
+
+predicate Bounded(n: Nat) { n <= value() + offset() }

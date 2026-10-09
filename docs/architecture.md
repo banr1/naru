@@ -29,7 +29,10 @@ E014 を出して backend に渡さない(C35。`naru_test regression` は全受
 (`Backend.Model.modelGraph`: 出力する runtime 宣言が参照する他のモジュール)と生成 Statements の import グラフ(`Backend.Statements.specGraph`: spec 宣言が
 参照する他のモジュールの spec 宣言)のそれぞれで、循環に関与する辺ごとに参照元の宣言の中の参照先モジュールへの最初の参照の行・列へ E017 を出す
 (参照が構文上その宣言に現れない依存 — 推論された型(欄の参照の record・呼出しの結果の型)や使う input の署名を通したもの — は宣言の名前の位置)。
-グラフは backend が import を書くのと同じ関数で計算する(生成の規則を変えれば検査も揃う)。backend に残る同名・循環の検査は安全網で、届かない。
+グラフは backend が import を書くのと同じ関数で計算する(生成の規則を変えれば検査も揃う)。Model の辺を作るのは出力される宣言への参照だけで、input への
+参照は辺にならない(input の宣言元のモジュールは import しない: C38)。backend に残る同名・循環の検査は安全網で、届かない。
+`naru compile` のソースルートが複数のときは、全ルートの module を束ねて同じ同名検査に掛ける(`compiler/Main.lean` の `compileAll`。生成の省略で生成パスが
+衝突しない組も E017)。
 
 ## Core IR と Model backend
 
@@ -40,7 +43,7 @@ Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす
 
 | naru | 生成 Lean |
 |---|---|
-| `module A.B` | ファイル `generated/Model/A/B.lean`、Lean モジュール `Model.A.B`。宣言は `Model.A.B.name` と完全修飾で参照。他モジュールの参照は `import`(循環と同名のモジュールは生成前の共通検査が E017 で退ける) |
+| `module A.B` | ファイル `generated/Model/A/B.lean`、Lean モジュール `Model.A.B`。宣言は `Model.A.B.name` と完全修飾で参照。他モジュールの参照は `import`(循環と同名のモジュールは生成前の共通検査が E017 で退ける)。Model ファイルを出すのは Lean の runtime 宣言(type / record / state / enum / fn / observer / scenario)を実際に出力するモジュールだけ(C38): spec 宣言だけ・input だけ・宣言の無いモジュールからはコメントと import だけのファイルを作らず、ルート `generated/Model.lean`(集約ファイルの例外。宣言が無くても生成する)は存在する Model モジュールだけを import する。`import` は出力される宣言への参照からだけ数える(input の宣言元のモジュールは import せず、input の署名が参照する型のモジュールを import する) |
 | `type T = U` | `abbrev Model.A.B.T : Type := U`(参照は展開した型で書く) |
 | `record` / `state` | `structure … deriving DecidableEq, Ord, Repr`(`derive eq` → `DecidableEq` + `Ord`、`derive order` → `Ord`。`Repr` は常に。`finite` はまだ何も生成しない。`Ord` は `Set` / `Table` の正規化に使う隠れた全順序で、欄・variant の宣言順の辞書式)。欄名と局所名は常に `«»` で囲む(予約語の一覧に頼らない) |
 | `enum` | `inductive`(variant の引数は `a0 a1 …`) |
@@ -78,8 +81,10 @@ Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の�
 ## Statements backend(`generated/Statements`)
 
 Statements backend(`Backend/Statements.lean`)は spec 宣言だけを Lean に落とす。naru モジュール `A.B` に spec 宣言があれば
-ファイル `generated/Statements/A/B.lean`(Lean モジュール `Statements.A.B`)になり、ルート `generated/Statements.lean` がそれらを import する。
-生成 Statements が import するのは `NaruStd`・生成 Model(`Model.A.B`)・他の生成 Statements(`Statements.X.Y`。循環は生成前の共通検査が E017 で退ける)だけで、
+ファイル `generated/Statements/A/B.lean`(Lean モジュール `Statements.A.B`)になり、ルート `generated/Statements.lean`(集約ファイルの例外。spec 宣言の
+あるモジュールが無くても生成する)がそれらだけを import する。
+生成 Statements が import するのは `NaruStd`・生成 Model(`Model.A.B`。出力される runtime 宣言への参照があるモジュールだけ。input の宣言元は import せず、
+input の署名が参照する型のモジュールを import する: C38)・他の生成 Statements(`Statements.X.Y`。循環は生成前の共通検査が E017 で退ける)だけで、
 Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 Model ← Statements ← Proofs。C8 の検査は `lake exe naru_test statements`、[testing.md](testing.md))。
 `lake build Statements` でビルドする。
 

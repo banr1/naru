@@ -1,0 +1,4 @@
+// 反例(C38 / C18): ルート `a` の spec だけのモジュール(Model ファイルを出さない)。ルート `b` の `b/Same.naru` と同じモジュール名。
+module Units.Roots.Same   // E017
+
+predicate Positive(n: Nat) { n > 0 }

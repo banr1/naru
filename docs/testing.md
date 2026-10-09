@@ -18,16 +18,24 @@
   旧名検索はこれだけを除外する)。`naru_test lsp` は全受理例の `didOpen` で診断 0 件も確かめる。
 - 生成 Lean の型検査は、生成 Model の olean を `--out` のディレクトリに作ってから行う(`naru_test regression` が全受理例に対して行う)。
 - `tests/config_change/`: 設定変更プロジェクト(C7 / C24 / C26 の検体)。`naru.toml`(`sources = ["src"]`、`generated = "generated"`)と
-  `src/Counter.naru`(fn `value()` の値を observer `current()` が表示する scenario `counter`)。`naru_test regression` が複製の上で `generated` を
+  `src/Counter.naru`(fn `value()` の値を observer `current()` が、`value()` + input `offset()`(scenario が 10 に束縛)を observer `shifted()` が表示する
+  scenario `counter`)、`src/Rules.naru`(spec だけ)、`src/Inputs.naru`(input だけ。C38: 既定以外の生成先でも Model ファイルは `Counter` だけ)。`naru_test regression` が複製の上で `generated` を
   `"custom"` に、`value()` の 1 を 2 に書き換えて `naru simulate` を走らせ、observer・生成先・Lake のビルド・実行ファイルの対応を照合する(回帰一式の 10)。
-- `tests/units/`: 複数ファイルのコンパイル単位の検体(C18)。`reject/<名前>/` と `accept/<名前>/` に `naru.toml`(`sources = ["src"]`)と `src/*.naru`
+- `tests/units/`: 複数ファイルのコンパイル単位の検体(C18 / C38)。`reject/<名前>/` と `accept/<名前>/` に `naru.toml`(`sources = ["src"]`)と `src/*.naru`
   (1 つの単位)。反例は `reject/module_duplicate`(2 ファイルが同じモジュール名)・`reject/runtime_cycle`(runtime 宣言の参照が Alpha → Beta → Gamma →
   Alpha と巡る)・`reject/spec_cycle`(spec 宣言の参照が Left → Right → Left と巡る)・`reject/inferred_cycle`(`make().x` の record の推論された型だけで
-  生じる辺を含む循環。その辺の E017 は宣言 `width` の名前の位置)で、各ファイルの行末の `// E017` が診断の出る行の印、`fix/<ファイル>.naru` はその `src/` の
+  生じる辺を含む循環。その辺の E017 は宣言 `width` の名前の位置)・`reject/omitted_duplicate`(C38: Model ファイルを出さない spec だけのモジュールと runtime の
+  モジュールが同じモジュール名。出力の省略にかかわらず E017)で、各ファイルの行末の `// E017` が診断の出る行の印、`fix/<ファイル>.naru` はその `src/` の
   ファイルを置き換えると誤りが消える内容。受理例は `accept/dependency_ok`(Top → Middle → Base の循環しない依存。spec 宣言が runtime 宣言と他モジュールの
   spec 宣言を使う)と `accept/cross_phase_ok`(Alpha の spec が Beta の runtime を、Beta の spec が Alpha の spec を使う。Model と Statements の import グラフは
-  別なので循環しない)。`naru_test regression`(回帰一式の 3)が CLI の診断(出力指定あり / なし)を印と照合し、`naru_test lsp` が LSP の診断の位置・幅と
+  別なので循環しない)と `accept/omit_model`(C38: runtime だけ / spec だけ / 両方 / input だけ / 宣言なしのモジュールと、別モジュールの input を runtime と
+  spec から使う `User`、`Point` を名指しせず input の署名だけを通して RuntimeOnly に依存する `Probe`。Model ファイルは runtime 宣言を出力する 4 モジュールに
+  だけでき、`User` / `Probe` は input の宣言元 `Inputs` ではなく署名の型のモジュール `RuntimeOnly` を import する)。`naru_test regression`(回帰一式の 3)が
+  CLI の診断(出力指定あり / なし)を印と照合し、生成ファイルの有無・import・宣言・input を渡した実際の値を照合し、`naru_test lsp` が LSP の診断の位置・幅と
   `fix/` の didChange で診断が消えることを照合する。検体は `lake exe naru compile tests/units/reject/<名前>/src/*.naru` でも試せる。
+  `roots/duplicate_across_roots/`(C38 / C18)はソースルートをまたぐ同名のモジュールの反例(`naru.toml` の `sources = ["a", "b"]`。ルート `a` は spec だけ、
+  ルート `b` は runtime だけで生成パスは衝突しない): 複製を cwd にした `naru compile` が両方の `module` 行(行末の `// E017`)に E017 を出して exit 1 になる。
+  言語サーバーの単位は 1 つのルートなので、この反例は CLI(compile-all)だけが検出する。
 
 ## 検査ドライバ(`lake exe naru_test`)
 
@@ -38,7 +46,7 @@
 | `lsp` | 言語サーバー `naru lsp` の検査(C18): `lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と LSP を話す。`initialize` の応答に全文同期がある、未対応のリクエスト(`textDocument/hover`)が `MethodNotFound`(この応答を、通知の処理の終わりを待つ barrier にも使う)、`tests/reject/` の各反例の `didOpen` で `naru compile` と同じ E 番号・行・列の診断(先頭コメントが名指しする E 番号を含む)がその URI に返り `didClose` で空になる、`tests/accept/` の各受理例の `didOpen` で診断 0 件(C35 の正常例を含む)、絵文字を含む単独文書で列が UTF-16 単位・範囲がトークン 1 つ分、`specs/consensus/` の全ファイルの `didOpen` で 0 件、`specs/consensus/Consensus/Objects/Time.naru` の `didChange` で末尾に足した未解決名の E011 がその行に出る・`slotStart` の改名で他のファイル(Parameters / Grades)の URI に E011 が出る・壊れたまま Parameters を `didClose` すると空のまま・開き直すと戻る・Time を戻すと消える、`didSave` で 0 件のまま、全ファイルの `didClose` で空、`shutdown` が `null`、`exit` で exit 0。期待値はコンパイラ(`compileSources`)から取る。C18 の複数ファイルの検体 `tests/units/`: 反例(`module_duplicate` / `runtime_cycle` / `spec_cycle` / `inferred_cycle`)は `src/` の全ファイルを `didOpen` すると、行末の `// E017` の印の行に、`compileSources` と同じ行・列(UTF-16)でトークン 1 つ分の幅の E017 が関与する全ファイルの URI に返り、`fix/` の内容に `didChange` すると関係する URI すべての診断が消え、戻すと戻り、`didClose` で閉じた文書は空(最後の文書を閉じると単位の診断がすべて消える)。受理例(`dependency_ok` / `cross_phase_ok`)は全ファイルの `didOpen` で 0 件。言語サーバーはファイルを生成しない: 生成先と `tests/units/` の全ファイルの sha256 がセッションの前後で同じ |
 | `zed-install` | 起動中の人間の Zed に `editors/zed-naru/` を Dev Extension として入れる(C19): `lake build naru` の後、`~/Library/Application Support/Zed/extensions/installed/naru` が無ければ `zed: install dev extension`(フォルダ選択ダイアログに ⌘⇧G でパスを貼る)、この拡張への symlink なら `zed: rebuild dev extension`(Dev Extension が 2 つ以上なら picker で `naru`)を `osascript`(System Events。文字列はクリップボード経由、前面が Zed であることを確かめてから送る)で実行し、`Zed.log` に操作の開始以後 `compiled grammar naru`・`finished compiling extension <installed/naru>`(install では Zed は拡張のソースのパスで記録するのでそれも受理)・`extensions updated.` の `loading 1` / `reloading 1` が足され、`failed to compile` / `Failed to install dev extension` が 0 件、`installed/naru` が `editors/zed-naru` への symlink、`extension.wasm` と `grammars/naru.wasm` の mtime が操作の開始以後、`grammars/naru/` の checkout が `extension.toml` の `rev`。`grammars/naru.wasm` は操作の前に消す(Zed は `parser.c` より新しい wasm があると文法のコンパイルを飛ばす)。スクリーンショットと AppleScript は `.lake/naru/test/zed-install/` |
 | `golden [--finality-horizon N]` / `golden --comparator` | 手書き Model と生成 Model の突き合わせ(C10)と、その比較器の検体。下の「golden test」 |
-| `statements` | 生成 Statements の検査(C8 / C9): `lake exe naru compile` で `generated/` を作り直し、`lake build Statements` が exit 0、`Statements` からの import 閉包(`lake env lean --deps-json`。ソースの文字列から推測しない)が `Init` / `NaruStd` / 生成 Model / 生成 Statements だけから成り(Proofs を含まない)、`generated/Statements/` 配下の全ファイルがその閉包にある、閉包の全ファイルに字句 `sorry` が無い、`specs/consensus/`(`naru.toml` のソースルート)に claim bundle `Consensus` がちょうど 1 つあってその項目が verified-consensus の 13 claims と同名、生成 `structure` の欄(`run_cmd` の `getStructureFields`。スクリプトは `.lake/naru/test/statements/SurfaceShape.lean`)が項目と同じ順で並び 13 名を列挙する。C37: 移植ソースの spec 側がソースルートの `Consensus/Spec/` にあり(改名前のディレクトリは無い)、各ファイルの `module` 宣言がルート相対パス(`Consensus.Spec.<ファイル名>`)と一致、単位に改名前の名前のモジュール・import が無い、claim bundle が `Consensus.Spec.*` にある、生成先に改名前のディレクトリが無く生成ファイルのどれも改名前のモジュール名に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある |
+| `statements` | 生成 Statements の検査(C8 / C9): `lake exe naru compile` で `generated/` を作り直し、`lake build Statements` が exit 0、`Statements` からの import 閉包(`lake env lean --deps-json`。ソースの文字列から推測しない)が `Init` / `NaruStd` / 生成 Model / 生成 Statements だけから成り(Proofs を含まない)、`generated/Statements/` 配下の全ファイルがその閉包にある、閉包の全ファイルに字句 `sorry` が無い、`specs/consensus/`(`naru.toml` のソースルート)に claim bundle `Consensus` がちょうど 1 つあってその項目が verified-consensus の 13 claims と同名、生成 `structure` の欄(`run_cmd` の `getStructureFields`。スクリプトは `.lake/naru/test/statements/SurfaceShape.lean`)が項目と同じ順で並び 13 名を列挙する。C37: 移植ソースの spec 側がソースルートの `Consensus/Spec/` にあり(改名前のディレクトリは無い)、各ファイルの `module` 宣言がルート相対パス(`Consensus.Spec.<ファイル名>`)と一致、単位に改名前の名前のモジュール・import が無い、claim bundle が `Consensus.Spec.*` にある、生成先に改名前のディレクトリが無く生成ファイルのどれも改名前のモジュール名に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある。C38: `generated/` の Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけあり、ルート `Model.lean` / `Statements.lean` が存在する生成モジュールをちょうど import し、生成ファイルの全 import が実在し、出力される runtime 宣言と spec 宣言のすべてが生成ファイルに宣言として現れる(`NaruTest.checkOmission`。移植ソースの Core と照合)、`generated/Model/Consensus/Spec/` には混在モジュールの Model が残り spec だけのモジュールの Model は無い |
 | `repo [--base-commit <sha>]` | リポジトリの構成と文書の検査(C21 / C23 / C25): README の構成表とリンクが実在する、クイックスタートのコマンドを実行して通る、`third_party/verified-consensus` の git submodule の整合(基準コミットとの関係。`--base-commit` で基準コミットを渡す)、`docs/` の 7 ファイル([language.md](language.md)・[diagnostics.md](diagnostics.md)・[cli.md](cli.md)・[architecture.md](architecture.md)・[testing.md](testing.md)・[editors.md](editors.md)・[roadmap.md](roadmap.md))がある、`docs/diagnostics.md` が `compiler/Naru/Diag.lean` にある E 番号をすべて載せてそれ以外の E 番号を載せない、文書の相対リンクが実在する、旧文書への参照が無い(`.idd/progress.md` と `.idd/knowledge.md` も `git grep` の対象)。C37: 移植ソースの改名前のモジュール名・ディレクトリ名(`Consensus/Spec/` の前の名前)への参照が無い(`git grep -l --untracked -E` で README・docs・tests・compiler・specs・生成先・`.idd/progress.md`・`.idd/knowledge.md` を含む追跡対象と追跡対象外のファイルを検索。除くのは `.idd/cycles/`・`.idd/journal.jsonl`・IDEAL.md・`third_party/` と意図的な検体 `tests/accept/legacy_module_name.naru` だけ) |
 | `regression` | 非対話の回帰一式(C36)。下の「回帰一式」。約 12 分 |
 
@@ -59,13 +67,26 @@
    (出力指定なし)と `naru compile --out .lake/naru/test/regression/units/<名前> <同>` がともに exit 1 で同じ診断(ファイル・行・列・番号)を出し、`--out` には
    何も書かれず、診断がすべて E017 で、その (ファイル, 行, 番号) の集合が各ファイルの行末の `// E017` の印と一致し、各診断の列が実在する識別子(メッセージが
    名指しする参照先の名前・宣言・モジュール)を指し、CLI の (ファイル, 行, 列, 番号) が同じ単位の `compileSources`(`lsp` 群が LSP の期待に使う)と等しい。
-   受理例 `dependency_ok` / `cross_phase_ok` は exit 0 で、`--out` に生成した Model / Statements の全ファイル(ルートの集約ファイルを含む)が import の順に
-   Lean で型検査できる(生成モジュール同士の import が解決する)。
+   受理例 `dependency_ok` / `cross_phase_ok` / `omit_model` は exit 0 で、`--out` に生成した Model / Statements の全ファイル(ルートの集約ファイルを含む)が import の順に
+   Lean で型検査できる(生成モジュール同士の import が解決する)。反例には `omitted_duplicate`(C38)も含む。
+   C38 の Model の生成省略(段 `C38 Model omission`): 受理例 `accept/omit_model` を `.lake/naru/test/regression/c38/clean/` に生成し、Model ファイルは
+   runtime 宣言を出力するモジュール(`RuntimeOnly` / `Mixed` / `User`)にだけ・Statements ファイルは spec 宣言のあるモジュール(`SpecOnly` / `Mixed` / `User`)に
+   だけあり(`Inputs` は input だけ、`Empty` は宣言なし、`SpecOnly` は spec だけなので Model は無い)、ルートの集約ファイルが存在するモジュールをちょうど import し、
+   全 import が実在し、全宣言が現れることを Core と照合する(`NaruTest.checkOmission`)。`User` の生成 Model / Statements は input の宣言元 `Inputs` を import せず
+   署名の型のモジュール `RuntimeOnly` を import し、input を引数 `origin'` / `seed'` / `scale'` に持つ。生成 Lean 8 ファイルを import 順に型検査し、検査プログラム
+   `Check.lean`(`c38Program`)を `lean --run` して input を渡した `start` / `size` の値、scenario `run` の観測(`current() = 5` / `scaled() = 55`)、input を引数に持つ
+   命題の真偽 6 件を照合する。旧構成の生成物・不要な空ファイル(コメントだけの Model ファイル、旧パス、古いルート、ビルドの残骸)を置いた `c38/stale/` への
+   再生成(直後と、同じ入力でもう一度)がクリーンな生成先とパス集合・sha256 まで一致し、置いたファイルは残らず、省略と import 解決が成立する。
+   `Probe`(`Point` を名指ししない)の生成 Model / Statements が `RuntimeOnly` を import する(署名の型の import は input だけを通して入る)。
+   ルートの集約ファイルの例外: `Empty.naru` / `RuntimeOnly.naru` / `omitted_duplicate/fix/Claims.naru` を 1 ファイルの単位として生成し、宣言なし / runtime だけ /
+   spec だけでも `Model.lean` と `Statements.lean` が生成され、無い側は import 0 件でディレクトリも作られない。`roots/duplicate_across_roots/` の複製を cwd に
+   した `naru compile` が両方の `module` 行に E017 を出して exit 1 になり、生成先にも Lake の link `.lake/naru/generated` にも触れない。
+   反例 `reject/omitted_duplicate` は `fix/` を当てると診断 0 で、Claims が Model を出さないモジュールであることを確かめる。
 4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。`tests/units/` の検体の didOpen / didChange / didClose と、生成ファイルが変わらないことを含む)の各群、
    golden の短い予行(`--finality-horizon 40`)、C10 の比較器回帰(`golden --comparator`。下の「golden test」の「比較器の検体」)。
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせて生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行に `naru-compiler` / `naru-stdlib` / `naru-source`、
    `naru-source:` のパスがソースルートのディレクトリ名で始まらない、各ソースの sha256 がヘッダにある。
-6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` の whole-word grep が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、`statements` 群(C8 / C9)。
+6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` の whole-word grep が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、`statements` 群(C8 / C9 / C37 / C38)。
 7. 受理例ごとに `--out .lake/naru/test/regression/accept/<名前>` へ生成し、生成 Model の olean を作ってから生成 Statements を型検査する。
    生成ファイルはモジュール名の一般規則(`<lib>/<モジュールのパス>.lean`、宣言は `<lib>.<モジュール名>.*`。C37)に従う。
    `guard_shadow.naru`(C34)と `prop_bool.naru`(C35)は加えて検査プログラム `Check.lean`(`NaruTest/Regression.lean` の `semanticsProgram` が書く。期待結果は
@@ -92,6 +113,10 @@
     Lake が読む link `.lake/naru/generated` が `custom/` を指し、ルートの `lake build Model Statements` が exit 0 で、その `.lake/build/bin/naru_simulate` が
     `current() = 2` を表示する(C24: lakefile の手修正なし)。現在のソースを不正にすると exit 1(E011)で observer の行を表示せず、`custom/` も書き換えない。
     最後にルートの `lake exe naru compile` で link をルートの生成先に戻し、`lake build Model Statements`。
+    C38(既定以外の生成先でも同じ規則): `custom/` に置いた旧構成の Model ファイル(`Model/Rules.lean` / `Model/Inputs.lean` / 旧パス)が再生成で消え、
+    同じ入力での再生成の繰り返しが同じ出力になり、`checkOmission` で Model は `Counter` だけ・Statements は `Counter` と `Rules`・ルートの import・
+    全 import の実在・全宣言の出現を照合する(`Rules` は spec だけ、`Inputs` は input だけ)。各実行で observer `shifted()`(`value()` + input `offset()`)が
+    `shifted() = 11` / `12` を表示し、ルートの `lake build Model Statements`(`Statements.Rules` が `Model.Counter` を import する)と実行ファイルもこの生成先で通る。
 11. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い(`grep -rn '"dsl\|"specs' compiler/` が 0 件)、`naru.toml` の `sources` を別名のコピー
     (`.lake/naru/test/regression/alias/`)に向けて `lake exe naru compile` しても生成先の sha256 が一致する。`naru.toml` は必ず元に戻し(`git diff --exit-code`)、
     もう一度 `compile` して生成先が元に戻ったことも確かめる。
