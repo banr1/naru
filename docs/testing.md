@@ -29,7 +29,7 @@
 | `zed` | Zed 拡張(`editors/zed-naru/`)の検査(C17): 5 ファイル(`extension.toml`・`languages/naru/config.toml`・`highlights.scm`・`Cargo.toml`・`src/lib.rs`)がある、`extension.toml` の `id = "naru"`・`[grammars.naru]` の `repository`(このリポジトリの `file://` URL)/ `rev`(40 桁の SHA)/ `path = "editors/tree-sitter-naru"`・`[language_servers.naru]` の `name` と `languages`、`config.toml` の `name` / `grammar` / `path_suffixes` / `language_servers`、`rev` がこのリポジトリのコミットで `git diff --exit-code <rev> HEAD -- editors/tree-sitter-naru` が空、`rev` の文法(`git archive`)を `tree-sitter build` して作業ツリーの `highlights.scm` が `tree-sitter query` でロードできる、`src/lib.rs` が設定 → `PATH` → `.lake/build/bin/naru` の順で `naru lsp` を起動する形、`cargo build --release --target wasm32-wasip2` が exit 0。一時ファイルは `.lake/naru/test/zed/`、cargo の成果物は `editors/zed-naru/target/` |
 | `lsp` | 言語サーバー `naru lsp` の検査(C18): `lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と LSP を話す。`initialize` の応答に全文同期がある、未対応のリクエスト(`textDocument/hover`)が `MethodNotFound`(この応答を、通知の処理の終わりを待つ barrier にも使う)、`tests/reject/` の各反例の `didOpen` で `naru compile` と同じ E 番号・行・列の診断(先頭コメントが名指しする E 番号を含む)がその URI に返り `didClose` で空になる、`tests/accept/` の各受理例の `didOpen` で診断 0 件(C35 の正常例を含む)、絵文字を含む単独文書で列が UTF-16 単位・範囲がトークン 1 つ分、`specs/consensus/` の全ファイルの `didOpen` で 0 件、`specs/consensus/Consensus/Objects/Time.naru` の `didChange` で末尾に足した未解決名の E011 がその行に出る・`slotStart` の改名で他のファイル(Parameters / Grades)の URI に E011 が出る・壊れたまま Parameters を `didClose` すると空のまま・開き直すと戻る・Time を戻すと消える、`didSave` で 0 件のまま、全ファイルの `didClose` で空、`shutdown` が `null`、`exit` で exit 0。期待値はコンパイラ(`compileSources`)から取る |
 | `zed-install` | 起動中の人間の Zed に `editors/zed-naru/` を Dev Extension として入れる(C19): `lake build naru` の後、`~/Library/Application Support/Zed/extensions/installed/naru` が無ければ `zed: install dev extension`(フォルダ選択ダイアログに ⌘⇧G でパスを貼る)、この拡張への symlink なら `zed: rebuild dev extension`(Dev Extension が 2 つ以上なら picker で `naru`)を `osascript`(System Events。文字列はクリップボード経由、前面が Zed であることを確かめてから送る)で実行し、`Zed.log` に操作の開始以後 `compiled grammar naru`・`finished compiling extension <installed/naru>`(install では Zed は拡張のソースのパスで記録するのでそれも受理)・`extensions updated.` の `loading 1` / `reloading 1` が足され、`failed to compile` / `Failed to install dev extension` が 0 件、`installed/naru` が `editors/zed-naru` への symlink、`extension.wasm` と `grammars/naru.wasm` の mtime が操作の開始以後、`grammars/naru/` の checkout が `extension.toml` の `rev`。`grammars/naru.wasm` は操作の前に消す(Zed は `parser.c` より新しい wasm があると文法のコンパイルを飛ばす)。スクリーンショットと AppleScript は `.lake/naru/test/zed-install/` |
-| `golden [--finality-horizon N]` | 手書き Model と生成 Model の突き合わせ(C10)。下の「golden test」 |
+| `golden [--finality-horizon N]` / `golden --comparator` | 手書き Model と生成 Model の突き合わせ(C10)と、その比較器の検体。下の「golden test」 |
 | `statements` | 生成 Statements の検査(C8 / C9): `lake exe naru compile` で `generated/` を作り直し、`lake build Statements` が exit 0、`Statements` からの import 閉包(`lake env lean --deps-json`。ソースの文字列から推測しない)が `Init` / `NaruStd` / 生成 Model / 生成 Statements だけから成り(Proofs を含まない)、`generated/Statements/` 配下の全ファイルがその閉包にある、閉包の全ファイルに字句 `sorry` が無い、`specs/consensus/`(`naru.toml` のソースルート)に claim bundle `Consensus` がちょうど 1 つあってその項目が verified-consensus の 13 claims と同名、生成 `structure` の欄(`run_cmd` の `getStructureFields`。スクリプトは `.lake/naru/test/statements/SurfaceShape.lean`)が項目と同じ順で並び 13 名を列挙する。C37: 移植ソースの spec 側がソースルートの `Consensus/Spec/` にあり(改名前のディレクトリは無い)、各ファイルの `module` 宣言がルート相対パス(`Consensus.Spec.<ファイル名>`)と一致、単位に改名前の名前のモジュール・import が無い、claim bundle が `Consensus.Spec.*` にある、生成先に改名前のディレクトリが無く生成ファイルのどれも改名前のモジュール名に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある |
 | `repo [--base-commit <sha>]` | リポジトリの構成と文書の検査(C21 / C23 / C25): README の構成表とリンクが実在する、クイックスタートのコマンドを実行して通る、`third_party/verified-consensus` の git submodule の整合(基準コミットとの関係。`--base-commit` で基準コミットを渡す)、`docs/` の 7 ファイル([language.md](language.md)・[diagnostics.md](diagnostics.md)・[cli.md](cli.md)・[architecture.md](architecture.md)・[testing.md](testing.md)・[editors.md](editors.md)・[roadmap.md](roadmap.md))がある、`docs/diagnostics.md` が `compiler/Naru/Diag.lean` にある E 番号をすべて載せてそれ以外の E 番号を載せない、文書の相対リンクが実在する、旧文書への参照が無い(`.idd/progress.md` と `.idd/knowledge.md` も `git grep` の対象)。C37: 移植ソースの改名前のモジュール名・ディレクトリ名(`Consensus/Spec/` の前の名前)への参照が無い(`git grep -l --untracked -E` で README・docs・tests・compiler・specs・生成先・`.idd/progress.md`・`.idd/knowledge.md` を含む追跡対象と追跡対象外のファイルを検索。除くのは `.idd/cycles/`・`.idd/journal.jsonl`・IDEAL.md・`third_party/` と意図的な検体 `tests/accept/legacy_module_name.naru` だけ) |
 | `regression` | 非対話の回帰一式(C36)。下の「回帰一式」。約 12 分 |
@@ -47,7 +47,8 @@
    `type_name_as_value.naru`: 型別名 `Count` の値使用と `Count {}` / `Nat { … }` のレコードリテラル)は、印の (行, 番号) の集合と診断の集合が一致する
    (LSP が同じ箇所に返すことは `lsp` 群が全反例で CLI と照合する)。Core の健全性: 全受理例(各 1 単位)と各ソースルート(1 単位)を検査して診断 0 で、
    生成対象 Core の全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件(`Core.Module.unsound`)。
-4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18)の各群と golden の短い予行(`--finality-horizon 40`)。
+4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18)の各群、golden の短い予行(`--finality-horizon 40`)、C10 の比較器回帰(`golden --comparator`。下の「golden test」の
+   「比較器の検体」)。
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせて生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行に `naru-compiler` / `naru-stdlib` / `naru-source`、
    `naru-source:` のパスがソースルートのディレクトリ名で始まらない、各ソースの sha256 がヘッダにある。
 6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` の whole-word grep が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、`statements` 群(C8 / C9)。
@@ -93,14 +94,31 @@ import し、同じ fixture(run)を両側で畳み込んで、各 event の前�
 ```
 lake exe naru_test golden                         # C10。horizon 100 で約 9 分
 lake exe naru_test golden --finality-horizon 40   # 約 30 秒
+lake exe naru_test golden --comparator            # 比較器の検体だけ。約 10 秒
 ```
 
 - 引数なしが C10 の証拠(FinalityLiveness は horizon 100 の prefix、StrongRecovery は seed の `rho 30`)。`--finality-horizon N` は短い予行用で、既定以外の N は `note:` が出る。
   所要時間の大半は手書き側の実行。
-- 前提: `lake exe naru compile` 済み(Lake は `.lake/naru/generated` の link 経由で有効な生成先を読む)で生成 Model が `lake build Model` 済み、手書き Model の olean が
-  `third_party/verified-consensus/.lake` にビルド済みであること(git submodule を取得して `lake build` しておく)。
-- 出力: case ごとに `ok <case>: n lines agree` か `FAIL <case>: …` と `MISMATCH …` の行、最後に `MISMATCH total: N`。exit 0 ⇔ N = 0。
+- ドライバはまず現在の naru ソースを再生成(`lake exe naru compile`。Lake は `.lake/naru/generated` の link 経由で有効な生成先を読む)して `lake build Model` を走らせる
+  (C10: 再生成してビルドしてから全 16 ケース)。手書き Model の olean は `third_party/verified-consensus/.lake` にビルド済みであること(git submodule を取得して
+  `lake build DecoupledConsensusModel` しておく)。
+- 出力: まず比較器の検体の `comparator agree <名前>: ok …` / `comparator probe <名前>: ok (detected)` / `comparator legacy-miss <名前>: …` と `comparator total: …`、
+  次に case ごとに `ok <case>: n lines agree` か `FAIL <case>: …` と `MISMATCH …` の行、最後に `MISMATCH total: N`。exit 0 ⇔ 比較器の失敗 0 かつ N = 0。
+  ドライバは 16 の case(`expectedCases`)と検体(`expectedAgreements` / `expectedProbes` / `expectedLegacyMisses`)の名前が 1 つずつ報告されたことも要求する。
 - case: `witness:weakGenesis` / `witness:outage` / `witness:strongRecovery(seed rho 30)` / `witness:finalityLiveness(horizon N)`(手書きの Witnesses の 4 run を両側で
   Lean に書き写したもの)、`scenario:<name>`(`specs/consensus/scenarios/*.naru` が fn として公開する Setup と run)、`scenario:<name>/observe <label>`(`naru simulate` の出力が
   同じ run の読みと一致する)。`tests/golden/` には `Golden.lean` だけがある。
+- emitted objects の共通表現(`Golden.lean` の `Common`): 両 Model の object(block / Goldfish vote / attestation)を、表現上の差(型名・構築子名・欄名、`Fin 2` と
+  `ValidatorId`)だけを吸収して 1 つの木に写し、その文字列(数、`true` / `false`、`none` / `(some v)`、`(構築子 引数 …)`、`[要素, …]`)で比べる。
+  vote は作者・slot・head、attestation(row)は作者・round・confirmed(`Option`)・height pair(`empty` / `(vote height entry timeout)`)・finality pair(`Option`)、
+  block は `genesis` / `node` の variant と、node なら親(genesis までの全祖先を再帰的に。各祖先の votes / support / rows も含む)・slot・root・votes・support・rows
+  (どれも順序を保つ列)・proposer。Option の None / Some と全 variant をそのまま写し、正規化は無い(object の中の列は両 Model とも `List`。集合は object に現れず、
+  node の状態の `|T|` / `|bodies|` にだけ現れて濃度で比べる)。例(FinalityLiveness の t = 12 の tick。`lean --run tests/golden/Golden.lean --side gen --finality-horizon 12` が
+  `longest:` に出す): `12 tick 0 12 -> [(block (node (node (node genesis 1 2 [] [] [] 0) 2 3 [(vote 0 1 2)] [(vote 0 1 2)] [(row 0 0 (some 0) empty none)] 0) 3 4 [(vote 0 2 3)] [(vote 0 2 3)] [] 0))]`。
+- 比較器の検体(`--comparator`、`Golden.lean --comparator-check`。`naru_test regression` の 4): 同じ記述(`Probe.DObj`)から手書き側と生成側の object を組み立て、
+  同じ意味の両表現が一致する(agree: vote、各 variant の row、2 代の祖先と votes・support・rows を持つ block、genesis、tick の列)ことと、一つだけ変えた検体
+  (probe: object の種類、vote の各欄、row の各欄と `none` ↔ `some`・variant・timeout、block の variant・各欄・親と祖父の欄・祖先の追加・votes / support / rows の
+  順序・要素・入れ子の欄。`none` と root 99 / root 0 の `some` の区別を含む 42 件)が両側とも一致したうえで基準と不一致になることを確かめる。
+  失敗例として、周回 35 までの 3 つ組 `(kind, root, author)`(`H.Legacy`。confirmed の `none` を 99 に潰していた)が見逃す検体を `legacy-miss` で報告し、
+  ドライバの `expectedLegacyMisses` がその見逃しを要求する(検体が元の不具合を捉えていることの確認)。
 - scenario 側の約束は [language.md](language.md) の「scenario と observer」。

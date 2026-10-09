@@ -22,7 +22,11 @@ import NaruTest.Repo
    `tests/reject/type_name_as_value.naru`(型別名 `Count` の値使用、`Count \{}` / `Nat \{ … }` のレコードリテラル))は、印の (行, E 番号) の集合と
    診断の集合が一致する(LSP が同じ箇所に返すことは `lsp` 群が CLI と照合する)。Core の健全性: 全受理例と各ソースルートを検査して診断 0 で、
    生成対象 Core の全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件。
-4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件を含む)の各群と、golden の短い予行(`--finality-horizon 40`)。
+4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件を含む)の各群、golden の短い予行(`--finality-horizon 40`)、
+   C10 の比較器回帰(`golden --comparator`: `tests/golden/Golden.lean --comparator-check`。emitted objects の共通表現について、同じ意味の両表現が
+   一致する検体と、各フィールド・入れ子・親関係・Option・variant・リスト順序を一つだけ変えた検体がすべて不一致になること、`none` と root 99 /
+   root 0 の `some` を混同しないこと、旧 3 つ組 `(kind, root, author)` が見逃す検体(失敗例)を `NaruTest/Golden.lean` の `expectedAgreements` /
+   `expectedProbes` / `expectedLegacyMisses` と照合する)。
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
    ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
 6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
@@ -797,6 +801,8 @@ def checks : M Unit := do
   subgroup "naru_test lsp (C18)" NaruTest.Lsp.run
   heading "golden rehearsal"
   subgroup "naru_test golden --finality-horizon 40 (rehearsal, not the C10 evidence)" (NaruTest.Golden.run 40)
+  heading "C10 comparator regression"
+  subgroup "naru_test golden --comparator (C10: common representation of the emitted objects)" NaruTest.Golden.comparatorRun
   checkDeterminism roots generated
   checkBuilds generated
   let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]

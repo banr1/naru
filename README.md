@@ -84,7 +84,8 @@ lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lea
 ```
 
 `naru_test golden` は verified-consensus の手書き Model(mathlib)を interpreter で走らせるので、引数なし(FinalityLiveness の horizon 100)で約 9 分かかります。
-短い予行は `lake exe naru_test golden --finality-horizon 40`(約 30 秒)。`naru_test regression` はコードを変えたときの最終検証で、`/tmp` のスクリプトや
+短い予行は `lake exe naru_test golden --finality-horizon 40`(約 30 秒)、比較器の検体だけなら `lake exe naru_test golden --comparator`(約 10 秒)。
+`naru_test regression` はコードを変えたときの最終検証で、`/tmp` のスクリプトや
 過去の出力に頼らず全項目を走らせます。`naru_test zed-install`(C19)は起動中の Zed を操作して Dev Extension を
 入れ直すので、普段の回帰には含めません。詳しくは [docs/testing.md](docs/testing.md)。
 
