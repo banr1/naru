@@ -2,7 +2,7 @@
 -- naru-compiler: 0.1.0 sha256:bb2ec3f674191e7800f5aad05d244e19d7fcbc4e28dd7e5ace2dc1aff301a3fc
 -- naru-stdlib: 0.1.0 sha256:d105d21d75d5dc219546dea33f657a5842f12b3230decc1b053b779bc2829194
 -- naru-source: scenarios/basic.naru sha256:5a6d5f1e7f9cdf30f7cd79b9761819feb6395c8a09dbe4669044fcbc89302955
--- naru-unit: sha256:416ee7c42546cfe249a4bda167b7904166b3de0e48f649cc0b7b47abbcfaaa51
+-- naru-unit: sha256:d86ad601ae648ec646f829a03d2b503f0843547f3a5ae5870515fc1758da6e38
 import NaruStd
 import Model.Consensus.Execution.Run
 import Model.Consensus.Execution.Setup

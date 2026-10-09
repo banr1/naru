@@ -87,7 +87,8 @@ Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 M
 
 ### verified-consensus の Statements の移植
 
-移植は `specs/consensus/Consensus/Statements/`(8 ファイル。手書きの Generic + Instantiation の構成に沿う: `Execution`(run の
+移植は `specs/consensus/Consensus/Spec/`(module 宣言は `Consensus.Spec.*`、生成モジュールは `Statements.Consensus.Spec.*` / `Model.Consensus.Spec.*`。
+8 ファイル。手書きの Generic + Instantiation の構成に沿う: `Execution`(run の
 観測述語 `Emits` / `Processes` / `Handles` / `Carries` / `HandlesAt` / `AcceptsAt` / `BlockInRun` / `NamedRootCollisionFree`)、`Accountability`(`SlashableBetween` /
 `HasSlashableWeightBetween` / `RootInjectiveOnAncestors` / `NamedFinalizedAt`)、`Interface`(enum `Output` と `outputAt` / `proposedBlock` / `envAwake` の
 fn、`Opening` / `Finalizes` / `CollisionFree` / `Evidence` / `InRun` / `Idealization` / `Slashes`)、`Constants`(定数の fn と `ConstantsValid`)、

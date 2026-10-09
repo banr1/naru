@@ -15,6 +15,11 @@ import Naru
 - C9: ソースルートの naru ソースに claim bundle `Consensus` がちょうど 1 つあり、その項目のラベルが verified-consensus の 13 claims
   (IDEAL.md 用語「claim surface」)と同名で、生成 Lean の `structure` の欄(`getStructureFields`。`run_cmd` の検査スクリプトを
   `.lake/naru/test/statements/SurfaceShape.lean` に書いて `lake env lean` で走らせる)がその項目と同じ順で並ぶ。13 の欄名を列挙する。
+- C37: 移植ソースの spec 側は各ソースルートの `Consensus/Spec/` にあり(1 つ以上。改名前のディレクトリは無い)、その各ファイルの
+  `module` 宣言はルート相対パスと一致する(`Consensus.Spec.<ファイル名>`)。単位の中に改名前の名前のモジュールも import も無い。
+  claim bundle `Consensus` は `Consensus.Spec.*` のモジュールにある。生成先に改名前のディレクトリが無く、生成ファイルのどれも
+  改名前のモジュール名(`Model.` / `Statements.` + 旧名)に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある。
+  (改名前後の宣言構造の照合と、一般規則が旧名の形の利用者モジュールにも適用される検体は `naru_test regression`。)
 
 実行は `lake exe naru_test statements`(リポジトリのルート)。先に `lake exe naru compile` で `generated/` を作り直す。
 -/
@@ -34,6 +39,19 @@ def claimSurface : List String :=
 /-- naru ソースの中で claim surface を公開する claim bundle の名前。 -/
 def bundleName : String := "Consensus"
 
+/-- 移植ソースの spec 側のディレクトリ(ソースルートからの相対)と、そのモジュール名の接頭辞(IDEAL.md 前提「構成」、C37)。 -/
+def specDir : String := "Consensus/Spec"
+def specModulePrefix : String := "Consensus.Spec."
+/-- 改名前の名前(C37)。この検査自身が旧名の検索(`naru_test repo`)に掛からないよう、連結で作る。 -/
+def oldSpecDir : String := "Consensus/" ++ "Statements"
+def oldSpecModulePrefix : String := "Consensus." ++ "Statements."
+
+/-- ソースルートからの相対パス。 -/
+def relativeTo (root : System.FilePath) (f : String) : String :=
+  let p := root.toString
+  let p := if p.endsWith "/" then p else p ++ "/"
+  if f.startsWith p then (f.drop p.length).toString else f
+
 /-- 閉包に許すモジュール: Lean の `Init`、stdlib、生成 Model、生成 Statements。Proofs は決して許さない。 -/
 def allowedImport (m : String) : Bool :=
   m == "Init" || m == "NaruStd" || m.startsWith "NaruStd." || m == "Model" || m.startsWith "Model." ||
@@ -51,6 +69,57 @@ def fileModule (p : String) : String :=
   let rel := if p.startsWith "generated/" then (p.drop "generated/".length).toString else p
   let noExt := if rel.endsWith ".lean" then (rel.dropEnd ".lean".length).toString else rel
   noExt.replace "/" "."
+
+/-- C37: 移植ソースの所在と module 宣言(ソースルートごと)。 -/
+def checkSpecSources (root : System.FilePath) (sources : List String) (mods : Array Core.Module) : M Unit := do
+  let specFiles := sources.filter fun f => (relativeTo root f).startsWith (specDir ++ "/")
+  let oldFiles := sources.filter fun f => (relativeTo root f).startsWith (oldSpecDir ++ "/")
+  if specFiles.isEmpty then fail s!"C37: {root}/{specDir}/ has no .naru file"
+  else ok s!"C37: {root}/{specDir}/ has {specFiles.length} source file(s)"
+  let oldDir := root / System.FilePath.mk oldSpecDir
+  if oldFiles.isEmpty && !(← oldDir.pathExists) then ok s!"C37: {oldDir}/ is gone"
+  else fail s!"C37: {oldDir}/ still exists ({oldFiles.length} .naru file(s))"
+  -- module 宣言 = ルート相対パス
+  let mut bad : List String := []
+  for f in specFiles do
+    let rel := relativeTo root f
+    let expected := ((rel.dropEnd ".naru".length).toString.replace "/" ".")
+    match mods.find? (·.file == f) with
+    | some m =>
+      let actual := ".".intercalate m.name
+      if actual != expected then bad := bad ++ [s!"{f}: module {actual} (expected {expected})"]
+    | none => bad := bad ++ [s!"{f}: not in the compiled unit"]
+  if bad.isEmpty then ok s!"C37: every file under {specDir}/ declares `module {specModulePrefix}<file name>` (= its root-relative path)"
+  else fail s!"C37: module declarations do not match the paths: {bad}"
+  -- 旧名のモジュール宣言と import が無い
+  let oldMods := mods.toList.filter fun (m : Core.Module) => (".".intercalate m.name).startsWith oldSpecModulePrefix
+  let mut oldImports : List String := []
+  for f in sources do
+    let text ← IO.FS.readFile f
+    if (text.splitOn ("import " ++ oldSpecModulePrefix)).length > 1 then oldImports := oldImports ++ [f]
+  if oldMods.isEmpty && oldImports.isEmpty then ok s!"C37: no module declaration or import named `{oldSpecModulePrefix}*` under {root}/"
+  else fail s!"C37: old module names remain under {root}/: modules in {oldMods.map (·.file)}, imports in {oldImports}"
+
+/-- C37: 生成先の配置と生成ファイルの中のモジュール名。 -/
+def checkGeneratedNames (closure : List String) : M Unit := do
+  for sub in ["Model", "Statements"] do
+    let oldDir := generatedDir / sub / System.FilePath.mk oldSpecDir
+    if ← oldDir.pathExists then fail s!"C37: {oldDir}/ still exists in the generated output" else ok s!"C37: no {oldDir}/"
+  let specStmt := generatedDir / "Statements" / System.FilePath.mk specDir
+  let specFiles ← listFiles specStmt "lean"
+  if specFiles.isEmpty then fail s!"C37: {specStmt}/ has no generated Statements file"
+  else ok s!"C37: {specStmt}/ has {specFiles.length} generated Statements file(s)"
+  let all ← listFiles generatedDir "lean"
+  let mut hits : List String := []
+  for f in all do
+    let c ← IO.FS.readFile f
+    if (c.splitOn ("Model." ++ oldSpecModulePrefix)).length > 1 || (c.splitOn ("Statements." ++ oldSpecModulePrefix)).length > 1 then
+      hits := hits ++ [f]
+  if hits.isEmpty then ok s!"C37: no generated file mentions `Model.{oldSpecModulePrefix}*` / `Statements.{oldSpecModulePrefix}*` ({all.length} file(s) scanned)"
+  else fail s!"C37: old module names in generated files: {hits}"
+  let outside := specFiles.filter fun f => !(closure.contains (fileModule f))
+  if outside.isEmpty then ok s!"C37: all generated modules under {specStmt}/ are in the import closure of Statements"
+  else fail s!"C37: generated modules under {specStmt}/ outside the closure: {outside}"
 
 /-- `lake env lean --deps-json <file>` の import(モジュール名、ファイルの順)。 -/
 def depsOf (file : System.FilePath) : IO (Except String (List String)) := do
@@ -158,6 +227,10 @@ def checks : M Unit := do
       fail s!"{root}/ has {diags.size} diagnostic(s); cannot read its claim bundle"
       return
     decls := decls ++ checked.core.toList.flatMap fun (m : Core.Module) => m.decls.toList
+    -- C37: 移植ソースの所在と module 宣言
+    checkSpecSources root sources checked.core
+  -- C37: 生成先の配置とモジュール名
+  checkGeneratedNames seen
   let rootsShown := ", ".intercalate (roots.map fun r => s!"{r}/")
   let bundles : List Core.Decl := decls.filter fun (d : Core.Decl) =>
     match d with
@@ -171,6 +244,9 @@ def checks : M Unit := do
     let bundleModule := "Statements." ++ ".".intercalate ((key.splitOn ".").dropLast)
     if seen.contains bundleModule then ok s!"the module of the claim bundle (`{bundleModule}`) is in the import closure of Statements"
     else fail s!"the module of the claim bundle (`{bundleModule}`) is not in the import closure of Statements"
+    -- C37: claim bundle は移植先 `Consensus.Spec.*` のモジュールにある(生成名は `Statements.Consensus.Spec.<module>.<bundle>`)
+    if key.startsWith specModulePrefix then ok s!"C37: the claim bundle `{key}` lives under `{specModulePrefix}*`"
+    else fail s!"C37: the claim bundle `{key}` is not under `{specModulePrefix}*`"
     let sortedLabels := labels.mergeSort (· ≤ ·)
     let sortedSurface := claimSurface.mergeSort (· ≤ ·)
     if sortedLabels == sortedSurface then

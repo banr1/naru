@@ -10,7 +10,7 @@
 - `let` のパターン(`let (a, b) = …`)
 - Constants と interface binding の構文(C15 の `generated/Statements/Review.lean`)
 - naru で書いた stdlib(現状は [language.md](language.md) の表と Lean 側の `NaruStd`)
-- Statements 用の stdlib(Safety / Liveness の一般概念・条件・regime。型引数が入るまでは `specs/consensus/Consensus/Statements/` に monomorphic に書いてある)
+- Statements 用の stdlib(Safety / Liveness の一般概念・条件・regime。型引数が入るまでは `specs/consensus/Consensus/Spec/` に monomorphic に書いてある)
 - `derive finite` / `derive repr` の生成
 - enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)
 - Bool の値が要る位置に置いた Prop(量化・spec 宣言の呼出し)の診断(いまは Lean が拒否する)

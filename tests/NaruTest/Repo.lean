@@ -18,6 +18,11 @@ import NaruTest.Common
 - C25(文書): `docs/` の 7 ファイルがあり、旧文書(`compiler/` 直下の構文リファレンス)が無い。`docs/diagnostics.md` が
   `compiler/Naru/Diag.lean` に定義された E 番号をすべて載せ、それ以外の E 番号を載せない。旧文書の名前への参照が追跡対象のファイルに
   無い(`git grep -l`。`.idd/cycles/` と `.idd/journal.jsonl`(履歴)、IDEAL.md(条件の文面そのものが旧文書を名指しする)を除く)。
+- C37(移植ソースの改名): 移植ソースの改名前のモジュール名・ディレクトリ名(`Consensus/Spec/` の前の名前)への参照が、追跡対象と
+  追跡対象外(ignore されていない)のファイルに無い(`git grep -l --untracked -E`。README・docs・tests・compiler・specs・生成先・
+  `.idd/progress.md`・`.idd/knowledge.md` を含む)。除くのは `.idd/cycles/` と `.idd/journal.jsonl`(履歴)、IDEAL.md(旧名を禁止する
+  要件の本文)、`third_party/`(外部基準)、そして一般規則が旧名の形の利用者モジュールにも適用されることを示す意図的な検体
+  `tests/accept/legacy_module_name.naru` だけ。
 -/
 
 namespace NaruTest.Repo
@@ -34,6 +39,10 @@ def vcPath : String := "third_party/verified-consensus"
 def vcUpstream : String := "https://github.com/fradamt/verified-consensus"
 def thirdPartyReadme : System.FilePath := "third_party" / "README.md"
 def idealPath : System.FilePath := "IDEAL.md"
+/-- 移植ソースの改名前の名前の検索パターン(`git grep -E`。IDEAL.md C37)。この検査自身が掛からないよう連結で作る。 -/
+def oldSpecPattern : String := "Consensus[./]" ++ "Statements"
+/-- 旧名を意図的に使う検体(生成モジュール名の一般規則が旧名の形を特別扱いしないことの受理例。`naru_test regression` が照合する)。 -/
+def oldSpecSamples : List String := ["tests/accept/legacy_module_name.naru"]
 
 /-! ## 小さな補助 -/
 
@@ -378,10 +387,23 @@ def checkDocs : M Unit := do
   else if hits.isEmpty then ok s!"git grep -l {oldDocName}: no tracked file refers to the old document (excluding .idd/cycles/, .idd/journal.jsonl, IDEAL.md)"
   else fail s!"tracked files still refer to {oldDocName}: {hits}"
 
+/-! ## C37: 移植ソースの改名前の名前への参照 -/
+
+def checkOldSpecNames : M Unit := do
+  let g ← runProc "git" #["grep", "-l", "--untracked", "-E", oldSpecPattern]
+  let hits := ((g.stdout.splitOn "\n").filter (!·.isEmpty)).filter fun f =>
+    !(f.startsWith ".idd/cycles/") && f != ".idd/journal.jsonl" && f != idealPath.toString &&
+    !(f.startsWith "third_party/") && !(oldSpecSamples.contains f)
+  if g.exitCode > 1 then fail s!"git grep -l --untracked -E {oldSpecPattern}: exit {g.exitCode}\n{tail g.stderr}"
+  else if hits.isEmpty then
+    ok s!"C37: git grep -l --untracked -E {oldSpecPattern}: no current file refers to the old module path or name (excluding .idd/cycles/, .idd/journal.jsonl, IDEAL.md, third_party/ and the intentional sample(s) {oldSpecSamples})"
+  else fail s!"C37: files still refer to the old module path or name ({oldSpecPattern}): {hits}"
+
 def run (base : Option String) : IO UInt32 := runGroup "naru_test repo" do
   checkReadmeTable
   checkLinks
   checkDocs
+  checkOldSpecNames
   checkSubmodule base
   checkQuickstart
 

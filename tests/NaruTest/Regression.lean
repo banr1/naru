@@ -21,15 +21,23 @@ import NaruTest.Repo
    ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
 5. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
    `statements` 群(C8 の依存境界 / C9 の claim surface)。
-6. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。`tests/accept/guard_shadow.naru` は C34 の検体: 生成した
+6. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。生成ファイルは `<lib>/<モジュールのパス>.lean` で、
+   宣言は `<lib>.<モジュール名>.*`(モジュール名の一般規則、C37)。`tests/accept/guard_shadow.naru` は C34 の検体: 生成した
    Model / Statements を import する検査プログラム(`c34Program`。期待結果は `c34Values` / `c34Props` / `c34Equations`)を `lean --run` し、
    実際の戻り値の行が期待とすべて一致し、命題の真偽(真になる入力と、偽になる対照入力の否定)を Lean kernel が `example` で検査する。
-7. C7 の simulate: ソースルート配下の scenario を持つ全ファイルの `naru simulate`(exit 0。`basic.naru` の出力に time / node / confirmed /
-   stable / finalized)、ルート外のファイルと scenario の無いファイルは exit 2、C26(生成先に追跡対象外のファイルが無い、`.gitignore` に `Simulate` の行が無い)。
-8. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
+   `tests/accept/legacy_module_name.naru` は C37 の検体: 移植ソースの改名前と同じ形の利用者モジュール名が、特別扱いなしに同じ規則で
+   `Model/` と `Statements/` の両方に生成され、ルートの集約ファイルが import する。
+7. C37 の改名: 改名前の最後の commit(`c37BaseCommit`)のソースルートを `git archive` で取り出して現在のコンパイラで `--out` に生成し、
+   現在のソースの生成物と、生成パスの集合と各ファイルのヘッダ以下の内容(宣言・import・本体)がモジュール名の置換を除いて一致する
+   ことを照合する。現在の生成物のパス・内容に改名前の名前が無い。
+8. C7 の simulate: ソースルート配下の scenario を持つ全ファイルの `naru simulate`(exit 0。`basic.naru` の出力に time / node / confirmed /
+   stable / finalized)、ルート外のファイルと scenario の無いファイルは exit 2、C26(simulate の後の生成先のファイル集合が直前の `naru compile` の
+   出力と一致する(runner・一時ファイルが無い)、`git status --porcelain --ignored` に compile の出力の外の追跡対象外・ignore の項目が無い、
+   `.gitignore` に `Simulate` の行が無い、runner は `.lake/naru/simulate/Simulate.lean`)。
+9. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
    (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
-9. `repo` 群(C21 / C23 / C25)、C28 / C22 / C27。
-10. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
+10. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
+11. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
 
 `zed-install`(C19。人間の Zed を操作する)と C20(画面観測)は非対話回帰に入れない(IDEAL.md C36)。
 -/
@@ -146,6 +154,127 @@ def c34Program : String :=
 
 def c34ExpectedLines : List String := c34Values.map fun (label, _, v) => s!"{label} = {v}"
 
+/-! ## C37 の検体: 改名前後の宣言構造と、モジュール名の一般規則 -/
+
+/-- 移植ソースの spec 側が改名前のディレクトリにあった最後の commit(周回 33 の改名の直前の HEAD)。この commit のソースルートを
+`git archive` で取り出し、現在のコンパイラで `--out` に生成して、現在のソースの生成物とモジュール名の置換(`c37OldMod` → `c37NewMod`、
+`c37OldDir` → `c37NewDir`)を除いて照合する。移植ソースの宣言を正当に変える周回は、この基準をその変更の直前の commit に進める。 -/
+def c37BaseCommit : String := "8e7eed5a6676cd19f24ea1b2cbc7255fbf4c7589"
+def c37NewDir : String := "Consensus/Spec"
+def c37NewMod : String := "Consensus.Spec"
+/-- 改名前の名前。この検査自身が旧名の検索(`naru_test repo`)に掛からないよう連結で作る。 -/
+def c37OldDir : String := "Consensus/" ++ "Statements"
+def c37OldMod : String := "Consensus." ++ "Statements"
+/-- 一般規則の検体: 改名前と同じ形の利用者モジュール名を持つ受理例(意図的な旧名。`naru_test repo` の旧名検索が除外する)。 -/
+def c37LegacySource : String := (acceptDir / "legacy_module_name.naru").toString
+def c37LegacyModule : String := c37OldMod ++ ".Legacy"
+
+/-- 生成 Lean の宣言の行数(`def` / `structure` / `inductive` / `instance` / `abbrev` / `theorem` で始まる行)。 -/
+def countDecls (c : String) : Nat :=
+  ((c.splitOn "\n").filter fun l =>
+    ["def ", "structure ", "inductive ", "instance ", "abbrev ", "theorem "].any (l.startsWith ·)).length
+
+/-- 受理例の生成ファイルがモジュール名の一般規則に従う: `<lib>/<モジュールのパス>.lean` は、その受理例のモジュール `<名前>` のもので、
+見出し行(naru module `<名前>`)と `<lib>.<名前>.` を接頭辞に持つ宣言を含む。 -/
+def checkModuleRule (name : String) (src : String) (out : System.FilePath) : M Unit := do
+  let (diags, checked) ← Naru.compileFiles [src]
+  if !diags.isEmpty then
+    fail s!"accept {name}: {diags.size} diagnostic(s) when reading its modules"
+    return
+  let modNames := checked.core.toList.map fun (m : Naru.Core.Module) => ".".intercalate m.name
+  for sub in ["Model", "Statements"] do
+    for f in (← Naru.listFiles (out / sub) "lean") do
+      let rel := (f.drop ((out / sub).toString.length + 1)).toString
+      let modName := ((rel.dropEnd ".lean".length).toString.replace "/" ".")
+      let c ← IO.FS.readFile f
+      if modNames.contains modName && contains c s!"/-! naru module `{modName}`" && contains c s!"{sub}.{modName}." then
+        ok s!"accept {name}: {sub}/{rel} is naru module `{modName}` and declares `{sub}.{modName}.*`"
+      else fail s!"accept {name}: {sub}/{rel} does not follow `<lib>/<module path>.lean` with `{sub}.<module>.*` declarations (modules of the source: {modNames})"
+  if src == c37LegacySource then
+    let relPath := System.FilePath.mk (c37LegacyModule.replace "." "/" ++ ".lean")
+    for lib in ["Model", "Statements"] do
+      let f := out / lib / relPath
+      if ← f.pathExists then
+        let c ← IO.FS.readFile f
+        if contains c s!"def {lib}.{c37LegacyModule}." then
+          ok s!"C37: {f} declares `{lib}.{c37LegacyModule}.*` (the general rule applies unchanged to a user module named like the old port)"
+        else fail s!"C37: {f} has no `def {lib}.{c37LegacyModule}.`"
+      else fail s!"C37: {f} is missing (the general rule must not special-case this module name)"
+    let mroot ← IO.FS.readFile (out / "Model.lean")
+    let sroot ← IO.FS.readFile (out / "Statements.lean")
+    if contains mroot s!"import Model.{c37LegacyModule}\n" && contains sroot s!"import Statements.{c37LegacyModule}\n" then
+      ok s!"C37: the root Model.lean / Statements.lean of {name} import `{c37LegacyModule}` under their prefixes"
+    else fail s!"C37: the root Model.lean / Statements.lean of {name} do not import `{c37LegacyModule}`"
+
+/-- 7. C37: 改名前の commit のソースを現在のコンパイラで生成し、現在の生成物とモジュール名の置換を除いて照合する。 -/
+def checkRenameStructure (roots : List System.FilePath) : M Unit := do
+  heading "C37 rename: declaration structure modulo module names"
+  let some root := roots.head? | fail "C37: naru.toml lists no source root"; return
+  let dir := workDir / "c37"
+  if ← dir.isDir then IO.FS.removeDirAll dir
+  IO.FS.createDirAll (dir / "old")
+  let tar := dir / "old.tar"
+  let _ ← step s!"C37: git archive {c37BaseCommit.take 7} {root}" "git" #["archive", "--format=tar", "-o", tar.toString, c37BaseCommit, root.toString]
+  let _ ← step "C37: extract the archive" "tar" #["-xf", tar.toString, "-C", (dir / "old").toString]
+  let oldRoot := dir / "old" / root
+  let oldFiles ← Naru.listFiles oldRoot "naru"
+  let newFiles ← Naru.listFiles root "naru"
+  if oldFiles.isEmpty then
+    fail s!"C37: no .naru under {oldRoot}"
+    return
+  let oldSpec := oldFiles.filter fun f => contains f (c37OldDir ++ "/")
+  let newSpec := newFiles.filter fun f => contains f (c37NewDir ++ "/")
+  if !oldSpec.isEmpty && oldSpec.length == newSpec.length then
+    ok s!"C37: {oldSpec.length} spec source files under {c37OldDir}/ before and under {c37NewDir}/ after the rename"
+  else fail s!"C37: {oldSpec.length} spec source files under {c37OldDir}/ before vs {newSpec.length} under {c37NewDir}/ after"
+  let oldGen := dir / "old-gen"
+  let newGen := dir / "new-gen"
+  let _ ← step "C37: compile the base commit's sources with the current compiler" "lake" (#["exe", "naru", "compile", "--out", oldGen.toString] ++ oldFiles.toArray)
+  let _ ← step "C37: compile the current sources" "lake" (#["exe", "naru", "compile", "--out", newGen.toString] ++ newFiles.toArray)
+  let oldPrefix := prefixOf (dir / "old")
+  let normalize (s : String) : String := ((s.replace oldPrefix "").replace c37OldMod c37NewMod).replace c37OldDir c37NewDir
+  let body (c : String) : String := "\n".intercalate ((c.splitOn "\n").drop 5)
+  let relOf (base : System.FilePath) (f : String) : String := (f.drop (prefixOf base).length).toString
+  let oldOut ← allFiles oldGen
+  let newOut ← allFiles newGen
+  let oldRels := (oldOut.map fun f => normalize (relOf oldGen f)).mergeSort (· ≤ ·)
+  let newRels := (newOut.map (relOf newGen ·)).mergeSort (· ≤ ·)
+  if !newRels.isEmpty && oldRels == newRels then
+    ok s!"C37: the same {newRels.length} generated paths before and after (substituting {c37OldDir} → {c37NewDir})"
+  else
+    let onlyOld := oldRels.filter (!newRels.contains ·)
+    let onlyNew := newRels.filter (!oldRels.contains ·)
+    fail s!"C37: generated paths differ: only before {onlyOld.take 5}, only after {onlyNew.take 5}"
+  let mut differ : List String := []
+  let mut compared := 0
+  for f in oldOut do
+    let rel := normalize (relOf oldGen f)
+    let newPath := newGen / rel
+    if !(← newPath.pathExists) then continue
+    compared := compared + 1
+    let a := normalize (body (← IO.FS.readFile f))
+    let b := body (← IO.FS.readFile newPath)
+    if a != b then differ := differ ++ [rel]
+  if compared > 0 && differ.isEmpty then
+    ok s!"C37: {compared} generated files are identical below the 5-line header after substituting {c37OldMod} → {c37NewMod} (imports, declarations, bodies)"
+  else fail s!"C37: generated files differ beyond the module names ({differ.length}): {differ.take 10}"
+  -- 宣言数(spec 側のモジュールの Model / Statements)
+  let mut nModel := 0
+  let mut nStmt := 0
+  for f in newOut do
+    let rel := relOf newGen f
+    if rel.startsWith s!"Model/{c37NewDir}/" then nModel := nModel + countDecls (← IO.FS.readFile f)
+    if rel.startsWith s!"Statements/{c37NewDir}/" then nStmt := nStmt + countDecls (← IO.FS.readFile f)
+  if nStmt > 0 then ok s!"C37: the {c37NewDir} modules generate {nStmt} Statements declaration(s) and {nModel} Model declaration(s) (same as before the rename, by the comparison above)"
+  else fail s!"C37: no Statements declaration under Statements/{c37NewDir}/"
+  -- 現在の生成物に旧名が無い
+  let mut hits : List String := []
+  for f in newOut do
+    if contains f c37OldDir then hits := hits ++ [f]
+    else if contains (← IO.FS.readFile f) c37OldMod then hits := hits ++ [f]
+  if hits.isEmpty then ok s!"C37: no generated path or content of the current sources mentions {c37OldDir} / {c37OldMod} ({newOut.length} files)"
+  else fail s!"C37: old names in the current generated output: {hits.take 10}"
+
 /-! ## 段 -/
 
 /-- 2. 受理例と反例。 -/
@@ -239,6 +368,7 @@ def checkGeneratedAccepts (leanPath : String) : M Unit := do
         let olean := (rel.dropEnd ".lean".length).toString ++ ".olean"
         let _ ← step s!"accept {name}: lean {rel}" "lean" #[s!"--root={outAbs}", "-o", (outAbs / olean).toString, rel]
           (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
+    checkModuleRule name src out
     if src == c34Source then
       let prog := out / "Check.lean"
       IO.FS.writeFile prog c34Program
@@ -257,8 +387,9 @@ def checkGeneratedAccepts (leanPath : String) : M Unit := do
       if good && r.exitCode == 0 then
         ok s!"C34: {c34Values.length} return values agree, {c34Props.length} propositions and {c34Equations.length} equations checked by the Lean kernel ({c34Source})"
   if !accepts.contains c34Source then fail s!"C34: {c34Source} is missing"
+  if !accepts.contains c37LegacySource then fail s!"C37: {c37LegacySource} is missing"
 
-/-- 7. C7 の simulate と C26。 -/
+/-- 8. C7 の simulate と C26。 -/
 def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
   heading "C7 simulate / C26"
   let mut scenarioFiles : List String := []
@@ -270,6 +401,9 @@ def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) :
       if hasScenario then scenarioFiles := scenarioFiles ++ [f]
       else if plainFile.isNone then plainFile := some f
   if scenarioFiles.isEmpty then fail "C7: no file under the source roots declares a scenario"
+  -- C26 の基準: 直前の `naru compile` が生成先に書くファイルの集合
+  let _ ← step "C26: compile (the files naru compile writes are the only ones allowed under the generated dir)" "lake" #["exe", "naru", "compile"]
+  let expected ← allFiles generated
   let words := ["time", "node", "confirmed", "stable", "finalized"]
   let mut basicSeen := false
   for f in scenarioFiles do
@@ -285,18 +419,37 @@ def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) :
   match plainFile with
   | some f => let _ ← step s!"C7 simulate a file without scenario (exit 2)" "lake" #["exe", "naru", "simulate", f] (expectExit := 2)
   | none => fail "C7: every file under the source roots declares a scenario (no probe for exit 2)"
-  -- C26
+  -- C26: 生成先には `naru compile` の決定的な出力だけがある。simulate の後の生成先のファイル集合が直前の compile の出力と一致し
+  -- (runner・一時ファイルが増えていない)、`git status --porcelain --ignored` の追跡対象外(`??`)の項目は compile の出力のパス
+  -- (この周回で新しくできた生成パス。次の commit が追跡する)だけ、ignore(`!!`)の項目は無い(` D` は作業木に無い旧パス、` M` は内容の更新)。
+  let after ← allFiles generated
+  let extra := after.filter (!expected.contains ·)
+  let missing := expected.filter (!after.contains ·)
+  if expected.isEmpty then fail s!"C26: {generated}/ is empty after compile"
+  else if extra.isEmpty && missing.isEmpty then ok s!"C26: after simulate, {generated}/ holds exactly the {expected.length} files that naru compile writes (no runner / temporary file)"
+  else fail s!"C26: {generated}/ differs from the compile output after simulate: extra {extra.take 5}, missing {missing.take 5}"
   let st ← runProc "git" #["status", "--porcelain", "--ignored", "--", generated.toString ++ "/"]
-  let stray := ((st.stdout.splitOn "\n").filter (!·.isEmpty)).filter fun l => !(l.startsWith " M")
-  if st.exitCode == 0 && stray.isEmpty then ok s!"C26: git status --porcelain --ignored -- {generated}/ has no untracked / ignored file after simulate"
-  else fail s!"C26: untracked / ignored files under {generated}/ (exit {st.exitCode}): {stray}"
+  let entries := (st.stdout.splitOn "\n").filter (!·.isEmpty)
+  let isOutput (p : String) : Bool :=
+    if p.endsWith "/" then expected.any (·.startsWith p) else expected.contains p
+  let mut stray : List String := []
+  let mut newOutput : List String := []
+  for l in entries do
+    let status := (l.take 2).toString
+    let path := (l.drop 3).toString
+    if status == " M" || status == " D" then continue
+    else if status == "??" && isOutput path then newOutput := newOutput ++ [path]
+    else stray := stray ++ [l]
+  if st.exitCode == 0 && stray.isEmpty then
+    ok s!"C26: git status --porcelain --ignored -- {generated}/ has no untracked / ignored entry outside the compile output ({newOutput.length} untracked entries are new compile output paths: {newOutput})"
+  else fail s!"C26: untracked / ignored entries outside the compile output under {generated}/ (exit {st.exitCode}): {stray}"
   let ignore ← IO.FS.readFile ".gitignore"
   let simLines := (ignore.splitOn "\n").filter (contains · "Simulate")
   if simLines.isEmpty then ok "C26: .gitignore has no line containing `Simulate`" else fail s!"C26: .gitignore mentions Simulate: {simLines}"
   let runner : System.FilePath := ".lake" / "naru" / "simulate" / "Simulate.lean"
   if ← runner.pathExists then ok s!"C26: the simulate runner is {runner}" else fail s!"C26: {runner} not found after simulate"
 
-/-- 8. C24: 直書きの不在と別名のコピー。 -/
+/-- 9. C24: 直書きの不在と別名のコピー。 -/
 def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
   heading "C24 naru.toml"
   let g ← step "C24 grep compiler/ for a hard-coded root name (expect no match)" "grep" #["-rn", "\"dsl\\|\"specs", compilerDir.toString] (expectExit := 1)
@@ -324,7 +477,7 @@ def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M
   let restored ← shaSnapshot generated
   if restored == before then ok "C24: generated files restored (sha256 identical)" else fail "C24: generated files differ after restoring naru.toml"
 
-/-- 9. C28 / C22 / C27。 -/
+/-- 10. C28 / C22 / C27。 -/
 def checkLayout : M Unit := do
   heading "C28 / C22 / C27"
   let r ← step "C28 git ls-files tests/golden" "git" #["ls-files", "tests/golden"]
@@ -364,10 +517,11 @@ def checks : M Unit := do
   let leanPath := e.stdout.trimAscii.toString
   if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
   checkGeneratedAccepts leanPath
+  checkRenameStructure roots
   checkSimulate roots generated
   checkConfig roots generated
   heading "repository"
-  subgroup "naru_test repo (C21 / C23 / C25)" (NaruTest.Repo.run none)
+  subgroup "naru_test repo (C21 / C23 / C25 / C37)" (NaruTest.Repo.run none)
   checkLayout
   let st ← runProc "git" #["status", "--short"]
   IO.println s!"git status --short:\n{st.stdout}"

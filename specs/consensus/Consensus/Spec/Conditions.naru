@@ -20,7 +20,7 @@
 //   型に持たないので、量化される `rho.honest` / `committee(k)` / electorate の鍵は `xs == sort(xs, by = …).toSet()` で正規形を
 //   要求する。`docs/architecture.md`「Statements backend」の既知の制限)、validator の型 `V` が electorate そのものであること(naru の
 //   `ValidatorId` は Nat 全体なので、proposer / committee / honest が electorate に含まれることを要求する)。
-module Consensus.Statements.Conditions
+module Consensus.Spec.Conditions
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
@@ -31,9 +31,9 @@ import Consensus.Execution.Objects
 import Consensus.Execution.Setup
 import Consensus.Execution.Node
 import Consensus.Execution.Run
-import Consensus.Statements.Execution
-import Consensus.Statements.Interface
-import Consensus.Statements.Constants
+import Consensus.Spec.Execution
+import Consensus.Spec.Interface
+import Consensus.Spec.Constants
 
 // ── The domain the handwritten types guarantee: well-formed setup and run ──
 

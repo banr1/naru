@@ -11,7 +11,7 @@
 //   validator の型 `V` が electorate であることは型に入っている。naru の `Setup` / `NamedRun` はそれらを持たないので、各 claim は
 //   `s: Setup` を量化し、`SetupWellFormed(s)` と(run を取る claim は)`RunDomain(s, rho)`(Conditions.naru)を premise に足す。
 // - `I.finalized` 等の出力 → `Output.Finalized` 等(Interface.naru)、`0`(genesis からの時刻)→ `0`(Time = Int)。
-module Consensus.Statements.Claims
+module Consensus.Spec.Claims
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
@@ -19,11 +19,11 @@ import Consensus.Objects.Blocks
 import Consensus.Objects.NamedBlocks
 import Consensus.Execution.Setup
 import Consensus.Execution.Run
-import Consensus.Statements.Interface
-import Consensus.Statements.Constants
-import Consensus.Statements.Properties
-import Consensus.Statements.Conditions
-import Consensus.Statements.Regimes
+import Consensus.Spec.Interface
+import Consensus.Spec.Constants
+import Consensus.Spec.Properties
+import Consensus.Spec.Conditions
+import Consensus.Spec.Regimes
 
 // Available outputs from `t0`; inclusion needs no recurrence: an honest proposal is confirmed by everyone within
 // `confirmationDelay`, and is in everyone's stable chain within `stableInclusionDelay`.

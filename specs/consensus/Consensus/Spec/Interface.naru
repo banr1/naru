@@ -12,7 +12,7 @@
 // - `env S` の `awake v t = (S.node v).awake (actionRound S t)` → `envAwake(s, v, t)`(`awake` は Schedule.naru の input)。
 //   `Δ` / `t_GST` / `electorate` は `s.e` の欄そのもの。
 // - `Certificate = NamedBlock`。
-module Consensus.Statements.Interface
+module Consensus.Spec.Interface
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
@@ -27,8 +27,8 @@ import Consensus.Protocol.Duties.Proposals
 import Consensus.Execution.Setup
 import Consensus.Execution.Node
 import Consensus.Execution.Run
-import Consensus.Statements.Execution
-import Consensus.Statements.Accountability
+import Consensus.Spec.Execution
+import Consensus.Spec.Accountability
 
 // The three user-facing outputs, as getters on the node state (手書き `Interface.confirmed` / `stable` / `finalized`).
 enum Output { Confirmed, Stable, Finalized } derive eq

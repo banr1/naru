@@ -9,7 +9,7 @@
 //   (昇順・重複なし)は `toSet()` が作るので、List で量化して正規化した集合に `weightOf` を当てる(重複で重みを数え
 //   過ぎない。`docs/architecture.md`「Statements backend」の既知の制限を避ける書き方)。
 // - `RootInjectiveBelow {tip₁, tip₂}` の `∃ B ∈ {tip₁, tip₂}, A ⪯ B` → `preceq(a, tip1) || preceq(a, tip2)`。
-module Consensus.Statements.Accountability
+module Consensus.Spec.Accountability
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Blocks

@@ -7,7 +7,7 @@
 // - `∀ u ∈ rho.honest, …` → `forall u: ValidatorId { rho.honest.contains(u) && … implies … }`。
 // - 欄 2 つの `structure … : Prop`(`SafeFrom` / `OutputOrder`)→ `&&` で束ねた property。
 // - `t'` / `t₀` / `b₀` / `T` → `t2` / `t0` / `b0` / `tRead`(局所名は小文字始まり)。
-module Consensus.Statements.Properties
+module Consensus.Spec.Properties
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
@@ -16,7 +16,7 @@ import Consensus.Objects.Parameters
 import Consensus.Protocol.Schedule
 import Consensus.Execution.Setup
 import Consensus.Execution.Run
-import Consensus.Statements.Interface
+import Consensus.Spec.Interface
 
 // Two outputs do not conflict across honest reads from `t0` to the horizon.
 property ConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Time) {

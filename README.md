@@ -48,7 +48,7 @@ scenario basic
 |---|---|
 | `compiler/` | naru コンパイラ(Lean)。字句・構文解析、名前解決、型・capability・phase・停止性の検査、Core IR、Model / Statements backend、言語サーバー、CLI |
 | `stdlib/` | Model 用 stdlib(`stdlib/Model`、Lean の `NaruStd`)。生成 Model が import する |
-| `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
+| `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
 | `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`)。機械生成専用で手では編集しない |
 | `tests/` | 受理例 `accept/`、反例 `reject/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
 | `docs/` | 文書(下の案内) |
@@ -77,7 +77,7 @@ lake exe naru check-reject tests/reject/phase_leak.naru E001   # 反例が期待
 lake exe naru_test grammar      # tree-sitter 文法(C16)
 lake exe naru_test zed          # Zed 拡張(C17)
 lake exe naru_test lsp          # 言語サーバー(C18)
-lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface(C8 / C9)
+lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
 lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 12 分

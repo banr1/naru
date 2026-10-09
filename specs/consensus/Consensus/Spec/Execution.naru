@@ -8,7 +8,7 @@
 //   `P.depsPresent` / `P.excludes` は node の `.st` に Node.naru の fn を当てる。
 // - `(NamedNode.tick S v n t).2`(tick が出す object)→ runtime の fn `tickEmits`(Model に出る)。
 // - `handles` の局所 `blockCall B before` → predicate `BlockCall`。
-module Consensus.Statements.Execution
+module Consensus.Spec.Execution
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time

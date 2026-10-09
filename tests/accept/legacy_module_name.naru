@@ -1,0 +1,20 @@
+// 受理例(IDEAL.md C37 の検体): 生成モジュール名の一般規則「出力ライブラリの接頭辞 + 元のモジュール名」が Consensus / Statements を
+// 特別扱いせず、合法な利用者のモジュール名にそのまま適用されること。移植ソースの旧名と同じ形のモジュール名を意図的に使う
+// (移植ソース自身は `Consensus/Spec/` に住む。`naru_test repo` の旧名検索はこのファイルだけを除外する)。
+// `lake exe naru compile tests/accept/legacy_module_name.naru` が exit 0 で、`--out <dir>` に
+// `Model/Consensus/Statements/Legacy.lean`(宣言は `Model.Consensus.Statements.Legacy.*`)と
+// `Statements/Consensus/Statements/Legacy.lean`(宣言は `Statements.Consensus.Statements.Legacy.*`)が出て、
+// ルート `Model.lean` / `Statements.lean` がそれらを import すること(`naru_test regression` が照合する)。
+module Consensus.Statements.Legacy
+
+record Slot { value: Nat } derive eq, order
+
+fn next(s: Slot) -> Slot { Slot { value: s.value + 1 } }
+
+fn isLater(a: Slot, b: Slot) -> Bool { a.value < b.value }
+
+predicate Later(a: Slot, b: Slot) { isLater(a, b) }
+
+claim nextIsLater(s: Slot) { Later(s, next(s)) }
+
+claim bundle Legacy { nextIsLater }

@@ -15,7 +15,7 @@
 //   床除算 `fdiv` と一致する(`roundAfter` の被除数 `tRead − 6Δ + L − 1` は負になりうる)。
 // - `S.a r` → `setupActionTime(s, r)`、`S.cfg.K` / `D` → `s.cfg.k` / `d`、`S.hc.R` / `η_SG` → `s.hc.r` / `etaSG`、
 //   `S.cfg.timeoutDelay / S.hc.R - 2`(切り捨て)→ `extraRounds(s)`。
-module Consensus.Statements.Constants
+module Consensus.Spec.Constants
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time

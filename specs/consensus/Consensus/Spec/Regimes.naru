@@ -7,16 +7,16 @@
 //   `t == 0 || exists source, t0, gap { … }` と書く(knowledge「手書き Statements の構成」)。量化される `source` には、
 //   手書きの型が保証する run の領域 `RunDomain(s, source)`(Conditions.naru)を足す。
 // - `rho'.honest ⊆ rho.honest` → `subset`、`rho'.events.filter (fun e => decide (…)) = …` → `filter` の List の等しさ。
-module Consensus.Statements.Regimes
+module Consensus.Spec.Regimes
 
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
 import Consensus.Objects.Parameters
 import Consensus.Execution.Setup
 import Consensus.Execution.Run
-import Consensus.Statements.Interface
-import Consensus.Statements.Constants
-import Consensus.Statements.Conditions
+import Consensus.Spec.Interface
+import Consensus.Spec.Constants
+import Consensus.Spec.Conditions
 
 // A continuation preserves retained honest validators' event prefixes.
 regime AgreesUntil(rho: NamedRun, rho2: NamedRun, cutoff: Time) {
