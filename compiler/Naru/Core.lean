@@ -221,6 +221,72 @@ def Decl.refs : Decl → List String
     inputs.flatMap (fun (k, ps, v) => k :: ps.flatMap (·.2.namedKeys) ++ v.refs) ++ stmts.flatMap ScenarioStmt.refs
   | .claimBundle _ _ items => items.map (·.2)
 
+/-! ## 健全性(C35)
+
+検査を通って backend に渡る Core には、推論用のメタ変数(`.mvar`)・誤りの波及を抑える「不明」(`.unknown`)・誤りの位置
+(`.error`)が残ってはならない(型検査は誤りを診断してから作る)。`unsound` はそれらの位置の説明を返す(空なら健全)。
+`Driver.compileSources` は診断の無い単位でこれを確かめ、残っていればコンパイラの不変条件の破れとして E014 を出し、backend に渡さない。
+`naru_test regression` は全受理例と移植ソースの Core で 0 件を要求する。 -/
+
+/-- 型に `.mvar` / `.unknown` が残っているか。 -/
+partial def _root_.Naru.TyV.unsettled : TyV → Bool
+  | .mvar _ | .unknown => true
+  | .option a | .list a | .set a => a.unsettled
+  | .result a b | .table a b => a.unsettled || b.unsettled
+  | .tuple ts => ts.any TyV.unsettled
+  | .fn ps r => ps.any TyV.unsettled || r.unsettled
+  | _ => false
+
+def tyIssue (what : String) (t : TyV) : List String :=
+  if t.unsettled then [s!"{what}: unresolved type `{t.render}`"] else []
+
+mutual
+/-- 式に残る不健全な節の説明(`.error` ノード、`.mvar` / `.unknown` を含む型)。 -/
+partial def Expr.unsound : Expr → List String
+  | .error => ["error node"]
+  | .lit _ ty => tyIssue "literal" ty
+  | .var _ | .global _ => []
+  | .call _ args | .tuple args | .variant _ _ args => args.flatMap Expr.unsound
+  | .callLocal f args => f.unsound ++ args.flatMap Expr.unsound
+  | .method tn n recv args rt => tyIssue s!"receiver of `{tn}.{n}`" rt ++ recv.unsound ++ args.flatMap Expr.unsound
+  | .builtin n args ty => tyIssue s!"result of `{n}`" ty ++ args.flatMap Expr.unsound
+  | .field r _ _ => r.unsound
+  | .binop op l r ty => tyIssue s!"operands of `{op}`" ty ++ l.unsound ++ r.unsound
+  | .unop _ a => a.unsound
+  | .ite c t e => c.unsound ++ t.unsound ++ e.unsound
+  | .match_ s st arms => tyIssue "scrutinee" st ++ s.unsound ++ arms.flatMap Arm.unsound
+  | .let_ n ty v b => tyIssue s!"`let {n}`" ty ++ v.unsound ++ b.unsound
+  | .record _ fs base => fs.flatMap (·.2.unsound) ++ (base.map Expr.unsound).getD []
+  | .list es ty => tyIssue "list elements" ty ++ es.flatMap Expr.unsound
+  | .lambda ps b => ps.flatMap (fun (n, t) => tyIssue s!"closure parameter `{n}`" t) ++ b.unsound
+  | .quant _ bs b => bs.flatMap (fun (n, t) => tyIssue s!"quantified `{n}`" t) ++ b.unsound
+
+partial def Arm.unsound : Arm → List String
+  | .mk _ g b => (g.map Expr.unsound).getD [] ++ b.unsound
+end
+
+def ScenarioStmt.unsound : ScenarioStmt → List String
+  | .let_ n ty v => tyIssue s!"`let {n}`" ty ++ v.unsound
+  | .observe _ ty e => tyIssue "observe" ty ++ e.unsound
+
+/-- 宣言に残る不健全な節の説明(署名と本体)。 -/
+def Decl.unsound : Decl → List String
+  | .typeAlias _ _ ty => tyIssue "alias" ty
+  | .record _ _ _ fields _ => fields.flatMap fun (f, t) => tyIssue s!"field `{f}`" t
+  | .enum _ _ variants _ => variants.flatMap fun (v, ts) => ts.flatMap (tyIssue s!"variant `{v}`")
+  | .fn _ _ _ params ret body =>
+    params.flatMap (fun p => tyIssue s!"parameter `{p.name}`" p.ty) ++ tyIssue "return type" ret ++ (body.map Expr.unsound).getD []
+  | .scenario _ _ inputs stmts =>
+    inputs.flatMap (fun (_, ps, v) => ps.flatMap (fun (p, t) => tyIssue s!"input parameter `{p}`" t) ++ v.unsound) ++
+      stmts.flatMap ScenarioStmt.unsound
+  | .claimBundle .. => []
+
+/-- モジュールの宣言ごとの不健全な節(空でないものだけ): (宣言の修飾名, 説明)。 -/
+def Module.unsound (m : Module) : List (String × List String) :=
+  m.decls.toList.filterMap fun d =>
+    let issues := d.unsound
+    if issues.isEmpty then none else some (d.key, issues)
+
 end Core
 
 end Naru

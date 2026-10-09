@@ -34,7 +34,7 @@ file:line:col: error[E0xx]: message
 | E011 | 解決できない名前 | 済 |
 | E012 | 同名の宣言(scenario で同じ input を 2 度束縛、も) | 済 |
 | E013 | 型の位置に型でない宣言 | 済 |
-| E014 | 型の不一致・推論できない型・値でないものの値としての使用(`observe` に observer の呼出し以外、input でないものの束縛、も) | 済 |
+| E014 | 型の不一致・推論できない型・値でないものの値としての使用(`observe` に observer の呼出し以外、input でないものの束縛、型別名を含む型名の値使用と record でない型へのレコードリテラル、spec 宣言で Prop 相当の式(量化・spec 宣言の呼出し・Prop に束ねた局所名)を Bool の値が要る位置に書く、も) | 済 |
 | E015 | 無い欄・無いメソッド・引数の数や名前の不一致(閉じていない scenario: 使う input の未束縛・束縛の順序・仮引数の数、も) | 済 |
 | E016 | claim bundle の項目が claim でない | 済 |
 | E017 | 生成モジュールの構造: モジュール同士の循環参照(runtime の参照は Model、spec の参照は Statements)・同名のモジュール(backend) | 済(`Backend/Model.lean`、`Backend/Statements.lean`) |
@@ -159,6 +159,26 @@ fn f(x: g) -> Nat { 1 }       // E013(g は fn であって型ではない)
 fn f(x: Nat) -> Bool { x }    // E014
 record Scorer { score: (Nat) -> Nat }   // E014
 fn g() -> Nat { let xs = []; 0 }        // E014(xs の型が決まらない。`cannot infer the type of …`)
+```
+
+spec 宣言の中で、Prop 相当の式(量化・spec 宣言の呼出し・`let` で Prop に束ねた局所名)を実行可能な Bool の値が要る位置
+(fn / stdlib メソッドの実引数・コレクションの要素・record の欄・Bool を要求する lambda の戻り値・`match` の scrutinee・算術 / 比較の被演算子)に
+書く場合と、Prop の条件や Prop のガードで Bool 以外の値を選ぶ場合も E014(`tests/reject/prop_as_value.naru`。Prop は Bool に戻せず、naru は量化も
+spec 宣言も決定しない。置ける位置は [language.md](language.md)「Prop と Bool」)。
+
+```
+predicate truthLost(rho: Run) { boolId(forall b: Block { … }) }            // E014(量化は Bool の値にならない: 真偽が失われる)
+predicate P(rho: Run) { rho.blocks.all(|b| Below(b, 10)) }                 // E014(lambda の戻り値に spec 宣言の呼出し)
+predicate Q(rho: Run) { let n = if AllHonest(rho) { 1 } else { 2 }; n > 0 }   // E014(Prop の条件で Nat を選ぶ)
+```
+
+型名(型別名 `type Count = Nat` の `Count` を含む)を値に使う場合と、record / state でない型へのレコードリテラルも E014
+(`tests/reject/type_name_as_value.naru`)。
+
+```
+type Count = Nat
+fn f(x: Count) -> Count { x + Count }   // E014(型別名は値ではない)
+fn g() -> Count { Count {} }            // E014(Count は record ではない)
 ```
 
 ### E015 無い欄・無いメソッド・引数の不一致

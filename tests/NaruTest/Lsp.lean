@@ -12,6 +12,7 @@ import NaruTest.Common
    待つ barrier にも使う(サーバーはメッセージを順に処理するので、応答が返れば直前の通知の診断は送り終わっている)。
 3. `tests/reject/` の各反例を `didOpen` すると、`naru compile` と同じ E 番号・同じ行(・列)の診断がその URI に返り、
    反例の先頭コメントが名指しする E 番号(`期待: … E001`)がその中にある。`didClose` で空になる。
+   `tests/accept/` の各受理例(単独の単位)を `didOpen` すると診断 0 件(C35 の正常例 `prop_bool.naru` を含む)、`didClose` で空。
 4. BMP 外の文字(絵文字)を含む単独の文書(ディスクに無い)で、診断の列が UTF-16 単位で、範囲がトークン 1 つ分の幅になる。
 5. `naru.toml` のソースルート(`specs/consensus/`)の移植ソースをすべて `didOpen` しても診断は 0 件(他の URI にも非空の診断は来ない)。
 6. `<ルート>/Consensus/Objects/Time.naru` を `didChange` で壊す: 末尾に未解決名を使う fn を足すとその行に E011 が出る。
@@ -270,6 +271,21 @@ def checks (env : Env) : M Unit := do
     let _ ← agrees s!"{p}: didClose" got #[] [uri]
   if nRejects == rejects.length then
     ok s!"tests/reject/: {nRejects} files, didOpen diagnostics match naru compile and the header's E number, didClose clears them"
+  -- 3b. 受理例(単独の単位): `didOpen` で診断 0 件(C35 の正常例 `prop_bool.naru` を含む)、`didClose` で空
+  let accepts ← Naru.listFiles "tests/accept" "naru"
+  let mut nAccepts := 0
+  for p in accepts do
+    let abs := (env.root / p).toString
+    let uri := System.Uri.pathToUri abs
+    didOpen env uri (← IO.FS.readFile abs)
+    let some got ← barrier env | return
+    let opened ← agrees s!"{p}: didOpen" got #[] [uri]
+    didClose env uri
+    let some got ← barrier env | return
+    let closed ← agrees s!"{p}: didClose" got #[] [uri]
+    if opened && closed then nAccepts := nAccepts + 1
+  if nAccepts == accepts.length && nAccepts > 0 then
+    ok s!"tests/accept/: {nAccepts} files, didOpen → 0 diagnostics (none for other URIs either), didClose → empty"
   -- 4. BMP 外の文字を含む単独の文書(ディスクに無い: 単独の単位はバッファだけを検査する)
   let emojiPath := "/tmp/naru-lsp-probe/emoji.naru"
   let emojiUri := System.Uri.pathToUri emojiPath

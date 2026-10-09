@@ -61,6 +61,16 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
     diags := ds
     core := cs
   if diags.isEmpty then
+    -- C35: 診断なしに検査を通った Core に `.error` / 未解決の型が残っていればコンパイラの不変条件の破れ。
+    -- 黙って backend に渡さず、宣言の位置に E014 を出す(`Core.Decl.unsound`)
+    for cm in core do
+      for (key, issues) in cm.unsound do
+        let name := (key.splitOn ".").getLast!
+        let span := ((mods.find? (·.name == cm.name)).bind fun m => m.decls.find? (·.name == name)).map (·.span) |>.getD {}
+        let shown := ", ".intercalate (issues.take 3) ++ (if issues.length > 3 then ", …" else "")
+        let msg := s!"internal: the checked Core of `{name}` still contains unresolved types or error nodes ({shown}); this is a compiler bug (no diagnostic was reported for it), so the declaration is rejected instead of being generated"
+        diags := diags.push { file := cm.file, span := span, code := Code.typeMismatch, msg := msg }
+  if diags.isEmpty then
     let (ds, rs) := totalityAll mods
     diags := ds
     recs := rs

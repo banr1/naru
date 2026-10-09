@@ -16,28 +16,35 @@ import NaruTest.Repo
 
 1. compiler / naru_test のビルド(`lake build naru naru_test`)。
 2. 受理例 `tests/accept/*.naru` の `naru compile`(exit 0)と、反例 `tests/reject/*.naru` の `naru check-reject`(先頭コメントが名指しする E 番号)。
-3. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18)の各群と、golden の短い予行(`--finality-horizon 40`)。
-4. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
+3. C35: 全反例で `compile <file>`(出力指定なし)と `compile --out <dir> <file>` がともに exit 1 で同じ診断を出し、`--out` には何も書かれない
+   (生成に進まない)。行末に `// E0dd` の印のある反例(`tests/reject/prop_as_value.naru`(先頭は `truthLost`。量化・spec 宣言の呼出し・Prop に
+   束ねた局所名の、fn / メソッドの実引数・コレクションの要素・record の欄・lambda の戻り値・scrutinee への流入と、Prop の条件で選ぶ値)と
+   `tests/reject/type_name_as_value.naru`(型別名 `Count` の値使用、`Count \{}` / `Nat \{ … }` のレコードリテラル))は、印の (行, E 番号) の集合と
+   診断の集合が一致する(LSP が同じ箇所に返すことは `lsp` 群が CLI と照合する)。Core の健全性: 全受理例と各ソースルートを検査して診断 0 で、
+   生成対象 Core の全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件。
+4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件を含む)の各群と、golden の短い予行(`--finality-horizon 40`)。
+5. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
    ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
-5. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
+6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
    `statements` 群(C8 の依存境界 / C9 の claim surface)。
-6. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。生成ファイルは `<lib>/<モジュールのパス>.lean` で、
-   宣言は `<lib>.<モジュール名>.*`(モジュール名の一般規則、C37)。`tests/accept/guard_shadow.naru` は C34 の検体: 生成した
-   Model / Statements を import する検査プログラム(`c34Program`。期待結果は `c34Values` / `c34Props` / `c34Equations`)を `lean --run` し、
-   実際の戻り値の行が期待とすべて一致し、命題の真偽(真になる入力と、偽になる対照入力の否定)を Lean kernel が `example` で検査する。
+7. 受理例ごとに `--out` へ生成して生成 Lean を型検査(Model の olean → Statements)。生成ファイルは `<lib>/<モジュールのパス>.lean` で、
+   宣言は `<lib>.<モジュール名>.*`(モジュール名の一般規則、C37)。`tests/accept/guard_shadow.naru` は C34 の検体、`tests/accept/prop_bool.naru` は
+   C35 の検体: 生成した Model / Statements を import する検査プログラム(`semanticsProgram`。期待結果は `c34Values` / `c34Props` / `c34Equations`、
+   `c35Values` / `c35Props` / `c35Equations`)を `lean --run` し、実際の戻り値の行が期待とすべて一致し、命題の真偽(真になる入力と、偽になる
+   対照入力の否定)を Lean kernel が `example` で検査する。
    `tests/accept/legacy_module_name.naru` は C37 の検体: 移植ソースの改名前と同じ形の利用者モジュール名が、特別扱いなしに同じ規則で
    `Model/` と `Statements/` の両方に生成され、ルートの集約ファイルが import する。
-7. C37 の改名: 改名前の最後の commit(`c37BaseCommit`)のソースルートを `git archive` で取り出して現在のコンパイラで `--out` に生成し、
+8. C37 の改名: 改名前の最後の commit(`c37BaseCommit`)のソースルートを `git archive` で取り出して現在のコンパイラで `--out` に生成し、
    現在のソースの生成物と、生成パスの集合と各ファイルのヘッダ以下の内容(宣言・import・本体)がモジュール名の置換を除いて一致する
    ことを照合する。現在の生成物のパス・内容に改名前の名前が無い。
-8. C7 の simulate: ソースルート配下の scenario を持つ全ファイルの `naru simulate`(exit 0。`basic.naru` の出力に time / node / confirmed /
+9. C7 の simulate: ソースルート配下の scenario を持つ全ファイルの `naru simulate`(exit 0。`basic.naru` の出力に time / node / confirmed /
    stable / finalized)、ルート外のファイルと scenario の無いファイルは exit 2、C26(simulate の後の生成先のファイル集合が直前の `naru compile` の
    出力と一致する(runner・一時ファイルが無い)、`git status --porcelain --ignored` に compile の出力の外の追跡対象外・ignore の項目が無い、
    `.gitignore` に `Simulate` の行が無い、runner は `.lake/naru/simulate/Simulate.lean`)。
-9. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
-   (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
-10. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
-11. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
+10. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
+    (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
+11. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
+12. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
 
 `zed-install`(C19。人間の Zed を操作する)と C20(画面観測)は非対話回帰に入れない(IDEAL.md C36)。
 -/
@@ -143,16 +150,172 @@ def c34Equations : List (String × String) :=
     ("fuelMulti 0 7 = 7", "simp [fuelMulti]"),
     ("fuelMulti 150 7 = 0", "simp [fuelMulti]") ]
 
-/-- 検査プログラム(生成した Model / Statements を import し、`example` と `main` で確かめる)。 -/
-def c34Program : String :=
-  let examples := (c34Props ++ c34Equations).map fun (p, tac) => s!"example : {p} := by {tac}\n"
-  let prints := c34Values.map fun (label, expr, _) => s!"  IO.println s!\"{label} = \{{expr}}\"\n"
-  s!"-- naru_test regression (C34): generated from NaruTest/Regression.lean. Imports the Model / Statements generated from {c34Source}.\n" ++
-  s!"import Model.{c34Module}\nimport Statements.{c34Module}\n\nopen Model.{c34Module}\nopen Statements.{c34Module}\n\n" ++
+/-- 検査プログラム(生成した Model / Statements を import し、`example` と `main` で確かめる)。C34 / C35 の検体で共用。 -/
+def semanticsProgram (label source module : String) (values : List (String × String × String))
+    (props eqs : List (String × String)) : String :=
+  let examples := (props ++ eqs).map fun (p, tac) => s!"example : {p} := by {tac}\n"
+  let prints := values.map fun (l, expr, _) => s!"  IO.println s!\"{l} = \{{expr}}\"\n"
+  s!"-- naru_test regression ({label}): generated from NaruTest/Regression.lean. Imports the Model / Statements generated from {source}.\n" ++
+  s!"import Model.{module}\nimport Statements.{module}\n\nopen Model.{module}\nopen Statements.{module}\n\n" ++
   "-- 命題の真偽と戻り値の等式(Lean kernel が検査する)\n" ++ "".intercalate examples ++
   "\n-- 実際の戻り値(表示して期待の行と照合する)\ndef main : IO Unit := do\n" ++ "".intercalate prints
 
-def c34ExpectedLines : List String := c34Values.map fun (label, _, v) => s!"{label} = {v}"
+def expectedLines (values : List (String × String × String)) : List String := values.map fun (l, _, v) => s!"{l} = {v}"
+
+/-- 検査プログラムを `--out` のディレクトリで `lean --run` し、戻り値の行が期待とすべて一致して余計な行が無く、`example` がすべて
+通る(exit 0)ことを確かめる。 -/
+def runSemantics (label source module : String) (outAbs : System.FilePath) (lp : String)
+    (values : List (String × String × String)) (props eqs : List (String × String)) : M Unit := do
+  IO.FS.writeFile (outAbs / "Check.lean") (semanticsProgram label source module values props eqs)
+  let r ← step s!"{label}: lean --run Check.lean" "lean" #["--run", "Check.lean"] (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
+  let lines := (r.stdout.splitOn "\n").filter (!·.isEmpty)
+  let want := expectedLines values
+  let mut good := true
+  for e in want do
+    if lines.contains e then ok s!"{label}: {e}"
+    else
+      good := false
+      fail s!"{label}: expected `{e}`, got {lines.filter fun l => l.startsWith ((e.splitOn " = ").head!)}"
+  let extra := lines.filter fun l => !want.contains l
+  if !extra.isEmpty then
+    good := false
+    fail s!"{label}: unexpected output lines {extra}"
+  if good && r.exitCode == 0 then
+    ok s!"{label}: {values.length} return values agree, {props.length} propositions and {eqs.length} equations checked by the Lean kernel ({source})"
+
+/-! ## C35 の検体: Prop / Bool の境界・型名の値使用・Core の健全性 -/
+
+/-- 反例: Prop 相当の式(量化・spec 宣言の呼出し・Prop に束ねた局所名)の値の位置への流入(先頭は `truthLost`)。 -/
+def c35PropSource : String := (rejectDir / "prop_as_value.naru").toString
+/-- 反例: 型別名の値使用(`Count`)と、record でない型へのレコードリテラル(`Count \{}`)。 -/
+def c35TypeSource : String := (rejectDir / "type_name_as_value.naru").toString
+/-- 受理例: 論理式・量化・Prop と値の let・Prop の if / match・型別名の正常な使用。 -/
+def c35AcceptSource : String := (acceptDir / "prop_bool.naru").toString
+def c35Module : String := "Accept.PropBool"
+
+/-- C35 の受理例の実際の戻り値(表示ラベル, Lean の式, 期待する表示)。 -/
+def c35Values : List (String × String × String) :=
+  [ ("within(fresh(1))", "within (fresh 1)", "true"),
+    ("bump(fresh(1)).count", "(bump (fresh 1)).count", "2"),
+    ("total([fresh(1), fresh(2)])", "total [fresh 1, fresh 2]", "3"),
+    ("allWithin([fresh(1), fresh(11)])", "allWithin [fresh 1, fresh 11]", "false"),
+    ("tallyValues()", "tallyValues", "[1, 2, 3, 0]") ]
+
+/-- C35 の受理例の命題の真偽(真になる入力と、偽になる対照入力の否定)。量化は `intro` / `omega` / `exact ⟨…⟩` で、量化しないものは
+`unfold` → `decide` で Lean kernel が検査する(`native_decide` / `sorry` 不使用)。 -/
+def c35Props : List (String × String) :=
+  [ ("Bounded (fresh 1)", "unfold Bounded; decide"),
+    ("¬ Bounded (fresh 11)", "unfold Bounded; decide"),
+    ("UpTo 10", "unfold UpTo; intro n h; omega"),
+    ("¬ UpTo 11", "unfold UpTo; intro h; have := h 10 (by omega); omega"),
+    ("Reaches 5", "unfold Reaches; exact ⟨4, rfl⟩"),
+    ("¬ Reaches 0", "unfold Reaches; intro ⟨n, h⟩; omega"),
+    ("Mixed (fresh 1)", "unfold Mixed Bounded; decide"),
+    ("¬ Mixed (fresh 11)", "unfold Mixed Bounded; decide"),
+    ("SameTruth (fresh 1)", "unfold SameTruth Bounded; decide"),
+    ("¬ SameTruth (Tally.mk 5 3)", "unfold SameTruth Bounded; decide"),
+    ("DiffTruth (Tally.mk 5 3)", "unfold DiffTruth Bounded; decide"),
+    ("¬ DiffTruth (fresh 1)", "unfold DiffTruth Bounded; decide"),
+    ("LetBoth (fresh 1)", "unfold LetBoth Bounded; decide"),
+    ("¬ LetBoth (fresh 11)", "unfold LetBoth Bounded; decide"),
+    ("IfProp (fresh 1)", "unfold IfProp Bounded; decide"),
+    ("¬ IfProp (Tally.mk 5 3)", "unfold IfProp Bounded; decide"),
+    ("IfBool (fresh 1)", "unfold IfBool Bounded; decide"),
+    ("¬ IfBool (Tally.mk 11 20)", "unfold IfBool Bounded; decide"),
+    ("GuardProp (fresh 1) (some 5)", "unfold GuardProp Bounded; decide"),
+    ("GuardProp (fresh 1) none", "unfold GuardProp Bounded; decide"),
+    ("¬ GuardProp (Tally.mk 5 3) (some 7)", "unfold GuardProp Bounded; decide"),
+    ("ValuesOk [fresh 1, fresh 2]", "unfold ValuesOk; decide"),
+    ("¬ ValuesOk [fresh 1, fresh 11]", "unfold ValuesOk; decide") ]
+
+def c35Equations : List (String × String) :=
+  [ ("within (fresh 1) = true", "decide"),
+    ("(bump (fresh 1)).count = 2", "decide"),
+    ("total [fresh 1, fresh 2] = 3", "decide"),
+    ("allWithin [fresh 1, fresh 11] = false", "decide") ]
+
+/-- 反例の行末の `// E0dd`(コードの後ろのコメント)が印す期待: (1 始まりの行, E 番号)。先頭のコメント行(コードの無い行)は印ではない。 -/
+def markedDiagnostics (text : String) : List (Nat × String) := Id.run do
+  let mut out : List (Nat × String) := []
+  let mut i := 1
+  for l in text.splitOn "\n" do
+    let parts := l.splitOn "//"
+    if parts.length ≥ 2 then
+      let code := parts.head!
+      let comment := (parts.getLast!).trimAscii.toString
+      if !code.trimAscii.toString.isEmpty then
+        if let some c := NaruTest.Lsp.firstCode comment then
+          if comment.startsWith c then out := out ++ [(i, c)]
+    i := i + 1
+  return out
+
+/-- CLI の標準エラーの診断行 `file:line:col: error[E0dd]: …` → (行, 列, E 番号)。 -/
+def parseDiags (stderr : String) : List (Nat × Nat × String) :=
+  (stderr.splitOn "\n").filterMap fun l =>
+    if !(contains l ": error[") then none
+    else
+      let parts := l.splitOn ":"
+      match parts[1]?.bind (·.trimAscii.toString.toNat?), parts[2]?.bind (·.trimAscii.toString.toNat?),
+            NaruTest.Lsp.firstCode ((l.splitOn ": error[").getLast!) with
+      | some line, some col, some code => some (line, col, code)
+      | _, _, _ => none
+
+def sortMarks (xs : List (Nat × String)) : List (Nat × String) :=
+  xs.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
+
+/-- 3. C35 の反例: 全反例で `compile <file>`(出力指定なし)と `compile --out <dir> <file>` がともに exit 1 で同じ診断を出し、`--out` には
+何も書かれない(生成に進まない)。行末に `// E0dd` の印のある反例は、印の (行, 番号) の集合と診断の (行, 番号) の集合が一致する
+(`naru_test lsp` が LSP の診断を CLI と照合するので、LSP も同じ箇所に返す)。 -/
+def checkRejectDiagnostics : M Unit := do
+  heading "C35 reject diagnostics (CLI with / without --out, marked lines)"
+  let rejects ← Naru.listFiles rejectDir "naru"
+  let mut nMarked := 0
+  for f in rejects do
+    let name := ((System.FilePath.mk f).fileStem).getD f
+    let out := workDir / "reject" / name
+    if ← out.isDir then IO.FS.removeDirAll out
+    let r1 ← step s!"reject {name}: compile (no output)" "lake" #["exe", "naru", "compile", f] (expectExit := 1)
+    let r2 ← step s!"reject {name}: compile --out" "lake" #["exe", "naru", "compile", "--out", out.toString, f] (expectExit := 1)
+    let d1 := parseDiags r1.stderr
+    let d2 := parseDiags r2.stderr
+    if !d1.isEmpty && d1 == d2 then ok s!"reject {name}: {d1.length} diagnostic(s), identical with and without --out"
+    else fail s!"reject {name}: diagnostics differ or are empty: without --out {d1}, with --out {d2}"
+    let written ← allFiles out
+    if written.isEmpty then ok s!"reject {name}: --out {out} received no file (generation did not run)"
+    else fail s!"reject {name}: --out wrote {written.take 5}"
+    let marks := markedDiagnostics (← IO.FS.readFile f)
+    if !marks.isEmpty then
+      nMarked := nMarked + 1
+      let got := sortMarks (d1.map fun (l, _, c) => (l, c)).eraseDups
+      let want := sortMarks marks.eraseDups
+      if got == want then ok s!"reject {name}: the diagnostics are exactly the marked lines {want.map (·.1)} ({(want.map (·.2)).eraseDups})"
+      else fail s!"reject {name}: marked {want} vs reported {got}"
+  for f in [c35PropSource, c35TypeSource] do
+    if !rejects.contains f then fail s!"C35: {f} is missing"
+  if nMarked ≥ 2 then ok s!"C35: {nMarked} reject file(s) carry line marks and match them"
+  else fail s!"C35: expected at least 2 reject files with line marks, found {nMarked}"
+
+/-- 3'. Core の健全性(C35): 全受理例(単独の単位)と各ソースルート(1 単位)を `compileFiles` で検査し、診断が無く、生成対象 Core の
+全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件(`Core.Module.unsound`)。 -/
+def checkCoreSoundness (roots : List System.FilePath) : M Unit := do
+  heading "C35 Core soundness (no .unknown / metavariable / error node)"
+  let mut units : List (String × List String) := []
+  for f in (← Naru.listFiles acceptDir "naru") do units := units ++ [(f, [f])]
+  for r in roots do units := units ++ [(s!"source root {r}", ← Naru.listFiles r "naru")]
+  let mut total := 0
+  for (label, files) in units do
+    let (diags, checked) ← Naru.compileFiles files
+    if !diags.isEmpty then
+      fail s!"C35: {label}: {diags.size} diagnostic(s) (expected a clean unit)"
+      continue
+    let issues := checked.core.toList.flatMap fun (m : Naru.Core.Module) => m.unsound
+    let nDecls := checked.core.toList.foldl (init := 0) fun n (m : Naru.Core.Module) => n + m.decls.size
+    total := total + nDecls
+    if nDecls == 0 then fail s!"C35: {label}: no Core declaration"
+    else if issues.isEmpty then ok s!"C35: {label}: {nDecls} Core declaration(s) walked, 0 unsound node(s)"
+    else fail s!"C35: {label}: unsound Core: {issues.take 5}"
+  if total > 0 then ok s!"C35: {total} Core declarations across {units.length} units are sound"
+  else fail "C35: no Core declaration walked"
 
 /-! ## C37 の検体: 改名前後の宣言構造と、モジュール名の一般規則 -/
 
@@ -370,23 +533,11 @@ def checkGeneratedAccepts (leanPath : String) : M Unit := do
           (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
     checkModuleRule name src out
     if src == c34Source then
-      let prog := out / "Check.lean"
-      IO.FS.writeFile prog c34Program
-      let r ← step "C34: lean --run Check.lean" "lean" #["--run", "Check.lean"] (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
-      let lines := (r.stdout.splitOn "\n").filter (!·.isEmpty)
-      let mut good := true
-      for e in c34ExpectedLines do
-        if lines.contains e then ok s!"C34: {e}"
-        else
-          good := false
-          fail s!"C34: expected `{e}`, got {lines.filter fun l => l.startsWith ((e.splitOn " = ").head!)}"
-      let extra := lines.filter fun l => !c34ExpectedLines.contains l
-      if !extra.isEmpty then
-        good := false
-        fail s!"C34: unexpected output lines {extra}"
-      if good && r.exitCode == 0 then
-        ok s!"C34: {c34Values.length} return values agree, {c34Props.length} propositions and {c34Equations.length} equations checked by the Lean kernel ({c34Source})"
+      runSemantics "C34" c34Source c34Module outAbs lp c34Values c34Props c34Equations
+    if src == c35AcceptSource then
+      runSemantics "C35" c35AcceptSource c35Module outAbs lp c35Values c35Props c35Equations
   if !accepts.contains c34Source then fail s!"C34: {c34Source} is missing"
+  if !accepts.contains c35AcceptSource then fail s!"C35: {c35AcceptSource} is missing"
   if !accepts.contains c37LegacySource then fail s!"C37: {c37LegacySource} is missing"
 
 /-- 8. C7 の simulate と C26。 -/
@@ -505,6 +656,8 @@ def checks : M Unit := do
     | .error e => fail e; return
   ok s!"naru.toml: sources {roots}, generated {generated}"
   checkAcceptReject
+  checkRejectDiagnostics
+  checkCoreSoundness roots
   heading "editor support groups"
   subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
   subgroup "naru_test zed (C17)" NaruTest.Zed.run

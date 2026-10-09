@@ -29,9 +29,12 @@ runtime 宣言は Model backend(`Backend/Model.lean`)の仕事で、ここでは
   claim bundle は項目が使う input の和を引数に持つ。
 - 生成ファイルの先頭 5 行は Model と同じヘッダ(コンパイラ版・stdlib 版・ソース hash・単位 hash)。
 
-既知の制限: Bool の値が要る位置(fn の実引数・`let` の値・コレクション)に量化や spec 宣言の呼出し(Prop)を書くと Lean が拒否する
-(Prop は Bool に戻せない)。spec 宣言の中では Prop は論理演算・`if` の条件・`match` のガード・`let` の Prop の束縛にだけ置く。
-`∀` / `∃` は Lean の型の全要素を回るので、`Set` / `Table` を含む型(`NaruStd.Set` は昇順・重複なしのリストだが、その不変条件は
+Prop と Bool の境界(C35): Bool の値が要る位置(fn / メソッドの実引数・欄・コレクションの要素・lambda の本体・scrutinee・算術 / 比較の
+被演算子 …)に量化や spec 宣言の呼出し・Prop に束ねた局所名(Prop)を書いた spec 宣言は、型検査(`Typecheck.lean` の `valueGuard`)が
+E014 で退けるので、ここには届かない(Prop は Bool に戻せず、`(∀ …) = true` は Lean が拒否する。量化の実行も classical な判定も naru に無い)。
+spec 宣言の中で Prop が置けるのは論理演算・`if` の条件と分岐・`match` のガードと腕の本体・`let` の Prop の束縛・`==` / `!=` の両辺(`↔`)
+だけで、`proppy` の規則は型検査の `Typecheck.proppy` と同じ。
+既知の制限: `∀` / `∃` は Lean の型の全要素を回るので、`Set` / `Table` を含む型(`NaruStd.Set` は昇順・重複なしのリストだが、その不変条件は
 型に入っていない)の量化は正規化されていない表現も含む(`docs/architecture.md`「Statements backend」の既知の制限)。
 本体の無い spec 宣言と解決できない claim bundle の項目は `False` に落ちるが、パーサ(本体必須)と E016 が退けるので到達しない。
 -/
@@ -86,7 +89,11 @@ partial def proppy (env : Env) (c : PCtx) : Core.Expr → Bool
   | .binop _ l r _ => proppy env c l || proppy env c r
   | .unop _ a => proppy env c a
   | .ite a b d => proppy env c a || proppy env c b || proppy env c d
-  | .match_ s _ arms => proppy env c s || arms.any fun | .mk _ g b => (g.map (proppy env c)).getD false || proppy env c b
+  | .match_ s _ arms =>
+    proppy env c s || arms.any fun
+      | .mk p g b =>
+        let c' := c.unbind (patVars p)   -- パターンの束縛は同名の Prop の局所名を隠す
+        (g.map (proppy env c')).getD false || proppy env c' b
   | .let_ n _ v b => proppy env c v || proppy env (c.unbind [n]) b
   | .lambda ps b => proppy env (c.unbind (ps.map (·.1))) b
   | .callLocal f args => proppy env c f || args.any (proppy env c)

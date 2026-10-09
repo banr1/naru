@@ -1,0 +1,72 @@
+// 受理例(C35): spec 宣言の Prop 相当の式と実行可能な Bool の値の境界で、受理されるべき形。論理式(`&&` `||` `!` `implies`)、
+// `==` / `!=` の両辺の Prop(↔)、forall / exists、Prop の let と値の let、Prop の条件の if と Bool の条件の if、Prop のガード付き match、
+// 値の位置の Bool の値(lambda の戻り値・fn の実引数・欄)、型別名の正常な型としての使用(仮引数・欄・let の注釈・戻り型)。
+// `lake exe naru_test regression` が、このファイルを生成・ビルドし、検査プログラム(`NaruTest/Regression.lean` の `c35Program`)で
+// 実際の戻り値と命題の真偽(真になる入力と、偽になる対照入力の否定)を Lean kernel で照合する。
+module Accept.PropBool
+
+type Count = Nat                                       // 型別名(型の位置での使用はすべて正常)
+record Tally { count: Count, limit: Count } derive eq, order
+
+fn within(t: Tally) -> Bool { t.count <= t.limit }
+fn bump(t: Tally) -> Tally { Tally { count: t.count + 1, ..t } }
+fn fresh(n: Count) -> Tally { let c: Count = n; Tally { count: c, limit: 10 } }
+fn total(ts: List<Tally>) -> Count { ts.sum(|t| t.count) }
+fn allWithin(ts: List<Tally>) -> Bool { ts.all(|t| within(t)) }
+
+// 量化しない Prop(`decide` で検査できる): Bounded(fresh(1)) は真、Bounded(fresh(11)) は偽
+predicate Bounded(t: Tally) { t.count <= 10 }
+
+// forall: UpTo(10) は真、UpTo(11) は偽(n = 10 が反例)
+predicate UpTo(c: Count) { forall n: Nat { n < c implies n < 10 } }
+
+// exists: Reaches(5) は真(n = 4)、Reaches(0) は偽
+predicate Reaches(c: Count) { exists n: Nat { n + 1 == c } }
+
+// 論理式: Prop と Bool の値の混在(値は `= true` に落ちる)。Mixed(fresh(1)) は真、Mixed(fresh(11)) は偽
+predicate Mixed(t: Tally) { (Bounded(t) && within(t)) || !(Bounded(t) implies within(t)) }
+
+// == / != の両辺が Prop(↔)。SameTruth(fresh(1)) は真、SameTruth(Tally { count: 5, limit: 3 }) は偽(DiffTruth はその逆)
+predicate SameTruth(t: Tally) { Bounded(t) == within(t) }
+predicate DiffTruth(t: Tally) { Bounded(t) != within(t) }
+
+// Prop の let(`let b : Prop := …`)と値の let(Bool の値・Count の値)。LetBoth(fresh(1)) は真、LetBoth(fresh(11)) は偽
+predicate LetBoth(t: Tally) {
+  let b = Bounded(t);
+  let w = within(t);
+  let n: Count = t.count;
+  b && w && n <= 10
+}
+
+// Prop の条件の if((c → a) ∧ (¬ c → b))と Bool の条件の if(`if c = true then`)
+predicate IfProp(t: Tally) { if Bounded(t) { within(t) } else { true } }
+predicate IfBool(t: Tally) { if within(t) { Bounded(t) } else { true } }
+
+// Prop のガード付き match。GuardProp(fresh(1), Some(5)) と GuardProp(fresh(1), None) は真、GuardProp(Tally { count: 5, limit: 3 }, Some(7)) は偽
+predicate GuardProp(t: Tally, o: Option<Count>) {
+  match o {
+    Some(c) if Bounded(t) => c <= t.limit,
+    Some(_) => true,
+    None => within(t),
+  }
+}
+
+// 値の位置の Bool の値(Prop でない)は自由: lambda の戻り値・fn の実引数・欄
+predicate ValuesOk(ts: List<Tally>) {
+  let r = Tally { count: total(ts), limit: 20 };
+  ts.all(|t| within(t)) && allWithin(ts) && within(r)
+}
+
+// scenario から観測できる形(simulate の表示と同じ)
+observer tallyValues() -> List<Nat> {
+  [
+    (if within(fresh(1)) { 1 } else { 0 }),
+    bump(fresh(1)).count,
+    total([fresh(1), fresh(2)]),
+    (if allWithin([fresh(1), fresh(11)]) { 1 } else { 0 }),
+  ]
+}
+
+scenario tallies {
+  observe tallyValues();
+}

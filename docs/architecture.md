@@ -17,6 +17,9 @@ Parser → Surface AST
 
 前の段に誤りがあれば次の段には進まない。診断が 1 つでもあれば backend には進まず、`generated/` は書き換えない。
 入口は `compiler/Naru/Driver.lean` の `compileFiles`(指定ファイル)/ `compileSources`(ソースルート。`naru lsp` はバッファの内容でこれを呼ぶ)。
+型検査を診断なしに通った Core には、推論用のメタ変数・誤りの波及を抑える「不明」の型・エラー用ノードが残ってはならない(型検査は誤りを診断してから
+それらを作る)。`compileSources` は停止性検査の前に Core の全宣言を再帰的に走査し(`Core.Decl.unsound`)、残っていればコンパイラの不変条件の破れとして
+E014 を出して backend に渡さない(C35。`naru_test regression` は全受理例と移植ソースの Core で 0 件を確かめる)。
 
 ## Core IR と Model backend
 
@@ -80,9 +83,10 @@ Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 M
 | `if c { a } else { b }` | 条件が Bool の値なら `if c = true then a else b`(再帰する宣言では `if _h' : c = true then`)、条件が Prop なら `(c → a) ∧ (¬ c → b)` |
 | `let x = e; body` | `let «x» : T := e`(値)。型が Bool で `e` が Prop を含むなら `let «x» : Prop := e` とし、以後 `x` は Prop として読む |
 | `match` | 腕の本体を Prop にする。ガードは Model と同じ構造: 最初のガード付き腕 i より前の腕はそのまま、`\| _ =>` の中で `(match s with \| p_i => g → b \| _ => True) ∧ (¬ (match s with \| p_i => g \| _ => False) → REST)`(REST = i 以外の腕の match。`p_i` が必ず一致する形なら `\| _ => …` は出さない)。REST はどの腕の中にも置かないので、`p_i` の束縛はその腕のガードと本体だけで有効で、REST の同名の外側の束縛(仮引数・`let`・scrutinee の中の名前)を捕捉しない(C34。検体は `tests/accept/guard_shadow.naru`、検査は `lake exe naru_test regression`)。scrutinee とガードが 2 回現れ、到達しない腕は Lean が拒否する(Model と同じ既知の制限) |
-| 値の位置(fn の実引数・欄・コレクションの要素 …)の式 | Model backend と同じ Lean(`emitE`)。Prop(量化・spec 宣言の呼出し)をここに書くと Lean が拒否する(Prop は Bool に戻せない: 既知の制限) |
+| 値の位置(fn / メソッドの実引数・欄・コレクションの要素・lambda の本体・scrutinee・算術 / 比較の被演算子 …)の式 | Model backend と同じ Lean(`emitE`)。Prop(量化・spec 宣言の呼出し・Prop に束ねた局所名)はここに届かない: 型検査が E014 で退ける([language.md](language.md)「Prop と Bool」。C35。Prop は Bool に戻せず、`(∀ …) = true` は Lean が拒否する。量化の実行も classical な判定も naru に無い)。Prop の条件 / ガードで Bool 以外の値を選ぶ式も同じく E014 |
 
-受理例は `tests/accept/statements.naru`(量化・`let`・`if`・`match`・比較・input・入れ子の bundle・再帰)。生成 Lean の型検査は、生成 Model の olean を
+受理例は `tests/accept/statements.naru`(量化・`let`・`if`・`match`・比較・input・入れ子の bundle・再帰)と `tests/accept/prop_bool.naru`(Prop と Bool の
+境界で受理される形。`naru_test regression` が戻り値と命題の真偽を照合する)。生成 Lean の型検査は、生成 Model の olean を
 `--out` のディレクトリに作ってから(knowledge「生成コードの回帰」)。
 
 ### verified-consensus の Statements の移植

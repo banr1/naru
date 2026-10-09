@@ -1,0 +1,69 @@
+// 反例(C35): spec 宣言の中で、Prop 相当の式(量化・spec 宣言の呼出し・Prop に束ねた局所名)を、実行可能な Bool の
+// 値が要る位置(fn / stdlib メソッドの実引数・コレクションの要素・record の欄・Bool を要求する lambda の戻り値・
+// scrutinee・Prop の条件で選ぶ値)に書く。Statements backend は Prop を Bool に戻せない(`(∀ …) = true` は Lean が
+// 拒否する)ので、型検査の段で E014 として拒否し、生成には進まない(`--out` を付けても何も書かない)。先頭の
+// `truthLost`: 量化を fn に渡すと、その真偽は Bool の値に落ちずに失われる。
+// 各行末の `// E014` は、その行に E014 が 1 つ以上出ることの印(`naru_test regression` が CLI の診断の行と照合し、
+// `naru_test lsp` が LSP の診断の位置を CLI と照合する)。
+// 期待: `lake exe naru check-reject tests/reject/prop_as_value.naru E014` が PASS
+module Reject.PropAsValue
+
+type Slot = Nat
+record Block { slot: Slot, author: Nat } derive eq, order
+record Run { blocks: List<Block>, honest: Set<Nat> } derive eq
+record Report { ok: Bool, count: Nat } derive eq
+
+fn isHonest(rho: Run, v: Nat) -> Bool { rho.honest.contains(v) }
+fn boolId(b: Bool) -> Bool { b }
+fn countTrue(bs: List<Bool>) -> Nat { bs.filter(|b| b).size() }
+
+predicate Below(b: Block, s: Slot) { b.slot < s }
+predicate AllHonest(rho: Run) { forall v: Nat { rho.honest.contains(v) implies isHonest(rho, v) } }
+
+// 量化を fn の実引数に: 真偽が失われる
+predicate truthLost(rho: Run) {
+  boolId(forall b: Block { rho.blocks.contains(b) implies b.slot > 0 })   // E014
+}
+
+// spec 宣言の呼出しを fn の実引数に
+predicate specCallAsArgument(rho: Run) {
+  boolId(AllHonest(rho))   // E014
+}
+
+// 量化をコレクション(list literal)の要素に
+predicate quantifierAsElement(rho: Run) {
+  countTrue([forall v: Nat { isHonest(rho, v) }, true]) > 0   // E014
+}
+
+// spec 宣言の呼出しを stdlib メソッドの実引数に
+predicate specCallAsMethodArgument(rho: Run) {
+  [true, false].contains(AllHonest(rho))   // E014
+}
+
+// 量化を record の欄に
+predicate quantifierAsField(rho: Run) {
+  let r = Report { ok: exists v: Nat { isHonest(rho, v) }, count: 0 };   // E014
+  r.ok
+}
+
+// Bool を要求する lambda の戻り値に spec 宣言の呼出し
+predicate specCallInLambda(rho: Run) {
+  rho.blocks.all(|b| Below(b, 10))   // E014
+}
+
+// Prop に束ねた局所名を値の位置(fn の実引数)に
+predicate propLocalAsValue(rho: Run) {
+  let all = forall b: Block { rho.blocks.contains(b) implies b.slot > 0 };
+  boolId(all)   // E014
+}
+
+// 量化を scrutinee に
+predicate quantifierAsScrutinee(rho: Run) {
+  match (forall v: Nat { isHonest(rho, v) }) { true => true, false => false }   // E014
+}
+
+// Prop の条件で値(Nat)を選ぶ
+predicate propConditionAsValue(rho: Run) {
+  let n = if AllHonest(rho) { 1 } else { 2 };   // E014
+  n > 0
+}

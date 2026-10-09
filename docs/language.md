@@ -171,6 +171,17 @@ Set から直接取れる。
 `forall` / `exists` は spec 宣言専用。runtime 宣言(fn / observer / scenario …)に書くと E006。
 有限の集合を回すには `all` / `any` / `filter` を使う。
 
+### Prop と Bool(E014)
+
+spec 宣言(predicate / condition / regime / property / claim)の本体は Prop 相当の Bool の式で、量化・spec 宣言の呼出し・`let` でそれらに
+束ねた局所名は Lean の Prop にしかならない(実行できない。生成の規則は [architecture.md](architecture.md)「Statements backend」)。それらを置けるのは
+宣言の論理構造 — `&&` / `||` / `!` / `implies` の被演算子、`==` / `!=` の両辺(両辺 Bool。`↔` になる)、`if` の条件と分岐、`match` のガードと腕の本体、
+`let` の値(Bool)と続き、量化の本体 — だけで、実行可能な Bool の値が要る位置(fn / stdlib メソッドの実引数、コレクションの要素、record の欄、
+`all` / `any` / `filter` などに渡す lambda の戻り値、`match` の scrutinee、算術・比較の被演算子)に書くと **E014**。Prop の条件や Prop のガードで
+Bool 以外の値を選ぶ(`let n = if P(x) { 1 } else { 2 };`)のも E014。fn の呼出しや stdlib の `all` / `any` / `contains` などの Bool の値は、どちらの位置にも
+置ける(Prop の位置では `= true` と読む)。反例は `tests/reject/prop_as_value.naru`、受理例は `tests/accept/prop_bool.naru`。
+型名(型別名を含む)を値に使う・record / state でない型にレコードリテラルを書くのも E014(`tests/reject/type_name_as_value.naru`)。
+
 ### 再帰(E002)
 
 停止性検査は `compiler/Naru/Totality.lean`。IDEAL.md「言語の意味論」: 再帰は構造的再帰・明示 fuel・有限集合の反復のみ。有限集合の反復は stdlib のメソッド

@@ -1,0 +1,23 @@
+// 反例(C35): 値として使えない型名と、構築できない型へのレコードリテラル。型別名 `type Count = Nat` の `Count` を
+// 値に使う、`Count {}` のレコードリテラル、組み込み型 `Nat { … }` のレコードリテラルはいずれも E014
+// (以前は型別名が展開された型を診断なしに「不明」として黙り、`.unknown` / エラー用ノードが Core に残った)。
+// 型別名を正常に型として使う形(`x: Count`、欄 `count: Count`、`let c: Count = …`、戻り型)は受理例 tests/accept/prop_bool.naru。
+// 各行末の `// E014` は、その行に E014 が出ることの印(`naru_test regression` が CLI の診断の行と照合し、
+// `naru_test lsp` が LSP の診断の位置を CLI と照合する)。
+// 期待: `lake exe naru check-reject tests/reject/type_name_as_value.naru E014` が PASS
+module Reject.TypeNameAsValue
+
+type Count = Nat
+record Tally { count: Count } derive eq
+
+// 型別名を値に
+fn aliasAsValue(x: Count) -> Count { x + Count }   // E014
+
+// 型別名へのレコードリテラル(`Count` は record でも state でもない)
+fn aliasLiteral() -> Count { Count {} }   // E014
+
+// 組み込み型へのレコードリテラル
+fn builtinLiteral() -> Nat { Nat { value: 1 } }   // E014
+
+// spec 宣言の中でも同じ
+predicate aliasInSpec(t: Tally) { t.count == Count }   // E014
