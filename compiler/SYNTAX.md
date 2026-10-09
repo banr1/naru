@@ -225,6 +225,12 @@ scenario basic {
   node 0 の `nodeTick` の出力を `NamedEvent.Deliver(v1, o, t)` に並べ、`dsl/scenarios/equivocation.naru` の `deliveredVotesEvents` は
   Byzantine な validator の票(注入 object)を決めた時刻に配達する)。scenario 共通の observer は `dsl/scenarios/trace.naru`。
   1 つの scenario に複数の run(`let` で束ねた `NamedRun`)を並べ、同じ observer を両方に `observe` すれば対照実験になる(`equivocation.naru`)。
+- golden test との結び付き(C10、`tests/golden/Golden.lean`): scenario の Setup と run は scenario 本体の `let` に閉じ込めず、同じファイルの
+  fn として公開する(`fn basicSetup() -> Setup`、`fn basicRun(v0: ValidatorId) -> NamedRun`、`twoNodesRun(s, v0, v1)`、`twoFacedRun(v0, v1)` …。
+  fn の名前は大域なので scenario ごとに固有にする)。scenario 本体は `let s = basicSetup(); let rho = basicRun(v0);` のようにそれを呼ぶ。
+  golden test は生成 Model の `Model.Scenarios.<Mod>.<fn>` から同じ Setup / run を取って手書き Model と突き合わせ、scenario の
+  `observe` の行(`naru simulate` の出力)が同じ run の読みと一致することも照合する(`scenario:<name>/observe <label>` の case)。
+  `input` 束縛は scenario に閉じているので、golden 側は同じ値を Lean で書き写す(`Golden.G.Inputs`)。
 
 ## 診断
 

@@ -6,6 +6,7 @@
 // - 環境は basic.naru(WeakGenesis)と同じ: Δ = 1、GST 0、proposer 0、重み 2 / 1、R = 3、η = 2、K = 4、D = 2、timeout 6、new_root(s) = s + 1、
 //   awake ⇔ v = 0。違いは committee = {v0, v1}(v1 の票が committee 検査 `onGoldfishVoteChecked` を通る)と、t = 5 の配達だけ。
 //   node 0 の tick は t = 0 … 14(15 tick。t = 14 = slot 3 の support cutoff で slot 2 の confirmation が走る)。
+// - Setup と 2 つの run は fn `equivocationSetup` / `twoFacedRun` / `oneVoteRun` で公開する(golden test `tests/golden/Golden.lean` が使う。C10)。
 // - 読みで見えること(期待値は tests/golden/protocol_generated.lean の equivocation 節。周回 20 で手書き Model と一致):
 //   `twoFaced` では node 0 の slot-1 pool が t = 5 で 3 票(自分の票 + v1 の 2 票)になり equivocator は [v1]。slot 1 の confirmation
 //   (t = 10 = slot 2 の support cutoff)では、支持票 `supportVotes` が `noSecondVoteIn` で v1 の 2 票を外して v0 の 1 票だけになる一方、
@@ -38,6 +39,35 @@ fn deliveredVotesEvents(v0: ValidatorId, votes: List<GoldfishVote>, deliverAt: T
   List.range(n).flatMap(|i| deliveredVotesStep(v0, votes, deliverAt, i.toInt()))
 }
 
+// The WeakGenesis setup (basic.naru と同じ。committee は Setup ではなく input): Δ = 1, GST 0, weights 2 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+fn equivocationSetup() -> Setup {
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
+  Setup {
+    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  }
+}
+
+// `v1`'s slot-1 vote for node 0's slot-1 block (root 2).
+fn voteForBlock2(v1: ValidatorId) -> GoldfishVote { GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 2 } } }
+
+// `v1`'s conflicting slot-1 vote for genesis (root 0).
+fn voteForGenesis(v1: ValidatorId) -> GoldfishVote { GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 0 } } }
+
+// The equivocation run: node `v0` ticks at t = 0 … 14 and at t = 5 receives `v1`'s two conflicting slot-1 votes (heads 2 and 0).
+fn twoFacedRun(v0: ValidatorId, v1: ValidatorId) -> NamedRun {
+  NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [voteForBlock2(v1), voteForGenesis(v1)], 5, 15) }
+}
+
+// The contrast run: the same ticks, but only `v1`'s vote for root 2 is delivered at t = 5.
+fn oneVoteRun(v0: ValidatorId, v1: ValidatorId) -> NamedRun {
+  NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [voteForBlock2(v1)], 5, 15) }
+}
+
 scenario equivocation {
   input proposer(slot) = ValidatorId { value: 0 };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 }).insert(ValidatorId { value: 1 });
@@ -45,18 +75,9 @@ scenario equivocation {
   input awake(node, round) = node.value == 0;
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
-  let noWeights: Table<ValidatorId, Nat> = Table.empty();
-  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
-  let s = Setup {
-    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
-    hc: HealConfig { r: 3, etaSG: 2 },
-    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
-  };
-  // v1's two distinct slot-1 votes: for node 0's slot-1 block (root 2) and for genesis (root 0).
-  let forBlock2 = GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 2 } };
-  let forGenesis = GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 0 } };
-  let twoFaced = NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [forBlock2, forGenesis], 5, 15) };
-  let oneVote = NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [forBlock2], 5, 15) };
+  let s = equivocationSetup();
+  let twoFaced = twoFacedRun(v0, v1);
+  let oneVote = oneVoteRun(v0, v1);
   observe deliveries(twoFaced);
   observe votesHeldAt(s, twoFaced, v0, 1, 5);
   observe equivocatorsAt(s, twoFaced, v0, 1, 5);

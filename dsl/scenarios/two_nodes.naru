@@ -7,6 +7,7 @@
 // - event 列は `twoNodeEvents` が作る(配達の生成子はまだ言語機能ではないので scenario の fn で書く): 各 t = 0 … 7 で node 0 の tick、
 //   node 1 の tick、そして node 0 がその tick で emit した object を 1 つずつ node 1 へ `Deliver(v1, o, t)`(同時刻では tick が配達に先行する:
 //   Run.naru の event 順序)。node 0 は何も受領しないので、その読みは単独 run(basic)の読みと同じ。
+// - Setup と run は fn `twoNodesSetup` / `twoNodesRun` で公開する(golden test `tests/golden/Golden.lean` が使う。C10)。
 // - 期待値(tests/golden/protocol_generated.lean の 2 ノード run `wRho2`、t = 0 … 7。周回 10 で手書き Model と一致): event は 19 個
 //   (tick 16 + 配達 3: slot 1 の block が t = 4、Goldfish vote が t = 5、attestation が t = 6)、node 1 は t = 4 で root 2 の body を持ち
 //   (`heldAt` が [0] → [0, 2])、t = 7 までの confirmed / stable / finalized はどちらの node も 0。
@@ -49,6 +50,24 @@ fn twoNodeEvents(s: Setup, v0: ValidatorId, v1: ValidatorId, n: Nat) -> List<Nam
   }
 }
 
+// The WeakGenesis setup (basic.naru と同じ): Δ = 1, GST 0, weights 2 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+fn twoNodesSetup() -> Setup {
+  let v0 = ValidatorId { value: 0 };
+  let v1 = ValidatorId { value: 1 };
+  let noWeights: Table<ValidatorId, Nat> = Table.empty();
+  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
+  Setup {
+    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
+    hc: HealConfig { r: 3, etaSG: 2 },
+    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
+  }
+}
+
+// The two-node run over t = 0 … 7: both nodes honest, node 0's emits delivered to node 1 at the same time.
+fn twoNodesRun(s: Setup, v0: ValidatorId, v1: ValidatorId) -> NamedRun {
+  NamedRun { honest: Set.singleton(v0).insert(v1), horizon: 7, events: twoNodeEvents(s, v0, v1, 8) }
+}
+
 scenario twoNodes {
   input proposer(slot) = ValidatorId { value: 0 };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 });
@@ -56,14 +75,8 @@ scenario twoNodes {
   input awake(node, round) = node.value == 0;
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
-  let noWeights: Table<ValidatorId, Nat> = Table.empty();
-  let electorate = Electorate { weight: noWeights.insert(v0, 2).insert(v1, 1) };
-  let s = Setup {
-    e: ProtocolEnv { delta: 1, tGST: 0, electorate: electorate },
-    hc: HealConfig { r: 3, etaSG: 2 },
-    cfg: HeightConfig { k: 4, d: 2, timeoutDelay: 6 }
-  };
-  let rho = NamedRun { honest: Set.singleton(v0).insert(v1), horizon: 7, events: twoNodeEvents(s, v0, v1, 8) };
+  let s = twoNodesSetup();
+  let rho = twoNodesRun(s, v0, v1);
   observe deliveries(rho);
   observe trace(s, rho, v1);
   observe heldAt(s, rho, v1, 3);

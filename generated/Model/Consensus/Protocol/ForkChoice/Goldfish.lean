@@ -2,7 +2,7 @@
 -- naru-compiler: 0.1.0 sha256:f5eeb1c9360aec51dfc4ebab9dcc8b8e4bd9c6eee602112d3e113ca18b6051b7
 -- naru-stdlib: 0.1.0 sha256:d1d34650e87bf08cf6aac85f86741a685c27048c1edbd48d4dd09202b35233af
 -- naru-source: dsl/Consensus/Protocol/ForkChoice/Goldfish.naru sha256:0bd6314ad504d15cddc4a9f28e1e4579cf0605bc98f6c0d6e32ef8a4d4d8b953
--- naru-unit: sha256:5b45ad0d8eb5c7a433c8e6e02249c7a4fdb1a1ced348542e45145ae34c35a332
+-- naru-unit: sha256:4597ab2ac5ca1453f97bbd6af9c908f308fc84995eae15fc49c8c8b0808e4a4c
 import NaruStd
 import Model.Consensus.Objects.Blocks
 import Model.Consensus.Objects.Identifiers
