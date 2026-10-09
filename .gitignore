@@ -1,5 +1,1 @@
 .lake/
-# 周回 26 の一時的な除外(この行から次の `third_party/verified-consensus/` までの 4 行は、submodule を入れるときに消す):
-# third_party/verified-consensus は git submodule にする(IDEAL.md C23)が、周回に渡される git フック(reference-transaction)が
-# submodule の git リポジトリの作成(HEAD の作成)まで拒否するため、submodule 化は人間が周回の外で行う。それまで親がこの中身を追跡し直さない。
-third_party/verified-consensus/
