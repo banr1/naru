@@ -17,6 +17,9 @@
   `Model/` と `Statements/` の両方に生成されることを `naru_test regression` が照合する。旧名を意図的に使う唯一のファイルで、`naru_test repo` の
   旧名検索はこれだけを除外する)。`naru_test lsp` は全受理例の `didOpen` で診断 0 件も確かめる。
 - 生成 Lean の型検査は、生成 Model の olean を `--out` のディレクトリに作ってから行う(`naru_test regression` が全受理例に対して行う)。
+- `tests/config_change/`: 設定変更プロジェクト(C7 / C24 / C26 の検体)。`naru.toml`(`sources = ["src"]`、`generated = "generated"`)と
+  `src/Counter.naru`(fn `value()` の値を observer `current()` が表示する scenario `counter`)。`naru_test regression` が複製の上で `generated` を
+  `"custom"` に、`value()` の 1 を 2 に書き換えて `naru simulate` を走らせ、observer・生成先・Lake のビルド・実行ファイルの対応を照合する(回帰一式の 10)。
 
 ## 検査ドライバ(`lake exe naru_test`)
 
@@ -66,11 +69,19 @@
    (runner・一時ファイルが無い)、`git status --porcelain --ignored -- generated/` に compile の出力の外の追跡対象外・ignore の項目が無い
    (この周回で新しくできた生成パスの `??` と、作業木に無い旧パスの ` D` は許す)、`.gitignore` に `Simulate` の行が無い、
    runner は `.lake/naru/simulate/Simulate.lean`。
-10. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い(`grep -rn '"dsl\|"specs' compiler/` が 0 件)、`naru.toml` の `sources` を別名のコピー
+10. C7 / C24 / C26 の設定変更: 設定変更プロジェクト `tests/config_change/` の複製 `.lake/naru/test/regression/c7/` を cwd にして
+    `<ルート>/.lake/build/bin/naru simulate src/Counter.naru` を走らせる。既定の生成先・値 1(`current() = 1`)の後、`generated = "custom"`・値 2 で、
+    古い `generated/` とビルドキャッシュが残る場合と、設定した生成先だけが存在する場合(値 1 に戻してから `generated/` を消す)の双方で
+    `current() = 2` を表示して exit 0(C7。古い `generated/` は書き換えない)。`custom/` は再生成した `naru compile` の出力と sha256 まで一致し、
+    プロジェクトに runner・一時ファイル(`.lean` 以外・`Simulate.lean`)が無く、runner はルートの `.lake/naru/simulate/Simulate.lean` のまま(C26)。
+    Lake が読む link `.lake/naru/generated` が `custom/` を指し、ルートの `lake build Model Statements` が exit 0 で、その `.lake/build/bin/naru_simulate` が
+    `current() = 2` を表示する(C24: lakefile の手修正なし)。現在のソースを不正にすると exit 1(E011)で observer の行を表示せず、`custom/` も書き換えない。
+    最後にルートの `lake exe naru compile` で link をルートの生成先に戻し、`lake build Model Statements`。
+11. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い(`grep -rn '"dsl\|"specs' compiler/` が 0 件)、`naru.toml` の `sources` を別名のコピー
     (`.lake/naru/test/regression/alias/`)に向けて `lake exe naru compile` しても生成先の sha256 が一致する。`naru.toml` は必ず元に戻し(`git diff --exit-code`)、
     もう一度 `compile` して生成先が元に戻ったことも確かめる。
-11. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28(`git ls-files tests/golden` が `Golden.lean` だけ)、C22(`cmp LICENSE`)、C27(`git check-attr`)。
-12. C10: `golden`(引数なし = horizon 100、全 16 ケース。約 9 分)。
+12. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28(`git ls-files tests/golden` が `Golden.lean` だけ)、C22(`cmp LICENSE`)、C27(`git check-attr`)。
+13. C10: `golden`(引数なし = horizon 100、全 16 ケース。約 9 分)。
 
 `zed-install`(C19。人間の Zed を操作する)と C20(画面観測)は入れない。IDD の台帳・knowledge を更新した後は、少なくとも `repo` 群を再実行する(C25 / C36)。
 
@@ -86,7 +97,8 @@ lake exe naru_test golden --finality-horizon 40   # 約 30 秒
 
 - 引数なしが C10 の証拠(FinalityLiveness は horizon 100 の prefix、StrongRecovery は seed の `rho 30`)。`--finality-horizon N` は短い予行用で、既定以外の N は `note:` が出る。
   所要時間の大半は手書き側の実行。
-- 前提: 生成 Model が `lake build Model` 済みで、手書き Model の olean が `third_party/verified-consensus/.lake` にビルド済みであること(git submodule を取得して `lake build` しておく)。
+- 前提: `lake exe naru compile` 済み(Lake は `.lake/naru/generated` の link 経由で有効な生成先を読む)で生成 Model が `lake build Model` 済み、手書き Model の olean が
+  `third_party/verified-consensus/.lake` にビルド済みであること(git submodule を取得して `lake build` しておく)。
 - 出力: case ごとに `ok <case>: n lines agree` か `FAIL <case>: …` と `MISMATCH …` の行、最後に `MISMATCH total: N`。exit 0 ⇔ N = 0。
 - case: `witness:weakGenesis` / `witness:outage` / `witness:strongRecovery(seed rho 30)` / `witness:finalityLiveness(horizon N)`(手書きの Witnesses の 4 run を両側で
   Lean に書き写したもの)、`scenario:<name>`(`specs/consensus/scenarios/*.naru` が fn として公開する Setup と run)、`scenario:<name>/observe <label>`(`naru simulate` の出力が

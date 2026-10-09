@@ -18,17 +18,20 @@ srcDir = "compiler"
 name = "NaruStd"
 srcDir = "stdlib/Model"
 
-# 生成 Model(`lake exe naru compile` が `naru.toml` のソースルート(`specs/consensus`)から `generated/Model.lean` と `generated/Model/**.lean` を出力する)。
-# 機械生成専用。`lake build Model` でビルドする(C6)。
+# 生成 Model(`lake exe naru compile` が `naru.toml` のソースルート(`specs/consensus`)から有効な生成先(`naru.toml` の `generated`、
+# 既定 `generated/`)に `Model.lean` と `Model/**.lean` を出力する)。機械生成専用。`lake build Model` でビルドする(C6)。
+# `srcDir` は `.lake/naru/generated`: `naru compile` / `naru simulate` が有効な生成先への symlink にする(追跡対象外)ので、
+# `naru.toml` の `generated` を変えても lakefile を手で直さずに Lake が現在の生成先を読む(C24)。`lake build Model` の前に一度
+# `lake exe naru compile` が要る。
 [[lean_lib]]
 name = "Model"
-srcDir = "generated"
+srcDir = ".lake/naru/generated"
 
-# 生成 Statements(`lake exe naru compile` が `generated/Statements.lean` と `generated/Statements/**.lean` を出力する)。
-# 機械生成専用。生成 Model だけを import する(Proofs は import しない)。`lake build Statements` でビルドする(C8)。
+# 生成 Statements(`lake exe naru compile` が有効な生成先に `Statements.lean` と `Statements/**.lean` を出力する)。
+# 機械生成専用。生成 Model だけを import する(Proofs は import しない)。`lake build Statements` でビルドする(C8)。`srcDir` は Model と同じ link。
 [[lean_lib]]
 name = "Statements"
-srcDir = "generated"
+srcDir = ".lake/naru/generated"
 
 # scenario の実行ファイル(C7)。`lake exe naru simulate <specs/consensus/…/scenario.naru>` が `.lake/naru/simulate/Simulate.lean`(`main`。
 # 追跡対象外。C26: `generated/` には `naru compile` の決定的な出力だけを置く)を書いてから `lake build naru_simulate` で生成 Model ごと

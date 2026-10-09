@@ -41,10 +41,19 @@ import NaruTest.Repo
    stable / finalized)、ルート外のファイルと scenario の無いファイルは exit 2、C26(simulate の後の生成先のファイル集合が直前の `naru compile` の
    出力と一致する(runner・一時ファイルが無い)、`git status --porcelain --ignored` に compile の出力の外の追跡対象外・ignore の項目が無い、
    `.gitignore` に `Simulate` の行が無い、runner は `.lake/naru/simulate/Simulate.lean`)。
-10. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
+10. C7 / C24 / C26 の設定変更: 設定変更プロジェクト `tests/config_change/`(`naru.toml` は `sources = ["src"]`・`generated = "generated"`、
+    `src/Counter.naru` の observer `current()` が fn `value()` の値を表示する)の複製(`.lake/naru/test/regression/c7/`)を cwd にして
+    `<ルート>/.lake/build/bin/naru simulate src/Counter.naru` を走らせる: 既定の生成先・値 1(`current() = 1`)→ `generated = "custom"`・値 2 で、
+    古い `generated/` とビルドキャッシュが残る場合と、設定した生成先だけが存在する場合(値 1 に戻してから `generated/` を消す)の双方で
+    `current() = 2` を表示して exit 0(C7)。`custom/` は再生成した `naru compile` の出力と sha256 まで一致し、プロジェクトに runner・一時ファイルが無く、
+    runner はルートの `.lake/naru/simulate/Simulate.lean` のまま(C26)。Lake が読む生成ソースの link `.lake/naru/generated` が `custom/` を指し、
+    ルートの `lake build Model Statements` が exit 0 で、その実行ファイルが `current() = 2` を表示する(C24: lakefile の手修正なし)。
+    現在のソースを不正にすると exit 1(E011)で observer の行を表示せず、`custom/` も書き換えない(C7)。最後にルートの `naru compile` で
+    link をルートの生成先に戻して `lake build Model Statements`。
+11. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
     (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
-11. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
-12. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
+12. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
+13. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
 
 `zed-install`(C19。人間の Zed を操作する)と C20(画面観測)は非対話回帰に入れない(IDEAL.md C36)。
 -/
@@ -369,7 +378,7 @@ def checkModuleRule (name : String) (src : String) (out : System.FilePath) : M U
       ok s!"C37: the root Model.lean / Statements.lean of {name} import `{c37LegacyModule}` under their prefixes"
     else fail s!"C37: the root Model.lean / Statements.lean of {name} do not import `{c37LegacyModule}`"
 
-/-- 7. C37: 改名前の commit のソースを現在のコンパイラで生成し、現在の生成物とモジュール名の置換を除いて照合する。 -/
+/-- 8. C37: 改名前の commit のソースを現在のコンパイラで生成し、現在の生成物とモジュール名の置換を除いて照合する。 -/
 def checkRenameStructure (roots : List System.FilePath) : M Unit := do
   heading "C37 rename: declaration structure modulo module names"
   let some root := roots.head? | fail "C37: naru.toml lists no source root"; return
@@ -438,6 +447,130 @@ def checkRenameStructure (roots : List System.FilePath) : M Unit := do
   if hits.isEmpty then ok s!"C37: no generated path or content of the current sources mentions {c37OldDir} / {c37OldMod} ({newOut.length} files)"
   else fail s!"C37: old names in the current generated output: {hits.take 10}"
 
+/-! ## C7 / C24 / C26 の検体: 設定変更プロジェクト(`tests/config_change/`) -/
+
+/-- 設定変更プロジェクト: `naru.toml`(`sources = ["src"]`、`generated = "generated"`)と `src/Counter.naru`(fn `value()` の値を observer
+`current()` が表示する scenario `counter` と spec 宣言 1 つ)。回帰は複製を `.lake/naru/test/regression/c7/` に作り、その複製を cwd にして
+`<ルート>/.lake/build/bin/naru` を直接呼ぶ(`naru.toml` は cwd のもの、stdlib・Lake・実行入口・link はホーム = ルートのもの)。 -/
+def c7Fixture : System.FilePath := "tests" / "config_change"
+def c7Project : System.FilePath := workDir / "c7"
+def c7Source : String := "src/Counter.naru"
+/-- 値を決める行(回帰がこの行の 1 を 2 に書き換える)。 -/
+def c7ValueLine (n : Nat) : String := s!"fn value() -> Nat \{ {n} }"
+/-- `naru simulate` の出力に現れる observer の行。 -/
+def c7Observed (n : Nat) : String := s!"current() = {n}"
+/-- Lake が読む生成ソース(lakefile の lean_lib `Model` / `Statements` の `srcDir`)。`naru compile` / `simulate` が有効な生成先への symlink にする。 -/
+def lakeGeneratedLink : System.FilePath := ".lake" / "naru" / "generated"
+
+/-- `naru.toml` の `generated` の行を書き換える(コメントは触らない)。 -/
+def setGenerated (text : String) (dir : String) : String :=
+  "\n".intercalate ((text.splitOn "\n").map fun l =>
+    if l.trimAscii.toString.startsWith "generated" then s!"generated = \"{dir}\"" else l)
+
+/-- 値の行を `a` から `b` に書き換える。 -/
+def setValue (text : String) (a b : Nat) : String := text.replace (c7ValueLine a) (c7ValueLine b)
+
+/-- 10. C7 / C24 / C26 の設定変更回帰(docstring の 10)。設定変更プロジェクトの複製で、既定の生成先・値 1 → `generated = "custom"`・値 2 を、
+古い既定の生成先とビルドキャッシュが残る場合と設定した生成先だけが存在する場合の双方で `naru simulate` し(observer が 2、exit 0)、`custom/` が
+再生成した `compile` の出力と一致して runner・一時ファイルを含まず、runner はルートの `.lake/naru/simulate/Simulate.lean` のまま(C26)、Lake が
+読む生成ソースの link が `custom/` を指してルートの `lake build Model Statements` が exit 0、その実行ファイルが 2 を表示し(C24)、ソースを不正に
+すると exit 1 で observer の行を表示しない(C7)。最後にルートの生成先に戻す。 -/
+def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
+  heading "C7 / C24 / C26 generated-dir change (tests/config_change)"
+  let root ← IO.FS.realPath "."
+  let naruBin := (root / ".lake" / "build" / "bin" / "naru").toString
+  let simBin := (root / ".lake" / "build" / "bin" / "naru_simulate").toString
+  if ← c7Project.isDir then IO.FS.removeDirAll c7Project
+  IO.FS.createDirAll workDir
+  let _ ← step "C7: copy the config-change project" "cp" #["-R", c7Fixture.toString, c7Project.toString]
+  let proj ← IO.FS.realPath c7Project
+  let srcPath := proj / c7Source
+  let cfgPath := proj / "naru.toml"
+  let src0 ← IO.FS.readFile srcPath
+  if contains src0 (c7ValueLine 1) then ok s!"C7: {c7Fixture}/{c7Source} has the line `{c7ValueLine 1}`"
+  else fail s!"C7: {c7Fixture}/{c7Source} lacks the line `{c7ValueLine 1}`"
+  let cfg0 ← IO.FS.readFile cfgPath
+  let cfgLines := (cfg0.splitOn "\n").map (·.trimAscii.toString)
+  if cfgLines.contains "sources = [\"src\"]" && cfgLines.contains "generated = \"generated\"" then
+    ok s!"C7: {c7Fixture}/naru.toml has sources = [\"src\"] and generated = \"generated\""
+  else fail s!"C7: {c7Fixture}/naru.toml must have `sources = [\"src\"]` and `generated = \"generated\"`"
+  let gen := proj / "generated"
+  let custom := proj / "custom"
+  let setup (value : Nat) (dir : String) : IO Unit := do
+    IO.FS.writeFile srcPath (setValue src0 1 value)
+    IO.FS.writeFile cfgPath (setGenerated cfg0 dir)
+  let simulate (label : String) (expectExit : UInt32) : M IO.Process.Output :=
+    step label naruBin #["simulate", c7Source] expectExit (cwd := some proj)
+  let expectValue (label : String) (out : String) (n other : Nat) : M Unit := do
+    if contains out (c7Observed n) && !(contains out (c7Observed other)) then
+      ok s!"{label}: prints `{c7Observed n}` and not `{c7Observed other}`"
+    else fail s!"{label}: expected `{c7Observed n}` without `{c7Observed other}`\n{tail out 600}"
+  let expectLink (label : String) (want : System.FilePath) : M Unit := do
+    try
+      let t ← IO.FS.realPath lakeGeneratedLink
+      if t == want then ok s!"{label}: {lakeGeneratedLink} -> {want}"
+      else fail s!"{label}: {lakeGeneratedLink} -> {t} (expected {want})"
+    catch e => fail s!"{label}: {lakeGeneratedLink} is missing or dangling ({e})"
+  -- 1. 既定の生成先、値 1(ビルドキャッシュと実行ファイルは値 1 になる)
+  let r1 ← simulate "C7: simulate (generated = \"generated\", value 1)" 0
+  expectValue "C7 baseline" r1.stdout 1 2
+  if ← (gen / "Model" / "Counter.lean").pathExists then ok s!"C7: {gen}/Model/Counter.lean generated"
+  else fail s!"C7: {gen}/Model/Counter.lean is missing"
+  expectLink "C24 after the baseline" gen
+  let genSnapshot ← shaSnapshot gen
+  -- 2. 値 2・generated = "custom": 古い既定の生成先(値 1)とビルドキャッシュ(値 1 の Model / 実行ファイル)が残る
+  setup 2 "custom"
+  let r2 ← simulate "C7: simulate (generated = \"custom\", value 2; the old generated/ and the build cache remain)" 0
+  expectValue "C7 with the old default dir and build cache left" r2.stdout 2 1
+  if (← shaSnapshot gen) == genSnapshot then ok s!"C7: the old {gen}/ is untouched (still the value-1 output; simulate wrote only custom/)"
+  else fail s!"C7: {gen}/ changed although naru.toml points at custom/"
+  if ← (custom / "Model" / "Counter.lean").pathExists then ok s!"C7: {custom}/Model/Counter.lean generated"
+  else fail s!"C7: {custom}/Model/Counter.lean is missing"
+  expectLink "C24 after switching to custom" custom
+  -- 3. 既定の生成先・値 1 に戻す(ビルドキャッシュと実行ファイルを値 1 に戻す)
+  setup 1 "generated"
+  let r3 ← simulate "C7: simulate (back to generated = \"generated\", value 1: the build cache holds value 1 again)" 0
+  expectValue "C7 back to the baseline" r3.stdout 1 2
+  -- 4. 設定した生成先だけが存在する場合: 古い既定の生成先(と前の custom/)を消してから、値 2・custom
+  IO.FS.removeDirAll gen
+  if ← custom.isDir then IO.FS.removeDirAll custom
+  setup 2 "custom"
+  let r4 ← simulate "C7: simulate (generated = \"custom\", value 2; only the configured dir exists, the build cache held value 1)" 0
+  expectValue "C7 with only the configured dir" r4.stdout 2 1
+  if ← gen.pathExists then fail s!"C7: {gen}/ reappeared" else ok s!"C7: no {gen}/ (simulate writes only the configured generated dir)"
+  -- C26: custom/ は再生成した compile の出力と一致し、runner・一時ファイルを含まない。runner はルートの .lake/naru/simulate のまま
+  let s1 ← shaSnapshot custom
+  let _ ← step "C26: naru compile in the project (regenerate custom/)" naruBin #["compile"] (cwd := some proj)
+  let s2 ← shaSnapshot custom
+  if !s1.isEmpty && s1 == s2 then ok s!"C26: after simulate, {custom}/ holds exactly the {s1.length} files naru compile writes (sha256 identical to a fresh compile)"
+  else fail s!"C26: {custom}/ after simulate differs from a fresh compile: simulate {(s1.map (·.1)).take 5}, compile {(s2.map (·.1)).take 5}"
+  let nonLean := (s1.map (·.1)).filter fun f => !f.endsWith ".lean"
+  let runners := (← allFiles proj).filter fun f => (System.FilePath.mk f).fileName == some "Simulate.lean"
+  if nonLean.isEmpty && runners.isEmpty then ok s!"C26: no runner / temporary file under {proj}/ (only .lean output)"
+  else fail s!"C26: runner / temporary files under the project: {nonLean ++ runners}"
+  let runner := root / ".lake" / "naru" / "simulate" / "Simulate.lean"
+  if ← runner.pathExists then
+    if contains (← IO.FS.readFile runner) "Model.Counter" then ok s!"C26: the runner is still {runner} and runs the project's scenario"
+    else fail s!"C26: {runner} does not mention Model.Counter"
+  else fail s!"C26: {runner} not found"
+  -- C24: Lake が読む生成ソースは有効な生成先(custom/)で、Model / Statements がビルドでき、実行ファイルが現在の値を表示する
+  expectLink "C24 effective generated dir" custom
+  let _ ← step "C24: lake build Model Statements at the root (reads the project's custom/ through the link)" "lake" #["build", "Model", "Statements"]
+  let rb ← step "C24: run the simulate binary built from the effective generated dir" simBin #[]
+  expectValue "C24 binary" rb.stdout 2 1
+  -- 5. 現在のソースを不正にする: 検査で止まり(exit 1)、古い実行ファイルを実行しない
+  IO.FS.writeFile srcPath (setValue src0 1 2 ++ "\nfn broken() -> Nat { undefinedName }\n")
+  let r5 ← simulate "C7: simulate with an invalid current source (exit 1)" 1
+  if !(contains r5.stdout "current() =") && contains r5.stderr "error[E011]" then
+    ok "C7: an invalid source stops before building / running (E011 reported, no observer line, the old binary is not run)"
+  else fail s!"C7: invalid source: stdout {tail r5.stdout 300}, stderr {tail r5.stderr 300}"
+  if (← shaSnapshot custom) == s2 then ok s!"C7: {custom}/ keeps the last good output (not rewritten by the failed run)"
+  else fail s!"C7: {custom}/ changed after the failed run"
+  -- 6. ルートの生成先に戻す
+  let _ ← step "restore: lake exe naru compile (the link points back at the root's generated dir)" "lake" #["exe", "naru", "compile"]
+  expectLink "C24 restored" (← IO.FS.realPath generated)
+  let _ ← step "restore: lake build Model Statements" "lake" #["build", "Model", "Statements"]
+
 /-! ## 段 -/
 
 /-- 2. 受理例と反例。 -/
@@ -455,7 +588,7 @@ def checkAcceptReject : M Unit := do
       let _ ← step s!"reject {f} ({code})" "lake" #["exe", "naru", "check-reject", f, code]
   if rejects.isEmpty then fail s!"{rejectDir}: no .naru files" else ok s!"{rejectDir}: {rejects.length} files"
 
-/-- 4. C1: 決定性とヘッダ。 -/
+/-- 5. C1: 決定性とヘッダ。 -/
 def checkDeterminism (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
   heading "C1 determinism"
   let _ ← step "compile 1" "lake" #["exe", "naru", "compile"]
@@ -500,7 +633,7 @@ def checkDeterminism (roots : List System.FilePath) (generated : System.FilePath
   else if missing.isEmpty then ok s!"C1: {nSrc} sources, each `naru-source: <root-relative path> sha256:<hash>` appears in the generated headers"
   else fail s!"C1: source hash not found in the headers for {missing}"
 
-/-- 5. C6 / C8 のビルドと grep、statements 群。 -/
+/-- 6. C6 / C8 のビルドと grep、statements 群。 -/
 def checkBuilds (generated : System.FilePath) : M Unit := do
   heading "C6 / C8 builds"
   let _ ← step "C6 lake build Model" "lake" #["build", "Model"]
@@ -513,7 +646,7 @@ def checkBuilds (generated : System.FilePath) : M Unit := do
   if g2.exitCode == 0 then IO.println (tail g2.stdout 1000)
   subgroup "naru_test statements (C8 / C9)" NaruTest.Statements.run
 
-/-- 6. 受理例の生成 Lean の型検査と、C34 の検体の意味。 -/
+/-- 7. 受理例の生成 Lean の型検査と、C34 / C35 の検体の意味。 -/
 def checkGeneratedAccepts (leanPath : String) : M Unit := do
   heading "generated Lean of the accept examples (+ C34 semantics)"
   let accepts ← Naru.listFiles acceptDir "naru"
@@ -540,7 +673,7 @@ def checkGeneratedAccepts (leanPath : String) : M Unit := do
   if !accepts.contains c35AcceptSource then fail s!"C35: {c35AcceptSource} is missing"
   if !accepts.contains c37LegacySource then fail s!"C37: {c37LegacySource} is missing"
 
-/-- 8. C7 の simulate と C26。 -/
+/-- 9. C7 の simulate と C26。 -/
 def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
   heading "C7 simulate / C26"
   let mut scenarioFiles : List String := []
@@ -600,7 +733,7 @@ def checkSimulate (roots : List System.FilePath) (generated : System.FilePath) :
   let runner : System.FilePath := ".lake" / "naru" / "simulate" / "Simulate.lean"
   if ← runner.pathExists then ok s!"C26: the simulate runner is {runner}" else fail s!"C26: {runner} not found after simulate"
 
-/-- 9. C24: 直書きの不在と別名のコピー。 -/
+/-- 11. C24: 直書きの不在と別名のコピー。 -/
 def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M Unit := do
   heading "C24 naru.toml"
   let g ← step "C24 grep compiler/ for a hard-coded root name (expect no match)" "grep" #["-rn", "\"dsl\\|\"specs", compilerDir.toString] (expectExit := 1)
@@ -628,7 +761,7 @@ def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M
   let restored ← shaSnapshot generated
   if restored == before then ok "C24: generated files restored (sha256 identical)" else fail "C24: generated files differ after restoring naru.toml"
 
-/-- 10. C28 / C22 / C27。 -/
+/-- 12. C28 / C22 / C27。 -/
 def checkLayout : M Unit := do
   heading "C28 / C22 / C27"
   let r ← step "C28 git ls-files tests/golden" "git" #["ls-files", "tests/golden"]
@@ -672,6 +805,7 @@ def checks : M Unit := do
   checkGeneratedAccepts leanPath
   checkRenameStructure roots
   checkSimulate roots generated
+  checkGeneratedDirChange generated
   checkConfig roots generated
   heading "repository"
   subgroup "naru_test repo (C21 / C23 / C25 / C37)" (NaruTest.Repo.run none)

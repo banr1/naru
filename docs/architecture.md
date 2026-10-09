@@ -53,7 +53,12 @@ NaruStd.observe "readsAt(…)" (Model.A.B.readsAt committee' proposer' … «s»
 生成ファイルの先頭 5 行はコメント: `naru-compiler: <版> sha256:<compiler/**/*.lean の hash>`、`naru-stdlib: <版> sha256:<stdlib 全ファイルの hash>`、
 `naru-source: <ファイル> sha256:<そのファイルの hash>`、`naru-unit: sha256:<全ソースの hash>`。
 `naru-source:` のパスはソースルートからの相対パス(`Consensus/Objects/Time.naru`。`specs/consensus/` を含まない)。
-同じソースと stdlib からは同じバイト列を生成する(表の反復順・時刻・環境に依存しない)。
+同じソースと stdlib からは同じバイト列を生成する(表の反復順・時刻・環境に依存しない)。stdlib / コンパイラの hash はリポジトリのルート(ホーム。
+実行ファイル `<ルート>/.lake/build/bin/naru` の場所から求める)相対のパスで計算するので、cwd にも依らない。
+
+生成先と Lake: 生成先は `naru.toml` の `generated`(既定 `generated/`)で、`naru compile` / `naru simulate` は書き終えた生成先への symlink を
+`<ルート>/.lake/naru/generated` に置く。`lakefile.toml` の lean_lib `Model` / `Statements` の `srcDir` はこの link なので、`lake build Model` /
+`lake build Statements` / `naru_simulate` は現在の設定の生成先を読む(C24。[cli.md](cli.md) の naru.toml)。
 
 既知の制限(backend): naru は enum / Option / Bool / tuple の match の網羅性を検査しないので、網羅していない match は
 Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の穴を塞ぐので、生成コードの `panic!` は到達しない位置にだけある)。

@@ -19,6 +19,13 @@ import Naru
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
 ソースのパスはソースルートからの相対で書く(ルートのディレクトリ名を含まない: C1 / C24)。
 `--out <dir>` は `<dir>/Model.lean` と `<dir>/Model/`、`<dir>/Statements.lean` と `<dir>/Statements/` を作り直す(他は触らない)。
+
+ホーム(リポジトリのルート)と Lake: `naru.toml` は cwd のものを読む。stdlib / コンパイラ(ヘッダの hash)、`naru simulate` の実行入口と
+`lake build`、Lake が読む生成ソースの link は、実行ファイル `<ホーム>/.lake/build/bin/naru` の場所から求めたホームのもの(`findHome`)。
+`naru.toml` の `generated` は生成先だけでなく Lake にも反映する(C24): `compile` / `simulate` は書き終えた生成先への symlink を
+`<ホーム>/.lake/naru/generated`(lakefile の lean_lib `Model` / `Statements` の `srcDir`)に置くので、`lake build Model` / `Statements` /
+`naru_simulate` は現在の設定の生成先を読む(lakefile の手修正は要らない)。別のディレクトリの `naru.toml` のプロジェクトでも、そこを cwd にして
+`<ホーム>/.lake/build/bin/naru compile` / `simulate` と直接呼べる(`tests/config_change/` の設定変更プロジェクトはこの形で検査する)。
 -/
 
 open Naru
@@ -33,8 +40,42 @@ def stdlibDir : System.FilePath := "stdlib" / "Model"
 
 def compilerDir : System.FilePath := "compiler"
 
-/-- `naru simulate` が書く実行入口(追跡対象外。C26)。 -/
+/-- `naru simulate` が書く実行入口(ホーム相対。追跡対象外。C26)。 -/
 def simulateDir : System.FilePath := ".lake" / "naru" / "simulate"
+
+/-- Lake が読む生成ソース(ホーム相対。lakefile の lean_lib `Model` / `Statements` の `srcDir`)。`compile` / `simulate` が有効な生成先への
+symlink にする(C24)。 -/
+def lakeGeneratedLink : System.FilePath := ".lake" / "naru" / "generated"
+
+/-- `naru simulate` が Lake にビルドさせる実行ファイル(ホーム相対)。 -/
+def simulateBin : System.FilePath := ".lake" / "build" / "bin" / "naru_simulate"
+
+/-- naru のホーム(リポジトリのルート)。実行ファイル `<ホーム>/.lake/build/bin/naru` の場所から求める。 -/
+structure Home where
+  /-- ホームの実際のパス(絶対)。 -/
+  dir : System.FilePath
+  /-- cwd がホームそのものか(そのときはホーム相対のパスをそのまま使い、出力の形を変えない)。 -/
+  atHome : Bool
+
+/-- ホームを求める。stdlib が無ければ(実行ファイルが `lake build naru` の置く場所に無い)説明して none。 -/
+def findHome (who : String) : IO (Option Home) := do
+  let exe ← IO.FS.realPath (← IO.appPath)
+  -- <ホーム>/.lake/build/bin/naru
+  let some dir := exe.parent >>= (·.parent) >>= (·.parent) >>= (·.parent)
+    | IO.eprintln s!"{who}: cannot locate the naru home from {exe}"; return none
+  if !(← (dir / stdlibDir).isDir) then
+    IO.eprintln s!"{who}: stdlib not found at {dir / stdlibDir} (the executable must be <home>/.lake/build/bin/naru, built by `lake build naru` in the repository)"
+    return none
+  let cwd ← IO.FS.realPath "."
+  return some { dir, atHome := cwd == dir }
+
+/-- ホーム相対のパス `rel` を cwd から使えるパスにする。 -/
+def Home.path (h : Home) (rel : System.FilePath) : System.FilePath := if h.atHome then rel else h.dir / rel
+
+/-- ホーム配下のパスをホーム相対の表示にする(ヘッダの stdlib / コンパイラの hash は cwd に依らずホーム相対のパスで計算する)。 -/
+def Home.display (h : Home) (p : String) : String :=
+  let pre := h.dir.toString ++ "/"
+  if p.startsWith pre then (p.drop pre.length).toString else p
 
 def usage : String :=
   "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru under a source root of naru.toml>"
@@ -92,22 +133,22 @@ def writeGenerated (outDir : System.FilePath) (files : Array (String × String))
     IO.FS.writeFile path content
 
 /-- 生成ファイルのヘッダに入れる版と hash(ソースは与えられた順、stdlib とコンパイラはパス順)。単位の hash はソースルートからの
-相対パス(`sourcePrefix` を落としたもの)で計算するので、ルートのディレクトリ名に依らない(C24)。
-stdlib が見つからなければ `none`(リポジトリのルートで実行していない)。 -/
-def buildMeta (who : String) (files : List String) (sourcePrefix : String := "") : IO (Option Backend.Model.Meta) := do
+相対パス(`sourcePrefix` を落としたもの)で計算するので、ルートのディレクトリ名に依らない(C24)。stdlib とコンパイラはホームのもので、
+その hash もホーム相対のパスで計算する(cwd に依らない)。stdlib が見つからなければ `none`。 -/
+def buildMeta (who : String) (home : Home) (files : List String) (sourcePrefix : String := "") : IO (Option Backend.Model.Meta) := do
   let display (f : String) : String :=
     if !sourcePrefix.isEmpty && f.startsWith sourcePrefix then (f.drop sourcePrefix.length).toString else f
   let mut fileHashes : List (String × String) := []
   for f in files do fileHashes := fileHashes ++ [(f, ← hashFile f)]
-  let stdlibFiles ← listFiles stdlibDir "lean"
+  let stdlibFiles ← listFiles (home.path stdlibDir) "lean"
   if stdlibFiles.isEmpty then
-    IO.eprintln s!"{who}: stdlib not found at {stdlibDir} (run from the repository root)"
+    IO.eprintln s!"{who}: stdlib not found at {home.path stdlibDir}"
     return none
   let mut stdlibHashes : List (String × String) := []
-  for f in stdlibFiles do stdlibHashes := stdlibHashes ++ [(f, ← hashFile f)]
-  let compilerFiles ← listFiles compilerDir "lean"
+  for f in stdlibFiles do stdlibHashes := stdlibHashes ++ [(home.display f, ← hashFile f)]
+  let compilerFiles ← listFiles (home.path compilerDir) "lean"
   let mut compilerHashes : List (String × String) := []
-  for f in compilerFiles do compilerHashes := compilerHashes ++ [(f, ← hashFile f)]
+  for f in compilerFiles do compilerHashes := compilerHashes ++ [(home.display f, ← hashFile f)]
   return some
     { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
       stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit (fileHashes.map fun (p, h) => (display p, h)),
@@ -128,16 +169,32 @@ def emitLean (who : String) (checked : Checked) (info : Backend.Model.Meta) :
     | .ok statements => return some (model, statements)
 
 /-- 1 つの単位を検査して生成ファイルにする。診断があれば標準エラーに出して none。 -/
-def compileUnit (who : String) (u : Unit') :
+def compileUnit (who : String) (home : Home) (u : Unit') :
     IO (Option (Checked × Backend.Model.Meta × Array (String × String) × Array (String × String))) := do
   let (diags, checked) ← compileFiles u.files
   if !diags.isEmpty then
     for d in diags do IO.eprintln d.render
     IO.eprintln s!"{who}: {diags.size} error(s)"
     return none
-  let some info ← buildMeta who u.files (prefixOf u.root) | return none
+  let some info ← buildMeta who home u.files (prefixOf u.root) | return none
   let some (model, statements) ← emitLean who checked info | return none
   return some (checked, info, model, statements)
+
+/-- Lake が読む生成ソース `<ホーム>/.lake/naru/generated` を、書き終えた生成先への symlink にする(C24: `naru.toml` の `generated` を
+lakefile の手修正なしに Lake に反映する)。以前の link・ディレクトリ・ファイルがあれば外す(symlink は辿らない)。 -/
+def linkGenerated (who : String) (home : Home) (generated : System.FilePath) : IO Bool := do
+  let target ← IO.FS.realPath generated
+  let link := home.path lakeGeneratedLink
+  if let some parent := link.parent then IO.FS.createDirAll parent
+  try
+    let md ← link.symlinkMetadata
+    if md.type == .dir then IO.FS.removeDirAll link else IO.FS.removeFile link
+  catch _ => pure ()
+  let r ← IO.Process.output { cmd := "ln", args := #["-s", target.toString, link.toString] }
+  if r.exitCode != 0 then
+    IO.eprintln s!"{who}: cannot point {link} at {target} (Lake reads the generated Model / Statements there): {r.stderr.trimAscii}"
+    return false
+  return true
 
 /-- 複数の単位の生成ファイルを 1 つの生成先に束ねる。各単位のルートファイル(`Model.lean` / `Statements.lean`)は、全単位の
 モジュールを import するものに置き換える。同じパスのファイルが 2 つの単位から出たら誤り(同名のモジュール)。 -/
@@ -172,8 +229,9 @@ def mergeUnits (who : String) (units : List (Backend.Model.Meta × Array (String
       "\n/-! Generated Statements: one Lean module per naru module that declares predicates / conditions / regimes / properties / claims / claim bundles. Imports only NaruStd and the generated Model (never Proofs). Build with `lake build Statements`. -/\n"
     return some (files.push ("Model.lean", modelRoot) |>.push ("Statements.lean", stmtRoot))
 
-/-- `naru.toml` の全単位を検査して生成先に書く(`compile` と `simulate` が共用)。成功なら検査済みの単位の列。 -/
-def compileAll (who : String) (cfg : Config) : IO (Option (List (Unit' × Checked))) := do
+/-- `naru.toml` の全単位を検査して生成先に書き、Lake が読む生成ソースの link をその生成先に向ける(`compile` と `simulate` が共用)。
+成功なら検査済みの単位の列。 -/
+def compileAll (who : String) (home : Home) (cfg : Config) : IO (Option (List (Unit' × Checked))) := do
   let units ← unitsOf cfg
   if units.all (·.files.isEmpty) then
     IO.eprintln s!"{who}: no .naru sources under the source roots of {configFileName} ({", ".intercalate (cfg.rootPaths.map (·.toString))})"
@@ -184,13 +242,14 @@ def compileAll (who : String) (cfg : Config) : IO (Option (List (Unit' × Checke
   let mut nStatements := 0
   for u in units do
     if u.files.isEmpty then continue
-    let some (checked, info, model, statements) ← compileUnit who u | return none
+    let some (checked, info, model, statements) ← compileUnit who home u | return none
     results := results ++ [(u, checked)]
     generated := generated ++ [(info, model, statements)]
     nModel := nModel + model.size
     nStatements := nStatements + statements.size
   let some files ← mergeUnits who generated | return none
   writeGenerated cfg.generatedPath files
+  if !(← linkGenerated who home cfg.generatedPath) then return none
   let nMods := results.foldl (init := 0) fun n (_, c) => n + c.mods.size
   IO.println s!"compiled {nMods} module(s) from {results.length} source root(s); wrote {nModel} Model file(s) and {nStatements} Statements file(s) under {cfg.generatedPath}/"
   return some results
@@ -216,8 +275,9 @@ def runCompile (args : List String) : IO UInt32 := do
     if outDir.isSome then
       IO.eprintln "naru compile: `--out` needs explicit files (without files, the output directory comes from naru.toml)"
       return 2
+    let some home ← findHome "naru compile" | return 2
     let some cfg ← loadConfig "naru compile" | return 2
-    let some _ ← compileAll "naru compile" cfg | return 1
+    let some _ ← compileAll "naru compile" home cfg | return 1
     return 0
   let (diags, checked) ← compileFiles files
   if !diags.isEmpty then
@@ -229,19 +289,22 @@ def runCompile (args : List String) : IO UInt32 := do
     IO.println s!"checked {checked.mods.size} module(s)"
     return 0
   | some out =>
-    let some info ← buildMeta "naru compile" files | return 2
+    let some home ← findHome "naru compile" | return 2
+    let some info ← buildMeta "naru compile" home files | return 2
     let some (model, statements) ← emitLean "naru compile" checked info | return 1
     writeGenerated out (model ++ statements)
     IO.println s!"compiled {checked.mods.size} module(s); wrote {model.size} Model file(s) and {statements.size} Statements file(s) under {out}/"
     return 0
 
 /-- scenario の実行。`file` は `naru.toml` のソースルート配下の `.naru`(検査の単位はそのルート全体 = 生成先の元)。
-1. 全単位を検査し(診断があれば exit 1)、生成先に Model と Statements を作り直す(`compile` と同じ)。
+1. 全単位を検査し(診断があれば exit 1、何も実行しない)、生成先に Model と Statements を作り直し、Lake が読む生成ソースの link を
+   その生成先に向ける(`compile` と同じ)。
 2. そのファイルの scenario(1 つ以上。無ければ exit 2)を順に `NaruStd.runScenario` で表示する
-   `.lake/naru/simulate/Simulate.lean`(`main`)を書く(追跡対象外)。
-3. `lake build naru_simulate`(lakefile の lean_exe。Model を native にビルドする)→ `.lake/build/bin/naru_simulate`
-   を実行し、その exit code で終わる。 -/
+   `<ホーム>/.lake/naru/simulate/Simulate.lean`(`main`)を書く(追跡対象外。生成先を変えても所在は同じ: C26)。
+3. ホームで `lake build naru_simulate`(lakefile の lean_exe。link 経由で現在の生成先の Model を native にビルドする。失敗すれば exit 1 で
+   古い実行ファイルは実行しない)→ `<ホーム>/.lake/build/bin/naru_simulate` を実行し、その exit code で終わる。 -/
 def runSimulate (file : String) : IO UInt32 := do
+  let some home ← findHome "naru simulate" | return 2
   let some cfg ← loadConfig "naru simulate" | return 2
   if !(← (System.FilePath.mk file).pathExists) then
     IO.eprintln s!"naru simulate: `{file}` not found"
@@ -256,7 +319,7 @@ def runSimulate (file : String) : IO UInt32 := do
   let some (unit, rel) := found
     | IO.eprintln s!"naru simulate: `{file}` is not under a source root of {configFileName} ({", ".intercalate (cfg.rootPaths.map (·.toString))}); simulate runs the scenarios of a source that `compile` writes to {cfg.generatedPath}/"
       return 2
-  let some results ← compileAll "naru simulate" cfg | return 1
+  let some results ← compileAll "naru simulate" home cfg | return 1
   let some (_, checked) := results.find? fun (u, _) => u.root == unit.root
     | IO.eprintln s!"naru simulate: `{rel}` was not read"; return 2
   let some m := checked.mods.find? (·.file == rel)
@@ -265,7 +328,7 @@ def runSimulate (file : String) : IO UInt32 := do
   if scenarios.isEmpty then
     IO.eprintln s!"naru simulate: `{rel}` declares no scenario"
     return 2
-  let some info ← buildMeta "naru simulate" unit.files (prefixOf unit.root) | return 2
+  let some info ← buildMeta "naru simulate" home unit.files (prefixOf unit.root) | return 2
   let names := scenarios.toList.map (·.name)
   let calls := names.map fun n =>
     s!"  NaruStd.runScenario \"{n}\" {Backend.Model.leanName (renderPath (m.name ++ [n]))}\n"
@@ -275,18 +338,19 @@ def runSimulate (file : String) : IO UInt32 := do
     Backend.Model.header info shown ((info.fileHashes.lookup rel).getD "") ++
     s!"-- naru simulate: runs the scenario(s) of {shown} and prints their `observe` lines (`lake build naru_simulate && .lake/build/bin/naru_simulate`).\n" ++
     "import Model\n\ndef main : IO Unit := do\n" ++ "".intercalate calls
-  IO.FS.createDirAll simulateDir
-  let runnerPath := simulateDir / "Simulate.lean"
+  let simDir := home.path simulateDir
+  IO.FS.createDirAll simDir
+  let runnerPath := simDir / "Simulate.lean"
   IO.FS.writeFile runnerPath runner
   IO.println s!"naru simulate: building {runnerPath} (scenario {", ".intercalate names} of {rel}) with `lake build naru_simulate`"
-  let build ← IO.Process.output { cmd := "lake", args := #["build", "naru_simulate"] }
+  let build ← IO.Process.output { cmd := "lake", args := #["build", "naru_simulate"], cwd := some home.dir }
   if build.exitCode != 0 then
     IO.eprint build.stdout
     IO.eprint build.stderr
     IO.eprintln s!"naru simulate: `lake build naru_simulate` failed (exit {build.exitCode})"
     return 1
   let child ← IO.Process.spawn
-    { cmd := ".lake/build/bin/naru_simulate", args := #[], stdin := .inherit, stdout := .inherit, stderr := .inherit }
+    { cmd := (home.path simulateBin).toString, args := #[], stdin := .inherit, stdout := .inherit, stderr := .inherit }
   child.wait
 
 /-- 反例ソースの検査。`compile <file>` と同じ経路を走らせ、診断があって(= compile なら exit 1)

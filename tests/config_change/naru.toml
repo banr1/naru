@@ -1,0 +1,7 @@
+# 設定変更プロジェクト(IDEAL.md C7 / C24 / C26 の検体)。`lake exe naru_test regression` がこのディレクトリを
+# `.lake/naru/test/regression/c7/` に複製し、その複製を cwd にして `<ルート>/.lake/build/bin/naru simulate src/Counter.naru` を走らせる:
+# 既定の生成先・値 1 の後、この `generated` を "custom" に、`src/Counter.naru` の値 1 を 2 に書き換えて実行し、
+# 古い `generated/` とビルドキャッシュが残る場合と、設定した生成先だけが存在する場合の双方で observer が 2 を表示すること、
+# ソースを不正にすると exit 非 0 で古い値を表示しないことを確かめる(回帰が書き換えるのは `generated` の行だけ)。
+sources = ["src"]
+generated = "generated"

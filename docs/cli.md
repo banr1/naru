@@ -13,14 +13,21 @@ generated = "generated"
 ```
 
 - `sources`: ソースルートのディレクトリの一覧。各ルートの `**/*.naru` 全体を 1 つのコンパイル単位として検査する。
-- `generated`: `naru compile` の出力先。`generated/` には `naru compile` の決定的な出力(`Model` と `Statements`)だけを置く。
+- `generated`: `naru compile` の出力先(既定 `generated`)。そこには `naru compile` の決定的な出力(`Model` と `Statements`)だけを置く。
+- `generated` は Lake にも反映される(C24): `naru compile` / `naru simulate` は書き終えた生成先への symlink を `<ルート>/.lake/naru/generated`
+  (追跡対象外)に置き、`lakefile.toml` の lean_lib `Model` / `Statements` の `srcDir` はそこを向く。`lake build Model` / `lake build Statements` /
+  `naru_simulate` はこの link 経由で現在の設定の生成先を読むので、`generated` を変えても lakefile を手で直さない。`lake build Model` の前に
+  一度 `lake exe naru compile` が要る(link はそのとき作られる)。
 - モジュール名はソースルートからの相対パスに対応する。`specs/consensus/Consensus/Objects/Time.naru` は `Consensus.Objects.Time`
   (ファイルの `module` 宣言もこれと一致させる)。生成ファイルは `generated/Model/Consensus/Objects/Time.lean`(Lean モジュール `Model.Consensus.Objects.Time`)と、
   spec 宣言があれば `generated/Statements/Consensus/Objects/Time.lean`。
 
 ## コマンド
 
-リポジトリのルートで実行する(stdlib の hash のために `stdlib/Model` を読む。`lsp` は cwd に依らない)。
+`naru.toml` は cwd のものを読む。stdlib / コンパイラ(ヘッダの hash)、`simulate` の実行入口と `lake build`、Lake が読む生成ソースの link は、
+実行ファイル `<ルート>/.lake/build/bin/naru` の場所から求めたリポジトリのルート(ホーム)のもの。ふつうはルートで `lake exe naru …` と実行するが、
+別のディレクトリに `naru.toml` を置いたプロジェクトでも、そこを cwd にして `<ルート>/.lake/build/bin/naru compile` / `simulate` と直接呼べる
+(設定変更プロジェクト `tests/config_change/` はこの形で検査する。[testing.md](testing.md))。`lsp` は cwd に依らない。
 
 | コマンド | 意味 |
 |---|---|
@@ -38,10 +45,13 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 - ファイルは `naru.toml` のソースルート配下に限る(外なら exit 2)。`./specs/…` やリポジトリの絶対パスで渡しても、実際のパス(`realPath`)で
   ルート配下のファイルと突き合わせる。
-- ソースルート全体を検査して `generated/` に Model と Statements を作り直す(`compile` と同じ)。
-- 実行入口 `main`(C1 のヘッダ付き。追跡対象外)は `generated/Simulate.lean` ではなく `.lake/naru/simulate/Simulate.lean` に書く。
-  lakefile の lean_exe `naru_simulate` の `srcDir` は `.lake/naru/simulate`。`generated/` には `naru compile` の決定的な出力だけがある。
-- `lake build naru_simulate`(Model を native にビルド)→ `.lake/build/bin/naru_simulate` を実行する(「naru を実行する」= 生成 Lean を実行する)。
+- ソースルート全体を検査して有効な生成先に Model と Statements を作り直し、Lake が読む link `.lake/naru/generated` をそこに向ける(`compile` と同じ)。
+  診断があれば exit 1 で、生成先も実行ファイルも触らず何も実行しない。
+- 実行入口 `main`(C1 のヘッダ付き。追跡対象外)は生成先ではなく `<ルート>/.lake/naru/simulate/Simulate.lean` に書く(生成先を変えても所在は同じ)。
+  lakefile の lean_exe `naru_simulate` の `srcDir` は `.lake/naru/simulate`。生成先には `naru compile` の決定的な出力だけがある(C26)。
+- ルートで `lake build naru_simulate`(link 経由で現在の生成先の Model を native にビルド。失敗すれば exit 1 で古い実行ファイルは実行しない)→
+  `.lake/build/bin/naru_simulate` を実行する(「naru を実行する」= 生成 Lean を実行する)。生成先・Lake が読む Model・実行ファイルは同じ
+  `naru.toml` と現在のソースに対応する(C7)。
 - 出力: `scenario <name>`、scalar は `  <label> = <Repr>`、List は `  <label>:` の下に 1 要素 1 行。値の表示は Lean の `Repr`
   (record は `{ time := 4, node := { value := 0 }, … }`)。
 
