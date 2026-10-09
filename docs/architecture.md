@@ -130,3 +130,57 @@ record に無いので、condition `SetupWellFormed(s)` と `RunDomain(s, rho)` 
 入っていないので、`Set` / `Table` を含む型(`Run` の `honest` など)の量化は正規化されていない表現(重複・未整列)も含み、そこでは `size` や
 `==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、
 stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に整形性の前提を付ける(どちらも naru の表現力は変えない)。
+
+## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47)
+
+生成 Lean が Core の意味を保つことを、backend から独立した意味論と Lean の定理で保証する(限定範囲)。lean_lib `NaruSem`(`semantics/`)。
+検査入口と走らせ方は [testing.md](testing.md)「コンパイラ意味論保存」。プロトコルの Proofs(`proofs/`、空)とは別の役割で、Core・コンパイラ・独立意味論・
+生成宣言を参照してよいが、生成 Model / Statements からここへの逆依存は無い(不変条件の依存方向)。
+
+### 対象(用語「今回の保存対象」)と範囲の判定(`NaruSem/Scope.lean`)
+
+| 項目 | 定義 |
+|---|---|
+| 対象の constructor | `Core.Expr` の `.lit`(Nat / Bool)、`.var`、`.let_`、`.ite`、`.binop`、`.unop`(`!`)、`.method`(Nat の `min` / `max`)、`.match_`(`Core.Arm.mk`、パターン `Core.Pat` の `.lit` / `.bind` / `.wild`)。spec では加えて `.quant`(forall / exists、束縛型 Nat / Bool) |
+| 対象の演算 | `BinOp.ofString?`: Nat の算術 `+` `-` `*` `/` `%`(`ArithOp`)、比較 `<` `<=` `>` `>=`(`CmpOp`。Nat と Bool)、等値 `==` `!=`(`EqOp`)、論理 `&&` `\|\|` `implies`(`LogicOp`)。`NatMethod.ofString?`: `min` / `max`。写らない演算子は対象外 |
+| 型 | `Ty`(nat / bool)。spec の束縛文脈は `STy`(`.val Ty` = 値、`.prop` = 命題)で値と命題を区別する |
+| runtime の適格性 | `wtR Γ e = some t`(`Γ : Ctx` = 名前 → 型): 対象の構文だけから成り、スコープ内の名前だけを参照し、型が合い、`match` が網羅的(`exhaustive`: ガード無しの `_` / 変数の腕、または Bool の `true` と `false` のガード無しリテラル腕)。腕は `wtArmsR` / `wtArmR`、パターンは `wtPat` |
+| spec の適格性 | `wtS Γ e = some τ`(`Γ : SCtx`): 論理の位置の式は `.val .bool`(Bool の値)か `.prop`(量化・命題に束ねた名前を含む)。値を要求する位置(算術・比較・Nat の等値の被演算子、`min` / `max`、scrutinee、Nat の `let` の値)は `wtR Γ.vals`(命題に束ねた名前はスコープ外)で判定し、命題を戻さない。Bool の `let` は値が命題(`proppyS`: コンパイラの `proppy` と同じ構文的な区分)なら名前を `.prop` に、そうでなければ `.val .bool` に束ねる |
+| 対象外 | 上記以外(呼出し・input・record / enum・コレクション・lambda・文字列・Int・Option …)は `wtR` / `wtS` が `none`。保証の対象にならず、言語の受理範囲とは別 |
+
+### 意味(`NaruSem/Eval.lean`、`NaruSem/Sem.lean`)
+
+- runtime は表示的意味論 `eval ρ e : Option Val`(`ρ : Env` = 名前 → 値)。`none` は行き詰まり(スコープ外の名前、型の合わない演算、対象外の構文、
+  どの腕も一致しない `match`)で、既定値・panic の値で埋めない。演算の意味は Lean の `Nat` / `Bool` の演算で明示する: `-` は 0 で切り詰め、`/ 0 = 0`、
+  `% 0 = a`、Bool の順序は `false < true`、`implies` は `!a || b`、`==` / `!=` は値の等しさ。`match` は腕を前から試し、パターンの束縛はその腕のガードと本体だけで
+  有効(ガード不成立なら外側の環境で次の腕へ)。
+- spec は評価関係 `Sem ρ e P`(`ρ : SEnv` = 名前 → 値か命題、`P : Prop`)。Bool の値は「true である」という命題に写し(`lit` / `varVal`)、論理演算は `∧` / `∨` /
+  `→` / `¬`、Nat の比較・等値は `<` 等 / `=` / `≠`、Bool の比較は `evalBool = true`、論理の位置の `==` / `!=` は `↔` / `¬ (… ↔ …)`、`if` は `(C → P) ∧ (¬ C → Q)`、
+  `match` は腕を 1 つずつ剥がし(`matchSkip` / `matchHit` / `matchGuard`)、ガード付きの腕は `(G → B) ∧ (¬ G → R)`(R は外側の環境で解釈する残りの腕)、
+  量化は束縛ごとの意味を `∀ a` / `∃ a`(`Ty.carrier`: Nat / Bool の全要素)で束ねる。値の位置は `eval ρ.vals`。命題を実行可能な Bool に戻す規則は無い。
+  関係にしたのは量化の本体の意味が定まらない場合を `True` / `False` で埋めないため(導出が無い = 意味が定まらない)。
+
+### 一般定理(`NaruSem/Totality.lean`、`NaruSem/SemTotality.lean`)
+
+| 定理 | 内容 | 仮定 |
+|---|---|---|
+| `eval_total` | `wtR Γ e = some t` で `Γ = ρ.ty`(各名前の値の型が文脈の型)なら `∃ v, eval ρ e = some v ∧ v.ty = t` | 適格性(型付け・スコープ・網羅性) |
+| `Eval_unique` | `Eval ρ e v`(= `eval ρ e = some v`)の `v` は一意 | — |
+| `Sem_exists` | `wtS Γ e = some τ`、`τ` が論理の位置の型、`Γ = ρ.ctx` なら `∃ P, Sem ρ e P` | 適格性。値の位置は `eval_total` |
+| `Sem_unique` | `Sem ρ e P` と `Sem ρ e Q` なら `P = Q`(量化は関数外延性・命題外延性) | — |
+
+証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
+翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
+不適格な Core(スコープ外・型の不一致・対象外の構文・網羅しない `match`・値の位置の命題)は `none`、行き詰まりは `none` / 導出なし — すべて `decide` または
+導出の場合分けで kernel が検査する。実際の compiler 経路の検体は `tests/accept/sem_core.naru`(`naru_test semantics` が引用して `wtR` / `wtS` を検査する)。
+
+### 信頼する部分・方式・未対応
+
+- 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の正しさは境界の外(IDEAL.md「対象外」)。
+  Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。
+- 採用方式(予定): 汎用翻訳方式 — 対象 Core の Lean での読み(`emitE` / `emitProp` の出力の意味を Lean の関数 / 命題として定義したもの)と独立意味論の対応を
+  一般定理で示し、実生成宣言との接続は生成物ごとに kernel の定義的等しさ(`rfl`)で確かめる(C40〜C44 で実装)。本節は C39 の意味論と適格性までで、
+  保存定理・接続証拠はまだ無い(台帳 C40〜C47 は unmet)。
+- 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
+- 未対応: 一般の関数呼出しと input、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
+  `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は C47 で文書化する。

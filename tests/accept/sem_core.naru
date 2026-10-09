@@ -1,0 +1,71 @@
+// 受理例(C39 / C46): コンパイラ意味論保存の「今回の保存対象」の各構文を、ほかの構文を含めずに 1 つずつ使う最小の検体。
+// `lake exe naru_test semantics` がこのファイルを実際の compiler 経路でコンパイルし、各宣言の Core を Lean の項として引用して
+// `semantics/NaruSem` の適格性(`wtR` / `wtS`)を Lean で証明する(引用した Core と実際の Core の一致も同じ検査で照合する)。
+// runtime: Nat / Bool のリテラル・局所名・let・if・算術(+ - * / %)・min / max・比較(< <= > >=)・等値(== !=)・論理(&& || ! implies)・
+// Nat / Bool のガード付き match(リテラル・変数・`_` のパターン、同名の束縛、ガード不成立からの継続)。
+// spec: Bool 値の命題への境界・論理・比較・等値(↔)・Bool / Prop の let と shadowing・Bool / Prop の条件の if・forall / exists・ガード付き match。
+module Sem.Core
+
+// runtime(Model)
+fn litNat() -> Nat { 3 }
+fn litBool() -> Bool { true }
+fn useVar(x: Nat) -> Nat { x }
+fn useLet(x: Nat) -> Nat { let y = x + 1; y * 2 }
+fn letShadow(x: Nat) -> Nat { let x = x + 1; let x = x * 2; x }
+fn useIf(x: Nat, b: Bool) -> Nat { if b { x } else { 0 } }
+fn arith(x: Nat, y: Nat) -> Nat { (x + y) * (x - y) + x / y + x % y }
+fn minMax(x: Nat, y: Nat) -> Nat { x.min(y) + x.max(y) }
+fn cmpNat(x: Nat, y: Nat) -> Bool { (x < y && x <= y) || (x > y && x >= y) }
+fn cmpBool(a: Bool, b: Bool) -> Bool { (a < b || a <= b) && (a > b || a >= b) }
+fn eqNat(x: Nat, y: Nat) -> Bool { x == y || x != y }
+fn eqBool(a: Bool, b: Bool) -> Bool { a == b || a != b }
+fn logic(a: Bool, b: Bool) -> Bool { (a && b) || (!a implies b) }
+fn matchNat(x: Nat) -> Nat {
+  match x {
+    0 => 1,
+    n if n < 10 => n + 1,
+    _ => x,
+  }
+}
+fn matchBool(b: Bool) -> Nat {
+  match b {
+    true => 1,
+    false => 0,
+  }
+}
+fn matchShadow(n: Nat, x: Nat) -> Bool {
+  match x {
+    n if n == 0 => true,
+    n if n == 1 => false,
+    _ => n == x,
+  }
+}
+
+// spec(Statements)
+predicate specLit() { true }
+predicate specVar(a: Bool) { a }
+predicate specCmp(x: Nat, y: Nat) { x < y implies x <= y }
+predicate specCmpBool(a: Bool, b: Bool) { a < b implies a <= b }
+predicate specLogic(a: Bool, b: Bool) { (a && b) || !a || (a implies b) }
+predicate specEq(x: Nat, y: Nat, a: Bool, b: Bool) { (x == y || x != y) && (a == b || a != b) }
+predicate specArith(x: Nat, y: Nat) { x.min(y) + x % (y + 1) <= x.max(y) * (x - y) + x / (y + 1) }
+predicate specLetVal(x: Nat) { let big = x > 10; let n = x + 1; big implies n > 11 }
+predicate specLetProp(x: Nat) { let p = forall n: Nat { n + x >= x }; let q = p && x >= 0; q }
+predicate specLetShadow(x: Nat) { let b = forall n: Nat { n >= 0 }; let b = x > 0; b == (x > 0) }
+predicate specIfBool(x: Nat, b: Bool) { if b { x > 0 } else { x == 0 } }
+predicate specIfProp(x: Nat) { if forall n: Nat { n + x >= x } { x >= 0 } else { false } }
+predicate specForall(x: Nat) { forall n: Nat { n + x >= x } }
+predicate specExists(x: Nat) { exists b: Bool { b == (x > 0) } }
+predicate specMatch(x: Nat) {
+  match x {
+    0 => true,
+    n if n < 3 => n + 1 <= 3,
+    _ => x >= 3,
+  }
+}
+predicate specMatchProp(x: Nat, p: Bool) {
+  match x {
+    n if forall m: Nat { m + n >= n } => n == x,
+    _ => p,
+  }
+}

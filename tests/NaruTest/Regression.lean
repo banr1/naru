@@ -6,6 +6,7 @@ import NaruTest.Lsp
 import NaruTest.Golden
 import NaruTest.Statements
 import NaruTest.Repo
+import NaruTest.Semantics
 
 /-!
 # `naru_test regression` — 非対話の回帰・最終検証の入口(IDEAL.md C36)
@@ -1202,6 +1203,8 @@ def checks : M Unit := do
   checkCoreSoundness roots
   checkModuleUnits leanPath
   checkOmissionUnit leanPath generated
+  heading "compiler semantics preservation"
+  subgroup "naru_test semantics (C39 / C45: lake build NaruSem, axiom audit, scope of the real Core)" NaruTest.Semantics.run
   heading "editor support groups"
   subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
   subgroup "naru_test zed (C17)" NaruTest.Zed.run

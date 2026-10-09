@@ -101,6 +101,10 @@ Block  Phase  A.B.Name                   // ユーザ定義(型別名・record�
 
 優先順位(弱 → 強): `implies`(右結合)< `||` < `&&` < `==` `!=` < `<` `<=` `>` `>=` < `+` `-` < `*` `/` `%` < 前置 `!` `-` < 後置(呼出し・欄・メソッド)。
 
+Nat の演算の境界(Lean の `Nat` と同じ。独立した意味論 `semantics/NaruSem/Eval.lean` でも同じ定義): `-` は 0 で切り詰める(`3 - 5 == 0`)、
+除数 0 の `/` は 0(`7 / 0 == 0`)、除数 0 の `%` は被除数(`7 % 0 == 7`)。Bool の順序は `false < true`。`a implies b` は `!a || b`。`==` / `!=` は値の等しさ
+(spec の論理の位置では両辺の命題の同値とその否定: [architecture.md](architecture.md)「Statements backend」)。
+
 ```
 42  "s"  true  false  ()                 // リテラル
 x  x.slot  x.votes.size()                // 値・欄・メソッド呼出し

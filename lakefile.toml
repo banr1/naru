@@ -41,6 +41,13 @@ name = "naru_simulate"
 root = "Simulate"
 srcDir = ".lake/naru/simulate"
 
+# naru の Core IR の独立した意味論とコンパイラ意味論保存の証明(C39〜C47)。`lake build NaruSem` が意味論・一般定理・
+# 実生成物への接続証拠・公理監査を Lean kernel に検査させる(C45 の検査入口。`docs/testing.md`)。生成 Model / Statements からは
+# import されない(不変条件の依存方向)。
+[[lean_lib]]
+name = "NaruSem"
+srcDir = "semantics"
+
 # 検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)/ `golden`(C10)/ `statements`(C8 / C9)/
 # `repo`(C21 / C23 / C25)/ `regression`(C36。zed-install を除く上の全群と受理例・反例・C34 の意味・C1 / C6 / C7 / C8 / C24 / C26 を
 # 1 コマンドで走らせる非対話の回帰一式)。Lean で書く(前提)。
