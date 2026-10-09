@@ -15,9 +15,11 @@ import Model
 出力: case ごとに `ok <case>: n lines agree` か `FAIL <case>: …` と `MISMATCH …` の行、最後に `MISMATCH total: N`。exit 0 ⇔ N = 0。
 
 fixture(case):
-- `witness:weakGenesis` / `witness:outage` / `witness:strongRecovery` / `witness:finalityLiveness` — verified-consensus の Witnesses の 4 run を
-  両側で Lean に書き写したもの(Witnesses のモジュールは Proofs を import するので使えない)。FinalityLiveness の horizon は
-  `--finality-horizon N`(既定は Witnesses の 33729)。
+- `witness:weakGenesis` / `witness:outage` / `witness:strongRecovery(seed rho 30)` / `witness:finalityLiveness(horizon N)` — verified-consensus の
+  Witnesses の 4 run を両側で Lean に書き写したもの(Witnesses のモジュールは Proofs を import するので使えない)。WeakGenesis(horizon 30)と
+  Outage(horizon 45)は全 horizon。StrongRecovery は Witness の seed `rho 30`(本番の `rho eventCount` = 約 5,743 tick は両 Model とも実行不能)。
+  FinalityLiveness は同じ Setup と同じ tick 列の先頭から `--finality-horizon N` までの prefix(t = 0 … N、N + 1 tick)。既定の N は C10 が
+  求める 100(Witness の全 horizon 33729 = 33,730 tick は両 Model とも実行不能: 周回 21 の計測)。
 - `scenario:<name>` — naru の scenario(`dsl/scenarios/*.naru`)が fn として公開する Setup と run を生成 Model からそのまま取り、手書き側は
   同じ run を書き写したもの。basic / outage / strongRecovery / twoNodes(複数ノード)/ equivocation(twoFaced と oneVote)。
 - `scenario:<name>/observe <label>` — scenario の `observe` の行(`naru simulate` の出力そのもの)が、golden が生成 Model で畳み込んだ同じ
@@ -249,7 +251,7 @@ def tie (name : String) (obs : List NaruStd.Observation) (label : String) (gen :
 def witnessCases (finalityHorizon : Nat) : List Case :=
   [ hg "witness:weakGenesis" (fun _ => H.lines H.wS H.wRho) (fun _ => G.lines G.wI G.wS G.wRho),
     hg "witness:outage" (fun _ => H.lines H.oS H.oRho) (fun _ => G.lines G.oI G.oS G.oRho),
-    hg "witness:strongRecovery" (fun _ => H.lines H.rS H.wRho) (fun _ => G.lines G.rI G.rS G.wRho),
+    hg "witness:strongRecovery(seed rho 30)" (fun _ => H.lines H.rS H.wRho) (fun _ => G.lines G.rI G.rS G.wRho),
     hg s!"witness:finalityLiveness(horizon {finalityHorizon})" (fun _ => H.lines H.fS (H.fRho finalityHorizon)) (fun _ => G.lines G.wI G.fS (G.fRho finalityHorizon)) ]
 
 open Model.Scenarios in
@@ -300,9 +302,12 @@ def runCase (c : Case) : IO Nat := do
     IO.println s!"FAIL {c.name}: {bad} mismatching lines of {n} ({c.leftName} {l.length} lines in {t1 - t0} ms, {c.rightName} {r.length} lines in {t2 - t1} ms)"
   return bad
 
-def defaultFinalityHorizon : Nat := 33729
+/-- FinalityLiveness の prefix の既定 horizon。IDEAL.md C10 の「`horizon = 100` までの prefix(t = 0〜100、101 tick)」。 -/
+def defaultFinalityHorizon : Nat := 100
+/-- Witness 自身の horizon(tick 33,730)。両 Model とも実行不能なので既定にはしない(記録のため)。 -/
+def witnessFinalityHorizon : Nat := 33729
 
-/-- 引数: `--finality-horizon N`(FinalityLiveness の horizon。既定 33729)、`--side hand|gen`(計測用: FinalityLiveness の case を
+/-- 引数: `--finality-horizon N`(FinalityLiveness の prefix の horizon。既定 100 = C10)、`--side hand|gen`(計測用: FinalityLiveness の case を
 片側だけ計算して行数と時間を出す。照合はしない)。 -/
 structure Args where
   finalityHorizon : Nat := defaultFinalityHorizon

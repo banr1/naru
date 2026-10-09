@@ -9,21 +9,22 @@ MISMATCH を数える)を、verified-consensus の `LEAN_PATH`(mathlib と手書
 
 - 先に `lake build Model`(生成 Model)を走らせる。手書き Model は `verified-consensus/.lake/build` にビルド済みであること
   (無ければ `cd verified-consensus && lake build DecoupledConsensusModel`。周回は verified-consensus を変えない)。
-- `lake exe naru_test golden [--finality-horizon N]`。N は Witnesses の FinalityLiveness run の horizon(既定は Witnesses の 33729)。
-  interpreter(`lean --run`)では手書き Model の 1 tick が 0.1 秒以上かかるので、全 horizon は compile した実行形が要る(周回 21 の計測)。
-  既定より小さい N で PASS しても C10 の証拠にはならない(`note:` を出す)。
+- `lake exe naru_test golden [--finality-horizon N]`。N は FinalityLiveness の prefix の horizon(t = 0 … N、N + 1 tick)。既定は C10 が
+  求める 100(手書き側 interpreter で約 8 分)。Witness 自身の horizon 33729 は両 Model とも実行不能(周回 21 の計測)。
+  C10 の証拠は引数なし(= horizon 100)の PASS。他の N で PASS しても C10 の証拠にはならない(`note:` を出す。回帰は `--finality-horizon 40`)。
 -/
 
 namespace NaruTest.Golden
 
 def vcDir : System.FilePath := "verified-consensus"
 def goldenFile : System.FilePath := "tests" / "golden" / "Golden.lean"
-def fullHorizon : Nat := 33729
+/-- C10 の FinalityLiveness の prefix の horizon(IDEAL.md: `horizon = 100`、t = 0〜100、101 tick)。 -/
+def c10Horizon : Nat := 100
 
 /-- C10 の文面が求める case(Witnesses の 4 run、複数ノード・equivocation を含む naru scenario 3 本以上、scenario の `observe` との結び付き)。
 `Golden.lean` から case が消えても `MISMATCH total: 0` では通らないよう、`ok <case>:` の行があることを 1 つずつ確かめる。 -/
 def expectedCases (horizon : Nat) : List String :=
-  [ "witness:weakGenesis", "witness:outage", "witness:strongRecovery", s!"witness:finalityLiveness(horizon {horizon})",
+  [ "witness:weakGenesis", "witness:outage", "witness:strongRecovery(seed rho 30)", s!"witness:finalityLiveness(horizon {horizon})",
     "scenario:basic", "scenario:basic/observe trace(s, rho, v0)",
     "scenario:outage", "scenario:outage/observe trace(s, rho, v0)",
     "scenario:strongRecovery", "scenario:strongRecovery/observe trace(s, rho, v0)",
@@ -62,8 +63,8 @@ def checks (horizon : Nat) : M Unit := do
   | none => fail s!"no `MISMATCH total` line in the output of lean --run {goldenFile} (exit {r.exitCode})\n{tail r.stderr}"
   if r.exitCode == 0 then ok s!"lean --run {goldenFile} --finality-horizon {horizon} exit 0"
   else fail s!"lean --run {goldenFile}: exit {r.exitCode}\n{tail r.stderr}"
-  if horizon < fullHorizon then
-    IO.println s!"note: finalityLiveness horizon {horizon} of {fullHorizon} (partial: C10 requires the full Witnesses run)"
+  if horizon != c10Horizon then
+    IO.println s!"note: finalityLiveness horizon {horizon} (not the C10 prefix: C10 requires horizon {c10Horizon}; run without --finality-horizon)"
 
 def run (horizon : Nat) : IO UInt32 := runGroup "golden" (checks horizon)
 
