@@ -1,0 +1,6 @@
+// 反例(C18): `width` は Factory の `make` を呼び(Measure → Factory の辺。`make` の位置に E017)、その結果の欄 `.x` を読む。欄の参照の
+// record は Shape の `Point` なので Measure → Shape の辺もできるが、このファイルには `Point` も `Shape` も書かれていない(推論された型だけの
+// 依存)。その辺の E017 は宣言 `width` の名前の位置に出る(同じ行に 2 つ)。
+module Units.Inferred.Measure
+
+fn width() -> Nat { make().x }   // E017

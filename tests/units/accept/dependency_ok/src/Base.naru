@@ -1,0 +1,8 @@
+// 受理例(C18): 依存の根。他のモジュールを参照しない。
+module Units.Ok.Base
+
+record Point { x: Nat } derive eq
+
+input seed() -> Nat
+
+fn bump(n: Nat) -> Nat { n + 1 }

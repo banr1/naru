@@ -6,6 +6,7 @@ import Naru.Parser
 import Naru.Resolve
 import Naru.Typecheck
 import Naru.Totality
+import Naru.Modules
 import Naru.Driver
 import Naru.Config
 import Naru.Sha256

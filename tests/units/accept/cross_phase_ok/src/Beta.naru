@@ -1,0 +1,7 @@
+// 受理例(C18): runtime 宣言 `grow` と、Alpha の spec 宣言 `Big` を使う spec 宣言 `Grown`(生成 Statements.Beta が Statements.Alpha を import し、
+// Statements.Alpha が Model.Beta を import する。Model.Beta は何も import しないので循環しない)。
+module Units.Cross.Beta
+
+fn grow(n: Nat) -> Nat { n * 3 }
+
+predicate Grown(n: Nat) { Big(n) }

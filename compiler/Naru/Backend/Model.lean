@@ -562,14 +562,18 @@ def standaloneDerivingOf : Core.Decl → Option String
 
 /-! ## 依存順 -/
 
-/-- 宣言が参照する大域名のうち、同じモジュールで出力される宣言の鍵(重複なし、出現順)。 -/
-def localDeps (env : Env) (keys : List String) (d : Core.Decl) : List String := Id.run do
-  let mut out : List String := []
-  let refs := d.refs ++ ((env.inputs.getD d.key []).flatMap fun ik =>
+/-- 宣言が参照する大域名(署名と本体、それに(推移的に)使う input の署名。重複あり)。モジュール同士の依存(`moduleDeps` /
+`Statements.specModuleDeps`)と、その共通検査(`Modules.lean`、E017)はこれで数える。 -/
+def declRefs (env : Env) (d : Core.Decl) : List String :=
+  d.refs ++ ((env.inputs.getD d.key []).flatMap fun ik =>
     match env.decls.get? ik with
     | some i => i.refs
     | none => [])
-  for r in refs do
+
+/-- 宣言が参照する大域名のうち、同じモジュールで出力される宣言の鍵(重複なし、出現順)。 -/
+def localDeps (env : Env) (keys : List String) (d : Core.Decl) : List String := Id.run do
+  let mut out : List String := []
+  for r in declRefs env d do
     if keys.contains r && !out.contains r then out := out ++ [r]
   return out
 
@@ -635,19 +639,20 @@ def header (info : Meta) (source hash : String) : String :=
   s!"-- naru-source: {source} sha256:{hash}\n" ++
   s!"-- naru-unit: sha256:{info.unitHash}\n"
 
-/-- モジュールが参照する他のモジュール(名前順、重複なし)。 -/
+/-- モジュールの出力する宣言(`emitted`)が参照する他のモジュール(名前順、重複なし)= 生成 Model の `import`。 -/
 def moduleDeps (env : Env) (m : Core.Module) : List (List String) := Id.run do
   let mut out : List (List String) := []
   for d in m.decls do
     if !(emitted d) then continue
-    let refs := d.refs ++ ((env.inputs.getD d.key []).flatMap fun ik =>
-      match env.decls.get? ik with
-      | some i => i.refs
-      | none => [])
-    for r in refs do
+    for r in declRefs env d do
       if let some other := env.moduleOf.get? r then
         if other != m.name && !out.contains other then out := out ++ [other]
   return out.mergeSort fun a b => renderPath a ≤ renderPath b
+
+/-- 生成 Model のモジュール同士の依存グラフ: (モジュール名, import する他のモジュール)。`emitModel` の import と、生成前の共通検査
+(`Modules.lean`、E017: 循環)は同じこの関数で計算する(生成の規則を変えるときは両方が自動で揃う)。 -/
+def modelGraph (env : Env) (mods : Array Core.Module) : List (List String × List (List String)) :=
+  mods.toList.map fun m => (m.name, moduleDeps env m)
 
 def buildEnv (mods : Array Core.Module) (recs : Array Totality.Recursion) : Env := Id.run do
   let mut env : Env := {}
@@ -702,23 +707,25 @@ def findCycle (deps : List (List String × List (List String))) : Option (List (
           stack := (n, path ++ [n]) :: stack
   return none
 
-/-- Core のモジュール列から生成ファイル(`generated/` からの相対パス、内容)を作る。 -/
+/-- Core のモジュール列から生成ファイル(`generated/` からの相対パス、内容)を作る。
+同名のモジュールと import の循環(E017)は生成前の共通検査(`Modules.lean`。`Driver.compileSources` が走らせ、実在する行・列に出す)が
+退けるのでここには届かない。ここの検査は安全網(届けばコンパイラの不変条件の破れ。位置なし)。 -/
 def emitModel (mods : Array Core.Module) (recs : Array Totality.Recursion) (info : Meta) :
     Except Diagnostic (Array (String × String)) := do
-  -- 同名のモジュール
+  -- 同名のモジュール(安全網)
   let mut seen : List (List String × String) := []
   for m in mods do
     if let some other := seen.lookup m.name then
       throw { file := m.file, span := {}, code := Code.moduleStructure,
-              msg := s!"module `{renderPath m.name}` is also declared in {other}; each module needs its own name (it becomes one generated Lean file)" }
+              msg := s!"internal: module `{renderPath m.name}` is also declared in {other} (the common module check should have reported this before generation)" }
     seen := seen ++ [(m.name, m.file)]
   let env := buildEnv mods recs
-  let deps := mods.toList.map fun m => (m.name, moduleDeps env m)
+  let deps := modelGraph env mods
   if let some cycle := findCycle deps then
     let names := cycle.map fun n => s!"`{renderPath n}`"
     let first := mods.find? (·.name == cycle.head!)
     throw { file := (first.map (·.file)).getD "", span := {}, code := Code.moduleStructure,
-            msg := s!"modules refer to each other in a cycle ({" → ".intercalate names}); generated Lean modules import each other, so move the shared declarations into one module" }
+            msg := s!"internal: modules refer to each other in a cycle ({" → ".intercalate names}) (the common module check should have reported this before generation)" }
   let mut files : Array (String × String) := #[]
   for m in mods do
     let hash := (info.fileHashes.lookup m.file).getD ""

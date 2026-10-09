@@ -1,0 +1,7 @@
+// 反例(C18): このファイルと Second.naru が同じモジュール名 `Units.Same` を宣言する。生成 Lean は 1 モジュール 1 ファイルなので
+// 同名は共存できない。生成前の共通検査が、両方のファイルの `module` 行(名前の位置)に E017 を出す(CLI の出力指定あり / なしと
+// LSP で同じ行・列)。行末の `// E017` はその行に E017 が出る印。
+// 期待: `lake exe naru compile tests/units/reject/module_duplicate/src/First.naru tests/units/reject/module_duplicate/src/Second.naru` が exit 非 0 で E017
+module Units.Same   // E017
+
+fn one() -> Nat { 1 }

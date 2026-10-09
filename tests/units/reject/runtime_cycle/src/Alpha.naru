@@ -1,0 +1,9 @@
+// 反例(C18): runtime 宣言の参照が Alpha → Beta → Gamma → Alpha と巡る。生成 Model はモジュールごとに 1 ファイルで他モジュールの
+// 参照は `import` になるので、循環は Lean にできない。生成前の共通検査が、循環に関与する各辺について、参照元の宣言の中の
+// 参照先モジュールへの最初の参照の行・列に E017 を出す(ここでは `bump` の呼出し)。行末の `// E017` はその行に E017 が出る印。
+// 期待: `lake exe naru compile tests/units/reject/runtime_cycle/src/*.naru` が exit 非 0 で E017(3 ファイルに 1 つずつ)
+module Units.RuntimeCycle.Alpha
+
+record Point { x: Nat } derive eq
+
+fn shifted(n: Nat) -> Nat { bump(n) }   // E017

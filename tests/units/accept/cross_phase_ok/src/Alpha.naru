@@ -1,0 +1,4 @@
+// 受理例(C18): spec 宣言だけのモジュール。`Big` が Beta の runtime 宣言 `grow` を使う(生成 Statements.Alpha が Model.Beta を import する)。
+module Units.Cross.Alpha
+
+predicate Big(n: Nat) { grow(n) > 10 }

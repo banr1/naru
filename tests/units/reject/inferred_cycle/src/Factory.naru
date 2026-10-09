@@ -1,0 +1,4 @@
+// 反例(C18): Factory → Shape の辺(`make` の戻り型 `Point`)。循環を閉じる。
+module Units.Inferred.Factory
+
+fn make() -> Point { Point { x: 4 } }   // E017

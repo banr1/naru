@@ -7,19 +7,29 @@
 
 ```
 Parser → Surface AST
-  → 名前解決・phase 検査        (Resolve.lean:   E001, E011〜E013)
+  → 同名のモジュール            (Modules.lean:   E017)
+  → 名前解決・phase 検査        (Resolve.lean:   E001, E011〜E013。解決した参照の索引 `Resolve.Ref` も作る)
   → 型・capability 検査 + Core IR への elaboration
                                 (Typecheck.lean: E003〜E006, E014〜E016, E018, E019)
+  → Core の健全性               (Driver.lean:    E014「internal」。C35)
+  → モジュールの循環            (Modules.lean:   E017。生成 Model / Statements の import グラフ)
   → 停止性検査                  (Totality.lean:  E002)
-  → Model backend               (Backend/Model.lean: E017)
+  → Model backend               (Backend/Model.lean)
   → Statements backend          (Backend/Statements.lean)
 ```
 
 前の段に誤りがあれば次の段には進まない。診断が 1 つでもあれば backend には進まず、`generated/` は書き換えない。
 入口は `compiler/Naru/Driver.lean` の `compileFiles`(指定ファイル)/ `compileSources`(ソースルート。`naru lsp` はバッファの内容でこれを呼ぶ)。
+すべての診断は backend より前の共通の検査が出すので、CLI の `compile`(出力指定あり / なし)と言語サーバーは同じ入力・コンパイル単位に同じ診断を
+同じ行・列に出す(C18)。
 型検査を診断なしに通った Core には、推論用のメタ変数・誤りの波及を抑える「不明」の型・エラー用ノードが残ってはならない(型検査は誤りを診断してから
 それらを作る)。`compileSources` は停止性検査の前に Core の全宣言を再帰的に走査し(`Core.Decl.unsound`)、残っていればコンパイラの不変条件の破れとして
 E014 を出して backend に渡さない(C35。`naru_test regression` は全受理例と移植ソースの Core で 0 件を確かめる)。
+モジュール構造(`Modules.lean`): 同名のモジュールは構文解析の直後に各ファイルの `module` 行へ、循環は Core と参照の索引から、生成 Model の import グラフ
+(`Backend.Model.modelGraph`: 出力する runtime 宣言が参照する他のモジュール)と生成 Statements の import グラフ(`Backend.Statements.specGraph`: spec 宣言が
+参照する他のモジュールの spec 宣言)のそれぞれで、循環に関与する辺ごとに参照元の宣言の中の参照先モジュールへの最初の参照の行・列へ E017 を出す
+(参照が構文上その宣言に現れない依存 — 推論された型(欄の参照の record・呼出しの結果の型)や使う input の署名を通したもの — は宣言の名前の位置)。
+グラフは backend が import を書くのと同じ関数で計算する(生成の規則を変えれば検査も揃う)。backend に残る同名・循環の検査は安全網で、届かない。
 
 ## Core IR と Model backend
 
@@ -30,7 +40,7 @@ Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす
 
 | naru | 生成 Lean |
 |---|---|
-| `module A.B` | ファイル `generated/Model/A/B.lean`、Lean モジュール `Model.A.B`。宣言は `Model.A.B.name` と完全修飾で参照。他モジュールの参照は `import`(循環は E017) |
+| `module A.B` | ファイル `generated/Model/A/B.lean`、Lean モジュール `Model.A.B`。宣言は `Model.A.B.name` と完全修飾で参照。他モジュールの参照は `import`(循環と同名のモジュールは生成前の共通検査が E017 で退ける) |
 | `type T = U` | `abbrev Model.A.B.T : Type := U`(参照は展開した型で書く) |
 | `record` / `state` | `structure … deriving DecidableEq, Ord, Repr`(`derive eq` → `DecidableEq` + `Ord`、`derive order` → `Ord`。`Repr` は常に。`finite` はまだ何も生成しない。`Ord` は `Set` / `Table` の正規化に使う隠れた全順序で、欄・variant の宣言順の辞書式)。欄名と局所名は常に `«»` で囲む(予約語の一覧に頼らない) |
 | `enum` | `inductive`(variant の引数は `a0 a1 …`) |
@@ -69,7 +79,7 @@ Lean が拒否する(E018 が最後の腕のガードと Nat / Int / String の�
 
 Statements backend(`Backend/Statements.lean`)は spec 宣言だけを Lean に落とす。naru モジュール `A.B` に spec 宣言があれば
 ファイル `generated/Statements/A/B.lean`(Lean モジュール `Statements.A.B`)になり、ルート `generated/Statements.lean` がそれらを import する。
-生成 Statements が import するのは `NaruStd`・生成 Model(`Model.A.B`)・他の生成 Statements(`Statements.X.Y`。循環は E017)だけで、
+生成 Statements が import するのは `NaruStd`・生成 Model(`Model.A.B`)・他の生成 Statements(`Statements.X.Y`。循環は生成前の共通検査が E017 で退ける)だけで、
 Proofs は決して import しない(IDEAL.md「不変条件」の依存方向 Model ← Statements ← Proofs。C8 の検査は `lake exe naru_test statements`、[testing.md](testing.md))。
 `lake build Statements` でビルドする。
 

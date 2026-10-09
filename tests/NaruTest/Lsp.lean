@@ -13,6 +13,11 @@ import NaruTest.Common
 3. `tests/reject/` の各反例を `didOpen` すると、`naru compile` と同じ E 番号・同じ行(・列)の診断がその URI に返り、
    反例の先頭コメントが名指しする E 番号(`期待: … E001`)がその中にある。`didClose` で空になる。
    `tests/accept/` の各受理例(単独の単位)を `didOpen` すると診断 0 件(C35 の正常例 `prop_bool.naru` を含む)、`didClose` で空。
+   複数ファイルのコンパイル単位 `tests/units/`(各検体の `naru.toml` のルート `src/` 配下。C18): 反例(モジュール重複・runtime 循環・spec 循環)は
+   全ファイルを `didOpen` すると、各ファイルの行末の `// E017` の印の行に、`naru compile`(`compileSources`)と同じ行・列(UTF-16)で
+   トークン 1 つ分の幅の E017 が返る(関与する全ファイルの URI に)。`fix/` の内容に `didChange` して循環・重複を解消すると、関係する
+   URI すべての診断が消え、戻すと戻る。受理例(正常な依存関係)は全ファイルの `didOpen` で 0 件。`didClose` で空。
+   言語サーバーの検査はファイルを生成しない: 生成先と `tests/units/` の全ファイルの sha256 がセッションの前後で同じ。
 4. BMP 外の文字(絵文字)を含む単独の文書(ディスクに無い)で、診断の列が UTF-16 単位で、範囲がトークン 1 つ分の幅になる。
 5. `naru.toml` のソースルート(`specs/consensus/`)の移植ソースをすべて `didOpen` しても診断は 0 件(他の URI にも非空の診断は来ない)。
 6. `<ルート>/Consensus/Objects/Time.naru` を `didChange` で壊す: 末尾に未解決名を使う fn を足すとその行に E011 が出る。
@@ -129,21 +134,9 @@ def expectedOf (sources : List (String × String)) : Array (String × Array Diag
     | none => out := out.push (uri, #[e])
   return out
 
-/-- 文字列の中で最初に現れる `E0dd`。 -/
-def firstCode (s : String) : Option String := Id.run do
-  let cs := s.toList.toArray
-  for i in [0:cs.size] do
-    if cs[i]? == some 'E' && cs[i + 1]? == some '0' && (cs[i + 2]?.map Char.isDigit).getD false
-        && (cs[i + 3]?.map Char.isDigit).getD false then
-      return some (String.ofList [cs[i]!, cs[i + 1]!, cs[i + 2]!, cs[i + 3]!])
-  return none
-
-/-- 反例の本文(先頭のコメント)が名指しする E 番号: `期待:` の行の `E0dd`、その行が無ければ本文で最初の `E0dd`
-(`type_path_escape.naru` のように、説明の中で別の番号に先に触れる反例がある)。 -/
-def namedCode (text : String) : Option String :=
-  match (text.splitOn "\n").find? (fun l => (l.splitOn "期待").length > 1 && (firstCode l).isSome) with
-  | some l => firstCode l
-  | none => firstCode text
+/-- (URI, 0 始まりの行, E 番号) の列を並べる(印との照合用。列は印に無い)。 -/
+def sortLines (xs : List (String × Nat × String)) : List (String × Nat × String) :=
+  xs.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && (a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.2.2 ≤ b.2.2)))
 
 /-! ## 検査の本体 -/
 
@@ -286,6 +279,113 @@ def checks (env : Env) : M Unit := do
     if opened && closed then nAccepts := nAccepts + 1
   if nAccepts == accepts.length && nAccepts > 0 then
     ok s!"tests/accept/: {nAccepts} files, didOpen → 0 diagnostics (none for other URIs either), didClose → empty"
+  -- 3c. 複数ファイルのコンパイル単位(`tests/units/`。C18): 各検体の `naru.toml` のルート `src/` 配下なので、どのファイルを開いても
+  -- 単位全体が検査される。反例は行末の `// E017` の印の行に CLI と同じ行・列・幅の E017、`fix/` の didChange で関係する URI すべてが空、
+  -- 戻すと戻る。受理例は 0 件。
+  let rejectUnits ← listUnits "reject"
+  let acceptUnits ← listUnits "accept"
+  let mut nUnits := 0
+  for u in rejectUnits ++ acceptUnits do
+    let isReject := rejectUnits.any (·.name == u.name)
+    let label := s!"{unitsDir}/{if isReject then "reject" else "accept"}/{u.name}"
+    if u.files.isEmpty then
+      fail s!"{label}: no .naru under src/"
+      continue
+    let mut sources : List (String × String) := []
+    for f in u.files do
+      let abs := (env.root / f).toString
+      sources := sources ++ [(abs, ← IO.FS.readFile abs)]
+    let uris := sources.map fun (f, _) => System.Uri.pathToUri f
+    let expected := expectedOf sources
+    let mut good := true
+    -- 期待(CLI = `compileSources`)と印の照合: 反例は印の (ファイル, 行, E017) と一致、受理例は 0 件
+    let mut marks : List (String × Nat × String) := []
+    for (f, text) in sources do
+      for (l, c) in markedDiagnostics text do marks := marks ++ [(System.Uri.pathToUri f, l - 1, c)]
+    let expectedLines := sortLines (expected.toList.flatMap fun (uri, ds) => ds.toList.map fun (c, l, _) => (uri, l, c)).eraseDups
+    if isReject then
+      if marks.isEmpty then
+        fail s!"{label}: a reject unit needs `// E0dd` marks"
+        good := false
+      else if expectedLines != sortLines marks.eraseDups then
+        fail s!"{label}: naru compile reports {expectedLines.map fun (u, l, c) => s!"{c}@{relOfUri env u}:{l + 1}"}, the marks expect {(sortLines marks).map fun (u, l, c) => s!"{c}@{relOfUri env u}:{l + 1}"}"
+        good := false
+      else if !(marks.all fun (_, _, c) => c == "E017") then
+        fail s!"{label}: the marks must all be E017"
+        good := false
+    else if !expected.isEmpty then
+      fail s!"{label}: naru compile reports diagnostics for an accept unit: {expectedLines}"
+      good := false
+    -- 全ファイルを didOpen(単位全体の検査が毎回走る)。最後の状態が期待と一致し、各診断がトークン 1 つ分の幅を持つ
+    let mut all : Array Pub := #[]
+    for (f, text) in sources do
+      didOpen env (System.Uri.pathToUri f) text
+      let some got ← barrier env | return
+      all := all ++ got
+    let got := latest all
+    if !(← agrees s!"{label}: didOpen all {sources.length} files" got expected uris) then good := false
+    let mut zeroWidth : List String := []
+    for p in got do
+      for i in [0:p.diags.size] do
+        let (c, l, sc) := p.diags[i]!
+        if (p.ends[i]?).getD sc ≤ sc then zeroWidth := zeroWidth ++ [s!"{c}@{relOfUri env p.uri}:{l + 1}:{sc + 1}"]
+    if !zeroWidth.isEmpty then
+      fail s!"{label}: diagnostics with an empty range (the column must point at a token): {zeroWidth}"
+      good := false
+    if isReject && good then
+      let shown := expectedLines.map fun (u, l, c) => s!"{c}@{relOfUri env u}:{l + 1}"
+      ok s!"{label}: didOpen → E017 at the marked lines with naru compile's columns (UTF-16) and token-wide ranges: {shown}"
+    if !isReject && good then
+      ok s!"{label}: didOpen all {sources.length} files → 0 diagnostics (valid dependencies across modules)"
+    -- fix/: 循環・重複を解消する didChange で、関係する URI すべての診断が消える。戻すと戻る
+    let fixes := u.fixes.map fun (f, t) => ((env.root / f).toString, t)
+    if !fixes.isEmpty then
+      let fixed := sources.map fun (f, t) => match fixes.lookup f with
+        | some t' => (f, t')
+        | none => (f, t)
+      let expectedFixed := expectedOf fixed
+      if !expectedFixed.isEmpty then
+        fail s!"{label}: with fix/ applied, naru compile should report 0 diagnostics, got {expectedFixed.toList.map fun (u, ds) => s!"{relOfUri env u} [{showDiags ds}]"}"
+        good := false
+      let involved := expected.toList.map (·.1)
+      let mut ver := 2
+      let mut allFix : Array Pub := #[]
+      for (f, t') in fixes do
+        didChange env (System.Uri.pathToUri f) ver t'
+        ver := ver + 1
+        let some got ← barrier env | return
+        allFix := allFix ++ got
+      if ← agrees s!"{label}: didChange (fix/)" (latest allFix) #[] involved then
+        ok s!"{label}: didChange with fix/{", ".intercalate (fixes.map fun (f, _) => ((System.FilePath.mk f).fileName).getD f)} → empty diagnostics for all {involved.length} involved URI(s): {involved.map (relOfUri env)}"
+      else good := false
+      let mut allBack : Array Pub := #[]
+      for (f, _) in fixes do
+        didChange env (System.Uri.pathToUri f) ver ((sources.lookup f).getD "")
+        ver := ver + 1
+        let some got ← barrier env | return
+        allBack := allBack ++ got
+      if ← agrees s!"{label}: didChange (revert)" (latest allBack) expected (fixes.map fun (f, _) => System.Uri.pathToUri f) then
+        ok s!"{label}: didChange back to the original → the E017 diagnostics are back in all {expected.size} file(s)"
+      else good := false
+    else if isReject then
+      fail s!"{label}: a reject unit needs a fix/ file that resolves the error (for the didChange check)"
+      good := false
+    -- didClose(順に): 閉じた文書は空になる。同じ単位に開いた文書が残っていれば単位の再検査が走り、他のファイル(開いているものと、前に閉じて
+    -- 以後は開いていないファイルとして扱うもの)にはその診断が送られる。最後の文書を閉じると単位の診断がすべて消える
+    let mut nClosed := 0
+    let mut remaining := uris
+    for uri in uris do
+      didClose env uri
+      remaining := remaining.filter (· != uri)
+      let some got ← barrier env | return
+      let others := if remaining.isEmpty then #[] else expected.filter fun (u, _) => u != uri
+      if ← agrees s!"{label}: didClose {relOfUri env uri}" got others [uri] then nClosed := nClosed + 1
+    if nClosed == uris.length then ok s!"{label}: didClose on all {nClosed} files → empty for each closed file, and all empty once the last one is closed"
+    else good := false
+    if good then nUnits := nUnits + 1
+  if nUnits == (rejectUnits ++ acceptUnits).length && !rejectUnits.isEmpty && !acceptUnits.isEmpty then
+    ok s!"{unitsDir}/: {rejectUnits.length} reject unit(s) ({", ".intercalate (rejectUnits.map (·.name))}) and {acceptUnits.length} accept unit(s) ({", ".intercalate (acceptUnits.map (·.name))}) behave as expected"
+  else fail s!"{unitsDir}/: expected every unit to pass, with at least one reject and one accept unit (passed {nUnits} of {(rejectUnits ++ acceptUnits).length})"
   -- 4. BMP 外の文字を含む単独の文書(ディスクに無い: 単独の単位はバッファだけを検査する)
   let emojiPath := "/tmp/naru-lsp-probe/emoji.naru"
   let emojiUri := System.Uri.pathToUri emojiPath
@@ -416,6 +516,11 @@ def run : IO UInt32 := runGroup "naru_test lsp" do
   if !(← bin.pathExists) then
     fail s!"{bin} not found"
     return
+  -- 言語サーバーの検査はファイルを生成しない(C18): 生成先と `tests/units/` の全ファイルをセッションの前後で照合する
+  let generated ← match ← Naru.readConfig Naru.configFileName with
+    | .ok cfg => pure cfg.generatedPath
+    | .error e => fail s!"{Naru.configFileName}: {e}"; return
+  let before ← snapshotTree [generated, unitsDir]
   let child ← IO.Process.spawn
     { cmd := bin.toString, args := #["lsp"], cwd := some root, stdin := .piped, stdout := .piped, stderr := .inherit }
   let client : Client := { child, stdin := IO.FS.Stream.ofHandle child.stdin, stdout := IO.FS.Stream.ofHandle child.stdout }
@@ -427,5 +532,13 @@ def run : IO UInt32 := runGroup "naru_test lsp" do
   if !(← exited.get) then
     child.kill
     let _ ← child.wait
+  let after ← snapshotTree [generated, unitsDir]
+  if before == after && !before.isEmpty then
+    ok s!"the LSP session generated nothing: {before.length} files under {generated}/ and {unitsDir}/ have the same paths and sha256 before and after"
+  else
+    let onlyAfter := after.filter fun (p, _) => (before.lookup p).isNone
+    let changed := after.filter fun (p, h) => (before.lookup p).isSome && before.lookup p != some h
+    let gone := before.filter fun (p, _) => (after.lookup p).isNone
+    fail s!"generated files changed during the LSP session: new {onlyAfter.map (·.1) |>.take 5}, changed {changed.map (·.1) |>.take 5}, removed {gone.map (·.1) |>.take 5}"
 
 end NaruTest.Lsp

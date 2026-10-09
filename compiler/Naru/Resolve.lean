@@ -12,6 +12,9 @@ import Naru.Ast
 - 型の位置に型でない宣言 → E013
 - runtime 宣言から spec 宣言への参照 → **E001(phase leak)**
 
+解決した参照(値の位置・型の位置の名前 → 宣言)は `Ref` として集め、`resolveAll` が診断と一緒に返す。モジュール構造の共通検査
+(`Modules.lean`、E017)が、モジュール同士の参照の実在する行・列を引くのに使う(C18)。
+
 型検査・capability 検査はこの後の段(別モジュール)で行う。
 -/
 
@@ -24,6 +27,18 @@ structure Sym where
   kind : DeclKind
   file : String
   span : Span
+  /-- 宣言のあるモジュールの名前。 -/
+  module : List String := []
+deriving Inhabited
+
+/-- 解決した参照 1 つ: どのファイルのどの位置で、どの宣言の中から、どの宣言を参照したか。 -/
+structure Ref where
+  file : String
+  span : Span
+  /-- 参照が現れた宣言(文脈)の名前と種類。 -/
+  declName : String
+  declKind : DeclKind
+  target : Sym
 deriving Inhabited
 
 /-- いま検査している宣言の文脈。 -/
@@ -36,6 +51,8 @@ structure Ctx where
 structure St where
   globals : HashMap String Sym := {}
   diags : Array Diagnostic := #[]
+  /-- 解決した参照(出現順)。 -/
+  refs : Array Ref := #[]
 
 abbrev R := StateM St
 
@@ -44,6 +61,10 @@ instance : Inhabited (R (List String)) := ⟨pure []⟩
 
 def report (file : String) (span : Span) (code msg : String) : R Unit :=
   modify fun s => { s with diags := s.diags.push { file, span, code, msg } }
+
+/-- 解決した参照を索引に足す。 -/
+def record (ctx : Ctx) (span : Span) (sym : Sym) : R Unit :=
+  modify fun s => { s with refs := s.refs.push { file := ctx.file, span, declName := ctx.declName, declKind := ctx.declKind, target := sym } }
 
 /-- primitive 型(IDEAL.md「言語の意味論」)。 -/
 def builtinTypes : List String :=
@@ -71,7 +92,7 @@ def collect (m : Module) : R Unit := do
     | none =>
       let sym : Sym :=
         { name := d.name, qualified := renderPath (m.name ++ [d.name]), kind := d.kind,
-          file := m.file, span := d.span }
+          file := m.file, span := d.span, module := m.name }
       modify fun s =>
         { s with globals := (s.globals.insert d.name sym).insert sym.qualified sym }
 
@@ -102,6 +123,7 @@ def checkRef (ctx : Ctx) (span : Span) (segs : List String) : R Unit := do
       report ctx.file span Code.unresolved s!"cannot find `{renderPath segs}` in this scope"
     | some none => return
     | some (some sym) =>
+      record ctx span sym
       if ctx.declKind.phase == .runtime && sym.kind.phase == .spec then
         report ctx.file span Code.phaseLeak
           s!"{ctx.declKind.describe} `{ctx.declName}` is a runtime declaration but refers to spec {sym.kind.describe} `{sym.name}`; runtime declarations cannot depend on spec declarations (phase leak)"
@@ -113,6 +135,7 @@ def checkTyPath (ctx : Ctx) (span : Span) (name : List String) : R Unit := do
   let s ← get
   match s.globals.get? (renderPath name) with
   | some sym =>
+    record ctx span sym
     if !sym.kind.isType then
       report ctx.file span Code.notAType s!"`{sym.name}` is a {sym.kind.describe}, not a type"
   | none =>
@@ -260,13 +283,13 @@ def checkDecl (m : Module) (d : Decl) : R Unit := do
 
 end Resolve
 
-/-- コンパイル単位全体の名前解決と phase 検査。診断を返す(空なら合格)。 -/
-def resolveAll (mods : Array Module) : Array Diagnostic :=
+/-- コンパイル単位全体の名前解決と phase 検査。診断(空なら合格)と、解決した参照の索引(出現順)を返す。 -/
+def resolveAll (mods : Array Module) : Array Diagnostic × Array Resolve.Ref :=
   let run : Resolve.R Unit := do
     for m in mods do Resolve.collect m
     for m in mods do
       for d in m.decls do Resolve.checkDecl m d
   let ((), st) := run.run {}
-  st.diags
+  (st.diags, st.refs)
 
 end Naru

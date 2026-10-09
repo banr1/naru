@@ -1,0 +1,7 @@
+// 循環を解消した Shape(C18): `back` が Measure の `width` を使わない。残る辺(Measure → Factory、Measure → Shape、Factory → Shape)は循環しないので、
+// didChange でこの内容にすると 3 ファイルの診断がすべて消える。
+module Units.Inferred.Shape
+
+record Point { x: Nat } derive eq
+
+fn back() -> Nat { 0 }

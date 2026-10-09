@@ -1,0 +1,3 @@
+# 複数ファイルの受理例(IDEAL.md C18): 正常な依存関係(Top → Middle → Base、Top → Base。spec 宣言は runtime 宣言と他モジュールの spec 宣言を
+# 参照するが循環しない)。`src/**/*.naru` が 1 つのコンパイル単位。CLI は exit 0、LSP は診断 0 件、生成 Model / Statements は Lean で型検査が通る。
+sources = ["src"]

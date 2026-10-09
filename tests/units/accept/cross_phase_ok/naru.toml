@@ -1,0 +1,4 @@
+# 複数ファイルの受理例(IDEAL.md C18): 向きが逆の依存でも循環にならない。Alpha の spec 宣言が Beta の runtime 宣言を使い(生成 Statements.Alpha →
+# Model.Beta)、Beta の spec 宣言が Alpha の spec 宣言を使う(Statements.Beta → Statements.Alpha)。Model の import グラフと Statements の import グラフを
+# 別々に見るので、どちらにも循環は無い(Statements.Beta → Statements.Alpha → Model.Beta)。CLI は exit 0、LSP は診断 0 件、生成 Lean は型検査が通る。
+sources = ["src"]

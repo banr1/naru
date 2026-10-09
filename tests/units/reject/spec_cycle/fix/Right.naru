@@ -1,0 +1,6 @@
+// 循環を解消した Right(C18): `Back` が Left の `Small` を使わない。didChange でこの内容にすると Left / Right の診断が消える。
+module Units.SpecCycle.Right
+
+predicate Positive(n: Nat) { n > 0 }
+
+predicate Back(n: Nat) { n < 10 }

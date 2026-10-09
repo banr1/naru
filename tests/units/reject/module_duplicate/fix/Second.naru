@@ -1,0 +1,4 @@
+// 重複を解消した Second(C18): 別のモジュール名を宣言する。didChange でこの内容にすると First / Second の E017 が消える。
+module Units.Other
+
+fn two() -> Nat { 2 }

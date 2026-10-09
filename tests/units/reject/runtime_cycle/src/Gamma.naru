@@ -1,0 +1,7 @@
+// 反例(C18): Gamma → Alpha の辺(`origin` の戻り型が Alpha の `Point`。型の位置の参照も辺になる)。循環を閉じる最後の辺で、
+// `fix/Gamma.naru` はこの参照を外したもの。
+module Units.RuntimeCycle.Gamma
+
+fn double(n: Nat) -> Nat { n * 2 }
+
+fn origin(n: Nat) -> Point { Point { x: n } }   // E017

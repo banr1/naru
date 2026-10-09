@@ -1,0 +1,14 @@
+// 受理例(C18): Middle と Base に依存する(循環しない)。spec の `Fine` は runtime の `shifted`(生成 Model の import)と
+// spec の `Small`(生成 Statements の import)を使う。`start` は Base の input `seed` を(推移的に)使うので scenario が束縛する。
+module Units.Ok.Top
+
+fn start() -> Point { shifted(Point { x: seed() }) }
+
+predicate Fine(p: Point) { Small(shifted(p)) }
+
+observer current() -> Nat { start().x }
+
+scenario run {
+  input seed() = 1;
+  observe current();
+}

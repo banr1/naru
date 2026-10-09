@@ -1,0 +1,6 @@
+// 反例(C18): Beta → Gamma の辺(`twice` が Gamma の `double` を使う)。
+module Units.RuntimeCycle.Beta
+
+fn bump(n: Nat) -> Nat { n + 1 }
+
+fn twice(n: Nat) -> Nat { double(n) }   // E017

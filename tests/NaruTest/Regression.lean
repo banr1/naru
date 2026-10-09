@@ -22,7 +22,16 @@ import NaruTest.Repo
    `tests/reject/type_name_as_value.naru`(型別名 `Count` の値使用、`Count \{}` / `Nat \{ … }` のレコードリテラル))は、印の (行, E 番号) の集合と
    診断の集合が一致する(LSP が同じ箇所に返すことは `lsp` 群が CLI と照合する)。Core の健全性: 全受理例と各ソースルートを検査して診断 0 で、
    生成対象 Core の全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件。
-4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件を含む)の各群、golden の短い予行(`--finality-horizon 40`)、
+   C18 の複数ファイルの検体(`tests/units/`): 反例 `reject/module_duplicate`(2 ファイルが同じモジュール名)/ `reject/runtime_cycle`(runtime 宣言の参照が
+   3 モジュールを巡る)/ `reject/spec_cycle`(spec 宣言の参照が 2 モジュールを巡る)/ `reject/inferred_cycle`(名前を書いていない依存 — 欄の参照の record の
+   推論された型 — を含む循環。その辺の E017 は宣言の名前の位置)は、`compile <files>`(出力指定なし)と `compile --out <dir> <files>` がともに exit 1 で
+   同じ診断を出し、`--out` には何も書かれず、診断がすべて E017 で、その (ファイル, 行, 番号) の集合が各ファイルの行末の `// E017` の印と一致し、各診断の
+   列が実在する識別子(メッセージが名指しする参照先の名前・宣言・モジュール)を指し、CLI の (ファイル, 行, 列, 番号) が同じ単位の `compileSources`
+   (`lsp` 群が LSP の期待に使う)と等しい。受理例 `accept/dependency_ok`(Top → Middle → Base の循環しない依存)と `accept/cross_phase_ok`(Alpha の spec が
+   Beta の runtime を、Beta の spec が Alpha の spec を使う: Model と Statements の import グラフを別々に見るので循環しない)は exit 0 で、`--out` に生成した
+   Model / Statements の全ファイル(ルートの集約ファイルを含む)が import の順に Lean で型検査できる。LSP が同じ箇所に返し `fix/` の didChange で消えることは
+   `lsp` 群が照合する。
+4. `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。受理例の `didOpen` で診断 0 件、`tests/units/` の検体を含む)の各群、golden の短い予行(`--finality-horizon 40`)、
    C10 の比較器回帰(`golden --comparator`: `tests/golden/Golden.lean --comparator-check`。emitted objects の共通表現について、同じ意味の両表現が
    一致する検体と、各フィールド・入れ子・親関係・Option・variant・リスト順序を一つだけ変えた検体がすべて不一致になること、`none` と root 99 /
    root 0 の `some` を混同しないこと、旧 3 つ組 `(kind, root, author)` が見逃す検体(失敗例)を `NaruTest/Golden.lean` の `expectedAgreements` /
@@ -247,31 +256,9 @@ def c35Equations : List (String × String) :=
     ("total [fresh 1, fresh 2] = 3", "decide"),
     ("allWithin [fresh 1, fresh 11] = false", "decide") ]
 
-/-- 反例の行末の `// E0dd`(コードの後ろのコメント)が印す期待: (1 始まりの行, E 番号)。先頭のコメント行(コードの無い行)は印ではない。 -/
-def markedDiagnostics (text : String) : List (Nat × String) := Id.run do
-  let mut out : List (Nat × String) := []
-  let mut i := 1
-  for l in text.splitOn "\n" do
-    let parts := l.splitOn "//"
-    if parts.length ≥ 2 then
-      let code := parts.head!
-      let comment := (parts.getLast!).trimAscii.toString
-      if !code.trimAscii.toString.isEmpty then
-        if let some c := NaruTest.Lsp.firstCode comment then
-          if comment.startsWith c then out := out ++ [(i, c)]
-    i := i + 1
-  return out
-
-/-- CLI の標準エラーの診断行 `file:line:col: error[E0dd]: …` → (行, 列, E 番号)。 -/
+/-- CLI の標準エラーの診断行 `file:line:col: error[E0dd]: …` → (行, 列, E 番号)。印との照合は `NaruTest.markedDiagnostics`(`Common.lean`)。 -/
 def parseDiags (stderr : String) : List (Nat × Nat × String) :=
-  (stderr.splitOn "\n").filterMap fun l =>
-    if !(contains l ": error[") then none
-    else
-      let parts := l.splitOn ":"
-      match parts[1]?.bind (·.trimAscii.toString.toNat?), parts[2]?.bind (·.trimAscii.toString.toNat?),
-            NaruTest.Lsp.firstCode ((l.splitOn ": error[").getLast!) with
-      | some line, some col, some code => some (line, col, code)
-      | _, _, _ => none
+  (parseFileDiags stderr).map fun (_, line, col, code, _) => (line, col, code)
 
 def sortMarks (xs : List (Nat × String)) : List (Nat × String) :=
   xs.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
@@ -307,6 +294,123 @@ def checkRejectDiagnostics : M Unit := do
     if !rejects.contains f then fail s!"C35: {f} is missing"
   if nMarked ≥ 2 then ok s!"C35: {nMarked} reject file(s) carry line marks and match them"
   else fail s!"C35: expected at least 2 reject files with line marks, found {nMarked}"
+
+/-- (ファイル, 行, E 番号) の列を並べる。 -/
+def sortFileMarks (xs : List (String × Nat × String)) : List (String × Nat × String) :=
+  xs.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && (a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.2.2 ≤ b.2.2)))
+
+/-- (ファイル, 行, 列, E 番号) の列を並べる。 -/
+def sortFileDiags (xs : List (String × Nat × Nat × String)) : List (String × Nat × Nat × String) :=
+  xs.mergeSort fun a b =>
+    a.1 < b.1 || (a.1 == b.1 && (a.2.1 < b.2.1 || (a.2.1 == b.2.1 && (a.2.2.1 < b.2.2.1 || (a.2.2.1 == b.2.2.1 && a.2.2.2 ≤ b.2.2.2)))))
+
+/-- 診断のメッセージが、その列にある識別子 `tok` を名指ししているか: 単独の名前 `` `tok` ``、修飾名の末尾 `` .tok` ``、モジュール名の先頭 `` `tok. ``。 -/
+def namesToken (msg tok : String) : Bool :=
+  !tok.isEmpty && (contains msg s!"`{tok}`" || contains msg s!".{tok}`" || contains msg s!"`{tok}.")
+
+/-- 生成ファイル(`out` からの相対パス)を import の順(依存先が先)に並べる。各ファイルの `import X.Y` の行から、生成モジュール同士の依存を読む。 -/
+def generatedOrder (out : System.FilePath) (rels : List String) : IO (List String) := do
+  let modOf (rel : String) : String := ((rel.dropEnd ".lean".length).toString.replace "/" ".")
+  let mut deps : List (String × List String) := []
+  for rel in rels do
+    let c ← IO.FS.readFile (out / rel)
+    let imports := (c.splitOn "\n").filterMap fun l =>
+      if l.startsWith "import " then some (l.drop "import ".length).toString.trimAscii.toString else none
+    deps := deps ++ [(rel, rels.filter fun r => imports.contains (modOf r))]
+  let mut done : List String := []
+  let mut remaining := rels
+  let mut guard := rels.length + 1
+  while !remaining.isEmpty && guard > 0 do
+    guard := guard - 1
+    match remaining.find? (fun r => ((deps.lookup r).getD []).all done.contains) with
+    | some r =>
+      done := done ++ [r]
+      remaining := remaining.filter (· != r)
+    | none =>
+      done := done ++ remaining
+      remaining := []
+  return done
+
+/-- 3''. C18 の複数ファイルの検体(`tests/units/`、docstring の 3): 反例は `compile <files>`(出力指定なし)と `compile --out <dir> <files>` がともに
+exit 1 で同じ E017 を出し、`--out` には何も書かれず、診断の (ファイル, 行, 番号) の集合が行末の印と一致し、各診断の列が実在する識別子(メッセージが
+名指しする名前)を指す。受理例は exit 0 で、`--out` に生成した Model / Statements が Lean で型検査できる。 -/
+def checkModuleUnits (leanPath : String) : M Unit := do
+  heading "C18 module structure (tests/units: duplicate module, runtime cycle, spec cycle, valid dependencies)"
+  let rejects ← listUnits "reject"
+  for u in rejects do
+    let label := s!"units/reject/{u.name}"
+    let out := workDir / "units" / u.name
+    if ← out.isDir then IO.FS.removeDirAll out
+    if u.files.length < 2 then
+      fail s!"{label}: a multi-file unit needs at least 2 files under src/"
+      continue
+    let files := u.files.toArray
+    let r1 ← step s!"{label}: compile (no output)" "lake" (#["exe", "naru", "compile"] ++ files) (expectExit := 1)
+    let r2 ← step s!"{label}: compile --out" "lake" (#["exe", "naru", "compile", "--out", out.toString] ++ files) (expectExit := 1)
+    let d1 := parseFileDiags r1.stderr
+    let d2 := parseFileDiags r2.stderr
+    if !d1.isEmpty && d1 == d2 then ok s!"{label}: {d1.length} diagnostic(s), identical with and without --out"
+    else fail s!"{label}: diagnostics differ or are empty: without --out {d1.map fun (f, l, c, e, _) => s!"{e}@{f}:{l}:{c}"}, with --out {d2.map fun (f, l, c, e, _) => s!"{e}@{f}:{l}:{c}"}"
+    let written ← allFiles out
+    if written.isEmpty then ok s!"{label}: --out {out} received no file (generation did not run)"
+    else fail s!"{label}: --out wrote {written.take 5}"
+    if d1.all (fun (_, _, _, c, _) => c == "E017") then ok s!"{label}: every diagnostic is E017"
+    else fail s!"{label}: diagnostics other than E017: {d1.filter (fun (_, _, _, c, _) => c != "E017") |>.map fun (f, l, _, c, _) => s!"{c}@{f}:{l}"}"
+    let mut want : List (String × Nat × String) := []
+    let mut texts : List (String × String) := []
+    for f in u.files do
+      let text ← IO.FS.readFile f
+      texts := texts ++ [(f, text)]
+      for (l, c) in markedDiagnostics text do want := want ++ [(f, l, c)]
+    let got := sortFileMarks (d1.map fun (f, l, _, c, _) => (f, l, c)).eraseDups
+    let wantS := sortFileMarks want.eraseDups
+    let filesWithMarks := (want.map (·.1)).eraseDups
+    if !want.isEmpty && got == wantS then
+      ok s!"{label}: the diagnostics are exactly the marked lines in {filesWithMarks.length} file(s): {wantS.map fun (f, l, c) => s!"{c}@{f}:{l}"}"
+    else fail s!"{label}: marked {wantS} vs reported {got}"
+    let mut bad : List String := []
+    for (f, l, c, _, msg) in d1 do
+      let tok := tokenAt ((texts.lookup f).getD "") l c
+      if !(namesToken msg tok) then bad := bad ++ [s!"{f}:{l}:{c} (token `{tok}`)"]
+    if bad.isEmpty then ok s!"{label}: each diagnostic's column points at an identifier that its message names (the referenced name, the declaration or the module)"
+    else fail s!"{label}: columns that do not point at a named identifier: {bad}"
+    -- CLI の (ファイル, 行, 列, 番号) は、`lsp` 群が LSP の期待に使う `compileSources`(同じ単位)の診断と同じ
+    let (viaApi, _) ← Naru.compileFiles u.files
+    let apiDiags := sortFileDiags (viaApi.toList.map fun d => (d.file, d.span.line, d.span.col, d.code))
+    let cliDiags := sortFileDiags (d1.map fun (f, l, c, e, _) => (f, l, c, e))
+    if !apiDiags.isEmpty && apiDiags == cliDiags then
+      ok s!"{label}: the CLI's (file, line, column, code) equal compileSources on the same unit (the positions naru_test lsp expects from the server)"
+    else fail s!"{label}: CLI {cliDiags} vs compileSources {apiDiags}"
+  for name in ["module_duplicate", "runtime_cycle", "spec_cycle", "inferred_cycle"] do
+    if !(rejects.any (·.name == name)) then fail s!"C18: {unitsDir}/reject/{name} is missing"
+  let accepts ← listUnits "accept"
+  for u in accepts do
+    let label := s!"units/accept/{u.name}"
+    let out := workDir / "units" / u.name
+    if ← out.isDir then IO.FS.removeDirAll out
+    IO.FS.createDirAll out
+    let outAbs ← IO.FS.realPath out
+    let lp := s!"{outAbs}:{leanPath}"
+    let files := u.files.toArray
+    if u.files.length < 2 then
+      fail s!"{label}: a multi-file unit needs at least 2 files under src/"
+      continue
+    let _ ← step s!"{label}: compile (no output)" "lake" (#["exe", "naru", "compile"] ++ files)
+    let _ ← step s!"{label}: compile --out" "lake" (#["exe", "naru", "compile", "--out", out.toString] ++ files)
+    let mut rels : List String := []
+    for sub in ["Model", "Statements"] do
+      rels := rels ++ ((← Naru.listFiles (out / sub) "lean").map fun f => (f.drop (out.toString.length + 1)).toString) ++ [sub ++ ".lean"]
+    let ordered ← generatedOrder out rels
+    let mut nLean := 0
+    for rel in ordered do
+      let olean := (rel.dropEnd ".lean".length).toString ++ ".olean"
+      let r ← step s!"{label}: lean {rel}" "lean" #[s!"--root={outAbs}", "-o", (outAbs / olean).toString, rel]
+        (cwd := some outAbs) (env := #[("LEAN_PATH", some lp)])
+      if r.exitCode == 0 then nLean := nLean + 1
+    if nLean == rels.length && nLean ≥ 4 then ok s!"{label}: all {nLean} generated Lean files type-check in import order (the imports between the generated modules resolve)"
+    else fail s!"{label}: only {nLean} of {rels.length} generated Lean files type-checked"
+  for name in ["dependency_ok", "cross_phase_ok"] do
+    if !(accepts.any (·.name == name)) then fail s!"C18: {unitsDir}/accept/{name} is missing"
 
 /-- 3'. Core の健全性(C35): 全受理例(単独の単位)と各ソースルート(1 単位)を `compileFiles` で検査し、診断が無く、生成対象 Core の
 全宣言を再帰的に走査して `.unknown` / 型メタ変数 / エラー用ノードが 0 件(`Core.Module.unsound`)。 -/
@@ -586,7 +690,7 @@ def checkAcceptReject : M Unit := do
   if accepts.isEmpty then fail s!"{acceptDir}: no .naru files" else ok s!"{acceptDir}: {accepts.length} files compile"
   let rejects ← Naru.listFiles rejectDir "naru"
   for f in rejects do
-    match NaruTest.Lsp.namedCode (← IO.FS.readFile f) with
+    match namedCode (← IO.FS.readFile f) with
     | none => fail s!"{f}: the header comment names no E number"
     | some code =>
       let _ ← step s!"reject {f} ({code})" "lake" #["exe", "naru", "check-reject", f, code]
@@ -792,9 +896,13 @@ def checks : M Unit := do
       | .error e => fail e; return
     | .error e => fail e; return
   ok s!"naru.toml: sources {roots}, generated {generated}"
+  let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]
+  let leanPath := e.stdout.trimAscii.toString
+  if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
   checkAcceptReject
   checkRejectDiagnostics
   checkCoreSoundness roots
+  checkModuleUnits leanPath
   heading "editor support groups"
   subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
   subgroup "naru_test zed (C17)" NaruTest.Zed.run
@@ -805,9 +913,6 @@ def checks : M Unit := do
   subgroup "naru_test golden --comparator (C10: common representation of the emitted objects)" NaruTest.Golden.comparatorRun
   checkDeterminism roots generated
   checkBuilds generated
-  let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]
-  let leanPath := e.stdout.trimAscii.toString
-  if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
   checkGeneratedAccepts leanPath
   checkRenameStructure roots
   checkSimulate roots generated

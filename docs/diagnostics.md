@@ -15,9 +15,11 @@ file:line:col: error[E0xx]: message
 
 ## 段と進み方
 
+構文解析の後、同名のモジュール(E017)があれば名前解決には進まない(大域表の鍵がモジュール名で決まる)。
 名前解決(E011〜E013、E001)に誤りがあれば型検査には進まない(未解決名の波及を避ける)。
-型検査(E003〜E006、E014〜E016、E018、E019)に誤りがあれば停止性検査(E002)には進まない(呼出し先の署名が要る)。
-診断が 1 つでもあれば backend には進まない(`generated/` は書き換えない)。
+型検査(E003〜E006、E014〜E016、E018、E019)に誤りがあれば Core の健全性の検査・モジュールの循環(E017)・停止性検査(E002)には進まない(呼出し先の署名が要る)。
+診断が 1 つでもあれば backend には進まない(`generated/` は書き換えない)。すべての診断は生成前の共通の検査が出すので、CLI の `compile`
+(出力指定あり / なし)と言語サーバー `naru lsp` は同じ入力・コンパイル単位に同じ診断を同じ行・列に出す(`compile --out` も診断があれば何も書かない)。
 
 ## 一覧
 
@@ -37,7 +39,7 @@ file:line:col: error[E0xx]: message
 | E014 | 型の不一致・推論できない型・値でないものの値としての使用(`observe` に observer の呼出し以外、input でないものの束縛、型別名を含む型名の値使用と record でない型へのレコードリテラル、spec 宣言で Prop 相当の式(量化・spec 宣言の呼出し・Prop に束ねた局所名)を Bool の値が要る位置に書く、も) | 済 |
 | E015 | 無い欄・無いメソッド・引数の数や名前の不一致(閉じていない scenario: 使う input の未束縛・束縛の順序・仮引数の数、も) | 済 |
 | E016 | claim bundle の項目が claim でない | 済 |
-| E017 | 生成モジュールの構造: モジュール同士の循環参照(runtime の参照は Model、spec の参照は Statements)・同名のモジュール(backend) | 済(`Backend/Model.lean`、`Backend/Statements.lean`) |
+| E017 | 生成モジュールの構造: 同名のモジュール(各ファイルの `module` 行)・モジュール同士の循環参照(runtime 宣言の参照は生成 Model、spec 宣言の参照は生成 Statements の import の循環。循環に関与する参照の位置) | 済(`Modules.lean`。生成前の共通検査。backend の検査は安全網) |
 | E018 | match の腕の形: 最後の腕にガード / `Nat` `Int` `String` の match に無条件の腕が無い(網羅性の穴) | 済(`Typecheck.lean`) |
 | E019 | コンテナ(Option / List / Set / Table / Result / tuple)越しに自分に戻る record / enum(Lean の deriving が入れ子の帰納型に使えない) | 済(`Typecheck.lean`) |
 
@@ -199,16 +201,30 @@ claim bundle Guarantees { helper }   // E016(fn は項目にできない)
 
 ### E017 生成モジュールの構造
 
-モジュール同士の循環参照(runtime の参照は Model、spec の参照は Statements)と同名のモジュール。backend の段で出る。
+同名のモジュールと、モジュール同士の循環参照(runtime 宣言の参照は生成 Model の import、spec 宣言の参照は生成 Statements の import になる)。
+生成前の共通検査(`compiler/Naru/Modules.lean`)が出すので、CLI と言語サーバーが同じ行・列に出す。複数ファイルの検体は `tests/units/reject/`
+(`module_duplicate` / `runtime_cycle` / `spec_cycle` / `inferred_cycle`。[testing.md](testing.md))。
+
+- 同名のモジュール: 同じ名前を宣言するすべてのファイルの `module` 行(名前の位置)に 1 つずつ。メッセージが他の所在を列挙する。
+- 循環: 循環に関与する辺 `A → B`(`A` の宣言が `B` の宣言を参照し、`B` から `A` に戻れる)ごとに、`A` の中でその参照を作る最初の宣言の、
+  `B` への最初の参照(呼出し・型の位置の名前など)の行・列に 1 つ。メッセージが宣言と参照先、循環の経路を示す。循環のすべての辺に出るので、
+  どれか 1 つの辺を解消すれば関係するファイルすべての診断が消える(言語サーバーでは `didChange` で関係する URI すべてが空になる)。
+  参照が構文上その宣言に現れない依存(推論された型 — `make().x` の record や呼出しの結果の型 — や、使う input の署名を通した依存)は
+  その宣言の名前の位置に出る(`inferred_cycle` の `width`)。
 
 ```
-// A.naru
-module A
-fn a() -> Nat { b() }         // A → B
+// Alpha.naru
+module Alpha
+record Point { x: Nat } derive eq
+fn shifted(n: Nat) -> Nat { bump(n) }          // E017(`bump` の位置: Alpha → Beta)
 
-// B.naru
-module B
-fn b() -> Nat { a() }         // B → A(循環)
+// Beta.naru
+module Beta
+fn bump(n: Nat) -> Nat { n + 1 }
+fn origin(n: Nat) -> Point { Point { x: n } }  // E017(戻り型 `Point` の位置: Beta → Alpha で循環)
+
+// Same1.naru / Same2.naru
+module Units.Same                              // E017(両方のファイルの module 行)
 ```
 
 ### E018 match の腕の形

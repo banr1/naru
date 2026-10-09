@@ -1,0 +1,8 @@
+// 反例(C18): spec 宣言の参照が Left → Right → Left と巡る。生成 Statements もモジュールごとに 1 ファイルで、spec 宣言の参照は
+// `import Statements.X.Y` になるので循環は Lean にできない。共通検査が spec のグラフでも循環に関与する参照の行・列に E017 を出す。
+// 期待: `lake exe naru compile tests/units/reject/spec_cycle/src/*.naru` が exit 非 0 で E017(2 ファイルに 1 つずつ)
+module Units.SpecCycle.Left
+
+predicate Small(n: Nat) { n < 10 }
+
+predicate Bridged(n: Nat) { Positive(n) }   // E017

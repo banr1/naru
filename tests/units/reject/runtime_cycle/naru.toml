@@ -1,0 +1,4 @@
+# 複数ファイルの反例(IDEAL.md C18): runtime 宣言の参照が 3 つのモジュールを巡る循環(生成 Model の import の循環、E017)。
+# `src/**/*.naru` が 1 つのコンパイル単位。`fix/Gamma.naru` は循環を解消した Gamma(`naru_test lsp` が didChange で差し替えると
+# 関係する 3 つの URI すべての診断が消え、戻すと戻る)。
+sources = ["src"]

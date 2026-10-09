@@ -1,0 +1,7 @@
+// 反例(C18): Shape → Measure の辺(`back` が Measure の `width` を使う)。循環 Shape → Measure → Factory → Shape の起点。
+// 期待: `lake exe naru compile tests/units/reject/inferred_cycle/src/*.naru` が exit 非 0 で E017(Shape 1 つ、Measure 2 つ、Factory 1 つ)
+module Units.Inferred.Shape
+
+record Point { x: Nat } derive eq
+
+fn back() -> Nat { width() }   // E017

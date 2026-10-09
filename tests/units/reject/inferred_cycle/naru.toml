@@ -1,0 +1,5 @@
+# 複数ファイルの反例(IDEAL.md C18): 構文上は名前を書いていない依存(欄の参照 `make().x` の record の型)が循環を作る。
+# Shape → Measure(`back` が `width` を使う)→ Factory(`width` が `make` を使う)→ Shape(`make` の戻り型 `Point`)の循環に加え、
+# Measure → Shape の辺は `make().x` の record `Point` の推論された型だけで生じる(Measure.naru に `Point` も `Shape` も書かれていない)。
+# その辺の E017 は参照の位置ではなく宣言 `width` の名前の位置に出る(共通検査のフォールバック)。`fix/Shape.naru` は循環を解消した Shape。
+sources = ["src"]

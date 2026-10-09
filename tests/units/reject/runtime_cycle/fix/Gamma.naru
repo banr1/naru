@@ -1,0 +1,7 @@
+// 循環を解消した Gamma(C18): `origin` が Alpha の `Point` を使わない。`naru_test lsp` が `src/Gamma.naru` の文書をこの内容に didChange すると
+// Alpha / Beta / Gamma の診断がすべて消える(循環の辺が 1 つ消えれば、残りの辺も循環に関与しない)。
+module Units.RuntimeCycle.Gamma
+
+fn double(n: Nat) -> Nat { n * 2 }
+
+fn origin(n: Nat) -> Nat { n }

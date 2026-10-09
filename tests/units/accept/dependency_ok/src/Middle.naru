@@ -1,0 +1,6 @@
+// 受理例(C18): Base だけに依存する(runtime の `shifted` と spec の `Small`)。
+module Units.Ok.Middle
+
+fn shifted(p: Point) -> Point { Point { x: bump(p.x) } }
+
+predicate Small(p: Point) { p.x < 10 }

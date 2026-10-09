@@ -3,16 +3,20 @@ import Naru.Parser
 import Naru.Resolve
 import Naru.Typecheck
 import Naru.Totality
+import Naru.Modules
 
 /-!
 # ドライバ
 
-ファイル群 → 字句解析 → 構文解析 → 名前解決・phase 検査 → 型・capability 検査(選択 E003・順序 E004 を含む)
-と Core IR への elaboration → 計算可能性検査(停止性 E002)。
+ファイル群 → 字句解析 → 構文解析 → 同名のモジュール(E017)→ 名前解決・phase 検査 → 型・capability 検査(選択 E003・順序 E004 を含む)
+と Core IR への elaboration → Core の健全性 → モジュールの循環(E017)→ 計算可能性検査(停止性 E002)。
 構文エラーのあるファイルがあれば後段には進まない(1 ファイル 1 エラーで止まる)。
 名前解決の誤りがあれば型検査には進まない(未解決名の波及を避ける)。
 型検査の誤りがあれば停止性検査には進まない(呼出し先の署名が要る)。
 診断が 1 つでもあれば Core は空(backend には届かない)。
+
+モジュール構造(同名のモジュール・生成 Model / Statements の import の循環)は backend ではなくここ(`Modules.lean`)で検査するので、
+CLI の `compile`(出力指定あり / なし)と言語サーバーのすべてが同じ E017 を実在する行・列に返す(C18)。
 
 入口は 2 つ: `compileFiles`(パスを読む。CLI の `compile` / `check-reject`)と `compileSources`(パスと内容の組。
 言語サーバー `naru lsp` がエディタのバッファを渡す)。検査そのものは純粋で、どちらも同じ `compileSources` を通る。
@@ -54,8 +58,14 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
     | .error d => diags := diags.push d
   let mut core : Array Core.Module := #[]
   let mut recs : Array Totality.Recursion := #[]
+  let mut refs : Array Resolve.Ref := #[]
   if diags.isEmpty then
-    diags := resolveAll mods
+    -- C18: 同名のモジュール(E017)。名前解決の前に(大域表の鍵がモジュール名で決まるので)
+    diags := Modules.duplicates mods
+  if diags.isEmpty then
+    let (ds, rs) := resolveAll mods
+    diags := ds
+    refs := rs
   if diags.isEmpty then
     let (ds, cs) := typecheckAll mods
     diags := ds
@@ -70,6 +80,10 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
         let shown := ", ".intercalate (issues.take 3) ++ (if issues.length > 3 then ", …" else "")
         let msg := s!"internal: the checked Core of `{name}` still contains unresolved types or error nodes ({shown}); this is a compiler bug (no diagnostic was reported for it), so the declaration is rejected instead of being generated"
         diags := diags.push { file := cm.file, span := span, code := Code.typeMismatch, msg := msg }
+  if diags.isEmpty then
+    -- C18: 生成 Model / Statements の import の循環(E017)。循環に関与する参照の行・列に出す(停止性の前: モジュールを跨ぐ
+    -- 相互再帰は E002 ではなく循環として報告する)
+    diags := Modules.cycles mods core refs
   if diags.isEmpty then
     let (ds, rs) := totalityAll mods
     diags := ds

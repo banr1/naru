@@ -50,7 +50,7 @@ scenario basic
 | `stdlib/` | Model 用 stdlib(`stdlib/Model`、Lean の `NaruStd`)。生成 Model が import する |
 | `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
 | `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`)。機械生成専用で手では編集しない |
-| `tests/` | 受理例 `accept/`、反例 `reject/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
+| `tests/` | 受理例 `accept/`、反例 `reject/`、複数ファイルのコンパイル単位の検体 `units/`、設定変更プロジェクト `config_change/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
 | `docs/` | 文書(下の案内) |
 | `editors/` | エディタ対応: tree-sitter 文法 `tree-sitter-naru/` と Zed 拡張 `zed-naru/` |
 | `third_party/` | 同梱する外部の参照物。git submodule `verified-consensus/`(基準コミットと約束は `third_party/README.md`) |

@@ -1,0 +1,3 @@
+# 複数ファイルの反例(IDEAL.md C18): spec 宣言の参照が 2 つのモジュールを巡る循環(生成 Statements の import の循環、E017)。
+# runtime 宣言は無いので生成 Model の依存には循環が無く、spec のグラフだけが循環する。`fix/Right.naru` は循環を解消した Right。
+sources = ["src"]

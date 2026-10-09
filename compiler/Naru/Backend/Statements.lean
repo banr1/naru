@@ -304,11 +304,7 @@ def specModuleDeps (env : Env) (m : Core.Module) : List (List String) × List (L
   let mut sp : List (List String) := []
   for d in m.decls do
     if !(isSpecDecl d) then continue
-    let refs := d.refs ++ ((env.inputs.getD d.key []).flatMap fun ik =>
-      match env.decls.get? ik with
-      | some i => i.refs
-      | none => [])
-    for r in refs do
+    for r in declRefs env d do
       if let some other := env.moduleOf.get? r then
         if isSpecKey env r then
           if other != m.name && !sp.contains other then sp := sp ++ [other]
@@ -316,18 +312,28 @@ def specModuleDeps (env : Env) (m : Core.Module) : List (List String) × List (L
           if !rt.contains other then rt := rt ++ [other]
   return (rt.mergeSort fun a b => renderPath a ≤ renderPath b, sp.mergeSort fun a b => renderPath a ≤ renderPath b)
 
+/-- spec 宣言を持つモジュール(生成 Statements になるもの)。 -/
+def specModules (mods : Array Core.Module) : List Core.Module :=
+  mods.toList.filter fun m => m.decls.any isSpecDecl
+
+/-- 生成 Statements のモジュール同士の依存グラフ: (モジュール名, spec 宣言の参照で import する他の Statements モジュール)。
+`emitStatements` の import と、生成前の共通検査(`Modules.lean`、E017: spec の循環)は同じこの関数で計算する。 -/
+def specGraph (env : Env) (mods : Array Core.Module) : List (List String × List (List String)) :=
+  (specModules mods).map fun m => (m.name, (specModuleDeps env m).2)
+
 /-- Core のモジュール列から生成 Statements(`generated/` からの相対パス、内容)を作る。spec 宣言のあるモジュールだけ
-ファイルになり、ルート `Statements.lean` がそれらを import する。同名のモジュールの検査は Model backend(先に走る)が行う。 -/
+ファイルになり、ルート `Statements.lean` がそれらを import する。同名のモジュールと spec の循環(E017)は生成前の共通検査
+(`Modules.lean`)が退けるので届かない(ここの循環検査は安全網)。 -/
 def emitStatements (mods : Array Core.Module) (recs : Array Totality.Recursion) (info : Meta) :
     Except Diagnostic (Array (String × String)) := do
   let env := buildEnv mods recs
-  let specMods := mods.toList.filter fun m => m.decls.any isSpecDecl
+  let specMods := specModules mods
   let deps := specMods.map fun m => (m.name, specModuleDeps env m)
-  if let some cycle := findCycle (deps.map fun (n, (_, sp)) => (n, sp)) then
+  if let some cycle := findCycle (specGraph env mods) then
     let names := cycle.map fun n => s!"`{renderPath n}`"
     let first := specMods.find? (·.name == cycle.head!)
     throw { file := (first.map (·.file)).getD "", span := {}, code := Code.moduleStructure,
-            msg := s!"spec declarations of modules refer to each other in a cycle ({" → ".intercalate names}); generated Lean modules import each other, so move the shared declarations into one module" }
+            msg := s!"internal: spec declarations of modules refer to each other in a cycle ({" → ".intercalate names}) (the common module check should have reported this before generation)" }
   let mut files : Array (String × String) := #[]
   for m in specMods do
     let hash := (info.fileHashes.lookup m.file).getD ""

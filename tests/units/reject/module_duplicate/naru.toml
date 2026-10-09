@@ -1,0 +1,4 @@
+# 複数ファイルの反例(IDEAL.md C18): 2 つのファイルが同じ名前のモジュールを宣言する(E017)。
+# `src/**/*.naru` が 1 つのコンパイル単位。`naru_test lsp` は `src/` の各ファイルを didOpen し(この naru.toml のルート配下なので単位全体を検査する)、
+# `naru_test regression` は `naru compile src/First.naru src/Second.naru`(出力指定あり / なし)の診断を各行末の `// E017` の印と照合する。
+sources = ["src"]
