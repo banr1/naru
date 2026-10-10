@@ -131,11 +131,13 @@ record に無いので、condition `SetupWellFormed(s)` と `RunDomain(s, rho)` 
 `==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、
 stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に整形性の前提を付ける(どちらも naru の表現力は変えない)。
 
-## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47)
+## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53)
 
 生成 Lean が Core の意味を保つことを、backend から独立した意味論と Lean の定理で保証する(限定範囲)。lean_lib `NaruSem`(`semantics/`)。
 検査入口と走らせ方は [testing.md](testing.md)「コンパイラ意味論保存」。プロトコルの Proofs(`proofs/`、空)とは別の役割で、Core・コンパイラ・独立意味論・
 生成宣言を参照してよいが、生成 Model / Statements からここへの逆依存は無い(不変条件の依存方向)。
+Core IR の意味論(C39〜C47。下の各節)に加えて、構文解析の出力 Surface AST の独立した意味論と適格性(C48。「Surface AST の意味論と適格性」)がある。
+Surface AST → Core の対応(C49〜C51)はまだ無い(「信頼する部分・方式・未対応」)。
 
 ### 対象(用語「今回の保存対象」)と範囲の判定(`NaruSem/Scope.lean`)
 
@@ -182,6 +184,9 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 | `denoteP_let_prop` / `denoteP_let_bool` / `denoteP_ite_prop` / `denoteP_ite_bool` / `denoteP_eq_prop` / `denoteP_eq_bool` | 局所束縛・条件・`==` の読みの形(C43): 命題の `let` は名前を命題に束ね(以後の値の `let` / 量化 / パターンの同名の束縛が隠す)、Bool の値の `let` は値に束ねる。命題の条件の `if` は `(C → P) ∧ (¬ C → Q)`、Bool の値の条件は `if c = true then …`。命題を含む両辺の `==` / `!=` は `↔` とその否定、両辺が値なら値の等値 `a = b` / `a ≠ b` | — |
 | `check_sound_prop` | **接続検査の健全性(命題、C44)**: 仮引数の値の列 `xs` について、その型の文脈で適格な spec の式 `e` と、命題 `Q = denoteP (SEnv.ofList …) e`(各実生成宣言の接続検査が確かめる `Prop` の等式)から `Sem (SEnv.ofList …) e Q`(実生成宣言の命題は意味そのもの) | 適格性 + 接続検査の成功 |
 | `EqOp.propIff_bool` / `CmpOp.leanBoolProp_iff` / `EqOp.propBool_iff` / `LogicOp.prop_iff` / `CmpOp.propNat_iff` / `EqOp.propNat_iff` | **値の等値と命題の同値の区別**(C42): 論理の位置の `==` / `!=` の意味 `(a = true) ↔ (b = true)` / その否定は、両辺が Bool の値なら生成 Statements の値の等値 `a = b` / `a ≠ b` と同値(Bool の全要素)。生成 Statements の Bool の比較 `Ord.compare a b = .lt` …(`CmpOp.leanBoolProp`)は `evalBool = true` と同値、論理 `∧` / `∨` / `→` は `&&` / `\|\|` / `implies` が `true` と同値、Nat の比較・等値の命題は `decide` が `true` と同値 | — |
+| `Surf.eval_total` / `Surf.Eval_unique` | **Surface AST の runtime の全域性と一意性(C48)**: `Surf.wtR Γ e = some t`(AST の型付け・スコープ・網羅性)で `Γ = ρ.ty` なら `∃ v, Surf.eval ρ e = some v ∧ v.ty = t`、値は一意。`Surf.wtR.mutual_induct` で式・`let` の列・腕の列・腕を同時に示す(`Surf.wtR_total_all`) | AST の適格性 |
+| `Surf.Sem_exists` / `Surf.Sem_unique` | **Surface AST の spec の意味の存在と一意性(C48)**: `Surf.wtS Γ e = some τ`、`τ` が論理の位置の型、`Γ = ρ.ctx` なら `∃ P, Surf.Sem ρ e P`、意味は一意。注釈の無い `==` / `!=` の 2 規則(値の等しさ `eqNat` / 命題の同値 `eqForm`)の排他性は `Surf.Sem_not_nat` | AST の適格性。値の位置は `Surf.eval_total` |
+| `Surf.eval_mono` / `Surf.Sem_not_nat` | 評価の単調性(環境を広げても定まっていた値は変わらない)と、**論理の位置の式(`Surf.Sem` の導出のある式)は Nat の値に評価されない**(対応する評価の環境 `Agree` のすべてについて) | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -286,10 +291,35 @@ Nat / Bool の `match`(`emitMatchGuarded` の形)に限り、再帰 fn の中の
 条件の `if`・非再帰の Nat / Bool のガード付き `match`・命題を含む両辺の `==` / `!=`)。検体の宣言はすべて接続する(`c42Decls` + `c43Decls`)。spec 宣言の呼出し・
 input・コレクション・record / enum・再帰は対象外(C35 の受理 / 拒否と C34 の回帰が別に守る)。命題を実行可能な Bool に戻す経路は意味論にも読みにも無い。
 
+### Surface AST の意味論と適格性(`NaruSem/Surface.lean`・`SurfaceEval.lean`・`SurfaceTotality.lean`、C48)
+
+構文解析の出力 `Naru.Expr`(`compiler/Naru/Ast.lean`)のうち、用語「Surface AST の保存対象」(Nat / Bool の Core 構文・演算に対応する式: リテラル、
+局所変数、算術・比較・等値・論理と Nat の `min` / `max`、ブロックの `let`(型注釈は任意)と末尾式、`if`、`_` / 変数 / Nat・Bool のリテラルのパターンを持つ
+ガード付き `match`、spec の Nat / Bool の `forall` / `exists`、Bool / 命題の局所束縛)を、frontend(`Typecheck.lean` の elaboration)から独立に定める。
+
+| 項目 | 定義 |
+|---|---|
+| 対象の構文 | `Surf.Expr`(`.lit` / `.var` / `.method`(位置引数)/ `.binop` / `.unop` / `.ite` / `.matchE` / `.block`(`let` の列 `Surf.Stmt.letS` と末尾式)/ `.quant`)、`Surf.Arm`、`Surf.Pat`(`_` / 変数 / リテラル)、`Surf.Ty`(注釈。対象は `Nat` / `Bool`)、`Surf.Binder`。構文解析の出力の部分集合で、位置情報 `Span` もそのまま持つ。`Expr.toAst` が構築子ごとに `Naru.Expr` へ埋め込む(情報を落とさない)。対象外の構築子(呼出し・欄・record / list / tuple のリテラル・lambda・名前付き引数・`e;` 文)は写らない(`SurfaceQuote.ofAst?` が `none`)。リテラルは文字列・`()` も写るが `wtR` / `wtS` が対象外にする |
+| 最小の宣言の包装 | `Surf.Decl`(種別 `DeclKind`、名前、位置、仮引数 `Surf.Param`(名前・型注釈・位置)、runtime の戻り型の注釈、本体)。`Decl.toAst` が `Naru.Decl` へ埋め込む(fn / spec 宣言が使わない欄は既定値)。適格性 `Surf.wtDecl d = some (.runtime ctx t)` / `some (.spec ctx τ)`: 仮引数の注釈がすべて Nat / Bool(`paramsCtx` が文脈)、runtime は種別 `fn` で戻り型の注釈が Nat / Bool かつ本体がその型(`wtR`)、spec は phase が spec の宣言(predicate / condition / regime / property / claim)で戻り型の注釈が無く本体が論理の位置の型(`wtS`、`isForm`)。observer・input・注釈が対象外の宣言は `none` |
+| runtime の適格性 | `Surf.wtR Γ e = some t`: 対象の構文だけ、スコープ内の名前だけ、型が合う(注釈の無い二項演算は被演算子の型だけから `binopResult`)、`match` が網羅的(`Surf.exhaustive`: Core と同じ規則)。ブロックは `let` を前から型付けして文脈を伸ばし(`wtStmtsR`。注釈があれば値の型と一致 `annot`)、末尾式の型。末尾式の無いブロックと runtime の量化は対象外 |
+| spec の適格性 | `Surf.wtS Γ e = some τ`: Core の `wtS` と同じ区分(論理の位置は `.val .bool` か `.prop`、値を要求する位置は `wtR Γ.vals`)。ブロックの `let` は値が命題(`Surf.proppyS`: コンパイラの `proppy` / Core の `proppyS` と同じ構文的区分。注釈は無いか `Bool`)なら名前を `.prop` に、そうでなければ値の型(注釈があれば一致)に束ねる(`wtStmtsS`)。注釈の無い `==` / `!=` は両辺が Nat の値なら `.val .bool`、そうでなければ論理の位置の結び |
+| 意味(runtime) | 表示的意味論 `Surf.eval ρ e : Option Val`(`evalStmts` が `let` を前から評価して環境を伸ばす。`none` は行き詰まりで、既定値で埋めない)。値・環境・演算の意味(`Val` / `Env`、`ArithOp.eval` …)は Core の意味論と共有する — それらは言語の意味([language.md](language.md)「式」)であって変換結果ではない |
+| 意味(spec) | 評価関係 `Surf.Sem ρ e P`(Core の `Sem` と同じ読み方。ブロックの `let` は `blockLetVal` / `blockLetProp`、注釈の無い `==` / `!=` は両辺が Nat の値なら値の等しさ `eqNat`、そうでなければ両辺の命題の同値 `eqForm`)。命題を Bool に戻す規則は無い |
+| 意味が定まる | 上の表の `Surf.eval_total` / `Surf.Eval_unique` / `Surf.Sem_exists` / `Surf.Sem_unique`。`eqNat` / `eqForm` の排他性(論理の位置の式は Nat の値に評価されない `Surf.Sem_not_nat`。評価の単調性 `Surf.eval_mono` を使う) |
+| 検体 | `NaruSem/SurfaceExamples.lean`(`decide`): 対象範囲は空でない(ブロック・型注釈・ガード付き `match`・`min` / `max`・量化・命題の `let`・注釈の無い `==`、fn / predicate の包装)、不適格な AST(スコープ外・型不一致・注釈の不一致・対象外の構文・網羅しない `match`(runtime / spec)・値の位置の命題・束縛型の無い量化、戻り型の合わない fn・戻り型のある spec 宣言・observer)は `none`、行き詰まりは `none` / 導出なし。実際の構文解析の出力の検体は `tests/accept/sem_core.naru`(`lake exe naru_test semantics` が各宣言(包装と本体)を引用し、`Surf.wtDecl` と `Surf.wtR` / `Surf.wtS` を `decide` で検査し、埋め込み `Decl.toAst` が構文解析の出力と `==` で一致することを照合する。これらの検体の宣言については、AST の型付けの結果が Core の型付けの結果と一致することもドライバが確かめる — 検体についての照合であって一般定理ではない) |
+
+Core の意味を AST の意味と定義しない(`Surface*.lean` は Core の意味 `eval` / `Sem` も Core の型付け `wtR` / `wtS` も参照しない。値・環境・演算の意味
+(`Val` / `Env` / `SEnv`、`ArithOp.eval` / `CmpOp.propNat` …)は言語の意味として共有する)。意味論が見ない前提: Surface AST は大域の宣言表を持たないので
+`x.min(y)` / `x.max(y)` を常に Nat のメソッドとして読む(frontend は同名のユーザ宣言の fn があれば UFCS の呼出しに落とす。その場合は Core が `.call` になり、
+AST → Core の接続検査が一致しない)。量化の束縛は型注釈のあるものだけが対象(frontend は注釈の無い束縛を推論で補うが、対象外として扱う)。
+AST → Core の対応(C49 / C50)と実際の frontend への接続(C51)はまだ無い: 現時点で kernel が検査するのは、実際に構文解析された宣言が独立した意味論で
+適格で意味が定まることと、同じ宣言の実際の Core が適格で生成 Lean に接続していること(C39〜C47)までで、その 2 つの意味の対応は検証済みにしない。
+
 ### 信頼する部分・方式・未対応
 
 - 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の正しさは境界の外(IDEAL.md「対象外」)。
-  Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。生成 Model の Lean への
+  Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。Surface AST の引用
+  (`NaruSem/SurfaceQuote.lean`)は、同じソースを再び構文解析して埋め込み `Expr.toAst` と `==`(`Naru.Expr` の構造の等しさ)で照合する。生成 Model の Lean への
   elaboration(`import Model.Sem.Core`)は Lean の elaborator に委ねる(接続検査はその結果の定数に対して行う)。
 - 採用方式: 上の「Model の保存と実生成宣言への接続」と「Statements の保存と実生成宣言への接続」。Model は基礎段階(C40)と非再帰の Nat / Bool の `match`
   (C41)まで(接続はリテラルパターンの scrutinee の場合分け + `rfl`)。Statements は基礎段階(C42)と、Nat / Bool の量化・Bool / 命題の `let` と shadowing・
@@ -297,6 +327,8 @@ input・コレクション・record / enum・再帰は対象外(C35 の受理 / 
   場合分け + `rfl`)。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
 - 未対応: 一般の関数呼出しと input、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
+  Surface AST → Core の値の対応・命題の同値(C49 / C50)と、実際の frontend の入力 AST・出力 Core・実生成宣言を合成した接続(C51)もまだ無い(上の
+  「Surface AST の意味論と適格性」)。構文解析の正しさ・型検査器全体の健全性は境界の外。
   `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は次の節。
 - 文書との照合: `lake exe naru_test semantics` は、この文書の「一般定理」の表の第 1 列に挙げた定理名がすべて公理監査(`audit ok:`)に現れることと、
   [testing.md](testing.md)「コンパイラ意味論保存」に記載した検査のコマンドが実際に走らせるものと一致することを検査する(C47)。

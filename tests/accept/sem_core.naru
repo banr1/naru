@@ -1,11 +1,12 @@
 // 受理例(C39 / C46): コンパイラ意味論保存の「今回の保存対象」の各構文を、ほかの構文を含めずに 1 つずつ使う最小の検体。
 // `lake exe naru_test semantics` がこのファイルを実際の compiler 経路でコンパイルし、各宣言の Core を Lean の項として引用して
 // `semantics/NaruSem` の適格性(`wtR` / `wtS`)を Lean で証明する(引用した Core と実際の Core の一致も同じ検査で照合する)。
-// runtime: Nat / Bool のリテラル・局所名・let・if・算術(+ - * / %)・min / max・比較(< <= > >=)・等値(== !=)・論理(&& || ! implies)・
+// runtime: Nat / Bool のリテラル・局所名・let(型注釈つき・値がブロック)・if・算術(+ - * / %)・min / max・比較(< <= > >=)・等値(== !=)・論理(&& || ! implies)・
 // Nat / Bool のガード付き match(リテラル・変数・`_` のパターン、同名の仮引数・外側の let・scrutinee の中の名前の束縛、
 // 複数のガード不成立からの継続、Bool の scrutinee のガード、Nat のリテラル 0 / 1 の腕)。
 // spec: Bool 値の命題への境界・論理・比較・等値(値の == と Prop を含む両辺の ↔)・Bool / Prop の let と shadowing(同名の Prop 束縛を値の let・
-// 量化・パターンが隠す)・Bool / Prop の条件の if・forall / exists(Nat / Bool)・ガード付き match(Bool / Prop のガードの成功と失敗)。
+// 量化・パターンが隠す。型注釈 Bool の Prop の let も)・Bool / Prop の条件の if・forall / exists(Nat / Bool)・ガード付き match(Bool / Prop のガードの成功と失敗)。
+// C48: 同じ宣言の構文解析の出力(Surface AST)も `naru_test semantics` が引用して、独立した AST の意味論(`semantics/NaruSem/Surface.lean`)の適格性を検査する。
 module Sem.Core
 
 // runtime(Model)
@@ -22,6 +23,8 @@ fn cmpBool(a: Bool, b: Bool) -> Bool { (a < b || a <= b) && (a > b || a >= b) }
 fn eqNat(x: Nat, y: Nat) -> Bool { x == y || x != y }
 fn eqBool(a: Bool, b: Bool) -> Bool { a == b || a != b }
 fn logic(a: Bool, b: Bool) -> Bool { (a && b) || (!a implies b) }
+fn letAnnot(x: Nat) -> Nat { let y: Nat = x + 1; let b: Bool = y > 2; if b { y } else { 0 } }
+fn nestedBlock(x: Nat) -> Nat { let y = { let z = x * 2; z + 1 }; y }
 fn matchNat(x: Nat) -> Nat {
   match x {
     0 => 1,
@@ -82,6 +85,7 @@ predicate specArith(x: Nat, y: Nat) { x.min(y) + x % (y + 1) <= x.max(y) * (x - 
 predicate specLetVal(x: Nat) { let big = x > 10; let n = x + 1; big implies n > 11 }
 predicate specLetProp(x: Nat) { let p = forall n: Nat { n + x >= x }; let q = p && x >= 1; q }
 predicate specLetShadow(x: Nat) { let b = forall n: Nat { n >= 0 }; let b = x > 0; b == (x > 0) }
+predicate specLetAnnot(x: Nat) { let p: Bool = forall n: Nat { n + x >= x }; let b: Bool = x > 0; p && b }
 predicate specIfBool(x: Nat, b: Bool) { if b { x > 0 } else { x == 0 } }
 predicate specIfProp(x: Nat) { if forall n: Nat { n + x >= x } { x >= 0 } else { false } }
 predicate specForall(x: Nat) { forall n: Nat { n >= x } }

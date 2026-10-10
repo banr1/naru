@@ -48,7 +48,7 @@ scenario basic
 |---|---|
 | `compiler/` | naru コンパイラ(Lean)。字句・構文解析、名前解決、型・capability・phase・停止性の検査、Core IR、Model / Statements backend、言語サーバー、CLI |
 | `stdlib/` | Model 用 stdlib(`stdlib/Model`、Lean の `NaruStd`)。生成 Model が import する |
-| `semantics/` | コンパイラ意味論保存(Lean の `NaruSem`): naru の Core IR の独立した意味論と適格性、一般定理、検体、公理監査。`lake build NaruSem` が検査入口(`docs/architecture.md`「コンパイラ意味論保存」) |
+| `semantics/` | コンパイラ意味論保存(Lean の `NaruSem`): naru の Core IR と Surface AST の独立した意味論と適格性、一般定理、検体、公理監査。`lake build NaruSem` が検査入口(`docs/architecture.md`「コンパイラ意味論保存」) |
 | `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
 | `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`。Model は runtime 宣言を出力するモジュールにつき 1 ファイル、Statements は spec 宣言のあるモジュールにつき 1 ファイル)。機械生成専用で手では編集しない |
 | `tests/` | 受理例 `accept/`、反例 `reject/`、複数ファイルのコンパイル単位の検体 `units/`、設定変更プロジェクト `config_change/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
@@ -80,7 +80,7 @@ lake exe naru_test zed          # Zed 拡張(C17)
 lake exe naru_test lsp          # 言語サーバー(C18)
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
-lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の Core の適格性、実生成 Model / Statements の接続・保存(C39〜C45)。約 1 分
+lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、実生成 Model / Statements の接続・保存(C39〜C45、C48)。約 1 分
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
 lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 12 分
 ```

@@ -7,10 +7,15 @@ import NaruSem.Denote
 import NaruSem.DenoteProp
 import NaruSem.Examples
 import NaruSem.Quote
+import NaruSem.Surface
+import NaruSem.SurfaceEval
+import NaruSem.SurfaceTotality
+import NaruSem.SurfaceExamples
+import NaruSem.SurfaceQuote
 import NaruSem.Audit
 
 /-!
-# `NaruSem` — naru の Core IR の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47)
+# `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜)
 
 `lake build NaruSem` が、意味論・適格性の定義、一般定理、検体、公理監査をまとめて Lean kernel に検査させる(C45 の検査入口。
 走らせ方は `docs/testing.md`「コンパイラ意味論保存」、構成と定理の一覧は `docs/architecture.md`「コンパイラ意味論保存」)。
@@ -35,6 +40,17 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   (`CmpOp.leanBoolProp_iff` / `EqOp.propIff_bool`: 値の等値と命題の同値の区別 …)。基礎段階(C42)の `basic` / `SCtx.NoProp` は段階の記録(系)。
 - `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まり・読みの検体(`decide`)。
 - `NaruSem/Quote.lean` — 実際の compiler 経路の Core を Lean の項として引用し、一致を照合する(`lake exe naru_test semantics` が使う)。
+- `NaruSem/Surface.lean` — Surface AST の保存対象(C48): 構文解析の出力の部分集合 `Surf.Expr` / `Arm` / `Stmt` / `Pat` / `Ty` / `Binder`(位置情報つき)と
+  構文解析の型への埋め込み `Expr.toAst`、runtime の型付け `Surf.wtR`(+ `wtStmtsR` / `wtArmsR` / `wtArmR`)、spec の型付け `Surf.wtS`(+ `wtStmtsS` / `wtArmsS` /
+  `wtArmS`)、パターン `Surf.wtPat`、網羅性 `Surf.exhaustive`、命題の区分 `Surf.proppyS`(ブロックの `let` の列と末尾式、注釈の無い `==`、位置引数の
+  メソッドは AST 固有の規則)、最小の fn / spec 宣言の包装 `Surf.Decl` とその適格性 `Surf.wtDecl`(種別・仮引数と戻り型の注釈・本体の型)。
+- `NaruSem/SurfaceEval.lean` — Surface AST の意味(C48): runtime の表示的意味論 `Surf.eval`(+ `evalStmts` / `evalArms`、`Surf.matchPat`)、spec の評価関係
+  `Surf.Sem`(`==` / `!=` は両辺が Nat の値なら値の等しさ `eqNat`、そうでなければ命題の同値 `eqForm`)。Core の意味(`eval` / `Sem`)は参照しない。
+- `NaruSem/SurfaceTotality.lean` — Surface AST の意味が定まること(C48): runtime の全域性 `Surf.eval_total` と一意性 `Surf.Eval_unique`、spec の意味の存在
+  `Surf.Sem_exists` と一意性 `Surf.Sem_unique`、評価の単調性 `Surf.eval_mono`、論理の位置の式は Nat の値に評価されない `Surf.Sem_not_nat`
+  (`eqNat` / `eqForm` の排他性)。
+- `NaruSem/SurfaceExamples.lean` — Surface AST の対象範囲・不適格な AST・行き詰まりの検体(`decide`)。
+- `NaruSem/SurfaceQuote.lean` — 実際の構文解析の出力を対象の AST に写し(`ofAst?`)、Lean の項として引用し、埋め込みと `==` で一致を照合する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -100,3 +116,31 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -- C43: Statements の読みの検体(命題の let を隠すパターン束縛、Bool の全要素の量化、境界の一般形の実例)
 #audit_axioms NaruSem.ex_wtS_pat_shadow NaruSem.ex_denoteP_pat_shadow NaruSem.ex_Sem_pat_shadow
   NaruSem.ex_denoteP_exists_bool NaruSem.ex_Sem_exists_bool NaruSem.ex_denoteP_iff_denoteB_match
+
+-- C48: Surface AST の意味論の全域性・一意性・存在と、評価の単調性、論理の位置の式が Nat の値に評価されないこと、環境と文脈の対応・展開の補題
+#audit_axioms NaruSem.Surf.eval_total NaruSem.Surf.Eval_unique NaruSem.Surf.wtR_total_all NaruSem.Surf.Sem_exists NaruSem.Surf.Sem_unique
+  NaruSem.Surf.Sem_exists_all NaruSem.Surf.Sem_not_nat NaruSem.Surf.eval_mono NaruSem.Surf.eval_mono_all NaruSem.Surf.evalS_total
+  NaruSem.Surf.matchPat_types NaruSem.Surf.annot_eq NaruSem.Surf.BinOp.apply_not_nat NaruSem.Surf.eval_binop_not_nat
+  NaruSem.Surf.Agree.vals NaruSem.Surf.Agree.ext_val NaruSem.Surf.Agree.ext_prop NaruSem.Surf.Agree.extVals
+  NaruSem.Surf.Env.Sub.ext NaruSem.Surf.Env.Sub.extList
+  NaruSem.Surf.eval_block_cons NaruSem.Surf.eval_block_nil NaruSem.Surf.eval_match NaruSem.Surf.evalArms_cons NaruSem.Surf.evalStmts_cons
+  NaruSem.Surf.wtArmR_mk NaruSem.Surf.wtArmS_mk
+
+-- C48: Surface AST の対象範囲(ブロック・型注釈・ガード付き match・min / max・量化・命題の let・注釈の無い ==)、不適格な AST(スコープ外・型不一致・
+-- 注釈の不一致・対象外の構文・網羅しない match・値の位置の命題・束縛型の無い量化)、行き詰まり(評価は `none`、spec は導出なし)、意味の実例
+#audit_axioms NaruSem.Surf.ex_wtR_block NaruSem.Surf.ex_eval_block NaruSem.Surf.ex_wtR_annot NaruSem.Surf.ex_eval_annot
+  NaruSem.Surf.ex_wtR_match_guard NaruSem.Surf.ex_eval_match_guard NaruSem.Surf.ex_wtR_min NaruSem.Surf.ex_eval_min
+  NaruSem.Surf.ex_wtS_forall NaruSem.Surf.ex_wtS_let_prop NaruSem.Surf.ex_wtS_let_annot NaruSem.Surf.ex_wtS_eq_nat NaruSem.Surf.ex_wtS_eq_prop
+  NaruSem.Surf.ex_Sem_eq_nat NaruSem.Surf.ex_Sem_let_prop
+  NaruSem.Surf.neg_wtR_unbound NaruSem.Surf.neg_wtR_ill_typed NaruSem.Surf.neg_wtR_let_annotation NaruSem.Surf.neg_wtR_let_string_annotation
+  NaruSem.Surf.neg_wtR_ite_branches NaruSem.Surf.neg_wtR_path NaruSem.Surf.neg_wtR_string NaruSem.Surf.neg_wtR_method NaruSem.Surf.neg_wtR_min_arity
+  NaruSem.Surf.neg_wtR_block_no_tail NaruSem.Surf.neg_wtR_quant NaruSem.Surf.neg_wtR_match_not_exhaustive NaruSem.Surf.neg_wtR_match_guarded_only
+  NaruSem.Surf.ex_wtR_match_bool_complete NaruSem.Surf.neg_wtR_match_bool_half
+  NaruSem.Surf.ex_wtDecl_fn NaruSem.Surf.ex_wtDecl_pred NaruSem.Surf.neg_wtDecl_ret_mismatch NaruSem.Surf.neg_wtDecl_spec_ret
+  NaruSem.Surf.neg_wtDecl_observer NaruSem.Surf.neg_wtDecl_param_string NaruSem.Surf.neg_wtS_match_not_exhaustive
+  NaruSem.Surf.neg_wtS_prop_in_value NaruSem.Surf.neg_wtS_prop_scrutinee NaruSem.Surf.neg_wtS_prop_nat_annotation
+  NaruSem.Surf.neg_wtS_quant_untyped NaruSem.Surf.neg_wtS_quant_string NaruSem.Surf.ex_wtS_nat_not_form
+  NaruSem.Surf.neg_eval_unbound NaruSem.Surf.neg_eval_ill_typed NaruSem.Surf.neg_eval_match_stuck NaruSem.Surf.neg_eval_guard_stuck
+  NaruSem.Surf.neg_eval_block_no_tail NaruSem.Surf.neg_eval_block_stuck_let NaruSem.Surf.neg_eval_path NaruSem.Surf.neg_eval_quant
+  NaruSem.Surf.neg_Sem_unbound NaruSem.Surf.neg_Sem_nat_value NaruSem.Surf.neg_Sem_match_stuck NaruSem.Surf.neg_Sem_block_no_tail
+  NaruSem.Surf.ex_Sem_not_nat_eq

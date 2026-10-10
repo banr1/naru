@@ -1,9 +1,10 @@
 import NaruTest.Common
 import NaruSem.Quote
 import NaruSem.Denote
+import NaruSem.SurfaceQuote
 
 /-!
-# `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C44 / C45 / C46)
+# `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の AST・Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C44 / C45 / C46 / C48)
 
 1. C45 の検査入口 `lake build NaruSem`(意味論・一般定理・検体・公理監査を Lean kernel に検査させる)が exit 0。続けて
    `lake env lean semantics/NaruSem.lean` で公理監査の出力(`audit ok: <定数> depends on axioms […]`)を取り直し、必須の定理
@@ -35,6 +36,13 @@ import NaruSem.Denote
 5. C45: 監査が禁止依存を失敗にすることを、`sorry` / `native_decide` / 存在しない定数の 3 つの負の検体で確かめる(`lean` が exit 非 0)。
 6. C47: `docs/architecture.md`「一般定理」の表に挙げた定理名がすべて監査に載っていること、`docs/testing.md` に記載した検査のコマンドがここで走らせる
    ものと一致することを照合する(文書と定理・接続・公理監査の整合)。
+7. C48(Surface AST): 同じ検体の各宣言について、実際の構文解析の出力(`Checked.mods` の宣言)を最小の fn / spec 宣言の包装 `NaruSem.Surf.Decl`
+   (種別・名前・位置・仮引数・戻り型・本体 `NaruSem.Surf.Expr`)に写し(`ofDeclAst?`。対象外の構文があれば FAIL)、宣言の適格性 `Surf.wtDecl`(仮引数と
+   戻り型の注釈が Nat / Bool、runtime は本体が戻り型の型、spec は戻り型の注釈が無く本体が論理の位置の型)の結果の phase が `c39Decls` と、本体の型が Core の
+   型付けの結果と一致することを確かめ、宣言と本体を Lean の項として引用した検査プログラム `.lake/naru/test/semantics/SurfaceScope.lean` をモジュール
+   `SurfaceScope` として `lean` でコンパイルする: 本体の適格性(`wta_<f>`: `Surf.wtR` / `Surf.wtS`、`decide`)、宣言の適格性(`wtd_<f>`: `Surf.wtDecl`、`decide`)と、
+   引用した宣言の埋め込み(`Decl.toAst`)が構文解析の出力と一致すること(`NaruSem.Surf.Quote.checkDecls` が同じソースを再び構文解析して `==` で照合する)。
+   対象外の構文(呼出し・Option のパターン・再帰)を含む `tests/accept/guard_shadow.naru` の宣言が `ofAst?` で `none` になる(対象範囲の判定)ことも確かめる。
 -/
 
 namespace NaruTest.Semantics
@@ -59,18 +67,22 @@ def requiredTheorems : List String :=
     "NaruSem.Sem_denote_all", "NaruSem.Sem_denote_basic", "NaruSem.denoteP_iff_denoteB_noProp", "NaruSem.proppyS_congr", "NaruSem.wtS_noExh",
     "NaruSem.denoteArmsP_hit", "NaruSem.denoteArmsP_miss", "NaruSem.denoteArmsP_guard", "NaruSem.denoteArmsP_guard_true",
     "NaruSem.denoteArmsP_guard_false", "NaruSem.denoteQuant_forall_cons", "NaruSem.denoteQuant_exists_cons",
-    "NaruSem.denoteP_let_prop", "NaruSem.denoteP_let_bool", "NaruSem.denoteP_ite_prop", "NaruSem.denoteP_eq_prop" ]
+    "NaruSem.denoteP_let_prop", "NaruSem.denoteP_let_bool", "NaruSem.denoteP_ite_prop", "NaruSem.denoteP_eq_prop",
+    -- C48: Surface AST の意味論の全域性・一意性・存在、評価の単調性、論理の位置の式が Nat の値に評価されないこと
+    "NaruSem.Surf.eval_total", "NaruSem.Surf.Eval_unique", "NaruSem.Surf.Sem_exists", "NaruSem.Surf.Sem_unique",
+    "NaruSem.Surf.eval_mono", "NaruSem.Surf.Sem_not_nat" ]
 
 /-- 検体の宣言(修飾名, spec か)。今回の保存対象の各構文を 1 つずつ。欠けていれば FAIL。 -/
 def c39Decls : List (String × Bool) :=
   [ ("Sem.Core.litNat", false), ("Sem.Core.litBool", false), ("Sem.Core.useVar", false), ("Sem.Core.useLet", false),
     ("Sem.Core.letShadow", false), ("Sem.Core.useIf", false), ("Sem.Core.arith", false), ("Sem.Core.minMax", false),
     ("Sem.Core.cmpNat", false), ("Sem.Core.cmpBool", false), ("Sem.Core.eqNat", false), ("Sem.Core.eqBool", false),
-    ("Sem.Core.logic", false), ("Sem.Core.matchNat", false), ("Sem.Core.matchBool", false), ("Sem.Core.matchShadow", false),
+    ("Sem.Core.logic", false), ("Sem.Core.letAnnot", false), ("Sem.Core.nestedBlock", false),
+    ("Sem.Core.matchNat", false), ("Sem.Core.matchBool", false), ("Sem.Core.matchShadow", false),
     ("Sem.Core.matchLetShadow", false), ("Sem.Core.matchScrut", false), ("Sem.Core.matchLits", false), ("Sem.Core.matchBoolGuard", false),
     ("Sem.Core.specLit", true), ("Sem.Core.specVar", true), ("Sem.Core.specCmp", true), ("Sem.Core.specCmpBool", true),
     ("Sem.Core.specLogic", true), ("Sem.Core.specEq", true), ("Sem.Core.specArith", true), ("Sem.Core.specLetVal", true),
-    ("Sem.Core.specLetProp", true), ("Sem.Core.specLetShadow", true), ("Sem.Core.specIfBool", true), ("Sem.Core.specIfProp", true),
+    ("Sem.Core.specLetProp", true), ("Sem.Core.specLetShadow", true), ("Sem.Core.specLetAnnot", true), ("Sem.Core.specIfBool", true), ("Sem.Core.specIfProp", true),
     ("Sem.Core.specForall", true), ("Sem.Core.specExists", true), ("Sem.Core.specMatch", true), ("Sem.Core.specMatchProp", true),
     ("Sem.Core.specIffProp", true), ("Sem.Core.specQuantShadow", true), ("Sem.Core.specPatShadow", true), ("Sem.Core.specGuardBool", true),
     ("Sem.Core.specGuardProp", true), ("Sem.Core.specMatchBool", true), ("Sem.Core.specMatchShadow", true) ]
@@ -78,7 +90,8 @@ def c39Decls : List (String × Bool) :=
 /-- C40 の基礎段階の runtime 宣言(リテラル・局所名・let・if・算術・min / max・比較・等値・論理)。`NaruSem.basic` が真でなければならない。 -/
 def c40Decls : List String :=
   [ "Sem.Core.litNat", "Sem.Core.litBool", "Sem.Core.useVar", "Sem.Core.useLet", "Sem.Core.letShadow", "Sem.Core.useIf",
-    "Sem.Core.arith", "Sem.Core.minMax", "Sem.Core.cmpNat", "Sem.Core.cmpBool", "Sem.Core.eqNat", "Sem.Core.eqBool", "Sem.Core.logic" ]
+    "Sem.Core.arith", "Sem.Core.minMax", "Sem.Core.cmpNat", "Sem.Core.cmpBool", "Sem.Core.eqNat", "Sem.Core.eqBool", "Sem.Core.logic",
+    "Sem.Core.letAnnot", "Sem.Core.nestedBlock" ]
 
 /-- C41 の非再帰の Nat / Bool の `match` の runtime 宣言(同名の仮引数・外側の let・scrutinee の中の名前の束縛、複数のガード不成立からの継続、
 Bool のリテラルの腕と Bool の scrutinee のガード、Nat のリテラル 0 / 1 の腕)。`NaruSem.basic` が偽(段階の境界)で、接続と保存を検査する。 -/
@@ -96,7 +109,7 @@ def c42Decls : List String :=
 Nat / Bool の scrutinee のガード付き `match`(Bool / Prop のガードの成功と失敗、Bool のリテラルの腕、仮引数と同名のパターン束縛)、Prop を含む両辺の
 `==` / `!=`)。`NaruSem.basic` が偽(段階の境界)で、実生成 Statements への接続と保存を検査する。 -/
 def c43Decls : List String :=
-  [ "Sem.Core.specLetProp", "Sem.Core.specLetShadow", "Sem.Core.specIfProp", "Sem.Core.specForall", "Sem.Core.specExists",
+  [ "Sem.Core.specLetProp", "Sem.Core.specLetShadow", "Sem.Core.specLetAnnot", "Sem.Core.specIfProp", "Sem.Core.specForall", "Sem.Core.specExists",
     "Sem.Core.specMatch", "Sem.Core.specMatchProp", "Sem.Core.specIffProp", "Sem.Core.specQuantShadow", "Sem.Core.specPatShadow",
     "Sem.Core.specGuardBool", "Sem.Core.specGuardProp", "Sem.Core.specMatchBool", "Sem.Core.specMatchShadow" ]
 
@@ -184,6 +197,34 @@ def scopeProgram (quoted : List (String × String × String × String × Bool)) 
   "import NaruSem\n\n" ++
   "".intercalate defs ++
   s!"-- the quoted Core is the Core the compiler produces for the same source (C44)\nrun_cmd NaruSem.Quote.checkDecls {source.quote} [{", ".intercalate pairs}]\n"
+
+/-- C48: 引用した Surface AST の宣言 1 つ分: 修飾名、本体の項、仮引数の文脈の項、本体の型の項、spec か、宣言の項(本体は `ast_<f>` を指す)、宣言の適格性の結果の項。 -/
+structure QuotedDecl where
+  key : String
+  ast : String
+  ctx : String
+  ty : String
+  spec : Bool
+  decl : String
+  declTy : String
+
+/-- C48: 検査プログラム `SurfaceScope.lean`(モジュール `SurfaceScope`): 引用した Surface AST の本体(`ast_<f>`)と仮引数の文脈(`actx_<f>`)、本体の適格性
+(`wta_<f>`: `decide`)、宣言の包装(`decl_<f>`: 種別・名前・位置・仮引数・戻り型・本体)とその適格性(`wtd_<f>`: `decide`)、引用した宣言と構文解析の出力の
+一致の照合(`run_cmd`)。`Scope` を import するので、同じモジュールで引用した Core(`core_<f>`)と並ぶ。 -/
+def surfaceProgram (quoted : List QuotedDecl) : String :=
+  let defs := quoted.map fun q =>
+    let n := shortName q.key
+    let wt := if q.spec then
+      s!"theorem wta_{n} : NaruSem.Surf.wtS actx_{n} ast_{n} = some {q.ty} := by decide\n" ++
+      s!"theorem forma_{n} : NaruSem.STy.isForm {q.ty} = true := by decide\n"
+    else s!"theorem wta_{n} : NaruSem.Surf.wtR actx_{n} ast_{n} = some {q.ty} := by decide\n"
+    s!"-- {q.key}\ndef ast_{n} : NaruSem.Surf.Expr :=\n  {q.ast}\ndef actx_{n} := {q.ctx}\n{wt}" ++
+    s!"def decl_{n} : NaruSem.Surf.Decl :=\n  {q.decl}\ntheorem wtd_{n} : NaruSem.Surf.wtDecl decl_{n} = some {q.declTy} := by decide\n\n"
+  let pairs := quoted.map fun q => s!"({q.key.quote}, decl_{shortName q.key})"
+  s!"-- naru_test semantics (C48): generated from NaruTest/Semantics.lean. The Surface AST of each declaration of {source} as produced by the parser.\n" ++
+  "import Scope\n\n" ++
+  "".intercalate defs ++
+  s!"-- the quoted declarations embed (`Decl.toAst`) to the declarations the parser produces for the same source (C48 / C51)\nrun_cmd NaruSem.Surf.Quote.checkDecls {source.quote} [{", ".intercalate pairs}]\n"
 
 /-- 仮引数 → (Lean の束縛, 環境の項目, 実引数)。Nat / Bool 以外は `none`。 -/
 def binderOf (p : Naru.Core.Param) : Option (String × String × String) :=
@@ -625,6 +666,58 @@ def checks : M Unit := do
   if r.exitCode == 0 && (contains r.stdout agree || contains r.stderr agree) then
     ok s!"C39 / C44: the {quoted.length} quoted Core expressions are the Core the compiler produces for {source}"
   else fail s!"C39 / C44: identity of the quoted Core: expected `{agree}` in the output of lean {scopeFile}\n{tail r.stdout 1500}"
+  heading "C48 scope of the Surface AST produced by the parser"
+  let mut quotedAst : List QuotedDecl := []
+  for (key, spec) in c39Decls do
+    match NaruSem.Surf.Quote.declOf? key checked.mods with
+    | none => fail s!"C48: {source} has no fn / spec declaration `{key}` in the parsed AST"
+    | some (decl, _) =>
+      match NaruSem.Surf.Quote.ofDeclAst? decl with
+      | none => fail s!"C48: the parsed declaration `{key}` is outside the Surface AST subset (ofDeclAst? = none)"
+      | some sd =>
+        let n := shortName key
+        let declTerm := NaruSem.Surf.Quote.declWith sd s!"ast_{n}"
+        -- 宣言の適格性(種別・仮引数と戻り型の注釈・本体の型)と、Core の型付けの結果(上の Scope の段)との照合
+        let coreTy := (quoted.find? fun (k, _, _, _, _) => k == key).map fun (_, _, _, ty, _) => ty
+        match NaruSem.Surf.wtDecl sd with
+        | none => fail s!"C48: the parsed declaration `{key}` is not well-formed as a minimal fn / spec declaration (Surf.wtDecl = none): {declTerm}"
+        | some dty =>
+          match dty, spec with
+          | .runtime entries t, false =>
+            if coreTy == some (tyTerm t) then
+              ok s!"C48: the parsed `{key}` (fn, {entries.length} Nat / Bool parameter(s), return type {tyTerm t}) is a well-formed runtime declaration: Surf.wtDecl / Surf.wtR = {tyTerm t} (= the Core's wtR)"
+              let q : QuotedDecl :=
+                { key := key, ast := NaruSem.Surf.Quote.expr sd.body, ctx := NaruSem.Surf.Quote.ctxTerm entries false, ty := (tyTerm t),
+                  spec := false, decl := declTerm, declTy := NaruSem.Surf.Quote.declTy dty }
+              quotedAst := quotedAst ++ [q]
+            else fail s!"C48: `{key}` (runtime): Surf.wtDecl = {tyTerm t} but the Core's wtR = {coreTy}"
+          | .spec entries τ, true =>
+            if coreTy == some (styTerm τ) then
+              ok s!"C48: the parsed `{key}` ({decl.kind.describe}, {entries.length} Nat / Bool parameter(s), no return type) is a well-formed spec declaration: Surf.wtDecl / Surf.wtS = {styTerm τ} (= the Core's wtS)"
+              let q : QuotedDecl :=
+                { key := key, ast := NaruSem.Surf.Quote.expr sd.body, ctx := NaruSem.Surf.Quote.ctxTerm entries true, ty := (styTerm τ),
+                  spec := true, decl := declTerm, declTy := NaruSem.Surf.Quote.declTy dty }
+              quotedAst := quotedAst ++ [q]
+            else fail s!"C48: `{key}` (spec): Surf.wtDecl = {styTerm τ} but the Core's wtS = {coreTy}"
+          | _, _ => fail s!"C48: the phase of `{key}` per Surf.wtDecl does not match c39Decls (spec = {spec})"
+  -- 対象外の構文(呼出し・Option のパターン・再帰 …)を含む宣言は対象の AST に写らない
+  let (gdiags, gchecked) ← Naru.compileFiles ["tests/accept/guard_shadow.naru"]
+  let outside := gchecked.mods.toList.flatMap fun m => m.decls.toList.filterMap fun d =>
+    match d.body with
+    | some b => if Naru.Typecheck.isFnLike d.kind && (NaruSem.Surf.Quote.ofAst? b).isNone then some d.name else none
+    | none => none
+  if gdiags.isEmpty && outside.length >= 3 then
+    ok s!"C48: {outside.length} declarations of tests/accept/guard_shadow.naru with calls / Option patterns / recursion are outside the Surface scope (ofAst? = none): {outside}"
+  else fail s!"C48: expected declarations of tests/accept/guard_shadow.naru outside the Surface scope, got {outside} ({gdiags.size} diagnostics)"
+  let surfaceFile := outDir / "SurfaceScope.lean"
+  IO.FS.writeFile surfaceFile (surfaceProgram quotedAst)
+  let lpScope := s!"{outDir}:{leanPath}"
+  let r2 ← step s!"C48: lean {surfaceFile} as module `SurfaceScope` (well-formedness of {quotedAst.length} quoted Surface AST declarations and bodies by `decide`, identity with the parser's AST)"
+    "lean" #[s!"--root={outDir}", "-o", (outDir / "SurfaceScope.olean").toString, surfaceFile.toString] (env := #[("LEAN_PATH", some lpScope)])
+  let agreeAst := s!"checkDecls: {quotedAst.length} quoted Surface AST declaration(s) agree"
+  if r2.exitCode == 0 && quotedAst.length == c39Decls.length && (contains r2.stdout agreeAst || contains r2.stderr agreeAst) then
+    ok s!"C48 / C51: the {quotedAst.length} quoted Surface AST declarations (kind, name, span, parameters, return type, body) embed to the declarations the parser produces for {source}"
+  else fail s!"C48 / C51: identity of the quoted Surface AST: expected `{agreeAst}` in the output of lean {surfaceFile} ({quotedAst.length} of {c39Decls.length} quoted)\n{tail r2.stdout 1500}\n{tail r2.stderr 1500}"
   heading "C40 / C41 / C44 connection of the generated Model to the Core semantics"
   -- 実際の CLI で生成し、生成 Model をそのまま Lean のモジュールにする
   if ← genDir.pathExists then IO.FS.removeDirAll genDir
