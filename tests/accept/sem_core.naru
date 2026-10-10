@@ -4,7 +4,8 @@
 // runtime: Nat / Bool のリテラル・局所名・let・if・算術(+ - * / %)・min / max・比較(< <= > >=)・等値(== !=)・論理(&& || ! implies)・
 // Nat / Bool のガード付き match(リテラル・変数・`_` のパターン、同名の仮引数・外側の let・scrutinee の中の名前の束縛、
 // 複数のガード不成立からの継続、Bool の scrutinee のガード、Nat のリテラル 0 / 1 の腕)。
-// spec: Bool 値の命題への境界・論理・比較・等値(↔)・Bool / Prop の let と shadowing・Bool / Prop の条件の if・forall / exists・ガード付き match。
+// spec: Bool 値の命題への境界・論理・比較・等値(値の == と Prop を含む両辺の ↔)・Bool / Prop の let と shadowing(同名の Prop 束縛を値の let・
+// 量化・パターンが隠す)・Bool / Prop の条件の if・forall / exists(Nat / Bool)・ガード付き match(Bool / Prop のガードの成功と失敗)。
 module Sem.Core
 
 // runtime(Model)
@@ -79,11 +80,11 @@ predicate specLogic(a: Bool, b: Bool) { (a && b) || !a || (a implies b) }
 predicate specEq(x: Nat, y: Nat, a: Bool, b: Bool) { (x == y || x != y) && (a == b || a != b) }
 predicate specArith(x: Nat, y: Nat) { x.min(y) + x % (y + 1) <= x.max(y) * (x - y) + x / (y + 1) }
 predicate specLetVal(x: Nat) { let big = x > 10; let n = x + 1; big implies n > 11 }
-predicate specLetProp(x: Nat) { let p = forall n: Nat { n + x >= x }; let q = p && x >= 0; q }
+predicate specLetProp(x: Nat) { let p = forall n: Nat { n + x >= x }; let q = p && x >= 1; q }
 predicate specLetShadow(x: Nat) { let b = forall n: Nat { n >= 0 }; let b = x > 0; b == (x > 0) }
 predicate specIfBool(x: Nat, b: Bool) { if b { x > 0 } else { x == 0 } }
 predicate specIfProp(x: Nat) { if forall n: Nat { n + x >= x } { x >= 0 } else { false } }
-predicate specForall(x: Nat) { forall n: Nat { n + x >= x } }
+predicate specForall(x: Nat) { forall n: Nat { n >= x } }
 predicate specExists(x: Nat) { exists b: Bool { b == (x > 0) } }
 predicate specMatch(x: Nat) {
   match x {
@@ -96,5 +97,23 @@ predicate specMatchProp(x: Nat, p: Bool) {
   match x {
     n if forall m: Nat { m + n >= n } => n == x,
     _ => p,
+  }
+}
+predicate specIffProp(x: Nat, a: Bool) { (forall n: Nat { n >= x }) == a && (exists n: Nat { n < x }) != a }
+predicate specQuantShadow(x: Nat) { let p = forall n: Nat { n >= 0 }; exists p: Nat { p == x } && p }
+predicate specPatShadow(x: Nat) { let p = forall n: Nat { n >= 0 }; match x { p if p == 0 => true, _ => p } }
+predicate specGuardBool(x: Nat, b: Bool) { match x { n if b => n == x, _ => !b } }
+predicate specGuardProp(x: Nat) { match x { n if exists m: Nat { m + 1 == n } => n > 0, _ => x == 0 } }
+predicate specMatchBool(b: Bool, x: Nat) {
+  match b {
+    true if x > 0 => x >= 1,
+    true => x == 0,
+    false => x >= 0,
+  }
+}
+predicate specMatchShadow(n: Nat, x: Nat) {
+  match x {
+    n if n == 0 => true,
+    _ => n == x,
   }
 }

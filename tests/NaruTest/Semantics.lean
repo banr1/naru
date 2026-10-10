@@ -22,14 +22,19 @@ import NaruSem.Denote
    負の検体 `ModelWrong.lean`(隔離: 実生成文字列から `&&` / `||` を取り違えた `Wrong.logic`、束縛を取り違えた `Wrong.letShadow`、Bool の腕を
    入れ替えた `Wrong.matchBool`、ガードを否定した `Wrong.matchNat`、腕の束縛が後続の腕に漏れた形の `Wrong.matchShadow` を作る)は
    Lean の型検査を通るが、同じ正しい入力 Core への接続検査だけが失敗する(正しい出力の対照は同じファイルで成功する。誤りは接続の定理の行にだけ出る)。
-4. C42 / C44 / C46(Statements): 同じ生成先の生成 Statements `Statements/Sem/Core.lean` をそのまま Lean のモジュールにして、検査プログラム
-   `StatementsCheck.lean` が各基礎段階の spec 宣言(`c42Decls`: 量化・命題の `let`・`match` を含まない宣言。`c43Decls` はその外で、接続は次の段階)について、
-   任意の引数で実生成宣言の命題が Lean での読み `denoteP` と等しいこと(`conn_<f>`: `Prop` の等式、kernel の定義的等しさ `rfl`)と、そこから実生成宣言の命題が
-   独立意味論の意味そのものであること(`pres_<f>`: `Sem (SEnv.ofList …) core_<f> (Statements.Sem.Core.<f> args)`。`check_sound_prop`)を kernel に検査させ、
-   公理監査に載せる。一般定理 `Sem_denote`(両方向の同値)と値 / 命題の境界 `denoteP_iff_denoteB` の量化の形も同じプログラムで照合する。
-   負の検体 `StatementsWrong.lean`(`∧` / `∨` の取り違え、含意の向きの反転、Bool の値を `= false` に写した境界の誤り、`if` の分岐の入れ替え)は型検査を通るが
-   接続検査だけが失敗する。
+4. C42 / C43 / C44 / C46(Statements): 同じ生成先の生成 Statements `Statements/Sem/Core.lean` をそのまま Lean のモジュールにして、検査プログラム
+   `StatementsCheck.lean` が各 spec 宣言(`c42Decls`: 基礎段階 = 量化・命題の `let`・`match` を含まない宣言、`c43Decls`: 量化・Bool / Prop の `let` と
+   shadowing・Bool / Prop の条件の `if`・ガード付き `match`・Prop を含む両辺の `==` / `!=` の宣言)について、任意の引数で実生成宣言の命題が Lean での読み
+   `denoteP` と等しいこと(`conn_<f>`: `Prop` の等式、kernel の定義的等しさ `rfl`。リテラルパターンの `match` は Model と同じく scrutinee の `cases` の後に `rfl`)、
+   段階(`stage_<f>`: `basic` の真偽が一覧と一致)、そこから実生成宣言の命題が独立意味論の意味そのものであること(`pres_<f>`:
+   `Sem (SEnv.ofList …) core_<f> (Statements.Sem.Core.<f> args)`。`check_sound_prop`)を kernel に検査させ、公理監査に載せる。一般定理 `Sem_denote`
+   (任意の適格な式・対応する環境・意味の両方向の同値)、値 / 命題の境界 `denoteP_iff_denoteB_noProp`、腕の選択と束縛・量化の読みの形の量化の形も
+   同じプログラムで照合する。負の検体 `StatementsWrong.lean`(`∧` / `∨` の取り違え、含意の向きの反転、Bool の値を `= false` に写した境界の誤り、`if` の
+   分岐の入れ替え、`∀` / `∃` の取り違え、命題の `let` の束縛の取り違え、`match` のガードの否定、`↔` を一方向の `→` にする、Prop のガードの量化の
+   取り違え、腕の束縛が後続の腕に漏れた形)は型検査を通るが接続検査だけが失敗する(どれも意味の異なる命題: 同値でない)。
 5. C45: 監査が禁止依存を失敗にすることを、`sorry` / `native_decide` / 存在しない定数の 3 つの負の検体で確かめる(`lean` が exit 非 0)。
+6. C47: `docs/architecture.md`「一般定理」の表に挙げた定理名がすべて監査に載っていること、`docs/testing.md` に記載した検査のコマンドがここで走らせる
+   ものと一致することを照合する(文書と定理・接続・公理監査の整合)。
 -/
 
 namespace NaruTest.Semantics
@@ -41,7 +46,8 @@ def genDir : System.FilePath := outDir / "gen"
 def rootFile : String := "semantics/NaruSem.lean"
 
 /-- 公理監査に現れなければならない定理(C39: 全域性・一意性。C40 / C41 / C44: 保存と接続検査の健全性、腕の列・腕の補題、異なる表現の対応関係。
-C42 / C44: Statements の基礎段階の同値定理、値 / 命題の境界、接続検査の健全性、値の等値と命題の同値の区別)。 -/
+C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
+型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
   [ "NaruSem.eval_total", "NaruSem.Eval_unique", "NaruSem.Sem_exists", "NaruSem.Sem_unique",
     "NaruSem.denote_sound", "NaruSem.preserve_nat", "NaruSem.preserve_bool", "NaruSem.check_sound_nat", "NaruSem.check_sound_bool",
@@ -49,7 +55,11 @@ def requiredTheorems : List String :=
     "NaruSem.denoteArms_sound", "NaruSem.denoteArm_sound", "NaruSem.denoteArmsV_hit", "NaruSem.denoteArmsV_miss",
     "NaruSem.denoteArmsV_guard_true", "NaruSem.denoteArmsV_guard_false",
     "NaruSem.Sem_denote", "NaruSem.Sem_denoteP", "NaruSem.check_sound_prop", "NaruSem.denoteP_iff_denoteB", "NaruSem.basic_not_proppy",
-    "NaruSem.EqOp.propIff_bool", "NaruSem.CmpOp.leanBoolProp_iff", "NaruSem.LogicOp.prop_iff" ]
+    "NaruSem.EqOp.propIff_bool", "NaruSem.CmpOp.leanBoolProp_iff", "NaruSem.LogicOp.prop_iff",
+    "NaruSem.Sem_denote_all", "NaruSem.Sem_denote_basic", "NaruSem.denoteP_iff_denoteB_noProp", "NaruSem.proppyS_congr", "NaruSem.wtS_noExh",
+    "NaruSem.denoteArmsP_hit", "NaruSem.denoteArmsP_miss", "NaruSem.denoteArmsP_guard", "NaruSem.denoteArmsP_guard_true",
+    "NaruSem.denoteArmsP_guard_false", "NaruSem.denoteQuant_forall_cons", "NaruSem.denoteQuant_exists_cons",
+    "NaruSem.denoteP_let_prop", "NaruSem.denoteP_let_bool", "NaruSem.denoteP_ite_prop", "NaruSem.denoteP_eq_prop" ]
 
 /-- 検体の宣言(修飾名, spec か)。今回の保存対象の各構文を 1 つずつ。欠けていれば FAIL。 -/
 def c39Decls : List (String × Bool) :=
@@ -61,7 +71,9 @@ def c39Decls : List (String × Bool) :=
     ("Sem.Core.specLit", true), ("Sem.Core.specVar", true), ("Sem.Core.specCmp", true), ("Sem.Core.specCmpBool", true),
     ("Sem.Core.specLogic", true), ("Sem.Core.specEq", true), ("Sem.Core.specArith", true), ("Sem.Core.specLetVal", true),
     ("Sem.Core.specLetProp", true), ("Sem.Core.specLetShadow", true), ("Sem.Core.specIfBool", true), ("Sem.Core.specIfProp", true),
-    ("Sem.Core.specForall", true), ("Sem.Core.specExists", true), ("Sem.Core.specMatch", true), ("Sem.Core.specMatchProp", true) ]
+    ("Sem.Core.specForall", true), ("Sem.Core.specExists", true), ("Sem.Core.specMatch", true), ("Sem.Core.specMatchProp", true),
+    ("Sem.Core.specIffProp", true), ("Sem.Core.specQuantShadow", true), ("Sem.Core.specPatShadow", true), ("Sem.Core.specGuardBool", true),
+    ("Sem.Core.specGuardProp", true), ("Sem.Core.specMatchBool", true), ("Sem.Core.specMatchShadow", true) ]
 
 /-- C40 の基礎段階の runtime 宣言(リテラル・局所名・let・if・算術・min / max・比較・等値・論理)。`NaruSem.basic` が真でなければならない。 -/
 def c40Decls : List String :=
@@ -80,10 +92,13 @@ def c42Decls : List String :=
   [ "Sem.Core.specLit", "Sem.Core.specVar", "Sem.Core.specCmp", "Sem.Core.specCmpBool", "Sem.Core.specLogic", "Sem.Core.specEq",
     "Sem.Core.specArith", "Sem.Core.specLetVal", "Sem.Core.specIfBool" ]
 
-/-- C43 の spec 宣言(量化・命題の `let` と shadowing・命題の条件の `if`・ガード付き `match`)。`NaruSem.basic` が偽(段階の境界)で、接続は次の段階。 -/
+/-- C43 の spec 宣言(Nat / Bool の量化、命題の `let` と shadowing(値の `let`・量化の束縛・パターン束縛が同名の命題の束縛を隠す)、命題の条件の `if`、
+Nat / Bool の scrutinee のガード付き `match`(Bool / Prop のガードの成功と失敗、Bool のリテラルの腕、仮引数と同名のパターン束縛)、Prop を含む両辺の
+`==` / `!=`)。`NaruSem.basic` が偽(段階の境界)で、実生成 Statements への接続と保存を検査する。 -/
 def c43Decls : List String :=
   [ "Sem.Core.specLetProp", "Sem.Core.specLetShadow", "Sem.Core.specIfProp", "Sem.Core.specForall", "Sem.Core.specExists",
-    "Sem.Core.specMatch", "Sem.Core.specMatchProp" ]
+    "Sem.Core.specMatch", "Sem.Core.specMatchProp", "Sem.Core.specIffProp", "Sem.Core.specQuantShadow", "Sem.Core.specPatShadow",
+    "Sem.Core.specGuardBool", "Sem.Core.specGuardProp", "Sem.Core.specMatchBool", "Sem.Core.specMatchShadow" ]
 
 def heading (title : String) : M Unit := IO.println s!"== {title}"
 
@@ -130,6 +145,25 @@ def shortName (key : String) : String := (key.splitOn ".").getLast!
 def auditedNames (out : String) : List String :=
   ((out.splitOn "\n").filter fun l => contains l "audit ok:").filterMap fun l =>
     ((l.splitOn "audit ok: ").getD 1 "").splitOn " " |>.head?
+
+/-- `docs/architecture.md`「一般定理」の表の第 1 列(`` `名前` ``)に挙げた定理名(C47: 文書に挙げた定理はすべて公理監査に載っていなければならない)。 -/
+def docTheoremNames (doc : String) : List String := Id.run do
+  let mut inSection := false
+  let mut names : List String := []
+  for l in doc.splitOn "\n" do
+    if l.startsWith "### 一般定理" then inSection := true
+    else if l.startsWith "### " then inSection := false
+    else if inSection && l.startsWith "| `" then
+      let cell := (l.splitOn "|").getD 1 ""
+      let mut i := 0
+      for p in cell.splitOn "`" do
+        if i % 2 == 1 && !p.isEmpty && p.all (fun c => c.isAlphanum || c == '_' || c == '.') then names := names ++ [p]
+        i := i + 1
+  return names.eraseDups
+
+/-- `docs/testing.md`「コンパイラ意味論保存」に記載した検査のコマンド(C47: ここで実際に走らせるものと一致しなければならない)。 -/
+def documentedCommands : List String :=
+  [ "lake build NaruSem", "lake env lean semantics/NaruSem.lean", "lake exe naru_test semantics" ]
 
 /-- `lean` の出力の `<file>:<line>:<col>: error:` の行の行番号。 -/
 def errorLines (out : String) : List Nat :=
@@ -273,10 +307,12 @@ def modelProgram (decls : List (String × List Naru.Core.Param × NaruSem.Ty × 
   "".intercalate (decls.map fun (key, params, t, body) => connOf key params t body) ++
   s!"#audit_axioms {" ".intercalate names}\n"
 
-/-! ### Statements の接続(C42 / C44)
+/-! ### Statements の接続(C42 / C43 / C44)
 
 生成 Statements の spec 宣言は `Prop` の定数 / 関数なので、接続は `Prop` の等式 `Statements.Sem.Core.f args = denoteP (SEnv.ofList …) core_f`
-(kernel の定義的等しさ)。基礎段階の宣言(`c42Decls`)に `match` は無いので証明は `rfl` の項。 -/
+(kernel の定義的等しさ)。証明は Model と同じ `proofOf`: `match` の無い宣言(と変数・`_` のパターンだけの `match`。量化・命題の `let`・命題の条件の `if` は
+生成形 `∀ (x : T), …` / `let x : Prop := …` / `(C → P) ∧ (¬ C → Q)` が読みと定義的に等しい)は `rfl` の項、リテラルパターンの `match` は scrutinee の
+`cases` の後に `rfl`。 -/
 
 /-- 仮引数 → (Lean の束縛, spec の環境の項目(値), 実引数)。 -/
 def specBinderOf (p : Naru.Core.Param) : Option (String × String × String) :=
@@ -285,19 +321,19 @@ def specBinderOf (p : Naru.Core.Param) : Option (String × String × String) :=
   | .bool => some (s!"(«{p.name}» : Bool)", s!"({p.name.quote}, NaruSem.SVal.val (NaruSem.Val.bool «{p.name}»))", s!"«{p.name}»")
   | _ => none
 
-/-- 接続の定理 1 つ分(1 行、Statements): `<thm> : ∀ args, <call> = denoteP (SEnv.ofList …) <core> := rfl`。 -/
-def specConnStmt (thm lean : String) (params : List Naru.Core.Param) (coreName : String) : String :=
+/-- 接続の定理 1 つ分(1 行、Statements): `<thm> : ∀ args, <call> = denoteP (SEnv.ofList …) <core> := <proof>`(`proofOf`: `rfl` か scrutinee の `cases`)。 -/
+def specConnStmt (thm lean : String) (params : List Naru.Core.Param) (body : Naru.Core.Expr) (coreName : String) : String :=
   let bs := params.filterMap specBinderOf
   let binders := " ".intercalate (bs.map (·.1))
   let env := "[" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
   let args := " ".intercalate (bs.map (·.2.2))
   let call := if bs.isEmpty then lean else s!"{lean} {args}"
   let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
-  let proof := if bs.isEmpty then "rfl" else s!"fun {args} => rfl"
-  s!"theorem {thm} : {quant s!"{call} = NaruSem.denoteP (NaruSem.SEnv.ofList {env}) {coreName}"} := {proof}"
+  s!"theorem {thm} : {quant s!"{call} = NaruSem.denoteP (NaruSem.SEnv.ofList {env}) {coreName}"} := {proofOf params body}"
 
-/-- 1 つの spec 宣言の接続と保存: `conn_<f>`(実生成宣言の命題 = 読み)、`basic_<f>`(基礎段階の範囲)、`pres_<f>`(実生成宣言の命題は独立意味論の意味)。 -/
-def specConnOf (key : String) (params : List Naru.Core.Param) : String :=
+/-- 1 つの spec 宣言の接続と保存: `conn_<f>`(実生成宣言の命題 = 読み)、`stage_<f>`(段階: 基礎段階なら `basic` が真、C43 の段階なら偽)、
+`pres_<f>`(実生成宣言の命題は独立意味論の意味)。 -/
+def specConnOf (key : String) (params : List Naru.Core.Param) (body : Naru.Core.Expr) (isBasic : Bool) : String :=
   let n := shortName key
   let lean := Naru.Backend.Statements.stmtName key
   let bs := params.filterMap specBinderOf
@@ -310,26 +346,40 @@ def specConnOf (key : String) (params : List Naru.Core.Param) : String :=
   let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
   let lam (body : String) : String := if bs.isEmpty then body else s!"fun {args} => {body}"
   let conn := if bs.isEmpty then s!"conn_{n}" else s!"conn_{n} {args}"
-  s!"-- {key}: the generated declaration `{lean}` is definitionally the Lean reading of its Core; hence it is the meaning of the Core\n" ++
-  specConnStmt s!"conn_{n}" lean params s!"core_{n}" ++ "\n" ++
-  s!"theorem basic_{n} : NaruSem.basic core_{n} = true := by decide\n" ++
+  let stage := if isBasic then "basic stage (C42)" else "quantifier / Prop let / Prop if / guarded match stage (C43)"
+  s!"-- {key} ({stage}): the generated declaration `{lean}` is definitionally the Lean reading of its Core; hence it is the meaning of the Core\n" ++
+  specConnStmt s!"conn_{n}" lean params body s!"core_{n}" ++ "\n" ++
+  s!"theorem stage_{n} : NaruSem.basic core_{n} = {isBasic} := by decide\n" ++
   s!"theorem pres_{n} : {quant s!"NaruSem.Sem (NaruSem.SEnv.ofList {env}) core_{n} ({call})"} :=\n" ++
-  s!"  {lam s!"NaruSem.check_sound_prop {valsEnv} wt_{n} form_{n} basic_{n} ({conn})"}\n\n"
+  s!"  {lam s!"NaruSem.check_sound_prop {valsEnv} wt_{n} form_{n} ({conn})"}\n\n"
 
-/-- 検査プログラム `StatementsCheck.lean`: 実生成 Statements を import し、一般定理の量化の形と、各基礎段階の spec 宣言の接続・保存を kernel に検査させて監査する。 -/
-def statementsProgram (decls : List (String × List Naru.Core.Param)) : String :=
-  let names := decls.flatMap fun (key, _) => [s!"conn_{shortName key}", s!"basic_{shortName key}", s!"pres_{shortName key}"]
-  s!"-- naru_test semantics (C42 / C44): generated from NaruTest/Semantics.lean. Connection of the generated Statements of {source} to the Core semantics.\n" ++
+/-- 検査プログラム `StatementsCheck.lean`: 実生成 Statements を import し、一般定理の量化の形と、各 spec 宣言の接続・段階・保存を kernel に検査させて監査する。 -/
+def statementsProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) : String :=
+  let names := decls.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}"]
+  s!"-- naru_test semantics (C42 / C43 / C44): generated from NaruTest/Semantics.lean. Connection of the generated Statements of {source} to the Core semantics.\n" ++
   "import Scope\nimport Statements.Sem.Core\n\n" ++
-  "-- the general theorem quantifies over any context, basic expression, matching environment and meaning, and is an equivalence (C42)\n" ++
+  "-- the general theorem quantifies over any context, well-formed spec expression (quantifiers, Prop lets, Prop ifs, guarded matches included),\n" ++
+  "-- matching environment (Prop bindings included) and meaning, and is an equivalence (C42 / C43)\n" ++
   "example : ∀ (Γ : NaruSem.SCtx) (e : Naru.Core.Expr) (τ : NaruSem.STy) (ρ : NaruSem.SEnv) (P : Prop),\n" ++
-  "    NaruSem.wtS Γ e = some τ → NaruSem.basic e = true → Γ.NoProp → Γ = ρ.ctx → NaruSem.Sem ρ e P → (P ↔ NaruSem.denoteP ρ e) :=\n" ++
-  "  fun _ _ _ _ _ hw hb hΓ hρ h => NaruSem.Sem_denote hw hb hΓ _ hρ h\n" ++
-  "-- the value / proposition boundary quantifies over any basic expression and environment without proposition bindings (C42)\n" ++
-  "example : ∀ (e : Naru.Core.Expr) (ρ : NaruSem.SEnv), NaruSem.basic e = true → ρ.ctx.NoProp →\n" ++
+  "    NaruSem.wtS Γ e = some τ → Γ = ρ.ctx → NaruSem.Sem ρ e P → (P ↔ NaruSem.denoteP ρ e) :=\n" ++
+  "  fun _ _ _ _ _ hw hρ h => NaruSem.Sem_denote hw _ hρ h\n" ++
+  "-- the value / proposition boundary quantifies over any expression without quantifiers / Prop locals and any environment (C43)\n" ++
+  "example : ∀ (e : Naru.Core.Expr) (ρ : NaruSem.SEnv), NaruSem.proppyS ρ.ctx e = false →\n" ++
   "    (NaruSem.denoteP ρ e ↔ NaruSem.denoteB ρ.vals e = true) :=\n" ++
-  "  fun e ρ hb hΓ => NaruSem.denoteP_iff_denoteB e hb ρ hΓ\n\n" ++
-  "".intercalate (decls.map fun (key, params) => specConnOf key params) ++
+  "  fun e ρ hp => NaruSem.denoteP_iff_denoteB_noProp e ρ hp\n" ++
+  "-- the arm lemmas quantify over any environment, scrutinee value, pattern, guard, body and remaining arms: a matched guarded arm reads\n" ++
+  "-- `(G → B) ∧ (¬ G → R)` with the bindings in scope for G and B only, and the remaining arms in the outer environment (C43)\n" ++
+  "example : ∀ (ρ : NaruSem.SEnv) (v : NaruSem.Val) (p : Naru.Core.Pat) (g b : Naru.Core.Expr) (rest : List Naru.Core.Arm)\n" ++
+  "    (bs : List (String × NaruSem.Val)), NaruSem.matchPat p v = some bs →\n" ++
+  "    (NaruSem.denoteArmsP ρ v (.mk p (some g) b :: rest) ↔\n" ++
+  "      ((NaruSem.denoteP (ρ.extVals bs) g → NaruSem.denoteP (ρ.extVals bs) b) ∧ (¬ NaruSem.denoteP (ρ.extVals bs) g → NaruSem.denoteArmsP ρ v rest))) :=\n" ++
+  "  fun ρ v p g b rest bs hm => NaruSem.denoteArmsP_guard ρ v p g b rest bs hm\n" ++
+  "-- the quantifier lemma quantifies over any environment, binder and continuation: `forall x: T` ranges over all of T (C43)\n" ++
+  "example : ∀ (ρ : NaruSem.SEnv) (x : String) (tv : Naru.TyV) (t : NaruSem.Ty) (bs : List (String × Naru.TyV)) (k : NaruSem.SEnv → Prop),\n" ++
+  "    NaruSem.TyV.toTy? tv = some t →\n" ++
+  "    NaruSem.denoteQuant .forall_ ρ ((x, tv) :: bs) k = ∀ a : t.carrier, NaruSem.denoteQuant .forall_ (ρ.ext x (.val (NaruSem.Val.of t a))) bs k :=\n" ++
+  "  fun ρ x tv t bs k ht => NaruSem.denoteQuant_forall_cons ρ x tv t bs k ht\n\n" ++
+  "".intercalate (decls.map fun (key, params, body, isBasic) => specConnOf key params body isBasic) ++
   s!"#audit_axioms {" ".intercalate names}\n"
 
 /-- 生成ファイルの中の 1 つの宣言の本文(`def <名前> ` で始まる行から空行まで)。 -/
@@ -390,7 +440,26 @@ def specMistranslations : List Mistranslation :=
       note := "the Bool value mapped to the wrong proposition (`= false`) in the generated text of `specVar` (value / proposition boundary)" },
     { key := "Sem.Core.specIfBool", wrong := "Wrong.specIfBool", good := "«x» > (0 : Nat)", bad := "«x» = (0 : Nat)",
       transform := swapText "«x» > (0 : Nat)" "«x» = (0 : Nat)",
-      note := "the `then` and `else` branches swapped in the generated text of `specIfBool`" } ]
+      note := "the `then` and `else` branches swapped in the generated text of `specIfBool`" },
+    -- C43: 量化・命題の let・ガード・↔
+    { key := "Sem.Core.specForall", wrong := "Wrong.specForall", good := "∀ («n» : Nat)", bad := "∃ («n» : Nat)",
+      transform := fun s => s.replace "∀ («n» : Nat)" "∃ («n» : Nat)",
+      note := "`∀` replaced by `∃` in the generated text of `specForall` (`∀ n, n ≥ x` holds only for x = 0, `∃ n, n ≥ x` always: the quantifier must range over all of Nat)" },
+    { key := "Sem.Core.specLetProp", wrong := "Wrong.specLetProp", good := "\n  «q»", bad := "\n  «p»",
+      transform := fun s => s.replace "\n  «q»" "\n  «p»",
+      note := "the body refers to the wrong Prop binding (`p` instead of `q`) in the generated text of `specLetProp` (Prop let binding mix-up)" },
+    { key := "Sem.Core.specMatch", wrong := "Wrong.specMatch", good := "«n» < (3 : Nat)", bad := "«n» ≥ (3 : Nat)",
+      transform := fun s => s.replace "«n» < (3 : Nat)" "«n» ≥ (3 : Nat)",
+      note := "the guard negated in the generated text of `specMatch` (guard success / failure swapped in both places it is emitted)" },
+    { key := "Sem.Core.specIffProp", wrong := "Wrong.specIffProp", good := "↔", bad := "→",
+      transform := fun s => s.replace "↔" "→",
+      note := "`↔` replaced by the one-directional `→` in the generated text of `specIffProp` (Prop `==` / `!=` must be an equivalence)" },
+    { key := "Sem.Core.specGuardProp", wrong := "Wrong.specGuardProp", good := "∃ («m» : Nat)", bad := "∀ («m» : Nat)",
+      transform := fun s => s.replace "∃ («m» : Nat)" "∀ («m» : Nat)",
+      note := "the Prop guard's `∃` replaced by `∀` in the generated text of `specGuardProp` (guard success / failure changed)" },
+    { key := "Sem.Core.specMatchShadow", wrong := "Wrong.specMatchShadow", good := "«n» = «x»", bad := "«x» = «x»",
+      transform := fun s => s.replace "«n» = «x»" "«x» = «x»",
+      note := "the arm binding leaked into the following arm in the generated text of `specMatchShadow` (`n = x` reads the pattern's `n` = `x` instead of the parameter)" } ]
 
 /-- 負の検体のプログラムと、接続検査が失敗しなければならない行(1 始まり)。誤出力(型検査は通る)の宣言の後に、正しい出力の対照 `conn_<f>_ok` と
 誤出力への接続 `conn_wrong_<f>` を置く(`connOf 定理名 Lean 名 検体の宣言名` が接続の定理 1 行を返す。宣言が無ければ `none`)。 -/
@@ -421,11 +490,12 @@ def wrongProgram (decls : List (String × List Naru.Core.Param × NaruSem.Ty × 
       connStmt thm name params t s!"core_{shortName key}" (proofOf params body)
 
 /-- 負の検体 `StatementsWrong.lean`(Statements)。 -/
-def specWrongProgram (decls : List (String × List Naru.Core.Param)) (wrongs : List (Mistranslation × String)) : String × List Nat :=
+def specWrongProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) (wrongs : List (Mistranslation × String)) :
+    String × List Nat :=
   wrongProgramWith "Statements" "Statements.Sem.Core" wrongs fun thm lean key =>
-    (decls.find? fun (k, _) => k == key).map fun (key, params) =>
+    (decls.find? fun (k, _, _, _) => k == key).map fun (key, params, body, _) =>
       let name := if lean.isEmpty then Naru.Backend.Statements.stmtName key else lean
-      specConnStmt thm name params s!"core_{shortName key}"
+      specConnStmt thm name params body s!"core_{shortName key}"
 
 /-- 実生成文字列から負の検体を作る(型検査は通るが接続は失敗する誤出力)。`good` が元の文字列にあり、変換後に `bad` が現れ、変換が実際に変えたことを確かめる。 -/
 def deriveWrongs (what : String) (text : String) (leanNameOf : String → String) (mts : List Mistranslation) : M (List (Mistranslation × String)) := do
@@ -471,6 +541,17 @@ def checks : M Unit := do
   if a.exitCode == 0 && missing.isEmpty && !(contains a.stdout "forbidden") && !(contains a.stderr "forbidden") then
     ok s!"C45: the audit covers {auditLines.length} constant(s) including {requiredTheorems} with 0 forbidden dependencies (allowed: propext / Classical.choice / Quot.sound)"
   else fail s!"C45: audit: exit {a.exitCode}, required theorems not audited: {missing}\n{tail a.stdout 1500}\n{tail a.stderr 1500}"
+  -- C47: 文書に挙げた定理はすべて監査に載り、文書の検査コマンドはここで走らせるものと一致する
+  let archDoc ← IO.FS.readFile "docs/architecture.md"
+  let docNames := docTheoremNames archDoc
+  let docMissing := docNames.filter fun n => !audited.contains s!"NaruSem.{n}"
+  if docNames.length >= 20 && docMissing.isEmpty then
+    ok s!"C47: the {docNames.length} theorems named in the table of docs/architecture.md「一般定理」are all audited"
+  else fail s!"C47: theorems named in docs/architecture.md「一般定理」but not audited: {docMissing} ({docNames.length} named)"
+  let testingDoc ← IO.FS.readFile "docs/testing.md"
+  let undocumented := documentedCommands.filter fun c => !contains testingDoc c
+  if undocumented.isEmpty then ok s!"C47: docs/testing.md「コンパイラ意味論保存」documents the commands run here: {documentedCommands}"
+  else fail s!"C47: commands run here but not documented in docs/testing.md: {undocumented}"
   let _ ← step "C44: build the Model stdlib the generated Model imports" "lake" #["build", "NaruStd"]
   let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]
   let leanPath := e.stdout.trimAscii.toString
@@ -483,7 +564,7 @@ def checks : M Unit := do
     return
   let mut quoted : List (String × String × String × String × Bool) := []
   let mut connected : List (String × List Naru.Core.Param × NaruSem.Ty × Naru.Core.Expr) := []
-  let mut specConnected : List (String × List Naru.Core.Param) := []
+  let mut specConnected : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool) := []
   for (key, spec) in c39Decls do
     match NaruSem.Quote.fnOf? key checked.core with
     | none => fail s!"C39: {source} has no declaration `{key}`"
@@ -498,17 +579,18 @@ def checks : M Unit := do
             if τ.isForm then
               ok s!"C39: `{key}` (spec) is in scope: wtS = {styTerm τ}"
               quoted := quoted ++ [(key, NaruSem.Quote.expr body, ctx, styTerm τ, true)]
-              -- C42 / C43: 段階の境界(`basic`)は期待の一覧と一致し、基礎段階の宣言は接続・保存を検査する
+              -- C42 / C43: 段階の境界(`basic`)は期待の一覧と一致し、どちらの段階の宣言も接続・保存を検査する
               let isBasic := NaruSem.basic body
               if c42Decls.contains key then
                 if isBasic then
                   ok s!"C42: `{key}` is a basic spec expression (NaruSem.basic = true)"
-                  specConnected := specConnected ++ [(key, params)]
+                  specConnected := specConnected ++ [(key, params, body, true)]
                 else fail s!"C42: `{key}` is expected to be basic but NaruSem.basic = false: {NaruSem.Quote.expr body}"
               else if c43Decls.contains key then
                 if !isBasic then
-                  ok s!"C43: `{key}` is outside the basic stage (quantifier / Prop let / match; NaruSem.basic = false); its connection is the next stage"
-                else fail s!"C43: `{key}` is expected to contain a quantifier / Prop let / match but NaruSem.basic = true"
+                  ok s!"C43: `{key}` is outside the basic stage (quantifier / Prop let / Prop if / guarded match; NaruSem.basic = false); connection proof: `{proofOf params body}`"
+                  specConnected := specConnected ++ [(key, params, body, false)]
+                else fail s!"C43: `{key}` is expected to contain a quantifier / Prop let / Prop if / guarded match but NaruSem.basic = true"
               else fail s!"C42 / C43: `{key}` is a spec declaration listed in neither c42Decls nor c43Decls"
             else fail s!"C39: `{key}` (spec) has the value type {styTerm τ}, not a logical type"
           | none => fail s!"C39: `{key}` (spec) is not in scope (wtS = none): {NaruSem.Quote.expr body}"
@@ -569,7 +651,7 @@ def checks : M Unit := do
   -- C46: 隔離した誤出力(実生成文字列から作る)は型検査を通るが接続検査に失敗する
   let wrongs ← deriveWrongs "Model" modelText Naru.Backend.Model.leanName mistranslations
   checkWrong "Model" (outDir / "ModelWrong.lean") (wrongProgram connected wrongs) wrongs lp
-  heading "C42 / C44 connection of the generated Statements to the Core semantics"
+  heading "C42 / C43 / C44 connection of the generated Statements to the Core semantics"
   let stmtFile := genDir / "Statements" / "Sem" / "Core.lean"
   let stmtText ← if ← stmtFile.pathExists then IO.FS.readFile stmtFile else pure ""
   if stmtText.isEmpty then
@@ -580,16 +662,17 @@ def checks : M Unit := do
     #[s!"--root={genDir}", "-o", (genDir / "Statements" / "Sem" / "Core.olean").toString, stmtFile.toString] (env := #[("LEAN_PATH", some lp)])
   let stmtCheck := outDir / "StatementsCheck.lean"
   IO.FS.writeFile stmtCheck (statementsProgram specConnected)
-  let s ← step s!"C42 / C44: lean {stmtCheck} (shape of the general equivalence theorem and the value / proposition boundary; connection and preservation of {specConnected.length} generated spec declarations)"
+  let s ← step s!"C42 / C43 / C44: lean {stmtCheck} (shape of the general equivalence theorem, the value / proposition boundary, the arm and quantifier lemmas; connection and preservation of {specConnected.length} generated spec declarations)"
     "lean" #[stmtCheck.toString] (env := #[("LEAN_PATH", some lp)])
   let specAudited := auditedNames s.stdout
-  let expectedSpec := specConnected.flatMap fun (key, _) => [s!"conn_{shortName key}", s!"basic_{shortName key}", s!"pres_{shortName key}"]
+  let expectedSpec := specConnected.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}"]
   let missingSpec := expectedSpec.filter fun n => !specAudited.contains n
+  let c43Connected := specConnected.filter fun (_, _, _, isBasic) => !isBasic
   if s.exitCode == 0 && missingSpec.isEmpty && !(contains s.stdout "forbidden") && !(contains s.stderr "forbidden") then
-    ok s!"C44 / C45: the connection and preservation evidence of {specConnected.length} generated spec declarations ({expectedSpec.length} theorems) is audited with 0 forbidden dependencies"
+    ok s!"C44 / C45: the connection and preservation evidence of {specConnected.length} generated spec declarations ({expectedSpec.length} theorems; {c43Connected.length} with a quantifier / Prop let / Prop if / guarded match) is audited with 0 forbidden dependencies"
   else fail s!"C44 / C45: connection evidence (Statements): exit {s.exitCode}, not audited: {missingSpec}\n{tail s.stdout 1500}\n{tail s.stderr 1500}"
-  if specConnected.length != c42Decls.length then
-    fail s!"C42: expected the {c42Decls.length} basic spec declarations to be connected, got {specConnected.length}"
+  if specConnected.length != c42Decls.length + c43Decls.length || c43Connected.length != c43Decls.length then
+    fail s!"C42 / C43: expected the {c42Decls.length} basic and {c43Decls.length} C43 spec declarations to be connected, got {specConnected.length} ({c43Connected.length} C43)"
   let specWrongs ← deriveWrongs "Statements" stmtText Naru.Backend.Statements.stmtName specMistranslations
   checkWrong "Statements" (outDir / "StatementsWrong.lean") (specWrongProgram specConnected specWrongs) specWrongs lp
   heading "C45 the audit rejects forbidden dependencies"

@@ -22,8 +22,9 @@ IDEAL.md「前提」のとおり Lean で書く。実行ファイルは `NaruTes
 - `golden` — 手書き Model と生成 Model を 1 つの Lean プログラムで実行する golden test(C10)。`NaruTest/Golden.lean`(本体は `tests/golden/Golden.lean`)。
 - `statements` — 生成 Statements の import 閉包と `sorry`(C8)、claim surface の 13 の欄名(C9)。`NaruTest/Statements.lean`。
 - `repo` — README の構成表・リンク・クイックスタート(C21)、`third_party/verified-consensus` の submodule(C23)、`docs/` の文書(C25)。`NaruTest/Repo.lean`。
-- `semantics` — コンパイラ意味論保存の検査入口 `lake build NaruSem`(C45: 意味論・一般定理・検体・公理監査)と、実際の compiler 経路の Core の
-  適格性(C39: `tests/accept/sem_core.naru` の各宣言の Core を引用して `wtR` / `wtS` を `decide` で検査し、引用の一致を照合する)。`NaruTest/Semantics.lean`。
+- `semantics` — コンパイラ意味論保存の検査入口 `lake build NaruSem`(C45: 意味論・一般定理・検体・公理監査)、文書との照合(C47)、実際の compiler 経路の
+  Core の適格性(C39: `tests/accept/sem_core.naru` の各宣言の Core を引用して `wtR` / `wtS` を `decide` で検査し、引用の一致を照合する)、実生成 Model / Statements
+  への接続と保存(C40〜C44)と誤翻訳の負の検体(C46)。`NaruTest/Semantics.lean`。
 - `regression` — 非対話の回帰一式(C36): 受理例・反例、C34 の意味(`tests/accept/guard_shadow.naru` の戻り値と命題の真偽)、C1 の決定性、
   C6 / C8 のビルド、C7 の simulate と C26、C24 の設定、`grammar` / `zed` / `lsp` / `semantics` / `statements` / `repo` の各群、C28 / C22 / C27、C10 の golden。
   `NaruTest/Regression.lean`。

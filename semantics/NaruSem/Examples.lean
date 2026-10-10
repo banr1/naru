@@ -127,7 +127,7 @@ theorem ex_denoteP_spec_let (x : Nat) :
 /-- 同値定理の実例(一般定理の実例であって代用ではない): x の任意の値で、検体の意味は読みの命題(= 生成形)そのもの。 -/
 theorem ex_Sem_spec_let (x : Nat) :
     Sem (SEnv.ofList [("x", .val (.nat x))]) exSpecLet ((decide (x > 10) = true) → x + 1 > 11) :=
-  check_sound_prop [("x", .nat x)] ex_wtS_spec_let rfl ex_basic_spec_let (ex_denoteP_spec_let x).symm
+  check_sound_prop [("x", .nat x)] ex_wtS_spec_let rfl (ex_denoteP_spec_let x).symm
 
 /-- 値 / 命題の境界の実例: 命題の読みは Bool の読み(Model の読み)が `true` であることと同値。 -/
 theorem ex_denoteP_iff_denoteB_let (x : Nat) :
@@ -152,8 +152,50 @@ theorem ex_Sem_denote_eq_bool (a b : Bool) : ((a = true) ↔ (b = true)) ↔ (a 
   have h2 : Sem (SEnv.ofList [("a", .val (.bool a)), ("b", .val (.bool b))]) exEqBool (a = b) :=
     check_sound_prop [("a", .bool a), ("b", .bool b)]
       (by decide : wtS (SCtx.ofList [("a", .val .bool), ("b", .val .bool)]) exEqBool = some (.val .bool))
-      rfl (by decide) (ex_denoteP_eq_bool a b).symm
+      rfl (ex_denoteP_eq_bool a b).symm
   rw [Sem_unique h1 h2]
+
+/-! ## Statements の読み(C43): 命題の `let` を隠すパターン束縛、Bool の全要素の量化、値 / 命題の境界の一般形 -/
+
+/-- `specPatShadow` と同じ形: `let p = forall n: Nat { n >= 0 }; match x { p if p == 0 => true, _ => p }`。腕の束縛 `p`(値)はガードと本体だけで有効で、
+残りの腕の `p` は外側の命題(束縛は他の腕へ漏れない)。 -/
+def exPatShadow : Core.Expr :=
+  .let_ "p" .bool (.quant .forall_ [("n", .nat)] (.binop ">=" (.var "n") (.lit (.nat 0) .nat) .nat))
+    (.match_ (.var "x") .nat
+      [ .mk (.bind "p") (some (.binop "==" (.var "p") (.lit (.nat 0) .nat) .nat)) (.lit (.bool true) .bool),
+        .mk .wild none (.var "p") ])
+
+theorem ex_wtS_pat_shadow : wtS (SCtx.ofList [("x", .val .nat)]) exPatShadow = some .prop := by decide
+
+/-- 読みは生成形 `let p : Prop := ∀ n, n ≥ 0; (match x with | p => (p = 0) → True) ∧ (¬ (match x with | p => p = 0) → (match x with | _ => p))` と
+定義的に等しい(任意の x): ガードの `p` は値 `x`、残りの腕の `p` は命題。 -/
+theorem ex_denoteP_pat_shadow (x : Nat) :
+    denoteP (SEnv.ofList [("x", .val (.nat x))]) exPatShadow =
+      (((x = 0) → True) ∧ (¬ (x = 0) → ∀ a : Nat, a ≥ 0)) := rfl
+
+/-- 同値定理の実例: x の任意の値で、検体の意味は読みの命題そのもの。 -/
+theorem ex_Sem_pat_shadow (x : Nat) :
+    Sem (SEnv.ofList [("x", .val (.nat x))]) exPatShadow (((x = 0) → True) ∧ (¬ (x = 0) → ∀ a : Nat, a ≥ 0)) :=
+  (ex_denoteP_pat_shadow x) ▸ Sem_denoteP (Γ := SCtx.ofList [("x", .val .nat)]) (τ := .prop) (by decide) rfl _ (by rw [SEnv.ctx_ofList]; rfl)
+
+/-- `specExists` と同じ形: `exists b: Bool { b == (x > 0) }`(Bool の全要素の量化と、両辺が値の `==`)。 -/
+def exExistsBool : Core.Expr :=
+  .quant .exists_ [("b", .bool)] (.binop "==" (.var "b") (.binop ">" (.var "x") (.lit (.nat 0) .nat) .nat) .bool)
+
+/-- 読みは生成形 `∃ (b : Bool), b = decide (x > 0)` と定義的に等しい。 -/
+theorem ex_denoteP_exists_bool (x : Nat) :
+    denoteP (SEnv.ofList [("x", .val (.nat x))]) exExistsBool = ∃ b : Bool, b = decide (x > 0) := rfl
+
+theorem ex_Sem_exists_bool (x : Nat) :
+    Sem (SEnv.ofList [("x", .val (.nat x))]) exExistsBool (∃ b : Bool, b = decide (x > 0)) :=
+  (ex_denoteP_exists_bool x) ▸ Sem_denoteP (Γ := SCtx.ofList [("x", .val .nat)]) (τ := .prop) (by decide) rfl _ (by rw [SEnv.ctx_ofList]; rfl)
+
+/-- 値 / 命題の境界の一般形の実例: 命題の束縛 `q` のある環境でも、命題でしか表せない部分を含まない `match`(C41 の検体)の命題の読みは Bool の読みが
+`true` であることと同値。 -/
+theorem ex_denoteP_iff_denoteB_match (x : Nat) (P : Prop) :
+    denoteP (SEnv.ofList [("x", .val (.nat x)), ("q", .prop P)]) exMatchGuard ↔
+      denoteB (SEnv.ofList [("x", .val (.nat x)), ("q", .prop P)]).vals exMatchGuard = true :=
+  denoteP_iff_denoteB_noProp exMatchGuard _ rfl
 
 /-! ## 不適格な Core は保証対象にならない(`wtR` / `wtS` が `none`) -/
 

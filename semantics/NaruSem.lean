@@ -27,9 +27,12 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   基礎段階の範囲 `basic`(段階の記録)、保存定理 `denote_sound`(`preserve_nat` / `preserve_bool`。基礎の構文と非再帰の Nat / Bool の `match`)、
   腕の列・腕の一般補題 `denoteArms_sound` / `denoteArm_sound`、腕の選択と束縛の形 `denoteArmsV_hit` / `_miss` / `_guard_true` / `_guard_false`、
   実生成宣言への接続検査の健全性 `check_sound_nat` / `check_sound_bool`。
-- `NaruSem/DenoteProp.lean` — Statements の保存(C42 / C44): 生成 Lean の命題の読み `denoteP`(+ 腕の列 `denoteArmsP`、量化 `denoteQuant`。読みは spec の
-  対象範囲すべてに定める)、値 / 命題の境界 `denoteP_iff_denoteB`、基礎段階の同値定理 `Sem_denote`(`Sem_denoteP`: 読みは意味である)、接続検査の
-  健全性 `check_sound_prop`、異なる表現の対応関係(`CmpOp.leanBoolProp_iff` / `EqOp.propIff_bool`: 値の等値と命題の同値の区別 …)。
+- `NaruSem/DenoteProp.lean` — Statements の保存(C42 / C43 / C44): 生成 Lean の命題の読み `denoteP`(+ 腕の列 `denoteArmsP`、量化 `denoteQuant`)、
+  値 / 命題の境界 `denoteP_iff_denoteB_noProp`(`proppyS` が偽の式すべて。`proppyS` の文脈の合同 `proppyS_congr`)、一般同値定理 `Sem_denote`
+  (`wtS` で適格な式すべて: 量化・命題の `let` と shadowing・命題の条件の `if`・ガード付き `match` を含む。`Sem_denote_all` は網羅性を要求しない
+  型付け `wtSNoExh` を仮定に `Sem` の導出の帰納法。`Sem_denoteP`: 読みは意味である)、腕の選択と束縛の形 `denoteArmsP_hit` / `_miss` / `_guard` /
+  `_guard_true` / `_guard_false`、量化の読みの形 `denoteQuant_forall_cons` / `_exists_cons`、接続検査の健全性 `check_sound_prop`、異なる表現の対応関係
+  (`CmpOp.leanBoolProp_iff` / `EqOp.propIff_bool`: 値の等値と命題の同値の区別 …)。基礎段階(C42)の `basic` / `SCtx.NoProp` は段階の記録(系)。
 - `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まり・読みの検体(`decide`)。
 - `NaruSem/Quote.lean` — 実際の compiler 経路の Core を Lean の項として引用し、一致を照合する(`lake exe naru_test semantics` が使う)。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
@@ -83,3 +86,17 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -- C42: Statements の読みの検体(値の let と Bool の条件、値の等値と命題の同値の区別、同値定理の実例)
 #audit_axioms NaruSem.ex_wtS_spec_let NaruSem.ex_basic_spec_let NaruSem.ex_denoteP_spec_let NaruSem.ex_Sem_spec_let
   NaruSem.ex_denoteP_iff_denoteB_let NaruSem.ex_denoteP_eq_bool NaruSem.ex_Sem_eq_bool NaruSem.ex_Sem_denote_eq_bool
+
+-- C43 / C44: Statements の一般同値定理(量化・命題の let と shadowing・命題の条件の if・ガード付き match)、値 / 命題の境界の一般形、
+-- proppyS の文脈の合同、網羅性を要求しない型付け、読みの形(局所束縛・条件・==、腕の選択と束縛、量化)
+#audit_axioms NaruSem.Sem_denote_all NaruSem.Sem_denote_basic NaruSem.denoteP_iff_denoteB_all NaruSem.denoteP_iff_denoteB_noProp
+  NaruSem.proppyS_congr_all NaruSem.proppyS_congr NaruSem.proppyArms_congr NaruSem.proppyArms_cons NaruSem.proppyS_var
+  NaruSem.SCtx.isProp_ext NaruSem.SCtx.isProp_ext_val NaruSem.SEnv.vals_extVals
+  NaruSem.wtS_noExh NaruSem.wtArmsS_head NaruSem.wtArmsS_tail
+  NaruSem.denoteP_let_prop NaruSem.denoteP_let_bool NaruSem.denoteP_ite_prop NaruSem.denoteP_ite_bool NaruSem.denoteP_eq_prop NaruSem.denoteP_eq_bool
+  NaruSem.denoteArmsP_hit NaruSem.denoteArmsP_miss NaruSem.denoteArmsP_guard NaruSem.denoteArmsP_guard_true NaruSem.denoteArmsP_guard_false
+  NaruSem.denoteQuant_nil NaruSem.denoteQuant_forall_cons NaruSem.denoteQuant_exists_cons
+
+-- C43: Statements の読みの検体(命題の let を隠すパターン束縛、Bool の全要素の量化、境界の一般形の実例)
+#audit_axioms NaruSem.ex_wtS_pat_shadow NaruSem.ex_denoteP_pat_shadow NaruSem.ex_Sem_pat_shadow
+  NaruSem.ex_denoteP_exists_bool NaruSem.ex_Sem_exists_bool NaruSem.ex_denoteP_iff_denoteB_match
