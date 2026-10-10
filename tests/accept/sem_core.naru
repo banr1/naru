@@ -2,7 +2,8 @@
 // `lake exe naru_test semantics` がこのファイルを実際の compiler 経路でコンパイルし、各宣言の Core を Lean の項として引用して
 // `semantics/NaruSem` の適格性(`wtR` / `wtS`)を Lean で証明する(引用した Core と実際の Core の一致も同じ検査で照合する)。
 // runtime: Nat / Bool のリテラル・局所名・let・if・算術(+ - * / %)・min / max・比較(< <= > >=)・等値(== !=)・論理(&& || ! implies)・
-// Nat / Bool のガード付き match(リテラル・変数・`_` のパターン、同名の束縛、ガード不成立からの継続)。
+// Nat / Bool のガード付き match(リテラル・変数・`_` のパターン、同名の仮引数・外側の let・scrutinee の中の名前の束縛、
+// 複数のガード不成立からの継続、Bool の scrutinee のガード、Nat のリテラル 0 / 1 の腕)。
 // spec: Bool 値の命題への境界・論理・比較・等値(↔)・Bool / Prop の let と shadowing・Bool / Prop の条件の if・forall / exists・ガード付き match。
 module Sem.Core
 
@@ -38,6 +39,34 @@ fn matchShadow(n: Nat, x: Nat) -> Bool {
     n if n == 0 => true,
     n if n == 1 => false,
     _ => n == x,
+  }
+}
+fn matchLetShadow(y: Nat) -> Bool {
+  let x = 0;
+  match y {
+    x if x == 0 => false,
+    _ => x == 0,
+  }
+}
+fn matchScrut(y: Nat) -> Nat {
+  match y + 1 {
+    y if y == 0 => 0,
+    _ => y,
+  }
+}
+fn matchLits(x: Nat) -> Nat {
+  match x {
+    0 => 10,
+    1 => 11,
+    n if n == 2 => 12,
+    _ => x,
+  }
+}
+fn matchBoolGuard(b: Bool, x: Nat) -> Nat {
+  match b {
+    true if x > 0 => x,
+    true => 0,
+    false => 1,
   }
 }
 

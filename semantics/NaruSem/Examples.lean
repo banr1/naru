@@ -2,7 +2,7 @@ import NaruSem.SemTotality
 import NaruSem.Denote
 
 /-!
-# 対象範囲と行き詰まりの検体(IDEAL.md C39 / C40)
+# 対象範囲と行き詰まりの検体(IDEAL.md C39 / C40 / C41)
 
 一般定理が空虚でないこと、不適格な Core が保証対象にならないこと、評価不能を成功値に置き換えないことを、具体的な Core で kernel に
 検査させる(`decide`: `wtR` / `wtS` / `eval` は構造的再帰の関数なので kernel が計算できる)。名前付きの定理にして
@@ -65,7 +65,7 @@ theorem ex_basic_let : basic
     (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)) = true := by
   decide
 
-/-- `match` は基礎段階の範囲外(C41 の段階)。 -/
+/-- `match` は基礎段階(C40)の範囲外(C41 の段階。一般定理 `denote_sound` は周回 42 から両方を扱う)。 -/
 theorem neg_basic_match : basic (.match_ (.lit (.nat 3) .nat) .nat [.mk .wild none (.lit (.nat 1) .nat)]) = false := by decide
 
 /-- 読みは境界の挙動を保つ(生成 Lean と同じ `Nat` の演算): 3 - 5 = 0、7 / 0 = 0、7 % 0 = 7。 -/
@@ -81,7 +81,30 @@ theorem ex_preserve_let : eval (Env.ofList [("x", .nat 4)])
     (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)) =
     some (.nat (denoteN (Env.ofList [("x", .nat 4)])
       (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)))) :=
-  preserve_nat ex_wtR_let ex_basic_let _ (Env.ty_ofList [("x", .nat 4)]).symm
+  preserve_nat ex_wtR_let _ (Env.ty_ofList [("x", .nat 4)]).symm
+
+/-! ## Lean での読み(C41): `match` の腕の選択と束縛 -/
+
+/-- ガード付き match の検体(`ex_eval_match_guard` と同じ Core): `match 7 { x if x == 0 => false, _ => x == 0 }`。 -/
+def exMatchGuard : Core.Expr :=
+  .match_ (.lit (.nat 7) .nat) .nat
+    [.mk (.bind "x") (some (.binop "==" (.var "x") (.lit (.nat 0) .nat) .nat)) (.lit (.bool false) .bool),
+     .mk .wild none (.binop "==" (.var "x") (.lit (.nat 0) .nat) .nat)]
+
+/-- x : Nat の文脈で適格で Bool(`match` は非再帰の Nat の match として対象範囲に入る)。 -/
+theorem ex_wtR_match_guard : wtR (Ctx.ofList [("x", .nat)]) exMatchGuard = some .bool := by decide
+
+/-- 読み: 腕の束縛 x = 7 でガード `x == 0` が偽 → 次の腕は外側の x = 0 を見て真(束縛は次の腕に漏れない)。 -/
+theorem ex_denote_match_guard : denoteB (Env.ofList [("x", .nat 0)]) exMatchGuard = true := by decide
+
+/-- Bool のリテラルの腕: `match false { true => 1, false => 0 }` の読みは 0。 -/
+theorem ex_denote_match_bool : denoteN Env.empty (.match_ (.lit (.bool false) .bool) .bool
+    [.mk (.lit (.bool true)) none (.lit (.nat 1) .nat), .mk (.lit (.bool false)) none (.lit (.nat 0) .nat)]) = 0 := by decide
+
+/-- 保存定理の具体例(match): x = 0 で検体の意味は読みの値(= true)。 -/
+theorem ex_preserve_match : eval (Env.ofList [("x", .nat 0)]) exMatchGuard =
+    some (.bool (denoteB (Env.ofList [("x", .nat 0)]) exMatchGuard)) :=
+  preserve_bool ex_wtR_match_guard _ (Env.ty_ofList [("x", .nat 0)]).symm
 
 /-! ## 不適格な Core は保証対象にならない(`wtR` / `wtS` が `none`) -/
 

@@ -22,8 +22,10 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/Sem.lean` — spec の評価関係 `Sem`(環境 `SEnv`: 値と命題を区別)。
 - `NaruSem/Totality.lean` — runtime の全域性 `eval_total` と一意性 `Eval_unique`。
 - `NaruSem/SemTotality.lean` — spec の意味の存在 `Sem_exists` と一意性 `Sem_unique`。
-- `NaruSem/Denote.lean` — Model の基礎段階(C40 / C44): 生成 Lean の読み `denoteN` / `denoteB`、基礎の範囲 `basic`、保存定理
-  `denote_sound`(`preserve_nat` / `preserve_bool`)、実生成宣言への接続検査の健全性 `check_sound_nat` / `check_sound_bool`。
+- `NaruSem/Denote.lean` — Model の保存(C40 / C41 / C44): 生成 Lean の読み `denoteN` / `denoteB` と腕の列の読み `denoteArmsN` / `denoteArmsB`、
+  基礎段階の範囲 `basic`(段階の記録)、保存定理 `denote_sound`(`preserve_nat` / `preserve_bool`。基礎の構文と非再帰の Nat / Bool の `match`)、
+  腕の列・腕の一般補題 `denoteArms_sound` / `denoteArm_sound`、腕の選択と束縛の形 `denoteArmsV_hit` / `_miss` / `_guard_true` / `_guard_false`、
+  実生成宣言への接続検査の健全性 `check_sound_nat` / `check_sound_bool`。
 - `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まり・読みの検体(`decide`)。
 - `NaruSem/Quote.lean` — 実際の compiler 経路の Core を Lean の項として引用し、一致を照合する(`lake exe naru_test semantics` が使う)。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
@@ -59,3 +61,10 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -- C40: 基礎段階の範囲と読みの境界の検体
 #audit_axioms NaruSem.ex_basic_let NaruSem.neg_basic_match NaruSem.ex_denote_sub_truncates NaruSem.ex_denote_div_zero
   NaruSem.ex_denote_mod_zero NaruSem.ex_denote_bool_order NaruSem.ex_preserve_let
+
+-- C41 / C44: Model の match の保存 — 腕の列・腕の一般補題、腕の選択と束縛の形、腕の列の読みの展開
+#audit_axioms NaruSem.denoteArms_sound NaruSem.denoteArm_sound NaruSem.denoteArmsV_hit NaruSem.denoteArmsV_miss
+  NaruSem.denoteArmsV_guard_true NaruSem.denoteArmsV_guard_false NaruSem.denoteArmsN_cons NaruSem.denoteArmsB_cons NaruSem.denoteArmsV_ty
+
+-- C41: match の読みの検体(ガード不成立からの継続と束縛の範囲、Bool のリテラルの腕、保存定理の実例)
+#audit_axioms NaruSem.ex_wtR_match_guard NaruSem.ex_denote_match_guard NaruSem.ex_denote_match_bool NaruSem.ex_preserve_match
