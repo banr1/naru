@@ -4,6 +4,7 @@ import NaruSem.Sem
 import NaruSem.Totality
 import NaruSem.SemTotality
 import NaruSem.Denote
+import NaruSem.DenoteProp
 import NaruSem.Examples
 import NaruSem.Quote
 import NaruSem.Audit
@@ -26,6 +27,9 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   基礎段階の範囲 `basic`(段階の記録)、保存定理 `denote_sound`(`preserve_nat` / `preserve_bool`。基礎の構文と非再帰の Nat / Bool の `match`)、
   腕の列・腕の一般補題 `denoteArms_sound` / `denoteArm_sound`、腕の選択と束縛の形 `denoteArmsV_hit` / `_miss` / `_guard_true` / `_guard_false`、
   実生成宣言への接続検査の健全性 `check_sound_nat` / `check_sound_bool`。
+- `NaruSem/DenoteProp.lean` — Statements の保存(C42 / C44): 生成 Lean の命題の読み `denoteP`(+ 腕の列 `denoteArmsP`、量化 `denoteQuant`。読みは spec の
+  対象範囲すべてに定める)、値 / 命題の境界 `denoteP_iff_denoteB`、基礎段階の同値定理 `Sem_denote`(`Sem_denoteP`: 読みは意味である)、接続検査の
+  健全性 `check_sound_prop`、異なる表現の対応関係(`CmpOp.leanBoolProp_iff` / `EqOp.propIff_bool`: 値の等値と命題の同値の区別 …)。
 - `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まり・読みの検体(`decide`)。
 - `NaruSem/Quote.lean` — 実際の compiler 経路の Core を Lean の項として引用し、一致を照合する(`lake exe naru_test semantics` が使う)。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
@@ -68,3 +72,14 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 
 -- C41: match の読みの検体(ガード不成立からの継続と束縛の範囲、Bool のリテラルの腕、保存定理の実例)
 #audit_axioms NaruSem.ex_wtR_match_guard NaruSem.ex_denote_match_guard NaruSem.ex_denote_match_bool NaruSem.ex_preserve_match
+
+-- C42 / C44: Statements の基礎段階の同値定理、値 / 命題の境界、接続検査の健全性、異なる表現の対応関係、基礎段階の範囲の補題
+#audit_axioms NaruSem.Sem_denote NaruSem.Sem_denoteP NaruSem.Sem_denote_basic NaruSem.check_sound_prop NaruSem.denoteP_iff_denoteB
+  NaruSem.basic_not_proppy NaruSem.SEnv.vals_ext_val NaruSem.SEnv.ctx_ofList NaruSem.SCtx.NoProp.ofList NaruSem.SCtx.NoProp.ext_val
+  NaruSem.CmpOp.leanBoolProp_iff NaruSem.CmpOp.leanBoolProp_iff_leanBool NaruSem.CmpOp.propNat_iff
+  NaruSem.EqOp.propNat_iff NaruSem.EqOp.propNat_iff_leanNat NaruSem.EqOp.propBool_iff NaruSem.EqOp.propBool_iff_leanBool
+  NaruSem.EqOp.propIff_bool NaruSem.LogicOp.prop_iff
+
+-- C42: Statements の読みの検体(値の let と Bool の条件、値の等値と命題の同値の区別、同値定理の実例)
+#audit_axioms NaruSem.ex_wtS_spec_let NaruSem.ex_basic_spec_let NaruSem.ex_denoteP_spec_let NaruSem.ex_Sem_spec_let
+  NaruSem.ex_denoteP_iff_denoteB_let NaruSem.ex_denoteP_eq_bool NaruSem.ex_Sem_eq_bool NaruSem.ex_Sem_denote_eq_bool

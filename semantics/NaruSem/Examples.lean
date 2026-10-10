@@ -1,8 +1,9 @@
 import NaruSem.SemTotality
 import NaruSem.Denote
+import NaruSem.DenoteProp
 
 /-!
-# 対象範囲と行き詰まりの検体(IDEAL.md C39 / C40 / C41)
+# 対象範囲と行き詰まりの検体(IDEAL.md C39 / C40 / C41 / C42)
 
 一般定理が空虚でないこと、不適格な Core が保証対象にならないこと、評価不能を成功値に置き換えないことを、具体的な Core で kernel に
 検査させる(`decide`: `wtR` / `wtS` / `eval` は構造的再帰の関数なので kernel が計算できる)。名前付きの定理にして
@@ -105,6 +106,54 @@ theorem ex_denote_match_bool : denoteN Env.empty (.match_ (.lit (.bool false) .b
 theorem ex_preserve_match : eval (Env.ofList [("x", .nat 0)]) exMatchGuard =
     some (.bool (denoteB (Env.ofList [("x", .nat 0)]) exMatchGuard)) :=
   preserve_bool ex_wtR_match_guard _ (Env.ty_ofList [("x", .nat 0)]).symm
+
+/-! ## Statements の読み(C42): 値の `let` と Bool の条件、値 / 命題の境界、同値定理の実例(`NaruSem/DenoteProp.lean`) -/
+
+/-- `specLetVal` と同じ形: `let big = x > 10; let n = x + 1; big implies n > 11`。 -/
+def exSpecLet : Core.Expr :=
+  .let_ "big" .bool (.binop ">" (.var "x") (.lit (.nat 10) .nat) .nat)
+    (.let_ "n" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat)
+      (.binop "implies" (.var "big") (.binop ">" (.var "n") (.lit (.nat 11) .nat) .nat) .bool))
+
+theorem ex_wtS_spec_let : wtS (SCtx.ofList [("x", .val .nat)]) exSpecLet = some (.val .bool) := by decide
+
+/-- 基礎段階(C42)の範囲は空でない。 -/
+theorem ex_basic_spec_let : basic exSpecLet = true := by decide
+
+/-- 読みは生成形(`let «big» : Bool := decide (x > 10); let «n» : Nat := x + 1; («big» = true) → («n» > 11)`)と定義的に等しい(任意の x)。 -/
+theorem ex_denoteP_spec_let (x : Nat) :
+    denoteP (SEnv.ofList [("x", .val (.nat x))]) exSpecLet = ((decide (x > 10) = true) → x + 1 > 11) := rfl
+
+/-- 同値定理の実例(一般定理の実例であって代用ではない): x の任意の値で、検体の意味は読みの命題(= 生成形)そのもの。 -/
+theorem ex_Sem_spec_let (x : Nat) :
+    Sem (SEnv.ofList [("x", .val (.nat x))]) exSpecLet ((decide (x > 10) = true) → x + 1 > 11) :=
+  check_sound_prop [("x", .nat x)] ex_wtS_spec_let rfl ex_basic_spec_let (ex_denoteP_spec_let x).symm
+
+/-- 値 / 命題の境界の実例: 命題の読みは Bool の読み(Model の読み)が `true` であることと同値。 -/
+theorem ex_denoteP_iff_denoteB_let (x : Nat) :
+    denoteP (SEnv.ofList [("x", .val (.nat x))]) exSpecLet ↔ denoteB (SEnv.ofList [("x", .val (.nat x))]).vals exSpecLet = true :=
+  denoteP_iff_denoteB exSpecLet ex_basic_spec_let _ (by rw [SEnv.ctx_ofList]; exact SCtx.NoProp.ofList [("x", Val.nat x)] Val.ty)
+
+/-- 値の等値と命題の同値の区別: 論理の位置の `a == b`(両辺が Bool の値)。 -/
+def exEqBool : Core.Expr := .binop "==" (.var "a") (.var "b") .bool
+
+/-- 読み(= 生成形)は値の等値 `a = b`。 -/
+theorem ex_denoteP_eq_bool (a b : Bool) :
+    denoteP (SEnv.ofList [("a", .val (.bool a)), ("b", .val (.bool b))]) exEqBool = (a = b) := rfl
+
+/-- 意味は両辺の命題の同値 `(a = true) ↔ (b = true)`。 -/
+theorem ex_Sem_eq_bool (a b : Bool) :
+    Sem (SEnv.ofList [("a", .val (.bool a)), ("b", .val (.bool b))]) exEqBool ((a = true) ↔ (b = true)) :=
+  Sem.eqForm (k := .eq) rfl (.varVal rfl) (.varVal rfl)
+
+/-- 同値定理の実例: 意味と読みは同値(命題の同値と値の等値は、Bool の値では一致する)。 -/
+theorem ex_Sem_denote_eq_bool (a b : Bool) : ((a = true) ↔ (b = true)) ↔ (a = b) := by
+  have h1 := ex_Sem_eq_bool a b
+  have h2 : Sem (SEnv.ofList [("a", .val (.bool a)), ("b", .val (.bool b))]) exEqBool (a = b) :=
+    check_sound_prop [("a", .bool a), ("b", .bool b)]
+      (by decide : wtS (SCtx.ofList [("a", .val .bool), ("b", .val .bool)]) exEqBool = some (.val .bool))
+      rfl (by decide) (ex_denoteP_eq_bool a b).symm
+  rw [Sem_unique h1 h2]
 
 /-! ## 不適格な Core は保証対象にならない(`wtR` / `wtS` が `none`) -/
 

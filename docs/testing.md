@@ -47,7 +47,7 @@
 | `zed-install` | 起動中の人間の Zed に `editors/zed-naru/` を Dev Extension として入れる(C19): `lake build naru` の後、`~/Library/Application Support/Zed/extensions/installed/naru` が無ければ `zed: install dev extension`(フォルダ選択ダイアログに ⌘⇧G でパスを貼る)、この拡張への symlink なら `zed: rebuild dev extension`(Dev Extension が 2 つ以上なら picker で `naru`)を `osascript`(System Events。文字列はクリップボード経由、前面が Zed であることを確かめてから送る)で実行し、`Zed.log` に操作の開始以後 `compiled grammar naru`・`finished compiling extension <installed/naru>`(install では Zed は拡張のソースのパスで記録するのでそれも受理)・`extensions updated.` の `loading 1` / `reloading 1` が足され、`failed to compile` / `Failed to install dev extension` が 0 件、`installed/naru` が `editors/zed-naru` への symlink、`extension.wasm` と `grammars/naru.wasm` の mtime が操作の開始以後、`grammars/naru/` の checkout が `extension.toml` の `rev`。`grammars/naru.wasm` は操作の前に消す(Zed は `parser.c` より新しい wasm があると文法のコンパイルを飛ばす)。スクリーンショットと AppleScript は `.lake/naru/test/zed-install/` |
 | `golden [--finality-horizon N]` / `golden --comparator` | 手書き Model と生成 Model の突き合わせ(C10)と、その比較器の検体。下の「golden test」 |
 | `statements` | 生成 Statements の検査(C8 / C9): `lake exe naru compile` で `generated/` を作り直し、`lake build Statements` が exit 0、`Statements` からの import 閉包(`lake env lean --deps-json`。ソースの文字列から推測しない)が `Init` / `NaruStd` / 生成 Model / 生成 Statements だけから成り(Proofs を含まない)、`generated/Statements/` 配下の全ファイルがその閉包にある、閉包の全ファイルに字句 `sorry` が無い、`specs/consensus/`(`naru.toml` のソースルート)に claim bundle `Consensus` がちょうど 1 つあってその項目が verified-consensus の 13 claims と同名、生成 `structure` の欄(`run_cmd` の `getStructureFields`。スクリプトは `.lake/naru/test/statements/SurfaceShape.lean`)が項目と同じ順で並び 13 名を列挙する。C37: 移植ソースの spec 側がソースルートの `Consensus/Spec/` にあり(改名前のディレクトリは無い)、各ファイルの `module` 宣言がルート相対パス(`Consensus.Spec.<ファイル名>`)と一致、単位に改名前の名前のモジュール・import が無い、claim bundle が `Consensus.Spec.*` にある、生成先に改名前のディレクトリが無く生成ファイルのどれも改名前のモジュール名に触れず、`generated/Statements/Consensus/Spec/` の全モジュールが閉包にある。C38: `generated/` の Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけあり、ルート `Model.lean` / `Statements.lean` が存在する生成モジュールをちょうど import し、生成ファイルの全 import が実在し、出力される runtime 宣言と spec 宣言のすべてが生成ファイルに宣言として現れる(`NaruTest.checkOmission`。移植ソースの Core と照合)、`generated/Model/Consensus/Spec/` には混在モジュールの Model が残り spec だけのモジュールの Model は無い |
-| `semantics` | コンパイラ意味論保存(C39 / C40 / C41 / C44 / C45 / C46。下の「コンパイラ意味論保存」): C45 の検査入口 `lake build NaruSem`(`semantics/NaruSem`: 独立した意味論・適格性の定義、一般定理、検体、公理監査)が exit 0、`lake env lean semantics/NaruSem.lean` の公理監査の出力に必須の定理(`NaruTest/Semantics.lean` の `requiredTheorems`: `eval_total` / `Eval_unique` / `Sem_exists` / `Sem_unique`、`denote_sound` / `preserve_nat` / `preserve_bool` / `check_sound_nat` / `check_sound_bool`、腕の列・腕の `denoteArms_sound` / `denoteArm_sound` と腕の選択の `denoteArmsV_*`、対応関係の補題)が `audit ok:` で現れて許容しない依存が 0 件、検体 `tests/accept/sem_core.naru` の各宣言(`c39Decls`: 今回の保存対象の各構文を 1 つずつ)の Core を実際の compiler 経路(`Naru.compileFiles`)から引用した検査プログラム `.lake/naru/test/semantics/Scope.lean` をモジュール `Scope` として `lean` でコンパイル(適格性 `wtR` / `wtS` を `decide` で、引用した Core と compiler の Core の一致を `run_cmd` の再コンパイルで照合)、段階の境界(`c40Decls` は `NaruSem.basic` が真、`c41Decls` の `match` は偽)、実際の CLI で `.lake/naru/test/semantics/gen/` に生成した Model をモジュール `Model.Sem.Core` にして `ModelCheck.lean` で一般定理の量化の形(式と腕の列)と各 runtime 宣言の接続(`conn_<f>`: 実生成宣言 = 読み。`rfl`、リテラルパターンの `match` は scrutinee の `cases` の後に `rfl`)・保存(`pres_<f>`)を kernel に検査させて公理監査、実生成文字列から作った誤翻訳の負の検体 `ModelWrong.lean`(`&&` / `||` の取り違え、束縛の取り違え、Bool の腕の入れ替え、ガードの否定、腕の束縛の漏れ)が型検査を通りつつ接続検査だけがその定理の行で失敗(対照は成功)、監査が `sorry` / `native_decide` / 存在しない定数を失敗にする負の検体 3 つ(`Audit_*.lean` が exit 非 0)。約 1 分(ビルド済みなら約 10 秒) |
+| `semantics` | コンパイラ意味論保存(C39 / C40 / C41 / C42 / C44 / C45 / C46。下の「コンパイラ意味論保存」): C45 の検査入口 `lake build NaruSem`(`semantics/NaruSem`: 独立した意味論・適格性の定義、一般定理、検体、公理監査)が exit 0、`lake env lean semantics/NaruSem.lean` の公理監査の出力に必須の定理(`NaruTest/Semantics.lean` の `requiredTheorems`: `eval_total` / `Eval_unique` / `Sem_exists` / `Sem_unique`、`denote_sound` / `preserve_nat` / `preserve_bool` / `check_sound_nat` / `check_sound_bool`、腕の列・腕の `denoteArms_sound` / `denoteArm_sound` と腕の選択の `denoteArmsV_*`、Statements の `Sem_denote` / `Sem_denoteP` / `check_sound_prop` と境界 `denoteP_iff_denoteB` / `basic_not_proppy`、対応関係の補題)が `audit ok:` で現れて許容しない依存が 0 件、検体 `tests/accept/sem_core.naru` の各宣言(`c39Decls`: 今回の保存対象の各構文を 1 つずつ)の Core を実際の compiler 経路(`Naru.compileFiles`)から引用した検査プログラム `.lake/naru/test/semantics/Scope.lean` をモジュール `Scope` として `lean` でコンパイル(適格性 `wtR` / `wtS` を `decide` で、引用した Core と compiler の Core の一致を `run_cmd` の再コンパイルで照合)、段階の境界(`c40Decls` / `c42Decls` は `NaruSem.basic` が真、`c41Decls` の `match` と `c43Decls` の量化 / 命題の `let` / `match` は偽)、実際の CLI で `.lake/naru/test/semantics/gen/` に生成した Model をモジュール `Model.Sem.Core` にして `ModelCheck.lean` で一般定理の量化の形(式と腕の列)と各 runtime 宣言の接続(`conn_<f>`: 実生成宣言 = 読み。`rfl`、リテラルパターンの `match` は scrutinee の `cases` の後に `rfl`)・保存(`pres_<f>`)を kernel に検査させて公理監査、実生成文字列から作った誤翻訳の負の検体 `ModelWrong.lean`(`&&` / `||` の取り違え、束縛の取り違え、Bool の腕の入れ替え、ガードの否定、腕の束縛の漏れ)が型検査を通りつつ接続検査だけがその定理の行で失敗(対照は成功)、同じ生成先の Statements をモジュール `Statements.Sem.Core` にして `StatementsCheck.lean` で同値定理と境界の量化の形と各基礎段階の spec 宣言(`c42Decls`)の接続(`conn_<f>`: 実生成宣言の命題 = 読み `denoteP`。`rfl`)・範囲(`basic_<f>`)・保存(`pres_<f>`: `Sem … core_<f> (実生成宣言の命題)`)を kernel に検査させて公理監査、負の検体 `StatementsWrong.lean`(`∧` / `∨` の取り違え、含意の向きの反転、Bool の値を `= false` に写す境界の誤り、`if` の分岐の入れ替え)が接続検査だけで失敗、監査が `sorry` / `native_decide` / 存在しない定数を失敗にする負の検体 3 つ(`Audit_*.lean` が exit 非 0)。約 1 分(ビルド済みなら約 10 秒) |
 | `repo [--base-commit <sha>]` | リポジトリの構成と文書の検査(C21 / C23 / C25): README の構成表とリンクが実在する、クイックスタートのコマンドを実行して通る、`third_party/verified-consensus` の git submodule の整合(基準コミットとの関係。`--base-commit` で基準コミットを渡す)、`docs/` の 7 ファイル([language.md](language.md)・[diagnostics.md](diagnostics.md)・[cli.md](cli.md)・[architecture.md](architecture.md)・[testing.md](testing.md)・[editors.md](editors.md)・[roadmap.md](roadmap.md))がある、`docs/diagnostics.md` が `compiler/Naru/Diag.lean` にある E 番号をすべて載せてそれ以外の E 番号を載せない、文書の相対リンクが実在する、旧文書への参照が無い(`.idd/progress.md` と `.idd/knowledge.md` も `git grep` の対象)。C37: 移植ソースの改名前のモジュール名・ディレクトリ名(`Consensus/Spec/` の前の名前)への参照が無い(`git grep -l --untracked -E` で README・docs・tests・compiler・specs・生成先・`.idd/progress.md`・`.idd/knowledge.md` を含む追跡対象と追跡対象外のファイルを検索。除くのは `.idd/cycles/`・`.idd/journal.jsonl`・IDEAL.md・`third_party/` と意図的な検体 `tests/accept/legacy_module_name.naru` だけ) |
 | `regression` | 非対話の回帰一式(C36)。下の「回帰一式」。約 12 分 |
 
@@ -83,8 +83,8 @@
    spec だけでも `Model.lean` と `Statements.lean` が生成され、無い側は import 0 件でディレクトリも作られない。`roots/duplicate_across_roots/` の複製を cwd に
    した `naru compile` が両方の `module` 行に E017 を出して exit 1 になり、生成先にも Lake の link `.lake/naru/generated` にも触れない。
    反例 `reject/omitted_duplicate` は `fix/` を当てると診断 0 で、Claims が Model を出さないモジュールであることを確かめる。
-4. `semantics`(C39 / C40 / C41 / C44 / C45 / C46。C45 の検査入口 `lake build NaruSem` と公理監査、実際の compiler 経路の Core の適格性、実生成 Model の
-   runtime 宣言(基礎と `match`)の接続と保存、誤翻訳の負の検体。下の「コンパイラ意味論保存」)、
+4. `semantics`(C39 / C40 / C41 / C42 / C44 / C45 / C46。C45 の検査入口 `lake build NaruSem` と公理監査、実際の compiler 経路の Core の適格性、実生成 Model の
+   runtime 宣言(基礎と `match`)と実生成 Statements の基礎段階の spec 宣言の接続と保存、誤翻訳の負の検体。下の「コンパイラ意味論保存」)、
    `grammar`(C16)/ `zed`(C17)/ `lsp`(C18。`tests/units/` の検体の didOpen / didChange / didClose と、生成ファイルが変わらないことを含む)の各群、
    golden の短い予行(`--finality-horizon 40`)、C10 の比較器回帰(`golden --comparator`。下の「golden test」の「比較器の検体」)。
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせて生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行に `naru-compiler` / `naru-stdlib` / `naru-source`、
@@ -136,7 +136,7 @@
 ```sh
 lake build NaruSem                        # C45 の検査入口: 意味論・一般定理・検体を kernel が検査し、公理監査(`#audit_axioms`)が許容しない依存を失敗にする
 lake env lean semantics/NaruSem.lean      # 公理監査の出力を取り直す(`audit ok: <定数> depends on axioms […]` の行)
-lake exe naru_test semantics              # 上の 2 つ + 実際の compiler 経路の Core の適格性と引用の一致 + 実生成 Model の接続・保存 + 負の検体。約 1 分
+lake exe naru_test semantics              # 上の 2 つ + 実際の compiler 経路の Core の適格性と引用の一致 + 実生成 Model / Statements の接続・保存 + 負の検体。約 1 分
 ```
 
 - 公理監査(`semantics/NaruSem/Audit.lean`、`semantics/NaruSem.lean`): `#audit_axioms c₁ c₂ …` が各定数の依存閉包の公理を `#print axioms` と同じ
@@ -149,7 +149,7 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   Core を Lean の項として引用した `.lake/naru/test/semantics/Scope.lean` を `lean` で検査する。各宣言の適格性(`wtR ctx core = some t` / `wtS ctx core = some τ`)
   は `decide`(kernel の計算)で、引用した Core が compiler の Core と一致することは `run_cmd NaruSem.Quote.checkDecls` が同じソースを再びコンパイルして
   構造の等しさで照合する(誤出力に合わせて期待側を変えない: C44)。検体を足したら `NaruTest/Semantics.lean` の `c39Decls` にも足す(基礎の runtime 宣言は
-  `c40Decls`、`match` の runtime 宣言は `c41Decls` にも)。
+  `c40Decls`、`match` の runtime 宣言は `c41Decls`、基礎段階の spec 宣言は `c42Decls`、量化 / 命題の `let` / `match` の spec 宣言は `c43Decls` にも)。
 - 実生成 Model の接続と保存(C40 / C41 / C44 / C46、[architecture.md](architecture.md)「Model の保存と実生成宣言への接続」): 同じ検体を実際の CLI
   (`lake exe naru compile --out .lake/naru/test/semantics/gen`)で生成し、生成 Model `gen/Model/Sem/Core.lean` をそのまま Lean のモジュール `Model.Sem.Core`
   にコンパイルして、検査プログラム `.lake/naru/test/semantics/ModelCheck.lean`(`Scope` と `Model.Sem.Core` を import)を `lean` で検査する: 一般定理
@@ -163,6 +163,15 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   漏れた形の `Wrong.matchShadow`)を作り(Lean の型検査は通る)、同じ正しい入力 Core への接続検査 `conn_wrong_*` だけが失敗する(exit 1。`error:` の行番号の
   集合が `conn_wrong_*` の 5 行とちょうど一致し、構文 / import の誤りでない)。正しい出力の対照 `conn_*_ok` は同じファイルで成功する。生成先・検査プログラムは
   追跡対象外で、`generated/` には触れない。
+- 実生成 Statements の接続と保存(C42 / C44 / C46、[architecture.md](architecture.md)「Statements の保存と実生成宣言への接続」): 同じ生成先の
+  `gen/Statements/Sem/Core.lean` をモジュール `Statements.Sem.Core` にコンパイルして、検査プログラム `.lake/naru/test/semantics/StatementsCheck.lean`(`Scope` と
+  `Statements.Sem.Core` を import)を `lean` で検査する: 一般定理 `Sem_denote`(任意の文脈・基礎の式・対応する環境・意味の両方向の同値)と境界 `denoteP_iff_denoteB`
+  の量化の形、各基礎段階の spec 宣言 `f`(`c42Decls`)の接続 `conn_f : ∀ args, Statements.Sem.Core.f args = denoteP (SEnv.ofList …) core_f`(`Prop` の等式、`rfl`)、
+  範囲 `basic_f : basic core_f = true`(`decide`)、保存 `pres_f : ∀ args, Sem (SEnv.ofList …) core_f (Statements.Sem.Core.f args)`(`check_sound_prop` が
+  `wt_f`・`form_f`・`basic_f`・`conn_f` から導く)。すべて `#audit_axioms` で監査し、ドライバは全部が `audit ok:` に現れ、接続した宣言数が `c42Decls` と一致することを
+  要求する。`c43Decls`(量化・命題の `let`・命題の条件の `if`・`match`)は `basic` が偽であることだけを確かめ、接続は次の段階。
+  負の検体 `StatementsWrong.lean`(`specMistranslations`: `∧` と `∨` を取り違えた `Wrong.specLogic`、含意の向きを反転した `Wrong.specCmp`、Bool の値を `= false` に
+  写した `Wrong.specVar`、`if` の分岐を入れ替えた `Wrong.specIfBool`)は型検査を通り、接続検査 `conn_wrong_*` の 4 行だけが失敗する(対照 `conn_*_ok` は成功)。
 
 ## golden test(C10)
 

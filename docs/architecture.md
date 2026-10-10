@@ -173,13 +173,18 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 | `denoteArmsV_hit` / `denoteArmsV_miss` / `denoteArmsV_guard_true` / `denoteArmsV_guard_false` | 腕の選択と束縛の形: 一致したガード無しの腕は束縛 `bs` を足した環境の本体、一致しない腕は飛ばす、ガードが真なら同じ環境の本体、ガードが偽なら残りの腕を **外側の環境** で(束縛は次の腕に漏れない) | — |
 | `check_sound_nat` / `check_sound_bool` | **接続検査の健全性(C44)**: 仮引数の値の列 `xs` について、その型の文脈で適格な式 `e` と、値 `v = denoteN (Env.ofList xs) e`(各実生成宣言の接続検査が確かめる等式)から `eval (Env.ofList xs) e = some (.nat v)` | 同上 + 接続検査の成功 |
 | `CmpOp.leanBool_eq` / `EqOp.leanNat_eq` / `EqOp.leanBool_eq` | 異なる表現の対応関係: 生成 Lean の Bool の比較(`Ord.compare a b == .lt` …)と `==` / `!=`(`BEq`)は独立意味論の `evalBool` / `decide (a = b)` と一致する(Bool の全要素 / `decide` の場合分け) | — |
+| `Sem_denote`(`Sem_denoteP`) | **Statements の基礎段階の保存(C42)**: `wtS Γ e = some τ`、`e` が基礎の構文(`basic`: 量化・命題の `let`・`match` を含まない)、`Γ` に命題の束縛が無く(`SCtx.NoProp`: spec 宣言の仮引数は値)、`Γ = ρ.ctx` なら `Sem ρ e P → (P ↔ denoteP ρ e)` — 独立意味論の命題と生成 Lean の読み(下)の命題が **同値**(両方向)。`Sem_denoteP`: 加えて `τ` が論理の位置の型なら `Sem ρ e (denoteP ρ e)`(読みは意味そのもの。`Sem_exists` + 命題外延性)。`Sem` の導出の帰納法(`Sem_denote_basic`) | 適格性 + 基礎段階の範囲。任意の式・任意の対応する環境・任意の意味 |
+| `denoteP_iff_denoteB` | **値 / 命題の境界(C42)**: 基礎の式を命題の束縛の無い環境で読むと、命題の読みは Bool の読み(Model の読み)が `true` であることと同値: `denoteP ρ e ↔ denoteB ρ.vals e = true`。生成 Statements が値の形で出す所(`if c = true`、両辺が値の `a = b`)と意味の側の `(C → P) ∧ (¬ C → Q)` / `P ↔ Q` を結ぶ | 基礎段階の範囲(`basic`、`SCtx.NoProp`) |
+| `check_sound_prop` | **接続検査の健全性(命題、C44)**: 仮引数の値の列 `xs` について、その型の文脈で適格な基礎の spec の式 `e` と、命題 `Q = denoteP (SEnv.ofList …) e`(各実生成宣言の接続検査が確かめる `Prop` の等式)から `Sem (SEnv.ofList …) e Q`(実生成宣言の命題は意味そのもの) | 同上 + 接続検査の成功 |
+| `EqOp.propIff_bool` / `CmpOp.leanBoolProp_iff` / `EqOp.propBool_iff` / `LogicOp.prop_iff` / `CmpOp.propNat_iff` / `EqOp.propNat_iff` | **値の等値と命題の同値の区別**(C42): 論理の位置の `==` / `!=` の意味 `(a = true) ↔ (b = true)` / その否定は、両辺が Bool の値なら生成 Statements の値の等値 `a = b` / `a ≠ b` と同値(Bool の全要素)。生成 Statements の Bool の比較 `Ord.compare a b = .lt` …(`CmpOp.leanBoolProp`)は `evalBool = true` と同値、論理 `∧` / `∨` / `→` は `&&` / `\|\|` / `implies` が `true` と同値、Nat の比較・等値の命題は `decide` が `true` と同値 | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
 不適格な Core(スコープ外・型の不一致・対象外の構文・網羅しない `match`・値の位置の命題)は `none`、行き詰まりは `none` / 導出なし、読みの境界の挙動と
-基礎段階の範囲(`basic`。`match` は C41 の段階)、`match` の読み(ガード不成立からの継続は外側の環境、Bool のリテラルの腕)— すべて `decide` または
+基礎段階の範囲(`basic`。`match` は C41 の段階)、`match` の読み(ガード不成立からの継続は外側の環境、Bool のリテラルの腕)、Statements の読み(値の `let` と
+Bool の条件の生成形は任意の引数で `rfl`、論理の位置の `a == b` の意味 `(a = true) ↔ (b = true)` と読み `a = b` の同値)— すべて `decide` / `rfl` または
 導出の場合分けで kernel が検査する。実際の compiler 経路の検体は `tests/accept/sem_core.naru`(`naru_test semantics` が引用して `wtR` / `wtS` を検査し、
-runtime 宣言は実生成宣言への接続も検査する)。
+runtime 宣言と基礎段階の spec 宣言は実生成宣言への接続も検査する)。
 
 ### Model の保存と実生成宣言への接続(`NaruSem/Denote.lean`、C40 / C41 / C44)
 
@@ -219,15 +224,59 @@ runtime 宣言は実生成宣言への接続も検査する)。
 (コンパイラの全入力への無条件の保存ではない)。読みの定義が `emitE` と食い違えば接続検査が失敗する(読みを信頼する必要はない)。
 基礎段階の範囲 `basic`(リテラル・局所名・`let`・`if`・二項演算・`!`・`min` / `max`)は段階の記録で、一般定理の前提ではない。`match` の保証は非再帰の
 Nat / Bool の `match`(`emitMatchGuarded` の形)に限り、再帰 fn の中の `Nat` の `match`(`emitNatChain` の `if` の連鎖)・Option / record / enum のパターンは
-対象外(C34 の回帰が別に守る)。Statements(`emitProp`、C42 / C43)の読み・保存は未実装。
+対象外(C34 の回帰が別に守る)。Statements(`emitProp`)は次の節。
+
+### Statements の保存と実生成宣言への接続(`NaruSem/DenoteProp.lean`、C42 / C44)
+
+生成 Statements の意味を、backend の文字列とは独立に Core から直接定めた **命題の読み** `denoteP : SEnv → Core.Expr → Prop`(値の位置は Model の読み
+`denoteN` / `denoteB` を `ρ.vals`(命題に束ねた名前はスコープ外)で読む。対象外・不適格な部分は `False` で、一般定理は適格な式にだけ対応を主張する)で表す。
+読みは `Backend.Statements.emitProp` が書く Lean と同じ形で書き、`emitProp` と同じく `if` の条件と `==` / `!=` の両辺は `proppyS`(コンパイラの `proppy` と同じ
+構文的な区分)が真なら命題として、偽なら値として読む:
+
+| Core | 生成 Lean(`emitProp`) | 読み(`denoteP`) | 独立意味論(`Sem`) |
+|---|---|---|---|
+| `true` / `false` | `True` / `False` | `True` / `False` | `b = true`(`lit`) |
+| Bool の値の局所名 | `x = true` | 環境の値 `b` で `b = true`(命題に束ねた名前はその命題) | `b = true`(`varVal`)/ 命題(`varProp`) |
+| `&&` / `\|\|` / `implies` / `!` | `∧` / `∨` / `→` / `¬` | `LogicOp.prop` / `¬` | 同じ |
+| Nat の `< <= > >=`、`==` / `!=` | `a < b` …、`a = b` / `a ≠ b`(被演算子は `emitE`) | `CmpOp.propNat` / `EqOp.propNat`(被演算子は `denoteN`) | 同じ(値は `eval`) |
+| Bool の `< <= > >=` | `Ord.compare a b = Ordering.lt` / `≠ .gt` / `= .gt` / `≠ .lt` | `CmpOp.leanBoolProp`(同じ形) | `CmpOp.evalBool a b = true` — `CmpOp.leanBoolProp_iff` |
+| 論理の位置の `==` / `!=`、両辺が値 | `a = b` / `a ≠ b` | `EqOp.propBool` | `(P ↔ Q)` / `¬ (P ↔ Q)` — `EqOp.propIff_bool`(値の等値と命題の同値の区別) |
+| 同じく、どちらかが命題 | `P ↔ Q` / `¬ (P ↔ Q)` | `EqOp.propIff` | 同じ(C43) |
+| `if`(条件が Bool の値) | `if c = true then P else Q` | `if denoteB c = true then … else …` | `(C → P) ∧ (¬ C → Q)` — `denoteP_iff_denoteB` で結ぶ |
+| `if`(条件が命題) | `(C → P) ∧ (¬ C → Q)` | 同じ形 | 同じ(C43) |
+| 値の `let` | `let x : Nat := v; P` / `let x : Bool := v; P` | 環境の拡張(値) | 同じ |
+| 命題の `let` | `let x : Prop := P; Q` | 環境の拡張(命題) | 同じ(C43) |
+| `match`(非再帰) | `emitMatchGuardedProp`: ガード付きの腕は `(match s with \| p => g → b \| _ => True) ∧ (¬ (match s with \| p => g \| _ => False) → REST)` | `denoteArmsP`: 腕を前から `matchPat` で試し、同じ形(`rest` は外側の環境) | `matchSkip` / `matchHit` / `matchGuard`(C43) |
+| `forall` / `exists` | `∀ (x : T), …` / `∃ (x : T), …` | `denoteQuant`(`Ty.carrier` の全要素) | `forallCons` / `existsCons`(C43) |
+
+採用方式は Model と同じ **汎用翻訳方式(一般定理)+ 生成物ごとの接続検査**。
+
+1. 一般定理 `Sem_denote`(C42、基礎段階): 任意の適格な基礎の式(`basic`: リテラル・局所名・値の `let`・Bool の条件の `if`・論理・比較・等値・`!`・`min` / `max`。
+   量化・命題の `let`・命題の条件の `if`・`match` を含まない)と、命題の束縛の無い任意の対応する環境について、`Sem ρ e P → (P ↔ denoteP ρ e)`(両方向の同値。
+   一方向の含意ではない)。`Sem_denoteP` は存在と合わせて `Sem ρ e (denoteP ρ e)`。値の位置は Model の保存(`preserve_nat` / `preserve_bool`)で読みの値に、
+   Bool の値の命題は境界 `denoteP_iff_denoteB` で結ぶ。前提 `basic` / `SCtx.NoProp` は段階の記録で、読み `denoteP` 自体は `wtS` の対象範囲すべて(C43 の構文を含む)に
+   定めてある(C43 はこの前提を外す)。
+2. 接続(生成物ごと、`lake exe naru_test semantics` の `StatementsCheck.lean`): 同じ検体を実際の CLI で生成した `Statements/Sem/Core.lean` をそのまま Lean の
+   モジュールとして import し、各基礎段階の spec 宣言 `f` について `conn_f : ∀ args, Statements.Sem.Core.f args = denoteP (SEnv.ofList [(x, .val (.nat x)), …]) core_f`
+   (`Prop` の等式)を kernel の定義的等しさ(`rfl`。生成形 `True` / `x = true` / `a = b` / `Ord.compare a b = .lt` / `if b = true then` / `let x : T := v` は読みと
+   定義的に等しい)で検査する。`core_f` は compiler の Core の引用で、`Quote.checkDecls` が実際の Core との一致を照合する。
+   `pres_f : ∀ args, Sem (SEnv.ofList …) core_f (Statements.Sem.Core.f args)` は `check_sound_prop` が `wt_f`(適格性)・`form_f`(論理の位置の型)・
+   `basic_f`(基礎段階の範囲。`decide`)・`conn_f` から導く。`conn_f` / `basic_f` / `pres_f` は公理監査に載る。
+3. 負の検体(C46、`StatementsWrong.lean`): 実生成文字列から作った誤翻訳 4 つ(`∧` と `∨` を取り違えた `Wrong.specLogic`、含意の向きを反転した `Wrong.specCmp`
+   (同値が一方向の誤りを退ける)、Bool の値を `= false` に写した境界の誤り `Wrong.specVar`、`if` の分岐を入れ替えた `Wrong.specIfBool`)は Lean の型検査を通るが、
+   同じ正しい入力 Core への接続検査だけが失敗し、正しい出力の対照は同じファイルで成功する。
+
+保証の境界: 保証は「接続検査に成功した実生成 spec 宣言」に対するもので、基礎段階(`c42Decls`)に限る。量化・命題の `let` と shadowing・命題の条件の `if`・
+ガード付き `match`(`c43Decls`。C43)は、読みは定義済みだが同値定理の前提の外で、接続も未検査(検証済みにしない)。spec 宣言の呼出し・input・コレクションは対象外。
 
 ### 信頼する部分・方式・未対応
 
 - 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の正しさは境界の外(IDEAL.md「対象外」)。
   Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。生成 Model の Lean への
   elaboration(`import Model.Sem.Core`)は Lean の elaborator に委ねる(接続検査はその結果の定数に対して行う)。
-- 採用方式: 上の「Model の保存と実生成宣言への接続」。Model は基礎段階(C40)と非再帰の Nat / Bool の `match`(C41)まで実装済み(接続はリテラル
-  パターンの scrutinee の場合分け + `rfl`)。Statements(C42 / C43)は命題の読みと同値定理が残る。
+- 採用方式: 上の「Model の保存と実生成宣言への接続」と「Statements の保存と実生成宣言への接続」。Model は基礎段階(C40)と非再帰の Nat / Bool の `match`
+  (C41)まで実装済み(接続はリテラルパターンの scrutinee の場合分け + `rfl`)。Statements は基礎段階(C42)まで実装済み(接続は `rfl`)で、量化・命題の `let`・
+  命題の条件の `if`・`match`(C43)は読みは定義済み、同値定理と接続が残る。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
 - 未対応: 一般の関数呼出しと input、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
   `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は C47 で文書化する。
