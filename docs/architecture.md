@@ -168,19 +168,53 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 | `Eval_unique` | `Eval ρ e v`(= `eval ρ e = some v`)の `v` は一意 | — |
 | `Sem_exists` | `wtS Γ e = some τ`、`τ` が論理の位置の型、`Γ = ρ.ctx` なら `∃ P, Sem ρ e P` | 適格性。値の位置は `eval_total` |
 | `Sem_unique` | `Sem ρ e P` と `Sem ρ e Q` なら `P = Q`(量化は関数外延性・命題外延性) | — |
+| `denote_sound`(`preserve_nat` / `preserve_bool`) | **Model の基礎段階の保存(C40)**: `wtR Γ e = some t`、`basic e = true`(基礎の構文だけ)、`Γ = ρ.ty` なら `eval ρ e = some (denoteV ρ t e)` — 独立意味論の結果が生成 Lean の読み(下)の値に一致する | 適格性と基礎の範囲。任意の式・任意の対応する環境 |
+| `check_sound_nat` / `check_sound_bool` | **接続検査の健全性(C44)**: 仮引数の値の列 `xs` について、その型の文脈で適格な基礎の式 `e` と、値 `v = denoteN (Env.ofList xs) e`(各実生成宣言の接続検査が `rfl` で確かめる等式)から `eval (Env.ofList xs) e = some (.nat v)` | 同上 + 接続検査の成功 |
+| `CmpOp.leanBool_eq` / `EqOp.leanNat_eq` / `EqOp.leanBool_eq` | 異なる表現の対応関係: 生成 Lean の Bool の比較(`Ord.compare a b == .lt` …)と `==` / `!=`(`BEq`)は独立意味論の `evalBool` / `decide (a = b)` と一致する(Bool の全要素 / `decide` の場合分け) | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
-不適格な Core(スコープ外・型の不一致・対象外の構文・網羅しない `match`・値の位置の命題)は `none`、行き詰まりは `none` / 導出なし — すべて `decide` または
-導出の場合分けで kernel が検査する。実際の compiler 経路の検体は `tests/accept/sem_core.naru`(`naru_test semantics` が引用して `wtR` / `wtS` を検査する)。
+不適格な Core(スコープ外・型の不一致・対象外の構文・網羅しない `match`・値の位置の命題)は `none`、行き詰まりは `none` / 導出なし、読みの境界の挙動と
+基礎段階の範囲(`basic`。`match` は範囲外)— すべて `decide` または導出の場合分けで kernel が検査する。実際の compiler 経路の検体は
+`tests/accept/sem_core.naru`(`naru_test semantics` が引用して `wtR` / `wtS` を検査し、基礎宣言は実生成宣言への接続も検査する)。
+
+### Model の基礎段階の保存と実生成宣言への接続(`NaruSem/Denote.lean`、C40 / C44)
+
+生成 Model の意味を、backend の文字列とは独立に Core から直接定めた **Lean での読み** `denoteN` / `denoteB`(Nat / Bool の総関数。対象外・不適格な
+部分は既定値で、一般定理は適格な式にだけ対応を主張する)で表す。読みは `Backend.Model.emitE` が書く Lean と同じ演算で書く:
+
+| Core | 生成 Lean(`emitE`) | 読み | 独立意味論(`eval`) |
+|---|---|---|---|
+| Nat の `+ - * / %`、`min` / `max` | `a + b` …、`Min.min a b` / `Max.max a b` | `ArithOp.eval` / `NatMethod.eval`(同じ Lean の `Nat` の演算: `-` は 0 で切り詰め、`/ 0 = 0`、`% 0 = a`) | 同じ(等式) |
+| Nat の `< <= > >=` | `Decidable.decide (a < b)` … | `CmpOp.evalNat`(`decide`) | 同じ(等式) |
+| Bool の `< <= > >=` | `Ord.compare a b == .lt` / `!= .gt` / `== .gt` / `!= .lt` | `CmpOp.leanBool`(同じ形) | `CmpOp.evalBool`(`!a && b` …)— `CmpOp.leanBool_eq` |
+| `==` / `!=` | `a == b` / `a != b`(`BEq`。Nat / Bool とも `instBEqOfDecidableEq`) | `EqOp.leanNat` / `EqOp.leanBool`(同じ形) | `decide (a = b)` / `decide (a ≠ b)` — `EqOp.leanNat_eq` / `EqOp.leanBool_eq` |
+| `&&` / `\|\|` / `implies` / `!` | `a && b` / `a \|\| b` / `!a \|\| b` / `!a` | `LogicOp.eval` / `!` | 同じ(等式) |
+| リテラル / 局所名 / `let` / `if` | `(n : Nat)` / `x` / `let x : T := v; b` / `if c then t else e` | `n` / 環境の参照 / 環境の拡張 / `if` | 同じ |
+
+採用方式(IDEAL.md「コンパイラ意味論保存の保証方式」): **汎用翻訳方式(一般定理)+ 生成物ごとの接続検査**。
+
+1. 一般定理 `denote_sound`: 任意の基礎の適格な式と任意の対応する環境について、独立意味論の結果 = 読みの値。
+2. 接続(生成物ごと、`lake exe naru_test semantics` の `ModelCheck.lean`): 検体 `tests/accept/sem_core.naru` を実際の CLI で生成した `Model/Sem/Core.lean` を
+   そのまま Lean のモジュールとして import し、各基礎宣言 `f` について `conn_f : ∀ args, Model.Sem.Core.f args = denoteN (Env.ofList [(x, .nat x), …]) core_f`
+   を kernel の定義的等しさ(`rfl`)で検査する。`core_f` は compiler の Core の引用で、`Quote.checkDecls` が実際の Core との一致を照合する
+   (誤出力に合わせて期待側を変えない)。`pres_f : ∀ args, eval (Env.ofList …) core_f = some (.nat (Model.Sem.Core.f args))` は `check_sound_nat`
+   が `wt_f`(適格性、`decide`)・`basic core_f`(`decide`)・`conn_f` から導く。`conn_f` / `pres_f` は公理監査に載る。
+3. 負の検体(C46、`ModelWrong.lean`): 実生成文字列から作った誤翻訳(`&&` と `||` を取り違えた `Wrong.logic`、2 つ目の束縛を取り違えた `Wrong.letShadow`)は
+   Lean の型検査を通るが、同じ正しい入力 Core への接続検査(`rfl`)だけが型の不一致で失敗し、正しい出力の対照は同じファイルで成功する。
+   生成先は追跡対象外(`.lake/naru/test/semantics/`)で、追跡された `generated/` と実コードは壊さない。
+
+保証の境界: 保証は「接続検査に成功した実生成宣言」に対するもので、検査しなかった宣言・対象外の構文・接続に失敗した出力は検証済みにならない
+(コンパイラの全入力への無条件の保存ではない)。読みの定義が `emitE` と食い違えば接続検査が失敗する(読みを信頼する必要はない)。
+基礎段階の範囲は `basic`(リテラル・局所名・`let`・`if`・二項演算・`!`・`min` / `max`)で、`match`(C41)と Statements(`emitProp`、C42 / C43)の読み・保存は未実装。
 
 ### 信頼する部分・方式・未対応
 
 - 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の正しさは境界の外(IDEAL.md「対象外」)。
-  Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。
-- 採用方式(予定): 汎用翻訳方式 — 対象 Core の Lean での読み(`emitE` / `emitProp` の出力の意味を Lean の関数 / 命題として定義したもの)と独立意味論の対応を
-  一般定理で示し、実生成宣言との接続は生成物ごとに kernel の定義的等しさ(`rfl`)で確かめる(C40〜C44 で実装)。本節は C39 の意味論と適格性までで、
-  保存定理・接続証拠はまだ無い(台帳 C40〜C47 は unmet)。
+  Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。生成 Model の Lean への
+  elaboration(`import Model.Sem.Core`)は Lean の elaborator に委ねる(接続検査はその結果の定数に対して行う)。
+- 採用方式: 上の「Model の基礎段階の保存と実生成宣言への接続」。C40 / C44 の基礎段階(Model)まで実装済み。`match`(C41)は読みの拡張と接続の方法
+  (生成形 `emitMatchGuarded` の `match` は scrutinee の場合分けなので `rfl` だけでは閉じない)、Statements(C42 / C43)は命題の読みと同値定理が残る。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
 - 未対応: 一般の関数呼出しと input、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
   `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は C47 で文書化する。

@@ -1,7 +1,8 @@
 import NaruSem.SemTotality
+import NaruSem.Denote
 
 /-!
-# 対象範囲と行き詰まりの検体(IDEAL.md C39)
+# 対象範囲と行き詰まりの検体(IDEAL.md C39 / C40)
 
 一般定理が空虚でないこと、不適格な Core が保証対象にならないこと、評価不能を成功値に置き換えないことを、具体的な Core で kernel に
 検査させる(`decide`: `wtR` / `wtS` / `eval` は構造的再帰の関数なので kernel が計算できる)。名前付きの定理にして
@@ -56,6 +57,31 @@ theorem ex_bool_order : eval Env.empty (.binop "<" (.lit (.bool false) .bool) (.
 
 theorem ex_implies : eval Env.empty (.binop "implies" (.lit (.bool true) .bool) (.lit (.bool false) .bool) .bool) = some (.bool false) := by
   decide
+
+/-! ## Lean での読み(C40): 基礎段階の範囲と境界の挙動(`NaruSem/Denote.lean`) -/
+
+/-- 基礎段階の範囲は空でない: `let y = x + 1; y * 2` は基礎の式。 -/
+theorem ex_basic_let : basic
+    (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)) = true := by
+  decide
+
+/-- `match` は基礎段階の範囲外(C41 の段階)。 -/
+theorem neg_basic_match : basic (.match_ (.lit (.nat 3) .nat) .nat [.mk .wild none (.lit (.nat 1) .nat)]) = false := by decide
+
+/-- 読みは境界の挙動を保つ(生成 Lean と同じ `Nat` の演算): 3 - 5 = 0、7 / 0 = 0、7 % 0 = 7。 -/
+theorem ex_denote_sub_truncates : denoteN Env.empty (.binop "-" (.lit (.nat 3) .nat) (.lit (.nat 5) .nat) .nat) = 0 := by decide
+theorem ex_denote_div_zero : denoteN Env.empty (.binop "/" (.lit (.nat 7) .nat) (.lit (.nat 0) .nat) .nat) = 0 := by decide
+theorem ex_denote_mod_zero : denoteN Env.empty (.binop "%" (.lit (.nat 7) .nat) (.lit (.nat 0) .nat) .nat) = 7 := by decide
+
+/-- Bool の比較の `Ord.compare` の形も `false < true`。 -/
+theorem ex_denote_bool_order : denoteB Env.empty (.binop "<" (.lit (.bool false) .bool) (.lit (.bool true) .bool) .bool) = true := by decide
+
+/-- 保存定理の具体例(一般定理の実例であって代用ではない): x = 4 で `let y = x + 1; y * 2` の意味は読みの値(= 10)。 -/
+theorem ex_preserve_let : eval (Env.ofList [("x", .nat 4)])
+    (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)) =
+    some (.nat (denoteN (Env.ofList [("x", .nat 4)])
+      (.let_ "y" .nat (.binop "+" (.var "x") (.lit (.nat 1) .nat) .nat) (.binop "*" (.var "y") (.lit (.nat 2) .nat) .nat)))) :=
+  preserve_nat ex_wtR_let ex_basic_let _ (Env.ty_ofList [("x", .nat 4)]).symm
 
 /-! ## 不適格な Core は保証対象にならない(`wtR` / `wtS` が `none`) -/
 

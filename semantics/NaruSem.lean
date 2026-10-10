@@ -3,6 +3,7 @@ import NaruSem.Eval
 import NaruSem.Sem
 import NaruSem.Totality
 import NaruSem.SemTotality
+import NaruSem.Denote
 import NaruSem.Examples
 import NaruSem.Quote
 import NaruSem.Audit
@@ -21,7 +22,9 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/Sem.lean` — spec の評価関係 `Sem`(環境 `SEnv`: 値と命題を区別)。
 - `NaruSem/Totality.lean` — runtime の全域性 `eval_total` と一意性 `Eval_unique`。
 - `NaruSem/SemTotality.lean` — spec の意味の存在 `Sem_exists` と一意性 `Sem_unique`。
-- `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まりの検体(`decide`)。
+- `NaruSem/Denote.lean` — Model の基礎段階(C40 / C44): 生成 Lean の読み `denoteN` / `denoteB`、基礎の範囲 `basic`、保存定理
+  `denote_sound`(`preserve_nat` / `preserve_bool`)、実生成宣言への接続検査の健全性 `check_sound_nat` / `check_sound_bool`。
+- `NaruSem/Examples.lean` — 対象範囲・境界の挙動・不適格な Core・行き詰まり・読みの検体(`decide`)。
 - `NaruSem/Quote.lean` — 実際の compiler 経路の Core を Lean の項として引用し、一致を照合する(`lake exe naru_test semantics` が使う)。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
@@ -47,3 +50,12 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.neg_wtS_prop_in_value NaruSem.neg_wtS_prop_scrutinee NaruSem.neg_wtS_quant_string NaruSem.ex_wtS_nat_not_form
   NaruSem.neg_eval_unbound NaruSem.neg_eval_ill_typed NaruSem.neg_eval_match_stuck NaruSem.neg_eval_guard_stuck NaruSem.neg_eval_call
   NaruSem.neg_Sem_unbound NaruSem.neg_Sem_nat_value NaruSem.neg_Sem_match_stuck
+
+-- C40 / C44: Model の基礎段階の保存定理と、実生成宣言への接続検査の健全性・異なる表現の対応関係
+#audit_axioms NaruSem.denote_sound NaruSem.preserve_nat NaruSem.preserve_bool NaruSem.denote_sound_all
+  NaruSem.check_sound_nat NaruSem.check_sound_bool NaruSem.Env.ty_ofList NaruSem.denoteV_ty
+  NaruSem.CmpOp.leanBool_eq NaruSem.EqOp.leanNat_eq NaruSem.EqOp.leanBool_eq
+
+-- C40: 基礎段階の範囲と読みの境界の検体
+#audit_axioms NaruSem.ex_basic_let NaruSem.neg_basic_match NaruSem.ex_denote_sub_truncates NaruSem.ex_denote_div_zero
+  NaruSem.ex_denote_mod_zero NaruSem.ex_denote_bool_order NaruSem.ex_preserve_let
