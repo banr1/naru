@@ -485,4 +485,11 @@ def wtDecl (d : Decl) : Option DeclTy :=
       | none => none
     | _, _ => none
 
+/-- 宣言の仮引数から本体の文脈(runtime)。`wtDecl` が本体に使う文脈と同じ(検査プログラムが `actx_<f>` を宣言の仮引数に結ぶのに使う)。 -/
+def declCtx? (d : Decl) : Option Ctx := (paramsCtx d.params).map Ctx.ofList
+
+/-- 宣言の仮引数から本体の文脈(spec。仮引数は値)。 -/
+def declSCtx? (d : Decl) : Option SCtx :=
+  (paramsCtx d.params).map fun entries => SCtx.ofList (entries.map fun (x, t) => (x, .val t))
+
 end NaruSem.Surf

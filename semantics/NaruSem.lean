@@ -12,6 +12,8 @@ import NaruSem.SurfaceEval
 import NaruSem.SurfaceTotality
 import NaruSem.SurfaceExamples
 import NaruSem.SurfaceQuote
+import NaruSem.Lower
+import NaruSem.LowerExamples
 import NaruSem.Audit
 
 /-!
@@ -51,6 +53,12 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   (`eqNat` / `eqForm` の排他性)。
 - `NaruSem/SurfaceExamples.lean` — Surface AST の対象範囲・不適格な AST・行き詰まりの検体(`decide`)。
 - `NaruSem/SurfaceQuote.lean` — 実際の構文解析の出力を対象の AST に写し(`ofAst?`)、Lean の項として引用し、埋め込みと `==` で一致を照合する。
+- `NaruSem/Lower.lean` — Surface AST → Core の対応(C49): frontend から独立の変換 `Surf.lower`(+ `lowerStmts` / `lowerArms` / `lowerArm` / `lowerPat`、ブロックの
+  `let` の列の畳み込み `Surf.mkLets`)、一般定理 `Surf.lower_sound`(任意の適格な runtime の AST に変換が定まり、その Core は適格で、任意の環境で AST の意味と
+  Core の意味が一致する。`Surf.wtR.mutual_induct` の `Surf.lower_sound_all`。系 `lower_total` / `lower_wt` / `lower_eval`)、C40 / C41 と合成した
+  `Surf.preserve_nat` / `Surf.preserve_bool`(AST の意味 = 生成 Lean の読み)、接続検査の健全性 `Surf.check_sound_nat` / `Surf.check_sound_bool`
+  (`low_<f>` + `conn_<f>` から AST の意味 = 実生成宣言の値)。
+- `NaruSem/LowerExamples.lean` — 変換の検体(C49 / C52): 対象の各構文の変換の形、対象外の構文・型の定まらない式は変換されない、意味の異なる(適格な)Core は変換結果でない。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -144,3 +152,20 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.neg_eval_block_no_tail NaruSem.Surf.neg_eval_block_stuck_let NaruSem.Surf.neg_eval_path NaruSem.Surf.neg_eval_quant
   NaruSem.Surf.neg_Sem_unbound NaruSem.Surf.neg_Sem_nat_value NaruSem.Surf.neg_Sem_match_stuck NaruSem.Surf.neg_Sem_block_no_tail
   NaruSem.Surf.ex_Sem_not_nat_eq
+
+-- C49: Surface AST → Core の対応 — 一般定理(変換の全域性・適格性の保存・値の対応)、生成 Lean への接続(C40 / C41 との合成)と接続検査の健全性、
+-- パターン・演算・束縛の列の対応の補題
+#audit_axioms NaruSem.Surf.lower_sound NaruSem.Surf.lower_sound_all NaruSem.Surf.lower_total NaruSem.Surf.lower_wt NaruSem.Surf.lower_eval
+  NaruSem.Surf.preserve_nat NaruSem.Surf.preserve_bool NaruSem.Surf.check_sound_nat NaruSem.Surf.check_sound_bool
+  NaruSem.Surf.wtR_mkLets NaruSem.Surf.eval_mkLets NaruSem.Surf.wtPat_lower NaruSem.Surf.matchPat_lower NaruSem.Surf.binopResult_result
+  NaruSem.TyV.toTy?_toTyV NaruSem.Surf.lowerStmts_cons NaruSem.Surf.lowerArms_cons NaruSem.Surf.lowerArm_mk
+
+-- C49 / C52: 変換の検体 — 対象の各構文(ブロック・型注釈・ガード付き match・min / max・Bool の比較・Nat の等値)の変換の形と一般定理の実例、
+-- 対象外(量化・末尾式の無いブロック・対象外のメソッド・修飾名)と型の定まらない式(スコープ外の被演算子・値)は変換されない、
+-- 意味の異なる適格な Core(&& / || の取り違え、束縛の改名)は変換結果でない
+#audit_axioms NaruSem.Surf.ex_lower_block NaruSem.Surf.ex_lower_block_wt NaruSem.Surf.ex_lower_block_eval NaruSem.Surf.ex_preserve_block
+  NaruSem.Surf.ex_lower_annot NaruSem.Surf.ex_lower_match_guard NaruSem.Surf.ex_lower_min NaruSem.Surf.ex_lower_cmp_bool NaruSem.Surf.ex_lower_eq_nat
+  NaruSem.Surf.neg_lower_quant NaruSem.Surf.neg_lower_block_no_tail NaruSem.Surf.neg_lower_method NaruSem.Surf.neg_lower_path
+  NaruSem.Surf.neg_lower_unbound NaruSem.Surf.neg_lower_let_unbound
+  NaruSem.Surf.ex_wtR_logic_wrong NaruSem.Surf.neg_lower_swapped NaruSem.Surf.ex_lower_let_shadow NaruSem.Surf.ex_wtR_let_shadow_wrong
+  NaruSem.Surf.neg_lower_let_shadow
