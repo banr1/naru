@@ -3,9 +3,10 @@ import NaruSem.Quote
 import NaruSem.Denote
 import NaruSem.SurfaceQuote
 import NaruSem.Lower
+import NaruSem.LowerSpec
 
 /-!
-# `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の AST・Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C44 / C45 / C46 / C48)
+# `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の AST・Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C43 / C44 / C45 / C46 / C47 / C48〜C52)
 
 1. C45 の検査入口 `lake build NaruSem`(意味論・一般定理・検体・公理監査を Lean kernel に検査させる)が exit 0。続けて
    `lake env lean semantics/NaruSem.lean` で公理監査の出力(`audit ok: <定数> depends on axioms […]`)を取り直し、必須の定理
@@ -52,6 +53,14 @@ import NaruSem.Lower
    `&&` にした `WrongCore.logic`、2 つ目の `let_` を改名した `WrongCore.letShadow`、ガードを否定した `WrongCore.matchNat` を作る。どれも AST の意味と食い違う具体環境を
    ドライバが探して `diff_<f>_wrong`(`decide`)で kernel にも検査させる)は Core の適格性 `wtR`(`decide`)を通るが、
    同じ正しい AST の変換との一致 `conn_wrong_*`(`Surf.lower actx_<f> ast_<f> = some WrongCore.<f>`、`rfl`)だけが失敗する(対照 `conn_*_ok` は成功。定理名は Model / Statements の負の検体と共通の `wrongProgramWith` のもの)。
+9. C50 / C51 / C52(Surface AST → Core → 生成 Lean、spec): 各 spec 宣言について、実際に構文解析された AST の独立した変換 `NaruSem.Surf.lowerS`(`semantics/NaruSem/LowerSpec.lean`)
+   が実際に出力された Core に等しいこと(`lows_<f> : Surf.lowerS actx_<f> ast_<f> = some core_<f>`、`rfl`。`SurfaceScope.lean`)を検査し、`StatementsCheck.lean`(`SurfaceScope` を import)が
+   一般定理 `Surf.lowerS_sound` / `Surf.Sem_lowerS_iff`(双方向)/ `Surf.preserve_prop` の量化の形と、各 spec 宣言の AST → 生成 Lean の合成
+   `apres_<f> : ∀ args, Surf.Sem (SEnv.ofList …) ast_<f> (Statements.Sem.Core.<f> args)`(`Surf.check_sound_prop` が `wta_<f>`・`forma_<f>`・`lows_<f>`・`conn_<f>` から導く)を kernel に
+   検査させ、公理監査に載せる。負の検体 `SurfaceSpecWrong.lean`(`specCoreMistranslations`: 実際の Core の値から `∀` を `∃` にした `WrongCore.specForall`、`∃` を `∀` にした
+   `WrongCore.specExists`、命題の `let` の束縛を取り違えた `WrongCore.specLetProp`、ガードを否定した `WrongCore.specMatch` を作る。どれも `wtS` を通り、正しい Core の読みと意味の
+   食い違う具体環境を `diff_<f>_wrong : ¬ (denoteP ρ WrongCore.<f> ↔ denoteP ρ core_<f>)` で kernel にも検査させる)は、同じ正しい AST の変換との一致 `conn_wrong_*`
+   (`Surf.lowerS actx_<f> ast_<f> = some WrongCore.<f>`、`rfl`)だけが失敗する(対照 `conn_*_ok` は成功)。
 -/
 
 namespace NaruTest.Semantics
@@ -82,7 +91,11 @@ def requiredTheorems : List String :=
     "NaruSem.Surf.eval_mono", "NaruSem.Surf.Sem_not_nat",
     -- C49: Surface AST → Core の対応(変換の全域性・適格性の保存・値の対応)と、C40 / C41 と合成した生成 Lean への接続、接続検査の健全性
     "NaruSem.Surf.lower_sound", "NaruSem.Surf.lower_total", "NaruSem.Surf.lower_wt", "NaruSem.Surf.lower_eval",
-    "NaruSem.Surf.preserve_nat", "NaruSem.Surf.preserve_bool", "NaruSem.Surf.check_sound_nat", "NaruSem.Surf.check_sound_bool" ]
+    "NaruSem.Surf.preserve_nat", "NaruSem.Surf.preserve_bool", "NaruSem.Surf.check_sound_nat", "NaruSem.Surf.check_sound_bool",
+    -- C50: spec の Surface AST → Core の対応(変換の全域性・適格性の保存・意味の対応と双方向の同値・命題の区分の一致)と、C42 / C43 と合成した生成 Lean への接続、
+    -- 接続検査の健全性
+    "NaruSem.Surf.lowerS_sound", "NaruSem.Surf.lowerS_total", "NaruSem.Surf.lowerS_wt", "NaruSem.Surf.lowerS_Sem", "NaruSem.Surf.Sem_lowerS_iff",
+    "NaruSem.Surf.proppyS_lowerS", "NaruSem.Surf.proppyS_lower", "NaruSem.Surf.preserve_prop", "NaruSem.Surf.check_sound_prop" ]
 
 /-- 検体の宣言(修飾名, spec か)。今回の保存対象の各構文を 1 つずつ。欠けていれば FAIL。 -/
 def c39Decls : List (String × Bool) :=
@@ -229,7 +242,8 @@ def surfaceProgram (quoted : List QuotedDecl) : String :=
     let n := shortName q.key
     let wt := if q.spec then
       s!"theorem wta_{n} : NaruSem.Surf.wtS actx_{n} ast_{n} = some {q.ty} := by decide\n" ++
-      s!"theorem forma_{n} : NaruSem.STy.isForm {q.ty} = true := by decide\n"
+      s!"theorem forma_{n} : NaruSem.STy.isForm {q.ty} = true := by decide\n" ++
+      s!"-- the lowering of the parsed spec AST is the Core the compiler produced (C50 / C51)\ntheorem lows_{n} : NaruSem.Surf.lowerS actx_{n} ast_{n} = some core_{n} := rfl\n"
     else
       s!"theorem wta_{n} : NaruSem.Surf.wtR actx_{n} ast_{n} = some {q.ty} := by decide\n" ++
       s!"-- the lowering of the parsed AST is the Core the compiler produced (C49 / C51)\ntheorem low_{n} : NaruSem.Surf.lower actx_{n} ast_{n} = some core_{n} := rfl\n"
@@ -238,7 +252,7 @@ def surfaceProgram (quoted : List QuotedDecl) : String :=
     s!"def decl_{n} : NaruSem.Surf.Decl :=\n  {q.decl}\ntheorem wtd_{n} : NaruSem.Surf.wtDecl decl_{n} = some {q.declTy} := by decide\n" ++
     s!"-- the context of the body is the one the declaration's parameters give (C51)\ntheorem actx_{n}_decl : NaruSem.Surf.{declCtx} decl_{n} = some actx_{n} := rfl\n\n"
   let pairs := quoted.map fun q => s!"({q.key.quote}, decl_{shortName q.key})"
-  s!"-- naru_test semantics (C48 / C49): generated from NaruTest/Semantics.lean. The Surface AST of each declaration of {source} as produced by the parser.\n" ++
+  s!"-- naru_test semantics (C48 / C49 / C50): generated from NaruTest/Semantics.lean. The Surface AST of each declaration of {source} as produced by the parser.\n" ++
   "import Scope\n\n" ++
   "".intercalate defs ++
   s!"-- the quoted declarations embed (`Decl.toAst`) to the declarations the parser produces for the same source (C48 / C51)\nrun_cmd NaruSem.Surf.Quote.checkDecls {source.quote} [{", ".intercalate pairs}]\n"
@@ -422,13 +436,31 @@ def specConnOf (key : String) (params : List Naru.Core.Param) (body : Naru.Core.
   specConnStmt s!"conn_{n}" lean params body s!"core_{n}" ++ "\n" ++
   s!"theorem stage_{n} : NaruSem.basic core_{n} = {isBasic} := by decide\n" ++
   s!"theorem pres_{n} : {quant s!"NaruSem.Sem (NaruSem.SEnv.ofList {env}) core_{n} ({call})"} :=\n" ++
-  s!"  {lam s!"NaruSem.check_sound_prop {valsEnv} wt_{n} form_{n} ({conn})"}\n\n"
+  s!"  {lam s!"NaruSem.check_sound_prop {valsEnv} wt_{n} form_{n} ({conn})"}\n" ++
+  s!"-- the parsed AST's meaning is the proposition of the generated declaration: AST → Core (`lows_{n}`) → generated Lean (`conn_{n}`) (C50 / C51)\n" ++
+  s!"theorem apres_{n} : {quant s!"NaruSem.Surf.Sem (NaruSem.SEnv.ofList {env}) ast_{n} ({call})"} :=\n" ++
+  s!"  {lam s!"NaruSem.Surf.check_sound_prop {valsEnv} wta_{n} forma_{n} lows_{n} ({conn})"}\n\n"
 
 /-- 検査プログラム `StatementsCheck.lean`: 実生成 Statements を import し、一般定理の量化の形と、各 spec 宣言の接続・段階・保存を kernel に検査させて監査する。 -/
 def statementsProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) : String :=
-  let names := decls.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}"]
-  s!"-- naru_test semantics (C42 / C43 / C44): generated from NaruTest/Semantics.lean. Connection of the generated Statements of {source} to the Core semantics.\n" ++
-  "import Scope\nimport Statements.Sem.Core\n\n" ++
+  let names := decls.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}", s!"apres_{shortName key}"]
+  s!"-- naru_test semantics (C42 / C43 / C44 / C50): generated from NaruTest/Semantics.lean. Connection of the generated Statements of {source} to the Core semantics and to the Surface AST semantics.\n" ++
+  "import SurfaceScope\nimport Statements.Sem.Core\n\n" ++
+  "-- the spec AST → Core theorem quantifies over any context, well-formed spec Surface AST and type: the lowering is defined, its Core is\n" ++
+  "-- well-formed in the same context, and in every matching environment the AST's meaning is the Core's meaning (C50)\n" ++
+  "example : ∀ (Γ : NaruSem.SCtx) (e : NaruSem.Surf.Expr) (τ : NaruSem.STy), NaruSem.Surf.wtS Γ e = some τ →\n" ++
+  "    ∃ c, NaruSem.Surf.lowerS Γ e = some c ∧ NaruSem.wtS Γ c = some τ ∧\n" ++
+  "      ∀ (ρ : NaruSem.SEnv), Γ = ρ.ctx → ∀ (P : Prop), NaruSem.Surf.Sem ρ e P → NaruSem.Sem ρ c P :=\n" ++
+  "  fun _ _ _ h => NaruSem.Surf.lowerS_sound h\n" ++
+  "-- the correspondence is an equivalence in both directions for any proposition (C50)\n" ++
+  "example : ∀ (Γ : NaruSem.SCtx) (e : NaruSem.Surf.Expr) (τ : NaruSem.STy) (c : Naru.Core.Expr) (ρ : NaruSem.SEnv) (P : Prop),\n" ++
+  "    NaruSem.Surf.wtS Γ e = some τ → τ.isForm = true → NaruSem.Surf.lowerS Γ e = some c → Γ = ρ.ctx →\n" ++
+  "    (NaruSem.Surf.Sem ρ e P ↔ NaruSem.Sem ρ c P) :=\n" ++
+  "  fun _ _ _ _ _ P h hf hl hρ => NaruSem.Surf.Sem_lowerS_iff h hf hl _ hρ P\n" ++
+  "-- composed with C42 / C43: the AST's meaning is equivalent to the Lean reading of the lowered Core, for any matching environment (C50)\n" ++
+  "example : ∀ (Γ : NaruSem.SCtx) (e : NaruSem.Surf.Expr) (τ : NaruSem.STy) (c : Naru.Core.Expr) (ρ : NaruSem.SEnv) (P : Prop),\n" ++
+  "    NaruSem.Surf.wtS Γ e = some τ → NaruSem.Surf.lowerS Γ e = some c → Γ = ρ.ctx → NaruSem.Surf.Sem ρ e P → (P ↔ NaruSem.denoteP ρ c) :=\n" ++
+  "  fun _ _ _ _ _ _ h hl hρ hP => NaruSem.Surf.preserve_prop h hl _ hρ hP\n" ++
   "-- the general theorem quantifies over any context, well-formed spec expression (quantifiers, Prop lets, Prop ifs, guarded matches included),\n" ++
   "-- matching environment (Prop bindings included) and meaning, and is an equivalence (C42 / C43)\n" ++
   "example : ∀ (Γ : NaruSem.SCtx) (e : Naru.Core.Expr) (τ : NaruSem.STy) (ρ : NaruSem.SEnv) (P : Prop),\n" ++
@@ -658,6 +690,87 @@ def deriveCoreWrongs (decls : List (String × List Naru.Core.Param × NaruSem.Ty
     | _, _ => fail s!"C52: `{mt.key}` is not a connected runtime declaration with a parsed AST"
   return wrongs
 
+/-! ### spec の AST → Core の負の検体(C50 / C52)
+
+実際の spec の Core から、Core の適格性(`wtS`)は保つが意味の異なる Core を作り(`Core.Expr` の値の変換)、同じ正しい AST の変換 `Surf.lowerS` との一致
+`conn_wrong_<f> : Surf.lowerS actx_<f> ast_<f> = some WrongCore.<f> := rfl` だけが失敗することを確かめる。意味の食い違いは、命題の意味は `decide` で評価できないので、
+具体環境での読み `denoteP` の非同値 `diff_<f>_wrong : ¬ (denoteP ρ WrongCore.<f> ↔ denoteP ρ core_<f>)` を明示の命題(`show`)と証明で kernel に検査させる
+(`Sem_denote` により読みは意味そのものなので、これは意味の食い違い)。 -/
+
+/-- 負の検体の作り方(spec の Core): (検体の宣言, `WrongCore.<名前>`, Core の変換, 食い違う環境, その環境での非同値の証明, 説明)。 -/
+structure SpecCoreMistranslation where
+  key : String
+  wrong : String
+  transform : Naru.Core.Expr → Naru.Core.Expr
+  witnessEnv : List (String × NaruSem.Val)
+  witness : String
+  note : String
+
+/-- 最外の量化の `forall` / `exists` を取り違える。 -/
+def swapTopQuant : Naru.Core.Expr → Naru.Core.Expr
+  | .quant .forall_ bs b => .quant .exists_ bs b
+  | .quant .exists_ bs b => .quant .forall_ bs b
+  | e => e
+
+/-- 2 つの `let_` の末尾の局所名が 2 つ目の束縛なら 1 つ目の束縛に取り違える(`specLetProp`: `q` の代わりに `p`)。 -/
+def retargetLetTail : Naru.Core.Expr → Naru.Core.Expr
+  | .let_ x ty v (.let_ y ty2 v2 (.var z)) => .let_ x ty v (.let_ y ty2 v2 (.var (if z == y then x else z)))
+  | e => e
+
+def specCoreMistranslations : List SpecCoreMistranslation :=
+  [ { key := "Sem.Core.specForall", wrong := "WrongCore.specForall", transform := swapTopQuant, witnessEnv := [("x", .nat 1)],
+      witness := "by\n  show ¬ ((∃ a : Nat, a ≥ 1) ↔ (∀ a : Nat, a ≥ 1))\n  exact fun h => absurd (h.1 ⟨1, Nat.le_refl 1⟩ 0) (by decide)",
+      note := "`forall` replaced by `exists` in the Core of `specForall` (well-formed; at x = 1 `∃ n, n ≥ 1` holds but `∀ n, n ≥ 1` does not)" },
+    { key := "Sem.Core.specExists", wrong := "WrongCore.specExists", transform := swapTopQuant, witnessEnv := [("x", .nat 0)],
+      witness := "by\n  show ¬ ((∀ b : Bool, b = false) ↔ (∃ b : Bool, b = false))\n  exact fun h => absurd (h.2 ⟨false, rfl⟩ true) (by decide)",
+      note := "`exists` replaced by `forall` in the Core of `specExists` (well-formed; at x = 0 `∃ b, b = (x > 0)` holds but `∀ b, …` does not)" },
+    { key := "Sem.Core.specLetProp", wrong := "WrongCore.specLetProp", transform := retargetLetTail, witnessEnv := [("x", .nat 0)],
+      witness := "by\n  show ¬ ((∀ a : Nat, a + 0 ≥ 0) ↔ ((∀ a : Nat, a + 0 ≥ 0) ∧ 0 ≥ 1))\n  exact fun h => absurd (h.1 (fun a => Nat.zero_le _)).2 (by decide)",
+      note := "the body refers to the wrong Prop binding (`p` instead of `q`) in the Core of `specLetProp` (well-formed; at x = 0 `p` holds but `q = p && x >= 1` does not)" },
+    { key := "Sem.Core.specMatch", wrong := "WrongCore.specMatch", transform := negateGuards, witnessEnv := [("x", .nat 1)],
+      witness := "by\n  show ¬ (((¬ (1 < 3) → 1 + 1 ≤ 3) ∧ (¬ ¬ (1 < 3) → 1 ≥ 3)) ↔ (((1 < 3) → 1 + 1 ≤ 3) ∧ (¬ (1 < 3) → 1 ≥ 3)))\n  decide",
+      note := "the guard negated in the Core of `specMatch` (well-formed; at x = 1 the negated guard sends the arm to the following arm `x >= 3`)" } ]
+
+def senvTerm (env : List (String × NaruSem.Val)) : String :=
+  "NaruSem.SEnv.ofList [" ++ ", ".intercalate (env.map fun (x, v) => s!"({x.quote}, NaruSem.SVal.val ({valTerm v}))") ++ "]"
+
+/-- 負の検体 `SurfaceSpecWrong.lean`(spec の AST → Core): 誤った Core の定義と適格性(`decide`)・意味の食い違い(kernel)の後に、対照 `conn_<f>_ok` と誤った Core への対応
+`conn_wrong_<f>`(`rfl`)。 -/
+def surfaceSpecWrongProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) (wrongs : List (Mistranslation × String)) :
+    String × List Nat :=
+  wrongProgramWith "spec Core" "SurfaceScope" wrongs fun thm lean key =>
+    (decls.find? fun (k, _, _, _) => k == key).map fun (key, _, _, _) =>
+      let n := shortName key
+      let target := if lean.isEmpty then s!"core_{n}" else lean
+      s!"theorem {thm} : NaruSem.Surf.lowerS actx_{n} ast_{n} = some {target} := rfl"
+
+/-- 実際の spec の Core から負の検体を作る: 変換が実際に Core を変え、変えた Core が同じ文脈で適格(`wtS` が同じ型)で、正しい AST の変換(= 実際の Core)と
+異なることをドライバで確かめてから、Lean の定義・適格性の定理・意味の食い違いの定理(`diff_<f>_wrong`: 食い違う環境での読みの非同値。明示の命題と証明)の文面を返す。 -/
+def deriveSpecCoreWrongs (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) (asts : List (String × NaruSem.Surf.Expr))
+    (mts : List SpecCoreMistranslation) : M (List (Mistranslation × String)) := do
+  let mut wrongs : List (Mistranslation × String) := []
+  for mt in mts do
+    match decls.find? fun (k, _, _, _) => k == mt.key, asts.lookup mt.key with
+    | some (key, params, body, _), some ast =>
+      let n := shortName key
+      let wrong := mt.transform body
+      let ctx := sctxOfParams params
+      match NaruSem.wtS ctx body with
+      | some τ =>
+        if wrong != body && NaruSem.wtS ctx wrong == some τ && NaruSem.Surf.lowerS ctx ast == some body && NaruSem.Surf.lowerS ctx ast != some wrong then
+          ok s!"C52: `{mt.wrong}` is the Core of `{key}` with {mt.note}: well-formed (wtS = {styTerm τ}), not the lowering of the parsed AST; its reading differs at {mt.witnessEnv.map fun (x, v) => s!"{x} = {valTerm v}"} (kernel)"
+          let ρ := senvTerm mt.witnessEnv
+          let text := s!"def {mt.wrong} : Naru.Core.Expr :=\n  {NaruSem.Quote.expr wrong}\n" ++
+            s!"theorem wt_{n}_wrong : NaruSem.wtS ctx_{n} {mt.wrong} = some {styTerm τ} := by decide\n" ++
+            s!"-- the reading (= meaning, by `Sem_denote`) of the wrong Core is not equivalent to that of the correct Core in this environment\n" ++
+            s!"theorem diff_{n}_wrong : ¬ (NaruSem.denoteP ({ρ}) {mt.wrong} ↔ NaruSem.denoteP ({ρ}) core_{n}) := {mt.witness}"
+          let m : Mistranslation := { key := key, wrong := mt.wrong, good := "", bad := "", transform := id, note := mt.note }
+          wrongs := wrongs ++ [(m, text)]
+        else fail s!"C52: could not derive `{mt.wrong}` from the Core of `{key}`: changed {wrong != body}, wtS {(NaruSem.wtS ctx wrong).map styTerm}, lowering agrees {NaruSem.Surf.lowerS ctx ast == some body}"
+      | none => fail s!"C52: the Core of `{key}` is not in scope (wtS = none)"
+    | _, _ => fail s!"C52: `{mt.key}` is not a connected spec declaration with a parsed AST"
+  return wrongs
+
 /-- 実生成文字列から負の検体を作る(型検査は通るが接続は失敗する誤出力)。`good` が元の文字列にあり、変換後に `bad` が現れ、変換が実際に変えたことを確かめる。 -/
 def deriveWrongs (what : String) (text : String) (leanNameOf : String → String) (mts : List Mistranslation) : M (List (Mistranslation × String)) := do
   let mut wrongs : List (Mistranslation × String) := []
@@ -789,6 +902,7 @@ def checks : M Unit := do
   heading "C48 / C49 scope of the Surface AST produced by the parser and its lowering to the compiler's Core"
   let mut quotedAst : List QuotedDecl := []
   let mut parsedAsts : List (String × NaruSem.Surf.Expr) := []
+  let mut parsedSpecAsts : List (String × NaruSem.Surf.Expr) := []
   for (key, spec) in c39Decls do
     match NaruSem.Surf.Quote.declOf? key checked.mods with
     | none => fail s!"C48: {source} has no fn / spec declaration `{key}` in the parsed AST"
@@ -827,6 +941,14 @@ def checks : M Unit := do
                 { key := key, ast := NaruSem.Surf.Quote.expr sd.body, ctx := NaruSem.Surf.Quote.ctxTerm entries true, ty := (styTerm τ),
                   spec := true, decl := declTerm, declTy := NaruSem.Surf.Quote.declTy dty }
               quotedAst := quotedAst ++ [q]
+              parsedSpecAsts := parsedSpecAsts ++ [(key, sd.body)]
+              -- C50 / C51: 独立した変換 `Surf.lowerS` が実際の Core に等しい(ドライバの照合。kernel の検査は `SurfaceScope.lean` の `lows_<f>`)
+              match specConnected.find? fun (k, _, _, _) => k == key with
+              | some (_, params, body, _) =>
+                let lowered := NaruSem.Surf.lowerS (sctxOfParams params) sd.body
+                if lowered == some body then ok s!"C50: the lowering `Surf.lowerS` of the parsed `{key}` is the Core the compiler produced"
+                else fail s!"C50: the lowering of the parsed `{key}` differs from the compiler's Core:\n  lowered: {lowered.map NaruSem.Quote.expr}\n  actual: {NaruSem.Quote.expr body}"
+              | none => fail s!"C50: `{key}` is not among the connected spec declarations"
             else fail s!"C48: `{key}` (spec): Surf.wtDecl = {styTerm τ} but the Core's wtS = {coreTy}"
           | _, _ => fail s!"C48: the phase of `{key}` per Surf.wtDecl does not match c39Decls (spec = {spec})"
   -- 対象外の構文(呼出し・Option のパターン・再帰 …)を含む宣言は対象の AST に写らない
@@ -842,12 +964,14 @@ def checks : M Unit := do
   IO.FS.writeFile surfaceFile (surfaceProgram quotedAst)
   let lpScope := s!"{outDir}:{leanPath}"
   let runtimeAsts := quotedAst.filter fun q => !q.spec
-  let r2 ← step s!"C48 / C49: lean {surfaceFile} as module `SurfaceScope` (well-formedness of {quotedAst.length} quoted Surface AST declarations and bodies by `decide`, the lowering of the {runtimeAsts.length} runtime ASTs is the compiler's Core by `rfl`, identity with the parser's AST)"
+  let specAsts := quotedAst.filter fun q => q.spec
+  let r2 ← step s!"C48 / C49 / C50: lean {surfaceFile} as module `SurfaceScope` (well-formedness of {quotedAst.length} quoted Surface AST declarations and bodies by `decide`, the lowering of the {runtimeAsts.length} runtime ASTs (`Surf.lower`) and of the {specAsts.length} spec ASTs (`Surf.lowerS`) is the compiler's Core by `rfl`, identity with the parser's AST)"
     "lean" #[s!"--root={outDir}", "-o", (outDir / "SurfaceScope.olean").toString, surfaceFile.toString] (env := #[("LEAN_PATH", some lpScope)])
   let agreeAst := s!"checkDecls: {quotedAst.length} quoted Surface AST declaration(s) agree"
-  if r2.exitCode == 0 && quotedAst.length == c39Decls.length && runtimeAsts.length == c40Decls.length + c41Decls.length && (contains r2.stdout agreeAst || contains r2.stderr agreeAst) then
-    ok s!"C48 / C49 / C51: the {quotedAst.length} quoted Surface AST declarations (kind, name, span, parameters, return type, body) embed to the declarations the parser produces for {source}; the lowering of the {runtimeAsts.length} runtime ASTs is the compiler's Core (kernel)"
-  else fail s!"C48 / C49 / C51: identity of the quoted Surface AST / lowering: expected `{agreeAst}` in the output of lean {surfaceFile} ({quotedAst.length} of {c39Decls.length} quoted, {runtimeAsts.length} runtime)\n{tail r2.stdout 1500}\n{tail r2.stderr 1500}"
+  if r2.exitCode == 0 && quotedAst.length == c39Decls.length && runtimeAsts.length == c40Decls.length + c41Decls.length &&
+      specAsts.length == c42Decls.length + c43Decls.length && parsedSpecAsts.length == specAsts.length && (contains r2.stdout agreeAst || contains r2.stderr agreeAst) then
+    ok s!"C48 / C49 / C50 / C51: the {quotedAst.length} quoted Surface AST declarations (kind, name, span, parameters, return type, body) embed to the declarations the parser produces for {source}; the lowering of the {runtimeAsts.length} runtime ASTs and {specAsts.length} spec ASTs is the compiler's Core (kernel)"
+  else fail s!"C48 / C49 / C50 / C51: identity of the quoted Surface AST / lowering: expected `{agreeAst}` in the output of lean {surfaceFile} ({quotedAst.length} of {c39Decls.length} quoted, {runtimeAsts.length} runtime, {specAsts.length} spec)\n{tail r2.stdout 1500}\n{tail r2.stderr 1500}"
   heading "C40 / C41 / C44 connection of the generated Model to the Core semantics"
   -- 実際の CLI で生成し、生成 Model をそのまま Lean のモジュールにする
   if ← genDir.pathExists then IO.FS.removeDirAll genDir
@@ -891,16 +1015,19 @@ def checks : M Unit := do
   let s ← step s!"C42 / C43 / C44: lean {stmtCheck} (shape of the general equivalence theorem, the value / proposition boundary, the arm and quantifier lemmas; connection and preservation of {specConnected.length} generated spec declarations)"
     "lean" #[stmtCheck.toString] (env := #[("LEAN_PATH", some lp)])
   let specAudited := auditedNames s.stdout
-  let expectedSpec := specConnected.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}"]
+  let expectedSpec := specConnected.flatMap fun (key, _, _, _) => [s!"conn_{shortName key}", s!"stage_{shortName key}", s!"pres_{shortName key}", s!"apres_{shortName key}"]
   let missingSpec := expectedSpec.filter fun n => !specAudited.contains n
   let c43Connected := specConnected.filter fun (_, _, _, isBasic) => !isBasic
   if s.exitCode == 0 && missingSpec.isEmpty && !(contains s.stdout "forbidden") && !(contains s.stderr "forbidden") then
-    ok s!"C44 / C45: the connection and preservation evidence of {specConnected.length} generated spec declarations ({expectedSpec.length} theorems; {c43Connected.length} with a quantifier / Prop let / Prop if / guarded match) is audited with 0 forbidden dependencies"
-  else fail s!"C44 / C45: connection evidence (Statements): exit {s.exitCode}, not audited: {missingSpec}\n{tail s.stdout 1500}\n{tail s.stderr 1500}"
+    ok s!"C44 / C45 / C50 / C51: the connection and preservation evidence of {specConnected.length} generated spec declarations ({expectedSpec.length} theorems; {c43Connected.length} with a quantifier / Prop let / Prop if / guarded match; `apres_*` composes AST → Core → generated Lean) is audited with 0 forbidden dependencies"
+  else fail s!"C44 / C45 / C50: connection evidence (Statements): exit {s.exitCode}, not audited: {missingSpec}\n{tail s.stdout 1500}\n{tail s.stderr 1500}"
   if specConnected.length != c42Decls.length + c43Decls.length || c43Connected.length != c43Decls.length then
     fail s!"C42 / C43: expected the {c42Decls.length} basic and {c43Decls.length} C43 spec declarations to be connected, got {specConnected.length} ({c43Connected.length} C43)"
   let specWrongs ← deriveWrongs "Statements" stmtText Naru.Backend.Statements.stmtName specMistranslations
   checkWrong "Statements" (outDir / "StatementsWrong.lean") (specWrongProgram specConnected specWrongs) specWrongs lp
+  -- C52: 隔離した誤った spec の Core(実際の Core の値から作る)は Core の適格性を通るが、正しい AST の変換との一致に失敗する
+  let specCoreWrongs ← deriveSpecCoreWrongs specConnected parsedSpecAsts specCoreMistranslations
+  checkWrong "spec Core" (outDir / "SurfaceSpecWrong.lean") (surfaceSpecWrongProgram specConnected specCoreWrongs) specCoreWrongs lp
   heading "C45 the audit rejects forbidden dependencies"
   let negatives : List (String × String × String) :=
     [ ("sorry", "theorem bad : (1 : Nat) = 1 := sorry\n#audit_axioms bad\n", "sorryAx"),

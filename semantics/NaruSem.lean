@@ -14,10 +14,12 @@ import NaruSem.SurfaceExamples
 import NaruSem.SurfaceQuote
 import NaruSem.Lower
 import NaruSem.LowerExamples
+import NaruSem.LowerSpec
+import NaruSem.LowerSpecExamples
 import NaruSem.Audit
 
 /-!
-# `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜)
+# `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜C52)
 
 `lake build NaruSem` が、意味論・適格性の定義、一般定理、検体、公理監査をまとめて Lean kernel に検査させる(C45 の検査入口。
 走らせ方は `docs/testing.md`「コンパイラ意味論保存」、構成と定理の一覧は `docs/architecture.md`「コンパイラ意味論保存」)。
@@ -59,6 +61,14 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   `Surf.preserve_nat` / `Surf.preserve_bool`(AST の意味 = 生成 Lean の読み)、接続検査の健全性 `Surf.check_sound_nat` / `Surf.check_sound_bool`
   (`low_<f>` + `conn_<f>` から AST の意味 = 実生成宣言の値)。
 - `NaruSem/LowerExamples.lean` — 変換の検体(C49 / C52): 対象の各構文の変換の形、対象外の構文・型の定まらない式は変換されない、意味の異なる(適格な)Core は変換結果でない。
+- `NaruSem/LowerSpec.lean` — spec の Surface AST → Core の対応(C50): frontend から独立の変換 `Surf.lowerS`(+ `lowerStmtsS` / `lowerArmsS` / `lowerArmS` /
+  `lowerBinders`。論理の位置は `Surf.wtS` に導かれ、値の位置は `Surf.lower`)、一般定理 `Surf.lowerS_sound`(任意の適格な spec の AST に変換が定まり、その Core は
+  適格で、対応する任意の環境で AST の意味は Core の意味。`Surf.wtS.mutual_induct` の `Surf.lowerS_sound_all`。系 `lowerS_total` / `lowerS_wt` / `lowerS_Sem`)、
+  双方向の同値 `Surf.Sem_lowerS_iff`(`Surf.Sem_exists` + `NaruSem.Sem_unique`)、命題の区分の一致 `Surf.proppyS_lower` / `Surf.proppyS_lowerS`、
+  C42 / C43 と合成した `Surf.preserve_prop`(AST の意味 ↔ 生成 Lean の読み)、接続検査の健全性 `Surf.check_sound_prop`(`lows_<f>` + `conn_<f>` から
+  AST の意味 = 実生成宣言の命題)、量化・腕・束縛の列の対応の補題。
+- `NaruSem/LowerSpecExamples.lean` — spec の変換の検体(C50 / C52): 量化・命題の `let`・注釈の無い `==`・命題のガード付き `match` の変換の形と一般定理の実例、
+  対象外は変換されない、意味の異なる(適格な)Core(`forall` / `exists` の取り違え、命題の `let` の束縛の取り違え)は変換結果でない。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -169,3 +179,22 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.neg_lower_unbound NaruSem.Surf.neg_lower_let_unbound
   NaruSem.Surf.ex_wtR_logic_wrong NaruSem.Surf.neg_lower_swapped NaruSem.Surf.ex_lower_let_shadow NaruSem.Surf.ex_wtR_let_shadow_wrong
   NaruSem.Surf.neg_lower_let_shadow
+
+-- C50: spec の Surface AST → Core の対応 — 一般定理(変換の全域性・適格性の保存・意味の対応と双方向の同値)、命題の区分の一致、生成 Lean への接続
+-- (C42 / C43 との合成)と接続検査の健全性、量化・腕・束縛の列の対応と展開の補題
+#audit_axioms NaruSem.Surf.lowerS_sound NaruSem.Surf.lowerS_sound_all NaruSem.Surf.lowerS_total NaruSem.Surf.lowerS_wt NaruSem.Surf.lowerS_Sem
+  NaruSem.Surf.Sem_lowerS_iff NaruSem.Surf.preserve_prop NaruSem.Surf.check_sound_prop
+  NaruSem.Surf.proppyS_lowerS NaruSem.Surf.proppyS_lower NaruSem.Surf.proppyS_lower_all
+  NaruSem.Surf.quant_sound NaruSem.Surf.lowerBinders_sound NaruSem.Surf.exhaustiveFrom_lowerPat_cons NaruSem.Surf.proppyArms_lowerPat_cons
+  NaruSem.Surf.patCtx_lower NaruSem.Surf.proppyArms_cons NaruSem.Surf.proppyStmts_cons NaruSem.Surf.stmtsCtxP_cons NaruSem.Surf.proppyS_block_some
+  NaruSem.Surf.lowerStmtsS_cons NaruSem.Surf.lowerArmsS_cons NaruSem.Surf.lowerArmS_mk
+
+-- C50 / C52: spec の変換の検体 — 量化・命題の let(注釈の有無)・注釈の無い ==(値 / 命題)・命題のガード付き match の変換の形と一般定理の実例
+-- (適格性・双方向の同値・生成 Lean の読みとの同値)、対象外(束縛型の無い量化・命題の scrutinee・末尾式の無いブロック・修飾名)は変換されない、
+-- 値の位置の命題は変換結果があっても Core として不適格、意味の異なる適格な Core(forall / exists の取り違え、命題の let の束縛の取り違え)は変換結果でない
+#audit_axioms NaruSem.Surf.ex_lowerS_forall NaruSem.Surf.ex_lowerS_forall_wt NaruSem.Surf.ex_Sem_lowerS_forall NaruSem.Surf.ex_preserve_forall
+  NaruSem.Surf.ex_lowerS_let_prop NaruSem.Surf.ex_lowerS_let_annot NaruSem.Surf.ex_lowerS_eq_nat NaruSem.Surf.ex_lowerS_eq_prop
+  NaruSem.Surf.ex_wtS_match_guard_prop NaruSem.Surf.ex_lowerS_match_guard_prop
+  NaruSem.Surf.neg_lowerS_quant_untyped NaruSem.Surf.neg_lowerS_prop_scrutinee NaruSem.Surf.neg_lowerS_prop_in_value
+  NaruSem.Surf.neg_lowerS_block_no_tail NaruSem.Surf.neg_lowerS_path
+  NaruSem.Surf.ex_wtS_forall_wrong NaruSem.Surf.neg_lowerS_swapped_quant NaruSem.Surf.ex_wtS_let_prop_wrong NaruSem.Surf.neg_lowerS_let_prop_wrong

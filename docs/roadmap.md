@@ -15,5 +15,4 @@
 - enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)
 - Bool の値が要る位置に置いた Prop(量化・spec 宣言の呼出し)の診断(いまは Lean が拒否する)
 - `Set` / `Table` の不変条件の型への取り込み([architecture.md](architecture.md)「Statements backend」の既知の制限。コンパイラ意味論保存を Set / Table へ広げるときの方針は同「後続拡張の設計判断」)
-- Surface AST → Core の意味保存の spec 側(C50 / C51): runtime の値の対応(C49。[architecture.md](architecture.md)「Surface AST → Core の対応」)はあるが、spec の AST の意味と Core の仕様の意味の双方向の同値の一般定理、実際の AST・Core・実生成 Statements を合成した接続検査、forall / exists の取り違えの負の検体(C52)と文書の最終整合(C53)はまだ無い
 - コンパイラ意味論保存の次の段階(関数呼出しと input、再帰とコレクション、状態機械の一ステップ …。[architecture.md](architecture.md)「後続拡張の設計判断」、IDEAL.md「延期」)

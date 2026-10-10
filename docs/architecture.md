@@ -137,8 +137,8 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 検査入口と走らせ方は [testing.md](testing.md)「コンパイラ意味論保存」。プロトコルの Proofs(`proofs/`、空)とは別の役割で、Core・コンパイラ・独立意味論・
 生成宣言を参照してよいが、生成 Model / Statements からここへの逆依存は無い(不変条件の依存方向)。
 Core IR の意味論(C39〜C47。下の各節)に加えて、構文解析の出力 Surface AST の独立した意味論と適格性(C48。「Surface AST の意味論と適格性」)と、
-runtime の Surface AST → Core の変換と値の対応・実際の frontend と生成 Lean への接続(C49 / C51。「Surface AST → Core の対応」)がある。spec の AST の
-対応(C50)はまだ無い(「信頼する部分・方式・未対応」)。
+runtime の Surface AST → Core の変換と値の対応、spec の Surface AST → Core の変換と命題の双方向の同値、それぞれの実際の frontend と生成 Lean への接続
+(C49 / C50 / C51。「Surface AST → Core の対応」)がある。保証の境界と未対応は「信頼する部分・方式・未対応」。
 
 ### 対象(用語「今回の保存対象」)と範囲の判定(`NaruSem/Scope.lean`)
 
@@ -192,6 +192,12 @@ runtime の Surface AST → Core の変換と値の対応・実際の frontend �
 | `Surf.preserve_nat` / `Surf.preserve_bool` | **AST の意味 = 生成 Lean の読み(C49)**: `Surf.wtR Γ e = some .nat`、`Surf.lower Γ e = some c`、`Γ = ρ.ty` なら `Surf.eval ρ e = some (.nat (denoteN ρ c))`(`lower_sound` と C40 / C41 の `denote_sound` の合成) | AST の適格性 + 変換結果 |
 | `Surf.check_sound_nat` / `Surf.check_sound_bool` | **接続検査の健全性(AST、C49 / C51)**: 仮引数の値の列 `xs` について、その型の文脈で適格な AST `e`、変換結果 `c`(`low_<f>` が実際の Core と一致することを確かめる)、値 `v = denoteN (Env.ofList xs) c`(`conn_<f>` が実生成宣言について確かめる)から `Surf.eval (Env.ofList xs) e = some (.nat v)` | 同上 + 接続検査の成功 |
 | `Surf.wtR_mkLets` / `Surf.eval_mkLets` / `Surf.wtPat_lower` / `Surf.matchPat_lower` / `Surf.binopResult_result` | 変換の部品の対応: ブロックの束縛の列を `let_` の入れ子にする `Surf.mkLets`(コンパイラの `mkLets` と同じ畳み込み)の型付けと評価、パターンの型付けと照合は変換で変わらない、注釈の無い二項演算の型付けは被演算子の型を注釈にした Core の型付けと同じ | — |
+| `Surf.lowerS_sound`(`Surf.lowerS_total` / `Surf.lowerS_wt` / `Surf.lowerS_Sem`) | **spec の Surface AST → Core の対応(C50)**: `Surf.wtS Γ e = some τ` なら `∃ c, Surf.lowerS Γ e = some c ∧ wtS Γ c = some τ ∧ ∀ ρ, Γ = ρ.ctx → ∀ P, Surf.Sem ρ e P → Sem ρ c P` — 適格な spec の AST には frontend から独立の変換 `Surf.lowerS` が定まり(`lowerS_total`)、その Core は同じ文脈で適格で(`lowerS_wt`)、対応する任意の環境で AST の意味は Core の意味(`lowerS_Sem`)。`Surf.wtS.mutual_induct` で式・`let` の列・腕の列・腕を同時に示す(`Surf.lowerS_sound_all`。腕の列では網羅性の走査も変わらず、`proppyS` の一致も同時に) | AST の適格性。任意の AST・任意の対応する環境・任意の意味 |
+| `Surf.Sem_lowerS_iff` | **双方向の同値(C50)**: 加えて `τ` が論理の位置の型なら、任意の命題 `P` について `Surf.Sem ρ e P ↔ Sem ρ c P`(AST の意味の存在 `Surf.Sem_exists` と Core の意味の一意性 `Sem_unique` から。一方向の含意ではない) | 同上 |
+| `Surf.proppyS_lowerS` / `Surf.proppyS_lower` | 命題の区分 `proppyS`(Bool の `let` を命題に束ねるか値に束ねるか)は変換で変わらない: 任意の文脈 `Γ₀` で `proppyS Γ₀ c = Surf.proppyS Γ₀ e`(runtime の変換 `lower` は `lower.mutual_induct` の `proppyS_lower_all`) | 変換が定まること |
+| `Surf.preserve_prop` | **AST の意味 ↔ 生成 Lean の読み(C50)**: `Surf.wtS Γ e = some τ`、`Surf.lowerS Γ e = some c`、`Γ = ρ.ctx`、`Surf.Sem ρ e P` なら `P ↔ denoteP ρ c`(`lowerS_sound` と C42 / C43 の `Sem_denote` の合成) | AST の適格性 + 変換結果 |
+| `Surf.check_sound_prop` | **接続検査の健全性(AST、命題、C50 / C51)**: 仮引数の値の列 `xs` について、その型の文脈で適格な AST `e`、変換結果 `c`(`lows_<f>` が実際の Core と一致することを確かめる)、命題 `Q = denoteP (SEnv.ofList xs) c`(`conn_<f>` が実生成宣言について確かめる)から `Surf.Sem (SEnv.ofList xs) e Q`(実生成宣言の命題は AST の意味そのもの) | 同上 + 接続検査の成功 |
+| `Surf.quant_sound` / `Surf.lowerBinders_sound` / `Surf.exhaustiveFrom_lowerPat_cons` / `Surf.proppyArms_lowerPat_cons` | 変換の部品の対応(spec): 量化の束縛の列(注釈の型 → `(名前, 型)`)が同じ文脈を作り、束縛を 1 つずつ剥がす `forallCons` / `existsCons` が Core の同じ規則に写る、腕のパターンとガードの有無が対応していれば網羅性の走査と `proppyArms` は変わらない | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -317,16 +323,15 @@ Core の意味を AST の意味と定義しない(`Surface*.lean` は Core の�
 (`Val` / `Env` / `SEnv`、`ArithOp.eval` / `CmpOp.propNat` …)は言語の意味として共有する)。意味論が見ない前提: Surface AST は大域の宣言表を持たないので
 `x.min(y)` / `x.max(y)` を常に Nat のメソッドとして読む(frontend は同名のユーザ宣言の fn があれば UFCS の呼出しに落とす。その場合は Core が `.call` になり、
 AST → Core の接続検査が一致しない)。量化の束縛は型注釈のあるものだけが対象(frontend は注釈の無い束縛を推論で補うが、対象外として扱う)。
-runtime の AST → Core の対応と実際の frontend への接続は次の節(C49 / C51)。spec の AST の対応(C50)はまだ無い: spec 宣言について kernel が検査するのは、
-実際に構文解析された宣言が独立した意味論で適格で意味が定まることと、同じ宣言の実際の Core が適格で生成 Lean に接続していること(C39〜C47)までで、
-その 2 つの意味の対応(同値)は検証済みにしない。
+runtime と spec の AST → Core の対応と実際の frontend への接続は次の節(C49 / C50 / C51)。
 
-### Surface AST → Core の対応(`NaruSem/Lower.lean`・`LowerExamples.lean`、C49 / C51 / C52)
+### Surface AST → Core の対応(`NaruSem/Lower.lean`・`LowerExamples.lean`・`LowerSpec.lean`・`LowerSpecExamples.lean`、C49 / C50 / C51 / C52)
 
-frontend(`Typecheck.lean` の `infer` / `check` / `inferStmts` / `checkPat` / `mkLets`)が runtime の Surface AST を Core に elaborate する変換のうち、用語
-「Surface AST の保存対象」の部分を、frontend から独立に Lean の関数 `Surf.lower : Ctx → Surf.Expr → Option Core.Expr` として定める(汎用翻訳方式、
-「コンパイラ意味論保存の保証方式」)。変換は型に導かれる: Core の注釈(二項演算の被演算子の型、`let_` の型、`match_` の scrutinee の型)を AST の型付け
-`Surf.wtR` から補う(frontend の推論・単一化は参照しない)。
+frontend(`Typecheck.lean` の `infer` / `check` / `inferStmts` / `checkPat` / `mkLets`)が Surface AST を Core に elaborate する変換のうち、用語
+「Surface AST の保存対象」の部分を、frontend から独立に Lean の関数 `Surf.lower : Ctx → Surf.Expr → Option Core.Expr`(runtime)と
+`Surf.lowerS : SCtx → Surf.Expr → Option Core.Expr`(spec)として定める(汎用翻訳方式、「コンパイラ意味論保存の保証方式」)。変換は型に導かれる: Core の
+注釈(二項演算の被演算子の型、`let_` の型、`match_` の scrutinee の型、量化の束縛の型)を AST の型付け `Surf.wtR` / `Surf.wtS` から補う(frontend の推論・
+単一化は参照しない)。
 
 | AST(`Surf.Expr`) | 変換結果(`Core.Expr`) |
 |---|---|
@@ -351,23 +356,59 @@ frontend(`Typecheck.lean` の `infer` / `check` / `inferStmts` / `checkPat` / `m
   `neg_lower_let_shadow`)と、`naru_test semantics` の `SurfaceWrong.lean`(実際の Core の値から作った `WrongCore.logic`(最外の `||` → `&&`)/
   `WrongCore.letShadow`(2 つ目の `let_` の改名)/ `WrongCore.matchNat`(ガードの否定)は `wtR` を通り、AST の意味と食い違う具体環境がある(`diff_*`、`decide`)が、
   正しい AST の変換との一致 `conn_wrong_*` だけが失敗する。負の検体は意味の異なる Core にする(式全体で `&&` / `||` を入れ替えた `logic` は `a || b` と同値になる)。
-  [testing.md](testing.md))。forall / exists の取り違えは spec の対応(C50)と一緒に。
-- 未対応: spec の AST(`.quant`、命題の `let`、Prop を含む `==`)の変換と双方向の同値(C50)、その実際の Statements への合成(C51 の spec 側)。
+  [testing.md](testing.md))。forall / exists の取り違えは spec の負の検体(下)で、`&&` / `||` の取り違えはこの runtime の検体が覆う(C52 の要求は runtime と spec の
+  検体を合わせて満たす)。
+
+spec の式(spec 宣言の本体)の変換 `Surf.lowerS`(`LowerSpec.lean`)は AST の spec の型付け `Surf.wtS` に導かれる。論理の位置(論理演算・命題の同値の `==` / `!=`・
+`!`・`if`・`match` の腕・量化の本体・命題の `let` の値)は `lowerS` 自身で、値を要求する位置(算術・比較・Nat の等値の被演算子、`min` / `max`、scrutinee、値の `let` の値)は
+runtime の変換 `Surf.lower` を値の文脈 `Γ.vals` で使う。
+
+| AST(`Surf.Expr`、spec) | 変換結果(`Core.Expr`) |
+|---|---|
+| リテラル / 局所名(値・命題) | `.lit l .nat` / `.lit l .bool` / `.var x` |
+| `l && r`(`\|\|` / `implies`) | `.binop op (lowerS l) (lowerS r) .bool` |
+| `l == r` / `l != r` | 両辺が Nat の値(`wtR Γ.vals`)なら `.binop op (lower l) (lower r) .nat`(値の等値)、そうでなければ `.binop op (lowerS l) (lowerS r) .bool`(Bool の値の等値か命題の同値。frontend と同じ注釈) |
+| `l < r` 等 / 算術 / `x.min(y)` | `.binop op (lower l) (lower r) tl.toTyV`(`tl` = 被演算子の型)/ `.binop op (lower l) (lower r) .nat` / `.method "Nat" "min" … .nat`(値の位置は runtime の変換) |
+| `!a` / `if c { t } else { e }` | `.unop "!" (lowerS a)` / `.ite (lowerS c) (lowerS t) (lowerS e)` |
+| `match s { p if g => b, … }` | `.match_ (lower s) ts.toTyV [ .mk (lowerPat p) (lowerS g) (lowerS b), … ]`(ガードと本体は束縛を値として足した文脈で) |
+| `{ let x[: Bool] = v; …; e }` | `Surf.mkLets [(x, ty, cv), …] (lowerS e)`: 値 `v` が命題(`Surf.proppyS`)なら `cv = lowerS v` で注釈 `.bool`(frontend の命題の `let` と同じ)、そうでなければ `cv = lower v` で注釈は値の型 |
+| `forall x: T { b }` / `exists` | `.quant q [(x, T.toTyV), …] (lowerS b)`(束縛は注釈の型。注釈の無い束縛は対象外) |
+| 修飾名・対象外のメソッド・末尾式の無いブロック・型の定まらない式 | `none` |
+
+- 一般定理(上の表): `Surf.lowerS_sound` — 任意の適格な spec の AST に変換が定まり、その Core は同じ文脈で適格で、対応する任意の環境で AST の意味は Core の意味。
+  `Surf.Sem_lowerS_iff` — 任意の命題について AST の意味であることと Core の意味であることは同値(双方向。AST の意味の存在と Core の意味の一意性から)。
+  命題の区分 `proppyS` は変換で変わらない(`Surf.proppyS_lowerS` / `Surf.proppyS_lower`)。量化範囲(`Ty.carrier` の全要素)・前提・結論は AST と Core の意味論が
+  同じ規則で読み、命題を実行可能な Bool に戻す規則はどちらにも無い。翻訳の正しさは仮定しない。C42 / C43 と合成した `Surf.preserve_prop`(AST の意味 ↔ 生成 Lean の
+  読み `denoteP`)と、接続検査の健全性 `Surf.check_sound_prop` が AST → Core → 生成 Lean をつなぐ。
+- 実際の frontend への接続(C51、spec): `lake exe naru_test semantics` が、実際に構文解析された各 spec 宣言の AST(`ast_<f>`)の `Surf.lowerS` が実際に出力された
+  Core(`core_<f>`)に等しいことを kernel の定義的等しさで確かめ(`lows_<f> : Surf.lowerS actx_<f> ast_<f> = some core_<f> := rfl`。ドライバも `==` で先に照合する)、
+  実生成 Statements 宣言の接続 `conn_<f>` と合成した `apres_<f> : ∀ args, Surf.Sem (SEnv.ofList …) ast_<f> (Statements.Sem.Core.f args)`(`Surf.check_sound_prop`)を
+  `#audit_axioms` で監査する。宣言の包装(識別・phase・仮引数と型・本体と環境の対応)は `wtd_<f>` / `actx_<f>_decl` が検査する(前節)。保証は「`lows_<f>` と `conn_<f>` に
+  成功した宣言」に対するもので、frontend の全入力への無条件の保存ではない。
+- 負の検体(C52、spec): `LowerSpecExamples.lean`(`forall` を `exists` に取り違えた Core、命題の `let` の束縛を取り違えた Core は適格だが変換結果でない。
+  `neg_lowerS_swapped_quant` / `neg_lowerS_let_prop_wrong`)と、`naru_test semantics` の `SurfaceSpecWrong.lean`(実際の Core の値から作った
+  `WrongCore.specForall`(`∀` → `∃`)/ `WrongCore.specExists`(`∃` → `∀`)/ `WrongCore.specLetProp`(命題の `let` の束縛の取り違え)/ `WrongCore.specMatch`(ガードの否定)は
+  `wtS` を通り、正しい Core の読みと意味の食い違う具体環境がある(`diff_*`: 読みの非同値 `¬ (denoteP ρ WrongCore.f ↔ denoteP ρ core_f)` を明示の命題と証明で
+  kernel に検査させる。`Sem_denote` により読みは意味そのもの)が、正しい AST の変換との一致 `conn_wrong_*` だけが失敗する。
 
 ### 信頼する部分・方式・未対応
 
-- 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の正しさは境界の外(IDEAL.md「対象外」)。
+- 信頼する部分: Lean kernel と elaborator、`Naru.compileFiles`(型検査・名前解決・Core への elaboration)の一般的な正しさは境界の外(IDEAL.md「対象外」)。
+  ただし検体の宣言については、構文解析の出力 AST → 実際の Core の対応を成果物ごとに kernel が検査する(`low_<f>` / `lows_<f>`: 独立の変換の結果が実際の Core
+  と定義的に等しい)ので、それらの宣言の AST → Core → 生成 Lean は型検査器を信頼せずに検証済みになる(`apres_<f>` は「実生成宣言の値 / 命題は AST の意味」で、
+  意味の一意性 `Surf.Eval_unique` / `Surf.Sem_unique` により AST の唯一の意味)。
   Core の引用(`NaruSem/Quote.lean`)は、検査プログラムの中で同じソースを再びコンパイルして構造の等しさで照合する。Surface AST の引用
   (`NaruSem/SurfaceQuote.lean`)は、同じソースを再び構文解析して埋め込み `Expr.toAst` と `==`(`Naru.Expr` の構造の等しさ)で照合する。生成 Model の Lean への
   elaboration(`import Model.Sem.Core`)は Lean の elaborator に委ねる(接続検査はその結果の定数に対して行う)。
 - 採用方式: 上の「Model の保存と実生成宣言への接続」と「Statements の保存と実生成宣言への接続」。Model は基礎段階(C40)と非再帰の Nat / Bool の `match`
   (C41)まで(接続はリテラルパターンの scrutinee の場合分け + `rfl`)。Statements は基礎段階(C42)と、Nat / Bool の量化・Bool / 命題の `let` と shadowing・
   Bool / 命題の条件の `if`・非再帰の Nat / Bool のガード付き `match`・命題を含む両辺の `==` / `!=`(C43)まで(接続は `rfl`、リテラルパターンの `match` は
-  場合分け + `rfl`)。Surface AST → Core(C49)は汎用翻訳方式(`Surf.lower` + `Surf.lower_sound`)で、実際の AST と Core への接続は `rfl`(`low_<f>`)。
+  場合分け + `rfl`)。Surface AST → Core(C49 / C50)は汎用翻訳方式(runtime は `Surf.lower` + `Surf.lower_sound`、spec は `Surf.lowerS` + `Surf.lowerS_sound` /
+  `Surf.Sem_lowerS_iff`)で、実際の AST と Core への接続は `rfl`(`low_<f>` / `lows_<f>`)、実生成宣言への合成は `apres_<f>`。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
 - 未対応: 一般の関数呼出しと input、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
-  Surface AST → Core の spec の命題の同値(C50)と、その実際の AST・Core・実生成 Statements を合成した接続(C51 の spec 側)はまだ無い(runtime の値の対応と
-  合成は上の「Surface AST → Core の対応」)。構文解析の正しさ・型検査器全体の健全性は境界の外。
+  Surface AST → Core の対応は「Surface AST の保存対象」の式と最小の fn / spec 宣言の包装に限る(上の「Surface AST → Core の対応」)。ソース文字列からの保証
+  (構文解析の正しさ)・型検査器全体の健全性・consensus 全体と基準実装の同値・プロトコルの Safety / Liveness・レビュー面は境界の外で、達成済みと呼ばない。
   `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は次の節。
 - 文書との照合: `lake exe naru_test semantics` は、この文書の「一般定理」の表の第 1 列に挙げた定理名がすべて公理監査(`audit ok:`)に現れることと、
   [testing.md](testing.md)「コンパイラ意味論保存」に記載した検査のコマンドが実際に走らせるものと一致することを検査する(C47)。
