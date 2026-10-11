@@ -95,6 +95,12 @@ C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、�
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
   [ "NaruSem.Surf.Call.lowerCall_eq",
+    "NaruSem.Surf.Call.allSome_some", "NaruSem.Surf.Call.evalArgs_allSome",
+    "NaruSem.Surf.Call.arrange_eval", "NaruSem.Surf.Call.wtArgs_of_map", "NaruSem.Surf.Call.arrange_wt",
+    "NaruSem.Surf.Call.lowerCall_wt", "NaruSem.Surf.Call.lowerCall_eval",
+    "NaruSem.Surf.Call.lower_call_eval", "NaruSem.Surf.Call.lower_ufcs_eval",
+    "NaruSem.Surf.Call.named_call", "NaruSem.Surf.Call.ufcs_call", "NaruSem.Surf.Call.zero_args",
+    "NaruSem.Surf.Call.named_wt", "NaruSem.Surf.Call.swapped_values",
     "NaruSem.eval_total", "NaruSem.Eval_unique", "NaruSem.Sem_exists", "NaruSem.Sem_unique",
     "NaruSem.denote_sound", "NaruSem.preserve_nat", "NaruSem.preserve_bool", "NaruSem.check_sound_nat", "NaruSem.check_sound_bool",
     "NaruSem.CmpOp.leanBool_eq", "NaruSem.EqOp.leanNat_eq", "NaruSem.EqOp.leanBool_eq",

@@ -26,6 +26,7 @@ import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
 import NaruSem.SurfaceCallLower
+import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
 
@@ -111,6 +112,12 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 
 -- C39: 意味論の全域性・一意性と、環境と文脈の対応の補題
 #audit_axioms NaruSem.Surf.Call.lowerCall_eq
+  NaruSem.Surf.Call.allSome_some NaruSem.Surf.Call.evalArgs_allSome
+  NaruSem.Surf.Call.arrange_eval NaruSem.Surf.Call.wtArgs_of_map NaruSem.Surf.Call.arrange_wt
+  NaruSem.Surf.Call.lowerCall_wt NaruSem.Surf.Call.lowerCall_eval
+  NaruSem.Surf.Call.lower_call_eval NaruSem.Surf.Call.lower_ufcs_eval
+  NaruSem.Surf.Call.named_call NaruSem.Surf.Call.ufcs_call NaruSem.Surf.Call.zero_args
+  NaruSem.Surf.Call.named_wt NaruSem.Surf.Call.swapped_values
 
 #audit_axioms NaruSem.eval_total NaruSem.Eval_unique NaruSem.wtR_total_all
   NaruSem.Sem_exists NaruSem.Sem_unique NaruSem.Sem_exists_all

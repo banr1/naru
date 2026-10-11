@@ -551,3 +551,12 @@ UFCS は受け手を先頭の位置引数にし、局所の命題束縛も大域
 `lowerCall_eq` は呼出し先・署名・並べ替えの対応から Core の呼出しの形を導く補題であり、意味保存定理ではない。
 lowering の成功だけから型・スコープ・網羅性の成立は導かず、独立した適格性検査も要求する。
 任意の式・環境での値の対応、宣言群の Surface / Core の意味の合成、spec の lowering と双方向同値は未完了である。
+
+呼出しの局所的な合成は `Surf.Call.arrange_eval` / `arrange_wt` が担う。
+名前を保った子引数ごとの評価・型の対応から、仮引数順のCore引数の評価と型を導く。
+`lowerCall_eval` / `lowerCall_wt` は名前解決・値の署名・並べ替えの成功を使い、
+`lower_call_eval` / `lower_ufcs_eval` はその結果を通常のSurface呼出しとUFCSに合成する。
+環境・子式・値は任意で、calleeが存在しない場合や `none` を返す場合も同じ結果を保つ。
+子式の対応、局所名による隠蔽、UFCSの判定は明示した前提であり、全式のloweringがそれらを満たす一般帰納証明はまだない。
+`SurfaceCallLowerExamples.lean` の名前付き引数・UFCS・ゼロ引数の引数評価・型対応・同型の値の交換対照をkernel検査・公理監査する。
+具体的な対照は一般補題を補うもので、宣言群の合成保存や実生成LeanへのSurfaceからの接続を証明済みとはしない。

@@ -334,3 +334,10 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `SurfaceCallLowerWrong.lean` の5件は別callee・名前付き引数の交換・UFCS受け手の交換・同型inputの交換・matchガードの否定。
 現在のCoreから作った各検体は同じCore型を持ち、正しい対照が成功し、同じ正しいASTとの変換の一致の5行だけで失敗することを要求する。
 この検査は一般意味保存の代用ではなく、任意の環境での意味の対応とspec側のloweringは未完了である。
+
+呼出しの局所的な合成補題も同じ入口で検査する。`SurfaceCallLower.lean` の
+`allSome_some` / `evalArgs_allSome` / `arrange_eval` / `wtArgs_of_map` / `arrange_wt` /
+`lowerCall_wt` / `lowerCall_eval` / `lower_call_eval` / `lower_ufcs_eval` と、
+`SurfaceCallLowerExamples.lean` の5検体を `NaruSem.lean` で公理監査し、`requiredTheorems` が全14件の欠落を失敗にする。
+名前付き実引数の順序・UFCS受け手・ゼロ引数の引数評価・任意環境でのcallee不在や失敗を扱う。
+子式の評価・型の対応は明示した合成前提であり、全式の一般保存は未完了である。
