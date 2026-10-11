@@ -25,6 +25,7 @@ import NaruSem.CallComposeProp
 import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
+import NaruSem.SurfaceCallLower
 import NaruSem.CallQuote
 import NaruSem.Audit
 
@@ -97,6 +98,8 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   (同じ input 解釈 `SameInputs` と各 fn の接続の証拠 `Evidence` / `FnConn` から、宣言群の意味 `interp` は実生成定数の環境と署名の鍵で一致: 呼出し先の証拠の
   呼出し側への合成)と系 `Call.fn_value`、署名の包含 `SubV_of_cover`、接続検査の形 `Curried` と `fnConn_of_curried`。
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
+- `NaruSem/SurfaceCallLower.lean` — 呼出しを含む runtime の独立 lowering。現在の17 fnの AST / Core の構造的対応を検査する。
+  任意の式・環境の一般意味保存、spec の lowering、宣言群の意味の合成は未完了。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -107,6 +110,8 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -/
 
 -- C39: 意味論の全域性・一意性と、環境と文脈の対応の補題
+#audit_axioms NaruSem.Surf.Call.lowerCall_eq
+
 #audit_axioms NaruSem.eval_total NaruSem.Eval_unique NaruSem.wtR_total_all
   NaruSem.Sem_exists NaruSem.Sem_unique NaruSem.Sem_exists_all
   NaruSem.matchPat_types NaruSem.matchPat_irrefutable NaruSem.Env.ty_ext NaruSem.Env.ty_extList

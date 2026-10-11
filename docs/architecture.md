@@ -542,3 +542,12 @@ suffix は元の prefix 署名を保持し `specCallSpec` の接続を証明で�
 `tests/units/accept/sem_calls/` は `src/Sem/Inputs.naru` に4 input、`src/Sem/Callees.naru` に基礎の3 fn(`base`・`zero`・`addTo`)と1 spec(`posBase`)、`src/Sem/Call.naru` に呼出し側を置く。runtime→runtime・spec→runtime・spec→spec の別モジュール呼出し、修飾参照・位置/名前付き引数・UFCS・ゼロ引数を実生成 `Model.Sem.Callees` / `Statements.Sem.Callees` と呼出し側へ接続する。単一ファイルの受理例 `tests/accept/sem_call.naru` も維持する。`Call.Quote.checkProg` / `Surf.Call.Quote.checkProg` は同じ3ファイルを再コンパイルし、引用の識別・署名・本体と全31宣言の網羅を照合する。検体の宣言一覧を安定した依存順へ並べ、適格性をkernel検査する。`checkOmission` はinput元のModel/Statements不在、生成宣言の網羅、集約importと全依存の解決を検査する。任意解釈の接続・同型input交換のruntime/spec負検体はこの複数ファイル単位でkernel検査・公理監査する。モジュール全体の保存や呼出しを含むSurface保存はこの接続では保証しない。
 
 別モジュール呼出しの接続も同じ `semantics` / `regression` 入口で再検査する。実際のCoreの呼出し辺と生成Model/Statementsのimportを照合し、calleeの生成モジュールを先にLeanとしてビルドする。全17fn/10specの任意引数の接続・宣言群の合成証拠、公理監査、別宣言/古いCore/callee証拠欠落のruntime/spec各3件、Model5件/spec6件の型が合う誤出力検査は維持する。Surface呼出し保存は未完了である。
+
+呼出しを含む runtime の構造的対応は `SurfaceCallLower.lean` の `Surf.Call.lower T Γ` で検査する。
+`T` は宣言群全体の名前と各宣言の前までの署名、`Γ : SCtx` は実際の仮引数の文脈である。
+`lowerArgs` は構文解析順で変換し、`lowerCall` は名前解決・値の署名を検査して `arrange` で仮引数順に並べる。
+UFCS は受け手を先頭の位置引数にし、局所の命題束縛も大域名を隠す。ブロック・let・if・ガード付きmatch・算術等も変換する。
+`SurfaceCallLowerCheck.lean` は現在の全17 fnの宣言包装・仮引数・本体・適格性・実Coreとの一致 `slow_*` を kernel 検査し、公理監査する。
+`lowerCall_eq` は呼出し先・署名・並べ替えの対応から Core の呼出しの形を導く補題であり、意味保存定理ではない。
+lowering の成功だけから型・スコープ・網羅性の成立は導かず、独立した適格性検査も要求する。
+任意の式・環境での値の対応、宣言群の Surface / Core の意味の合成、spec の lowering と双方向同値は未完了である。
