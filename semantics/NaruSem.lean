@@ -31,6 +31,7 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallLowerSpecSem
 import NaruSem.SurfaceCallLowerSpecSemExamples
 import NaruSem.SurfaceCallLogicSemExamples
+import NaruSem.SurfaceCallCompareSemExamples
 import NaruSem.SurfaceCallQuantSemExamples
 import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
@@ -44,6 +45,8 @@ import NaruSem.Audit
 #audit_axioms NaruSem.Surf.Call.exhaustiveFrom_lowerPat_cons
 #audit_axioms NaruSem.Surf.Call.lowerS_typed_all NaruSem.Surf.Call.lowerS_typed NaruSem.Surf.Call.lowerS_total NaruSem.Surf.Call.lowerS_wt
 #audit_axioms NaruSem.Surf.Call.logic_sem_ctx NaruSem.Surf.Call.logic_sem_wt NaruSem.Surf.Call.logic_sem_lower NaruSem.Surf.Call.logic_sem_not_wt NaruSem.Surf.Call.logic_sem_not_lower NaruSem.Surf.Call.logic_sem_ite_wt NaruSem.Surf.Call.logic_sem_ite_lower NaruSem.Surf.Call.logic_sem_bridge NaruSem.Surf.Call.logic_sem_not_bridge NaruSem.Surf.Call.logic_sem_ite_bridge NaruSem.Surf.Call.logic_sem_arbitrary NaruSem.Surf.Call.logic_sem_not_arbitrary NaruSem.Surf.Call.logic_sem_ite_arbitrary NaruSem.Surf.Call.logic_sem_meaning NaruSem.Surf.Call.logic_sem_not_meaning NaruSem.Surf.Call.logic_sem_ite_meaning NaruSem.Surf.Call.logic_sem_missing NaruSem.Surf.Call.logic_sem_not_missing NaruSem.Surf.Call.logic_sem_ite_missing NaruSem.Surf.Call.logic_sem_ite_unselected_missing NaruSem.Surf.Call.logic_sem_wrong_wt NaruSem.Surf.Call.logic_sem_wrong_not_lower NaruSem.Surf.Call.logic_sem_wrong_not_preserved
+#audit_axioms NaruSem.Surf.Call.compare_sem_nat_wt NaruSem.Surf.Call.compare_sem_nat_lower NaruSem.Surf.Call.compare_sem_bool_wt NaruSem.Surf.Call.compare_sem_bool_lower NaruSem.Surf.Call.compare_sem_eq_nat_wt NaruSem.Surf.Call.compare_sem_eq_nat_lower NaruSem.Surf.Call.compare_sem_eq_bool_wt NaruSem.Surf.Call.compare_sem_eq_bool_lower NaruSem.Surf.Call.compare_sem_nat_arbitrary NaruSem.Surf.Call.compare_sem_bool_arbitrary NaruSem.Surf.Call.compare_sem_eq_nat_arbitrary NaruSem.Surf.Call.compare_sem_eq_bool_arbitrary NaruSem.Surf.Call.compare_sem_nat_meaning NaruSem.Surf.Call.compare_sem_bool_meaning NaruSem.Surf.Call.compare_sem_eq_nat_meaning NaruSem.Surf.Call.compare_sem_eq_bool_meaning NaruSem.Surf.Call.compare_sem_ctx NaruSem.Surf.Call.compare_sem_form_wt NaruSem.Surf.Call.compare_sem_form_lower NaruSem.Surf.Call.compare_sem_form_bridge NaruSem.Surf.Call.compare_sem_form_arbitrary NaruSem.Surf.Call.compare_sem_form_meaning NaruSem.Surf.Call.compare_sem_form_missing NaruSem.Surf.Call.compare_sem_interpretation_respects NaruSem.Surf.Call.compare_sem_input_cmp_wt NaruSem.Surf.Call.compare_sem_input_cmp_lower NaruSem.Surf.Call.compare_sem_input_eq_wt NaruSem.Surf.Call.compare_sem_input_eq_lower NaruSem.Surf.Call.compare_sem_input_cmp_arbitrary NaruSem.Surf.Call.compare_sem_input_eq_arbitrary NaruSem.Surf.Call.compare_sem_input_cmp_meaning NaruSem.Surf.Call.compare_sem_input_eq_meaning NaruSem.Surf.Call.compare_sem_nat_boundary NaruSem.Surf.Call.compare_sem_nat_inclusive_boundary NaruSem.Surf.Call.compare_sem_bool_boundary NaruSem.Surf.Call.compare_sem_bool_eq_boundary NaruSem.Surf.Call.compare_sem_mixed_cmp_rejected NaruSem.Surf.Call.compare_sem_mixed_eq_rejected NaruSem.Surf.Call.compare_sem_wrong_eq_wt NaruSem.Surf.Call.compare_sem_wrong_cmp_wt NaruSem.Surf.Call.compare_sem_wrong_eq_not_lower NaruSem.Surf.Call.compare_sem_wrong_cmp_not_lower NaruSem.Surf.Call.compare_sem_wrong_eq_not_preserved NaruSem.Surf.Call.compare_sem_wrong_cmp_not_preserved
+#audit_axioms NaruSem.Surf.Call.Sem_false_of_wtR_nat NaruSem.Surf.Call.lowerS_cmp_equiv NaruSem.Surf.Call.lowerS_cmp_sem_iff NaruSem.Surf.Call.lowerS_eqNat_equiv NaruSem.Surf.Call.lowerS_eqNat_sem_iff NaruSem.Surf.Call.lowerS_eqForm_equiv NaruSem.Surf.Call.lowerS_eqForm_sem_iff
 #audit_axioms NaruSem.Surf.Call.SpecSemEquiv.of_iff NaruSem.Surf.Call.lowerS_logic_equiv NaruSem.Surf.Call.lowerS_not_equiv NaruSem.Surf.Call.lowerS_ite_equiv NaruSem.Surf.Call.lowerS_logic_sem_iff NaruSem.Surf.Call.lowerS_not_sem_iff NaruSem.Surf.Call.lowerS_ite_sem_iff
 #audit_axioms NaruSem.Surf.Call.SpecSemEquiv.iff NaruSem.Surf.Call.SpecLetsBridge.lower NaruSem.Surf.Call.SpecLetsBridge.sem_iff NaruSem.Surf.Call.lowerStmtsS_sem_iff
 #audit_axioms NaruSem.Surf.Call.lowerS_block_sem_iff
@@ -139,6 +142,7 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/SurfaceCallLowerSpecSem.lean` — 子spec式と末尾の双方向の意味対応を `SpecLetsBridge` に明示し、値・命題let列をCoreへ局所合成する。
   `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値と宣言群保存は未完了。
 - `NaruSem/SurfaceCallLogicSemExamples.lean` — 論理演算・否定・Bool/Prop条件ifの局所合成、任意解釈、意味不在、同型の逆含意の非保存を検査する。
+- `NaruSem/SurfaceCallCompareSemExamples.lean` — Nat/Bool比較・値/命題等値の局所合成、任意input解釈、混合型拒否、意味不在、同型演算交換の非保存を検査する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)

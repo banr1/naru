@@ -234,6 +234,7 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Surf.Call.SpecLetsBridge.sem_iff` / `Surf.Call.lowerStmtsS_sem_iff` | 子spec式と末尾の双方向意味対応から、任意の値・命題let列をCoreの入れ子のletへ合成する局所保存 | 明示的な `SpecLetsBridge`、同じ局所環境、署名を守る関数/input環境。公開入口はlet列の適格性と独立lowering出力も照合する。全spec式の一般帰納保存ではない |
 | `Surf.Call.SpecArmsBridge.lower` / `Surf.Call.SpecArmsBridge.sem_iff` / `Surf.Call.lowerS_match_sem_iff` | 各腕のガード・本体の双方向対応から、任意のガード付きmatchの腕列を実lowerS出力へ合成する局所保存 | 明示的な `SpecArmsBridge`、同じ局所環境・任意spec解釈。scrutineeは適格な値で、関数/inputは署名を守る。意味の存在・全spec帰納保存・宣言群保存は結論にしない |
 | `Surf.Call.lowerBinders_sem_iff` / `Surf.Call.lowerS_quant_equiv` / `Surf.Call.lowerS_quant_sem_iff` | 拡張後の任意環境における本体の双方向対応から、任意長のNat/Bool束縛列のforall/existsを実lowerS出力へ合成する局所保存。名前・順序・量化範囲と同名shadowingを保持する | 本体の `SpecSemEquiv`、束縛注釈と文脈の対応、同じ関数/input/spec解釈。公開入口は本体の適格性と実lowering出力も照合する。意味の存在・全spec帰納保存・宣言群保存は含めない |
+| `Surf.Call.lowerS_cmp_equiv` / `Surf.Call.lowerS_cmp_sem_iff` / `Surf.Call.lowerS_eqNat_equiv` / `Surf.Call.lowerS_eqNat_sem_iff` / `Surf.Call.lowerS_eqForm_equiv` / `Surf.Call.lowerS_eqForm_sem_iff` | 値比較・Nat等値・Bool/Prop等値の局所双方向対応と実lowering出力の接続 | 値子式の型/独立lowering、署名を守る関数/input環境。命題等値は子SpecSemEquivと左辺の非Nat評価を要求する。全式/宣言群の保存は含めない |
 | `Surf.Call.lowerS_logic_equiv` / `Surf.Call.lowerS_not_equiv` / `Surf.Call.lowerS_ite_equiv` / `Surf.Call.lowerS_logic_sem_iff` / `Surf.Call.lowerS_not_sem_iff` / `Surf.Call.lowerS_ite_sem_iff` | 子式の双方向対応から論理演算・否定・ifの意味証人を合成し、独立loweringの実出力へ接続する局所保存 | 子式の `SpecSemEquiv`、同じ環境と解釈。ifは両分岐の意味を要求し、意味不在を補わない。全spec帰納保存・宣言群保存は含めない |
 | `Surf.Call.lowerS_typed_all` / `Surf.Call.lowerS_typed` / `Surf.Call.lowerS_total` / `Surf.Call.lowerS_wt` | 呼出しを含むspecの独立loweringの全域性と型保存。式・let列・腕列・腕の相互帰納から変換先の存在とCoreの同じ型を導く。命題の同値・宣言群の意味合成は含めない | 任意の宣言表・文脈・適格なspec式と型。実Coreとの一致は別途kernel検査 |
 
@@ -647,3 +648,7 @@ specのloweringの双方向同値、Surfaceから実生成Leanまでの宣言群
 `SurfaceCallLowerSpecSem.lean` の `SpecSemEquiv.of_iff`、`lowerS_logic_equiv` / `lowerS_not_equiv` / `lowerS_ite_equiv`、`lowerS_logic_sem_iff` / `lowerS_not_sem_iff` / `lowerS_ite_sem_iff` と `SurfaceCallLogicSemExamples.lean` の正負・意味不在の検体を、必須公理監査と `lake exe naru_test semantics` / `lake exe naru_test regression` から検査する。これらは全式の一般同値の代用にはしない。
 
 論理構文の7補題と23公開検体は必須監査に登録する。隔離した `CallLogicControl.lean` は正しい含意の接続と逆含意の命題型・2監査を通し、`CallLogicWrong.lean` は同じ入力への接続1行だけが型不一致になることを要求する。意味の異なる反例自体もkernelで証明し、構文・importの失敗で拒否を代用しない。
+
+呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値、Surface/Core宣言群の環境対応、実生成LeanへのSurface合成は未完了である。
+
+`SurfaceCallLowerSpecSem.lean` の7補題と `SurfaceCallCompareSemExamples.lean` の44公開検体をroot公理監査・必須一覧へ登録する。任意のinput解釈、Nat/Boolの全比較・等値演算、Bool値と命題の等値、意味不在、Nat/Bool混合型の拒否をkernel検査する。`checkComparisonConnection` の `CallCompareControl.lean` は正しい接続と同型誤Coreの型・4監査を通し、`CallCompareWrong.lean` は等値と比較を交換した接続2行だけの型不一致を要求する。反例の非保存もkernelが検査し、構文エラーやimport欠落で拒否を代用しない。再実行は `lake build NaruSem` / `lake exe naru_test semantics` / `lake exe naru_test regression`。

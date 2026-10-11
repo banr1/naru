@@ -2,13 +2,15 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallTotality
 
 /-!
-# spec の let 列・match・量化・論理構文の局所意味合成
+# spec の let 列・match・量化・論理構文・比較・等値の局所意味合成
 
 値の子式には既存の runtime 評価保存を使う。命題の子式と末尾の
-双方向対応、match のガード・本体、量化の本体、論理構文の子式の対応は明示的な前提であり、
+双方向対応、match のガード・本体、量化の本体、論理構文・命題等値の子式の対応は明示的な前提であり、
 全 spec 式の帰納保存や宣言群の保存ではない。
 存在する意味の証人を双方向に運び、意味の無い子式に True / False を補わない。
 意味の存在そのものはこの局所対応の主張ではない。
+比較と Nat 値等値は型付き runtime 保存を合成する。Bool / Prop の命題等値は
+子式の対応と左子式の非 Nat 評価を要求し、Nat 両側の lowering 分岐とは区別する。
 -/
 namespace NaruSem.Surf.Call
 open Naru
@@ -541,5 +543,195 @@ theorem lowerS_ite_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Ca
     simpa only [lowerS, ha, hb, he, Option.some.injEq] using hd.symm
   rw [h]
   exact (lowerS_ite_equiv cond thn els).iff hΓ P
+
+/-! ## Nat / Bool の値比較と、値等値・命題等値の局所意味合成 -/
+
+private theorem eval_nat_exists {T : Table} {Φ : NaruSem.Call.FEnv}
+    {Γ : SCtx} {e : Expr} (hw : wtR T Γ e = some .nat)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) :
+    ∃ n, eval T Φ ρ e = some (.nat n) := by
+  obtain ⟨v, hv, ht⟩ := eval_total hw Φ ρ hΓ hΦ
+  cases v with
+  | nat n => exact ⟨n, hv⟩
+  | bool b => cases ht
+
+private theorem eval_bool_exists {T : Table} {Φ : NaruSem.Call.FEnv}
+    {Γ : SCtx} {e : Expr} (hw : wtR T Γ e = some .bool)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) :
+    ∃ b, eval T Φ ρ e = some (.bool b) := by
+  obtain ⟨v, hv, ht⟩ := eval_total hw Φ ρ hΓ hΦ
+  cases v with
+  | nat n => cases ht
+  | bool b => exact ⟨b, hv⟩
+
+/-- 任意の型付き Nat 値式は spec の命題意味を持たない。
+適格な runtime 解釈だけを要求し、未定義の spec 解釈に意味を補わない。 -/
+theorem Sem_false_of_wtR_nat {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {e : Expr} (hw : wtR T Γ e = some .nat)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    ¬ Sem T Φ Ψ ρ e P := by
+  intro hs
+  obtain ⟨n, hn⟩ := eval_nat_exists hw hΦ hΓ
+  exact Sem_not_nat hs ρ (Agree.refl ρ) n hn
+
+/-- < / <= / > / >= は同じ型の Nat / Bool の runtime 評価を双方向に運ぶ。
+比較の型注釈と Surface の二つの意味規則を区別し、命題子式の対応は不要。 -/
+theorem lowerS_cmp_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr : Core.Expr} {sp : Span} {op : String} {k : CmpOp}
+    {t : NaruSem.Ty} (hk : BinOp.ofString? op = some (.cmp k))
+    (hwl : wtR T Γ l = some t) (hwr : wtR T Γ r = some t)
+    (hl : lower T Γ l = some cl) (hr : lower T Γ r = some cr)
+    (hΦ : Φ.Respects T.Δ) :
+    SpecSemEquiv T Φ Ψ Γ (.binop sp op l r) (.binop op cl cr t.toTyV) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  have hel := lower_eval hwl hl hΓ hΦ
+  have her := lower_eval hwr hr hΓ hΦ
+  cases t with
+  | nat =>
+    obtain ⟨n, hn⟩ := eval_nat_exists hwl hΦ hΓ
+    constructor
+    · intro h
+      cases h with
+      | logic hk' => rw [hk] at hk'; cases hk'
+      | eqNat hk' => rw [hk] at hk'; cases hk'
+      | eqForm hk' => rw [hk] at hk'; cases hk'
+      | cmpNat hk' ha hb =>
+        rw [hk] at hk'; cases hk'
+        exact .cmpNat hk (hel ▸ ha) (her ▸ hb)
+      | cmpBool _ ha => rw [hn] at ha; cases ha
+    · intro h
+      cases h with
+      | eqNat hk' => rw [hk] at hk'; cases hk'
+      | cmpNat hk' ha hb =>
+        rw [hk] at hk'; cases hk'
+        exact .cmpNat hk (hel.symm ▸ ha) (her.symm ▸ hb)
+  | bool =>
+    obtain ⟨b, hb⟩ := eval_bool_exists hwl hΦ hΓ
+    constructor
+    · intro h
+      cases h with
+      | logic hk' => rw [hk] at hk'; cases hk'
+      | eqNat hk' => rw [hk] at hk'; cases hk'
+      | eqForm hk' => rw [hk] at hk'; cases hk'
+      | cmpNat _ ha => rw [hb] at ha; cases ha
+      | cmpBool hk' ha hc =>
+        rw [hk] at hk'; cases hk'
+        exact .cmpBool hk (hel ▸ ha) (her ▸ hc)
+    · intro h
+      cases h with
+      | logic hk' => rw [hk] at hk'; cases hk'
+      | eqForm hk' => rw [hk] at hk'; cases hk'
+      | cmpBool hk' ha hc =>
+        rw [hk] at hk'; cases hk'
+        exact .cmpBool hk (hel.symm ▸ ha) (her.symm ▸ hc)
+
+/-- == / != の Nat 両側経路。Surface の eqForm 規則は型付き Nat 評価で排除する。
+実 lowering は子式の runtime lowering と Nat 注釈を使う。 -/
+theorem lowerS_eqNat_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr : Core.Expr} {sp : Span} {op : String} {k : EqOp}
+    (hk : BinOp.ofString? op = some (.eq k))
+    (hwl : wtR T Γ l = some .nat) (hwr : wtR T Γ r = some .nat)
+    (hl : lower T Γ l = some cl) (hr : lower T Γ r = some cr)
+    (hΦ : Φ.Respects T.Δ) :
+    SpecSemEquiv T Φ Ψ Γ (.binop sp op l r) (.binop op cl cr .nat) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  have hel := lower_eval hwl hl hΓ hΦ
+  have her := lower_eval hwr hr hΓ hΦ
+  constructor
+  · intro h
+    cases h with
+    | logic hk' => rw [hk] at hk'; cases hk'
+    | eqNat hk' ha hb =>
+      rw [hk] at hk'; cases hk'
+      exact .eqNat hk (hel ▸ ha) (her ▸ hb)
+    | eqForm _ ha => exact False.elim (Sem_false_of_wtR_nat hwl hΦ hΓ _ ha)
+    | cmpNat hk' => rw [hk] at hk'; cases hk'
+    | cmpBool hk' => rw [hk] at hk'; cases hk'
+  · intro h
+    cases h with
+    | eqNat hk' ha hb =>
+      rw [hk] at hk'; cases hk'
+      exact .eqNat hk (hel.symm ▸ ha) (her.symm ▸ hb)
+    | cmpNat hk' => rw [hk] at hk'; cases hk'
+
+/-- Bool / Prop の == / != は子式の意味証人を合成する。
+左子式の非 Nat 評価は局所前提で、eqNat との混同を排除する。
+子式に意味が無い環境も許し、Ψ.Defined や子式の意味存在を要求しない。 -/
+theorem lowerS_eqForm_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr : Core.Expr} {sp : Span} {op : String} {k : EqOp}
+    (hk : BinOp.ofString? op = some (.eq k))
+    (noNat : ∀ ρ : SEnv, Γ = ρ.ctx → ∀ n, eval T Φ ρ l ≠ some (.nat n))
+    (left : SpecSemEquiv T Φ Ψ Γ l cl) (right : SpecSemEquiv T Φ Ψ Γ r cr) :
+    SpecSemEquiv T Φ Ψ Γ (.binop sp op l r) (.binop op cl cr .bool) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  constructor
+  · intro h
+    cases h with
+    | logic hk' => rw [hk] at hk'; cases hk'
+    | eqNat _ ha => exact False.elim (noNat ρ hΓ _ ha)
+    | eqForm hk' ha hb =>
+      rw [hk] at hk'; cases hk'
+      exact .eqForm hk ((left.iff hΓ _).mp ha) ((right.iff hΓ _).mp hb)
+    | cmpNat hk' => rw [hk] at hk'; cases hk'
+    | cmpBool hk' => rw [hk] at hk'; cases hk'
+  · intro h
+    cases h with
+    | logic hk' => rw [hk] at hk'; cases hk'
+    | eqForm hk' ha hb =>
+      rw [hk] at hk'; cases hk'
+      exact .eqForm hk ((left.iff hΓ _).mpr ha) ((right.iff hΓ _).mpr hb)
+    | cmpBool hk' => rw [hk] at hk'; cases hk'
+
+/-- 適格性・runtime 子式の lowering・比較の実 lowerS 出力を照合する公開入口。 -/
+theorem lowerS_cmp_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr d : Core.Expr} {sp : Span} {op : String} {k : CmpOp}
+    {t : NaruSem.Ty} {τ : STy} (_hw : wtS T Γ (.binop sp op l r) = some τ)
+    (hk : BinOp.ofString? op = some (.cmp k))
+    (hwl : wtR T Γ l = some t) (hwr : wtR T Γ r = some t)
+    (hl : lower T Γ l = some cl) (hr : lower T Γ r = some cr)
+    (hd : lowerS T Γ (.binop sp op l r) = some d)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.binop sp op l r) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have he : d = .binop op cl cr t.toTyV := by
+    simpa only [lowerS, hk, hwl, hl, hr, Option.some.injEq] using hd.symm
+  rw [he]
+  exact (lowerS_cmp_equiv hk hwl hwr hl hr hΦ).iff hΓ P
+
+/-- 適格性と Nat 両側の条件、runtime lowering と実 Nat 注釈出力を照合する。 -/
+theorem lowerS_eqNat_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr d : Core.Expr} {sp : Span} {op : String} {k : EqOp}
+    {τ : STy} (_hw : wtS T Γ (.binop sp op l r) = some τ)
+    (hk : BinOp.ofString? op = some (.eq k))
+    (hwl : wtR T Γ l = some .nat) (hwr : wtR T Γ r = some .nat)
+    (hl : lower T Γ l = some cl) (hr : lower T Γ r = some cr)
+    (hd : lowerS T Γ (.binop sp op l r) = some d)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.binop sp op l r) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have he : d = .binop op cl cr .nat := by
+    simpa only [lowerS, hk, hwl, hwr, and_self, ite_true, hl, hr,
+      Option.some.injEq] using hd.symm
+  rw [he]
+  exact (lowerS_eqNat_equiv hk hwl hwr hl hr hΦ).iff hΓ P
+
+/-- 命題等値の適格性、非 Nat 両側分岐、spec 子式 lowering と実 Bool 注釈を照合する。
+子式対応と非 Nat 評価の局所前提は残り、全式・宣言群の一般保存ではない。 -/
+theorem lowerS_eqForm_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr d : Core.Expr} {sp : Span} {op : String} {k : EqOp}
+    {τ : STy} (_hw : wtS T Γ (.binop sp op l r) = some τ)
+    (hk : BinOp.ofString? op = some (.eq k))
+    (hnn : ¬ (wtR T Γ l = some .nat ∧ wtR T Γ r = some .nat))
+    (hl : lowerS T Γ l = some cl) (hr : lowerS T Γ r = some cr)
+    (hd : lowerS T Γ (.binop sp op l r) = some d)
+    (noNat : ∀ ρ : SEnv, Γ = ρ.ctx → ∀ n, eval T Φ ρ l ≠ some (.nat n))
+    (left : SpecSemEquiv T Φ Ψ Γ l cl) (right : SpecSemEquiv T Φ Ψ Γ r cr)
+    {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.binop sp op l r) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have he : d = .binop op cl cr .bool := by
+    simpa only [lowerS, hk, hnn, ite_false, hl, hr, Option.some.injEq] using hd.symm
+  rw [he]
+  exact (lowerS_eqForm_equiv hk noNat left right).iff hΓ P
 
 end NaruSem.Surf.Call

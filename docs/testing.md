@@ -416,3 +416,7 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 `SurfaceCallLowerSpecSem.lean` の `SpecSemEquiv.of_iff`、`lowerS_logic_equiv` / `lowerS_not_equiv` / `lowerS_ite_equiv`、`lowerS_logic_sem_iff` / `lowerS_not_sem_iff` / `lowerS_ite_sem_iff` と `SurfaceCallLogicSemExamples.lean` の正負・意味不在の検体を、必須公理監査と `lake exe naru_test semantics` / `lake exe naru_test regression` から検査する。これらは全式の一般同値の代用にはしない。
 
 論理構文の7補題と23公開検体は必須監査に登録する。隔離した `CallLogicControl.lean` は正しい含意の接続と逆含意の命題型・2監査を通し、`CallLogicWrong.lean` は同じ入力への接続1行だけが型不一致になることを要求する。意味の異なる反例自体もkernelで証明し、構文・importの失敗で拒否を代用しない。
+
+呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値、Surface/Core宣言群の環境対応、実生成LeanへのSurface合成は未完了である。
+
+`SurfaceCallLowerSpecSem.lean` の7補題と `SurfaceCallCompareSemExamples.lean` の44公開検体をroot公理監査・必須一覧へ登録する。任意のinput解釈、Nat/Boolの全比較・等値演算、Bool値と命題の等値、意味不在、Nat/Bool混合型の拒否をkernel検査する。`checkComparisonConnection` の `CallCompareControl.lean` は正しい接続と同型誤Coreの型・4監査を通し、`CallCompareWrong.lean` は等値と比較を交換した接続2行だけの型不一致を要求する。反例の非保存もkernelが検査し、構文エラーやimport欠落で拒否を代用しない。再実行は `lake build NaruSem` / `lake exe naru_test semantics` / `lake exe naru_test regression`。
