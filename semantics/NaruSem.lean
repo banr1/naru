@@ -28,6 +28,8 @@ import NaruSem.SurfaceCallTotality
 import NaruSem.SurfaceCallLower
 import NaruSem.SurfaceCallLowerSpec
 import NaruSem.SurfaceCallLowerSpecSound
+import NaruSem.SurfaceCallLowerSpecSem
+import NaruSem.SurfaceCallLowerSpecSemExamples
 import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
@@ -39,6 +41,9 @@ import NaruSem.Audit
 #audit_axioms NaruSem.Surf.Call.proppyS_lowerS NaruSem.Surf.Call.proppyS_lowerS_view
 #audit_axioms NaruSem.Surf.Call.exhaustiveFrom_lowerPat_cons
 #audit_axioms NaruSem.Surf.Call.lowerS_typed_all NaruSem.Surf.Call.lowerS_typed NaruSem.Surf.Call.lowerS_total NaruSem.Surf.Call.lowerS_wt
+#audit_axioms NaruSem.Surf.Call.SpecSemEquiv.iff NaruSem.Surf.Call.SpecLetsBridge.lower NaruSem.Surf.Call.SpecLetsBridge.sem_iff NaruSem.Surf.Call.lowerStmtsS_sem_iff
+#audit_axioms NaruSem.Surf.Call.lowerS_block_sem_iff
+#audit_axioms NaruSem.Surf.Call.lets_sem_wt NaruSem.Surf.Call.lets_sem_lower NaruSem.Surf.Call.lets_sem_bridge NaruSem.Surf.Call.lets_sem_arbitrary NaruSem.Surf.Call.lets_sem_meaning NaruSem.Surf.Call.lets_sem_closed_respects NaruSem.Surf.Call.lets_sem_closed_positive NaruSem.Surf.Call.lets_sem_wrong_wt NaruSem.Surf.Call.lets_sem_wrong_meaning NaruSem.Surf.Call.lets_sem_wrong_not_true NaruSem.Surf.Call.lets_sem_wrong_not_preserved
 #audit_axioms NaruSem.Surf.Call.lowerCallS_eq NaruSem.Surf.Call.lowerCallS_spec_wt
 #audit_axioms NaruSem.Surf.Call.lowerCallS_spec_Sem NaruSem.Surf.Call.lowerCallS_value_Sem
 
@@ -120,8 +125,11 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
   式・実引数・let列・腕列・腕を同時帰納し、同じ任意の署名を守る関数/input環境と対応する局所環境の下で評価も保存する。
   実際の17 fnへの型・評価保存の適用をkernelが検査する。specとSurface/Core宣言群の合成は未完了。
-- `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型を70証拠で検査する。
-  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec型保存・双方向同値と宣言群の合成は未完了。
+- `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型を90証拠で検査する。
+  `SurfaceCallLowerSpecSound.lean` は一般の全域性・型保存・命題区分保存を証明する。
+  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec双方向同値と宣言群の合成は未完了。
+- `NaruSem/SurfaceCallLowerSpecSem.lean` — 子spec式と末尾の双方向の意味対応を `SpecLetsBridge` に明示し、値・命題let列をCoreへ局所合成する。
+  `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値と宣言群保存は未完了。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)

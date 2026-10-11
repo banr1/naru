@@ -231,6 +231,7 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Call.fn_value` | **fn の意味は実生成定数の値(系)**: 宣言群の各 fn `k` について、`Φ'` の関数 `f'` が型の合う実引数 `vs` に `v` を返すなら、`(Call.interp I P).Φ k = some f` で `f vs = some v` | 同上 |
 | `Call.SubV_of_cover` / `Call.fnConn_of_curried` | 検査プログラムの形との結び: 宣言群の各 fn / input の署名が表にあれば(`decide` で確かめる)`wtProg` の署名は表の署名に含まれる(`Call.wtProg_keys`: 署名の鍵は始めの文脈か宣言群の宣言のもの)。接続検査 `conn_<f>`(カリー化の形 `Call.Curried`: 仮引数ごとに量化し、実生成の関数に実引数を渡した値 = 実引数を束ねた環境での本体の読み)と、`Φ'` の鍵がその関数を包んだものであることから接続の証拠 `FnConn`(`Call.curried_wrap`) | — |
 | `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の双方向同値は未証明 |
+| `Surf.Call.SpecLetsBridge.sem_iff` / `Surf.Call.lowerStmtsS_sem_iff` | 子spec式と末尾の双方向意味対応から、任意の値・命題let列をCoreの入れ子のletへ合成する局所保存 | 明示的な `SpecLetsBridge`、同じ局所環境、署名を守る関数/input環境。公開入口はlet列の適格性と独立lowering出力も照合する。全spec式の一般帰納保存ではない |
 | `Surf.Call.lowerS_typed_all` / `Surf.Call.lowerS_typed` / `Surf.Call.lowerS_total` / `Surf.Call.lowerS_wt` | 呼出しを含むspecの独立loweringの全域性と型保存。式・let列・腕列・腕の相互帰納から変換先の存在とCoreの同じ型を導く。命題の同値・宣言群の意味合成は含めない | 任意の宣言表・文脈・適格なspec式と型。実Coreとの一致は別途kernel検査 |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
@@ -622,3 +623,12 @@ specのloweringの双方向同値、Surfaceから実生成Leanまでの宣言群
 `SurfaceCallProppy.lean` のruntime命題除外補題を使い、Propを実行可能なBoolへ戻さない。これらの公開補題も必須監査に含める。
 現在10宣言の具体的なAST型 `sswtype_*` と実Core一致 `sslower_*` から一般定理を適用した `ssctyped_*` を検査・公理監査し、90証拠と一般定理の欠落を拒否する。
 この型保存と変換の存在はspecの双方向同値を保証しない。一般のspec loweringの双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。
+
+`SurfaceCallLowerSpecSem.lean` の `Surf.Call.SpecLetsBridge.sem_iff` / `lowerStmtsS_sem_iff` は、呼出しspecの値と命題のlet列をCoreの入れ子のletへ合成する局所証明である。
+`SpecSemEquiv.iff` は同値な意味の証人を移し、`SpecLetsBridge.lower` は証明書の束縛列と独立lowering出力の一致を示す。5補題と境界検体は公理監査と必須一覧の欠落検査に含め、`lake exe naru_test semantics` と同じ回帰入口から実行する。
+子spec式と末尾式の双方向の意味対応を明示した証明書を前提に、値の束縛にはruntimeの一般評価保存を使い、命題の同値には命題外延性を使って束縛環境を揃える。
+同じ名前の値・命題を再束縛する場合も扱う。この局所合成は子式の対応を全spec式の帰納法から導く一般定理ではなく、Surface/Core宣言群からの環境対応と実生成LeanへのSurface合成も未完了である。
+
+`lowerS_block_sem_iff` は末尾の型と独立変換の一致も照合して、実際の `lowerS` が出力したブロック全体へこの局所合成を適用する。子式の双方向対応は引き続き証明書の前提である。
+
+`SurfaceCallLowerSpecSemExamples.lean` の11検体は、ゼロ引数のBool inputを値として `q` へ束縛し、spec呼出しを命題として同じ `q` へ再束縛する。任意解釈の双方向対応と、spec解釈の存在を明示した意味の証人を検査する。閉じたinput=false / spec=Trueの正対照に対し、命題の子式を否定したCoreは同じ `.prop` 型で適格だが意味が `¬ True` となることと、正しいSurfaceの意味を保存しないことをkernelが検査する。5一般補題・11検体の監査欠落は失敗になる。

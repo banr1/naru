@@ -12,6 +12,9 @@ Lean 4 を知らない設計者が、Rust / TypeScript / Python / Go を知っ�
 モデルと証明)を `third_party/` に同梱し、その Model と Statements を naru に移植した `specs/consensus/` が、生成 Model の golden test と
 claim surface の基準になっています。設計の正本は [IDEAL.md](IDEAL.md)(人間が宣言する「実現する状態」)です。
 
+
+呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値と宣言群から実生成LeanまでのSurface合成は未完了である。
+
 ## 前提の道具
 
 | 道具 | 版 / 備考 |
