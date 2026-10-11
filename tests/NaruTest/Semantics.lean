@@ -146,15 +146,16 @@ def requiredTheorems : List String :=
     "NaruSem.Call.interpFrom_prop_agree", "NaruSem.Call.interp_prop_agree", "NaruSem.Call.curried_wrapP", "NaruSem.Call.specConn_of_curried",
     "NaruSem.Call.PEnv.Agree.refl", "NaruSem.Call.PEnv.Agree.defined", "NaruSem.Call.PEnv.Defined.mono", "NaruSem.Call.SigEnv.SubP.refl" ]
 
-/-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 15、spec 宣言 9。欠けていれば FAIL。 -/
+/-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 4、fn 17、spec 宣言 10。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
-  [ ("Sem.Call.seed", .input), ("Sem.Call.bias", .input), ("Sem.Call.flag", .input),
+  [ ("Sem.Call.seed", .input), ("Sem.Call.bias", .input), ("Sem.Call.otherBias", .input), ("Sem.Call.flag", .input),
     ("Sem.Call.base", .fn), ("Sem.Call.zero", .fn), ("Sem.Call.addTo", .fn), ("Sem.Call.callBase", .fn), ("Sem.Call.callNamed", .fn),
     ("Sem.Call.callMixed", .fn), ("Sem.Call.ufcs", .fn), ("Sem.Call.ufcsNamed", .fn), ("Sem.Call.useInput", .fn), ("Sem.Call.useInputArg", .fn),
     ("Sem.Call.twoStep", .fn), ("Sem.Call.boolCall", .fn), ("Sem.Call.zeroCall", .fn), ("Sem.Call.callInLet", .fn), ("Sem.Call.callInMatch", .fn),
+    ("Sem.Call.inputPair", .fn), ("Sem.Call.sharedInputs", .fn),
     ("Sem.Call.posBase", .predicate), ("Sem.Call.specCallSpec", .predicate), ("Sem.Call.specInput", .predicate), ("Sem.Call.specNamed", .predicate),
     ("Sem.Call.specUfcs", .predicate), ("Sem.Call.specBoolCall", .predicate), ("Sem.Call.specLetCall", .predicate), ("Sem.Call.specQuantCall", .predicate),
-    ("Sem.Call.specTwoStep", .predicate) ]
+    ("Sem.Call.specTwoStep", .predicate), ("Sem.Call.specSharedInputs", .predicate) ]
 
 /-- 検体の宣言(修飾名, spec か)。今回の保存対象の各構文を 1 つずつ。欠けていれば FAIL。 -/
 def c39Decls : List (String × Bool) :=
@@ -975,16 +976,18 @@ def valTerm' : NaruSem.Val → String
 
 def valsTerm (vs : List NaruSem.Val) : String := "[" ++ ", ".intercalate (vs.map valTerm') ++ "]"
 
-/-- 検査に使う input の解釈: `seed() = 41`、`bias(n) = n * 2`、`flag(b) = !b`(署名を守る任意の解釈の一例。scenario の束縛ではない)。 -/
+/-- 検査に使う input の解釈: `seed() = 41`、`bias(n) = n * 2`、`otherBias(n) = n + 3`、`flag(b) = !b`(署名を守る解釈の一例)。 -/
 def callInterp : NaruSem.Call.FEnv :=
-  ((NaruSem.Call.FEnv.empty.ext "Sem.Call.seed" fun _ => some (.nat 41)).ext "Sem.Call.bias"
+  (((NaruSem.Call.FEnv.empty.ext "Sem.Call.seed" fun _ => some (.nat 41)).ext "Sem.Call.bias"
     fun vs => match vs with | [.nat n] => some (.nat (n * 2)) | _ => none).ext "Sem.Call.flag"
-    fun vs => match vs with | [.bool b] => some (.bool (!b)) | _ => none
+    fun vs => match vs with | [.bool b] => some (.bool (!b)) | _ => none).ext "Sem.Call.otherBias"
+    fun vs => match vs with | [.nat n] => some (.nat (n + 3)) | _ => none
 
 def callInterpTerm : String :=
-  "((NaruSem.Call.FEnv.empty.ext \"Sem.Call.seed\" fun _ => some (NaruSem.Val.nat 41)).ext \"Sem.Call.bias\"\n" ++
+  "(((NaruSem.Call.FEnv.empty.ext \"Sem.Call.seed\" fun _ => some (NaruSem.Val.nat 41)).ext \"Sem.Call.bias\"\n" ++
   "    fun vs => match vs with | [NaruSem.Val.nat n] => some (NaruSem.Val.nat (n * 2)) | _ => none).ext \"Sem.Call.flag\"\n" ++
-  "    fun vs => match vs with | [NaruSem.Val.bool b] => some (NaruSem.Val.bool (!b)) | _ => none"
+  "    fun vs => match vs with | [NaruSem.Val.bool b] => some (NaruSem.Val.bool (!b)) | _ => none).ext \"Sem.Call.otherBias\"\n" ++
+  "    fun vs => match vs with | [NaruSem.Val.nat n] => some (NaruSem.Val.nat (n + 3)) | _ => none"
 
 /-- 署名に合わない解釈: `seed()` が Bool を返す。 -/
 def callInterpWrong : NaruSem.Call.FEnv := NaruSem.Call.FEnv.empty.ext "Sem.Call.seed" fun _ => some (.bool true)
@@ -1003,7 +1006,8 @@ def expectedCallValues : List (String × List NaruSem.Val × NaruSem.Val) :=
   [ ("Sem.Call.twoStep", [.nat 1], .nat 86), ("Sem.Call.useInputArg", [.nat 3], .nat 88), ("Sem.Call.callNamed", [.nat 1, .nat 2], .nat 4),
     ("Sem.Call.callMixed", [.nat 1, .nat 2], .nat 5), ("Sem.Call.ufcsNamed", [.nat 2, .nat 1], .nat 4), ("Sem.Call.boolCall", [.bool true], .bool false),
     ("Sem.Call.boolCall", [.bool false], .bool true), ("Sem.Call.zeroCall", [], .nat 0), ("Sem.Call.callInLet", [.nat 3], .nat 5),
-    ("Sem.Call.callInMatch", [.nat 1], .nat 0), ("Sem.Call.callInMatch", [.nat 5], .nat 6), ("Sem.Call.callInMatch", [.nat 0], .nat 2) ]
+    ("Sem.Call.callInMatch", [.nat 1], .nat 0), ("Sem.Call.callInMatch", [.nat 5], .nat 6), ("Sem.Call.callInMatch", [.nat 0], .nat 2),
+    ("Sem.Call.inputPair", [.nat 3], .nat 94), ("Sem.Call.sharedInputs", [.nat 3], .nat 182) ]
 
 /-- 検査プログラム `CallScope.lean`(モジュール `CallScope`): 依存順の Core の宣言群 `cprog_call`、適格性(`decide`)、各宣言の署名(`decide`)、負の検体(`wtProg = none`、`decide`)、
 input の解釈の下の値(`decide`)と署名に合わない解釈の行き詰まり、引用の一致と網羅の照合(`run_cmd`)。 -/
@@ -1030,7 +1034,7 @@ def callScopeProgram (prog : List NaruSem.Call.Decl) (Δ : NaruSem.Call.SigEnv) 
   "".intercalate sigs ++
   "\n-- negative specimens made from the actual Core: not well-formed (not in dependency order / wrong callee / phase / cycle / duplicate / arity / argument type)\n" ++
   "".intercalate negs ++
-  s!"\n-- an input interpretation respecting the signatures (seed() = 41, bias(n) = n * 2, flag(b) = !b); the meaning of the group under it\ndef I_call : NaruSem.Call.FEnv :=\n  {callInterpTerm}\n" ++
+  s!"\n-- an input interpretation respecting the signatures (seed() = 41, bias(n) = n * 2, otherBias(n) = n + 3, flag(b) = !b); the meaning of the group under it\ndef I_call : NaruSem.Call.FEnv :=\n  {callInterpTerm}\n" ++
   "".intercalate vals ++
   s!"-- an interpretation not respecting the signature of `seed` (Bool instead of Nat): the call is stuck (`none`), not a default value\ndef I_call_wrong : NaruSem.Call.FEnv := {callInterpWrongTerm}\n" ++
   "theorem cstuck_useInput : ((NaruSem.Call.interp I_call_wrong cprog_call).Φ \"Sem.Call.useInput\").bind (fun f => f [NaruSem.Val.nat 1]) = none := by decide\n" ++
@@ -1416,7 +1420,11 @@ def callSpecMistranslations : List Mistranslation :=
     { key := "Sem.Call.specBoolCall", wrong := "Wrong.specBoolCall",
       good := "Model.Sem.Call.boolCall flag' «b»", bad := "Model.Sem.Call.boolCall (fun v => flag' (!v)) «b»",
       transform := fun s => s.replace "Model.Sem.Call.boolCall flag' «b»" "Model.Sem.Call.boolCall (fun v => flag' (!v)) «b»",
-      note := "a different Bool-to-Bool input interpretation is passed through spec -> runtime -> input" } ]
+      note := "a different Bool-to-Bool input interpretation is passed through spec -> runtime -> input" },
+    { key := "Sem.Call.specSharedInputs", wrong := "Wrong.specSharedInputs",
+      good := "Model.Sem.Call.sharedInputs bias' otherBias' seed'", bad := "Model.Sem.Call.sharedInputs otherBias' bias' seed'",
+      transform := fun s => s.replace "Model.Sem.Call.sharedInputs bias' otherBias' seed'" "Model.Sem.Call.sharedInputs otherBias' bias' seed'",
+      note := "the two distinct Nat-to-Nat inputs are swapped through spec -> runtime -> runtime -> input" } ]
 
 /-- 閉じた反例は非同値を補助的に示す。任意 input/仮引数での正しい接続の代用にはしない。 -/
 def callSpecCounterexample (m : Mistranslation) : String :=
@@ -1426,6 +1434,7 @@ def callSpecCounterexample (m : Mistranslation) : String :=
     | "Sem.Call.specNamed" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.callNamed")
     | "Sem.Call.specUfcs" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.ufcs")
     | "Sem.Call.specBoolCall" => ("(fun b => b) false", "Model.Sem.Call.boolCall")
+    | "Sem.Call.specSharedInputs" => ("(fun n => n * 10) (fun _ => 1) 0 1", "Model.Sem.Call.sharedInputs Model.Sem.Call.inputPair Model.Sem.Call.useInputArg")
     | _ => ("", "")
   let name := s!"different_{shortName m.key}"
   let original := Naru.Backend.Statements.stmtName m.key
@@ -1450,11 +1459,19 @@ def callMistranslations : List Mistranslation :=
       note := "the UFCS receiver of `ufcs` (`a.addTo(b)`) passed as the second argument instead of the first" },
     { key := "Sem.Call.useInputArg", wrong := "Wrong.useInputArg", good := "(bias' (seed'))", bad := "(bias' «x») + (bias' «x»)",
       transform := fun s => s.replace "(bias' (seed'))" "(bias' «x»)",
-      note := "the input `seed` mis-wired in `useInputArg` (`bias(seed())` reads the parameter `x` instead of the input argument `seed'`: a multi-stage input mis-wiring)" } ]
+      note := "the input `seed` mis-wired in `useInputArg` (`bias(seed())` reads the parameter `x` instead of the input argument `seed'`: a multi-stage input mis-wiring)" },
+    { key := "Sem.Call.sharedInputs", wrong := "Wrong.sharedInputs",
+      good := "Model.Sem.Call.inputPair bias' otherBias' seed'", bad := "Model.Sem.Call.inputPair otherBias' bias' seed'",
+      transform := fun s => s.replace "Model.Sem.Call.inputPair bias' otherBias' seed'" "Model.Sem.Call.inputPair otherBias' bias' seed'",
+      note := "the same-signature inputs are swapped in one runtime callee, while the other callee still shares the original bias/seed interpretation" } ]
 
 /-- 負の検体 `CallModelWrong.lean`(Model、呼出し)。`CallModelCheck` を import して同じ `Δgen_call` / `Φgen_call` で接続する。 -/
 def callWrongProgram (ib ia : String) (fns : List CallFn) (wrongs : List (Mistranslation × String)) : String × List Nat :=
-  wrongProgramWith "Model (calls and inputs)" ["CallScope", "Model.Sem.Call", "CallModelCheck"] wrongs fun thm lean key =>
+  let witnessed := wrongs.map fun (m, text) =>
+    if m.key == "Sem.Call.sharedInputs" then
+      (m, text ++ "\ntheorem different_sharedInputs : Model.Sem.Call.sharedInputs (fun n => n * 2) (fun n => n + 3) 41 3 ≠ Wrong.sharedInputs (fun n => n * 2) (fun n => n + 3) 41 3 := by decide\n#audit_axioms different_sharedInputs\n")
+    else (m, text)
+  wrongProgramWith "Model (calls and inputs)" ["CallScope", "Model.Sem.Call", "CallModelCheck"] witnessed fun thm lean key =>
     (fns.find? fun f => f.key == key).map fun f =>
       let name := if lean.isEmpty then Naru.Backend.Model.leanName key else lean
       callConnStmt ib ia thm name f s!"ccore_{shortName key}" (proofOf f.params f.body)
@@ -1857,7 +1874,7 @@ def checks : M Unit := do
       for (k, args, v) in expectedCallValues do
         let got := callValue callInterp cprog k args
         if got == some v then
-          ok s!"C54: under the interpretation seed = 41 / bias(n) = 2n / flag(b) = !b, `{shortName k}` {args.map valTerm'} = {valTerm' v} (NaruSem.Call.interp)"
+          ok s!"C54: under the interpretation seed = 41 / bias(n) = 2n / otherBias(n) = n+3 / flag(b) = !b, `{shortName k}` {args.map valTerm'} = {valTerm' v} (NaruSem.Call.interp)"
           values := values ++ [(i, k, args, v)]
           i := i + 1
         else fail s!"C54: `{shortName k}` {args.map valTerm'}: expected {valTerm' v}, got {got.map valTerm'}"
@@ -1917,6 +1934,11 @@ def checks : M Unit := do
         let _ ← step "C57: compile the generated Model as the Lean module `Model.Sem.Call`" "lean"
           #[s!"--root={callGenDir}", "-o", (callGenDir / "Model" / "Sem" / "Call.olean").toString, callModelFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let inputsTable := inputsOf cprog
+        for key in ["Sem.Call.inputPair", "Sem.Call.sharedInputs", "Sem.Call.specSharedInputs"] do
+          let expected := ["Sem.Call.bias", "Sem.Call.otherBias", "Sem.Call.seed"]
+          if inputsTable.lookup key == some expected then
+            ok s!"C56: `{shortName key}` carries the two same-signature inputs distinctly and shares bias/seed exactly once, in name order"
+          else fail s!"C56: `{key}`: expected distinct and deduplicated transitive inputs {expected}, got {inputsTable.lookup key}"
         let mut fns : List CallFn := []
         let mut idx := 0
         for d in cprog do
@@ -1975,11 +1997,11 @@ def checks : M Unit := do
         let (sib, sia) := inputBinders inputs
         checkWrong "Statements (calls)" (outDir / "CallStatementsReadWrong.lean")
           (callSpecWrongProgram sib sia specs specReadWrongs) specReadWrongs lpCall
-          ["different_specCallSpec", "different_specTwoStep", "different_specNamed", "different_specUfcs", "different_specBoolCall"]
+          ["different_specCallSpec", "different_specTwoStep", "different_specNamed", "different_specUfcs", "different_specBoolCall", "different_specSharedInputs"]
         -- C58: 隔離した誤出力(同じ署名の別の呼出し先・名前付き実引数の取り違え・UFCS の受け手の誤対応・input の誤配線)は型検査を通るが接続検査に失敗する
         let (ib, ia) := inputBinders inputs
         let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations
-        checkWrong "Model (calls and inputs)" (outDir / "CallModelWrong.lean") (callWrongProgram ib ia fns callWrongs) callWrongs lpCall
+        checkWrong "Model (calls and inputs)" (outDir / "CallModelWrong.lean") (callWrongProgram ib ia fns callWrongs) callWrongs lpCall ["different_sharedInputs"]
         checkCallEvidence ib ia fns lpCall
         checkCallSpecEvidence ib ia specs cprog lpCall
   heading "C45 the audit rejects forbidden dependencies"

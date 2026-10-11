@@ -8,6 +8,7 @@ module Sem.Call
 // input: ゼロ引数(値)と引数あり(署名に従う任意の全域関数の解釈を環境から受け取る)
 input seed() -> Nat
 input bias(n: Nat) -> Nat
+input otherBias(n: Nat) -> Nat
 input flag(b: Bool) -> Bool
 
 // runtime(Model)
@@ -33,6 +34,10 @@ fn callInMatch(x: Nat) -> Nat {
   }
 }
 
+// 同じ署名の input を区別し、bias / seed の共有する推移依存を一度ずつ引き回す。
+fn inputPair(x: Nat) -> Nat { bias(x) + otherBias(seed()) * 2 }
+fn sharedInputs(x: Nat) -> Nat { inputPair(x) + useInputArg(x) }
+
 // spec(Statements)
 predicate posBase(x: Nat) { base(x) > 0 }
 predicate specCallSpec(x: Nat) { posBase(x) && x < 10 }
@@ -43,3 +48,4 @@ predicate specBoolCall(b: Bool) { boolCall(b) implies flag(b) }
 predicate specLetCall(x: Nat) { let p = posBase(x); let v = base(x); p implies v > 0 }
 predicate specQuantCall(x: Nat) { forall n: Nat { base(n) >= n } }
 predicate specTwoStep(x: Nat) { specCallSpec(x) || specInput(x) }
+predicate specSharedInputs(x: Nat) { sharedInputs(x) > bias(x) && otherBias(x) > 0 }

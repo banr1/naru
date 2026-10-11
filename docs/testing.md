@@ -231,12 +231,12 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   宣言群 `Surf.Call.wtProg` / `interp`)とその一般定理(`SurfaceCallTotality.lean`: `Surf.Call.eval_total` / `Eval_unique` / `evalArgs_total` / `Sem_exists` /
   `Sem_unique`、名前付き引数の並べ替えの可換性 `arrange_map`、評価の単調性 `eval_mono` と `Sem_not_nat`、宣言群の `Surf.Call.interp_respects` / `interp_defined` /
   `fn_total` / `spec_defined` / `spec_meaning`)、検体(`CallExamples.lean`)を kernel に検査させ、公理監査に載せる(`requiredTheorems` に含む)。`naru_test semantics` は検体
-  `tests/accept/sem_call.naru`(input 3・fn 16・spec 宣言 9。`NaruTest/Semantics.lean` の `c54Decls`)の fn / input / spec 宣言すべてを、実際の Core(`Call.Quote.declsOf`)と
+  `tests/accept/sem_call.naru`(input 4・fn 17・spec 宣言 10。`NaruTest/Semantics.lean` の `c54Decls`)の fn / input / spec 宣言すべてを、実際の Core(`Call.Quote.declsOf`)と
   実際の構文解析の出力(`Surf.Call.Quote.declsOf`)の宣言群として依存順(呼出し先が前。ドライバが Core の呼出しの鍵から並べる `dependencyOrder`)に引用した
   `.lake/naru/test/semantics/CallScope.lean`(モジュール `CallScope`)/ `SurfaceCallScope.lean`(モジュール `SurfaceCallScope`)を `lean` で検査する: 宣言群の適格性
   `cwt_call : (Call.wtProg SigEnv.empty cprog_call).isSome = true` と各宣言の署名 `csig_f`(`decide`)、実際の Core から作った負の検体(`coreWrongProgs`: 依存順の反転、`callBase` が
   `base` の代わりに `addTo`(違う呼出し先・引数の数)/ spec 宣言 `posBase`(phase)を呼ぶ、`base` が `callBase` を呼ぶ循環、`base` の重複、`seed()` に実引数(input の引数の数)、
-  `base` に Bool(引数の型))が `wtProg = none`(`decide`)、input の解釈(`seed() = 41`、`bias(n) = n * 2`、`flag(b) = !b`)の下の宣言群の意味 `Call.interp` の fn の値 11 件
+  `base` に Bool(引数の型))が `wtProg = none`(`decide`)、input の解釈(`seed() = 41`、`bias(n) = n * 2`、`otherBias(n) = n + 3`、`flag(b) = !b`)の下の宣言群の意味 `Call.interp` の fn の値 14 件
   (`expectedCallValues`: `twoStep(1) = 86` など。`decide`)と、署名に合わない解釈(`seed()` が Bool)では `useInput(1)` が行き詰まる(`none`)こと、引用した宣言群が実際の Core と
   一致し宣言群全体を網羅すること(`run_cmd Call.Quote.checkProg`)、一般定理が実際の宣言群に適用できること(`cΔ_call` / `cresp_call` / `cdef_call`: 署名を守る任意の
   解釈の下で `Call.interp` が署名を守り spec 宣言の意味が定義される。`#audit_axioms` で監査)。Surface 側は `swt_call : Surf.Call.wtProg sprog_call = true`(`decide`)、
@@ -252,7 +252,7 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   `.lake/naru/test/semantics/gencall/` に生成し、生成 Model `gencall/Model/Sem/Call.lean`(fn は input の引数 `name'` を名前順に先頭に取る)をモジュール
   `Model.Sem.Call` にコンパイルして、検査プログラム `.lake/naru/test/semantics/CallModelCheck.lean`(モジュール `CallModelCheck`。`CallScope` と `Model.Sem.Call` を
   import)を `lean` で検査する: 一般定理の量化の形(`Call.denote_sound`: 任意の署名・式・環境・一致する関数環境、`Call.interp_agree`: 任意の宣言群・input 解釈・
-  実生成定数の環境)、実生成宣言の表 `shapes_call` / `gens_call <inputs>`(input は Lean の値 `bias'` / `flag'` / `seed'` で量化、fn は生成定数に推移的な input の引数を
+  実生成定数の環境)、実生成宣言の表 `shapes_call` / `gens_call <inputs>`(input は Lean の値 `bias'` / `flag'` / `otherBias'` / `seed'` で量化、fn は生成定数に推移的な input の引数を
   名前順に適用。ドライバの `inputsOf` が backend と同じ規則で求める)から作った `Δgen_call` / `Φgen_call` が表の署名を守ること `Φgen_call_respects`、宣言群の各 fn /
   input の署名が表にあること `cover_call`(`decide`)、各 fn の接続 `conn_f <inputs> : ∀ args, Model.Sem.Call.f <input 引数> args = Call.denoteN Δgen_call (Φgen_call …)
   (Env.ofList …) ccore_f`(`rfl`。`match` は `proofOf` の `cases` の後に `rfl`。`ccore_f` は `CallScope.lean` の実際の Core の引用)と証拠 `evid_f`(`fnConn_of_curried`)、
@@ -260,13 +260,13 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   鍵で同じなら、宣言群の意味の fn は型の合う任意の実引数で実生成定数の値)。すべて `#audit_axioms` で監査し、ドライバは全部が `audit ok:` に現れ、fn の数が
   `c54Decls` の fn の数と一致することを要求する。負の検体 `CallModelWrong.lean`(`callMistranslations`: 実生成文字列から `twoStep` が同じ署名の `base` を `callBase` の
   代わりに呼ぶ `Wrong.twoStep`、`callNamed` の名前付き実引数を仮引数の順に渡す `Wrong.callNamed`、`ufcs` の UFCS の受け手を 2 番目に渡す `Wrong.ufcs`、`useInputArg` の
-  `bias(seed())` が `x` を読む input の誤配線 `Wrong.useInputArg`)は型検査を通り、接続検査 `conn_wrong_*` の 4 行だけが失敗する(対照 `conn_*_ok` は成功)。
+  `bias(seed())` が `x` を読む input の誤配線 `Wrong.useInputArg`、同型inputの交換 `Wrong.sharedInputs`)は型検査を通り、接続検査 `conn_wrong_*` の 5 行だけが失敗する(対照 `conn_*_ok` は成功)。
   C57 の証拠の欠落・不一致も同じ入口で検査する。`CallEvidenceCheck.lean` は正しい `evid_base` と全宣言の証拠による保存の合成を成功させ、
   `base` を抜いて呼出し側 `callBase` を残した証拠束、本体の定数を変えた同型の Core、その意味の差を kernel に検査させる。対照の 7 定理を公理監査する。
   `CallEvidenceWrong.lean` はその対照に、同じ署名の `callBase` の証拠を `base` に使う、本体変更前の証拠を変更後の Core に使う、
   呼出し先 `base` の証拠を抜いた束を `Call.interp_agree` に渡す、という 3 件だけを加える。その 3 行だけが型の不一致で失敗し、構文・import の誤りや
   未証明の穴による失敗が無いことを要求する。これらは隔離検体であり、現在のソース・生成物・正しい証拠を変更しない。
-  spec の `CallStatementsReadCheck.lean` は9宣言の prefix 接続 `read_*` / `spevid_*` と全体の `spevid_call` / `cprops_call` を kernel 検査・公理監査する。
+  spec の `CallStatementsReadCheck.lean` は10宣言の prefix 接続 `read_*` / `spevid_*` と全体の `spevid_call` / `cprops_call` を kernel 検査・公理監査する。
   C57 の spec 証拠の検査は `CallSpecEvidenceCheck.lean` / `CallSpecEvidenceWrong.lean`。正しい対照の8定理は、全 fn/spec の証拠による命題同値の合成、
   同型で意味が異なる変更後の `posBase` の Core、および呼出し先 `posBase` の証拠だけを含まない部分証拠を検査する。
   部分証拠は `specCallSpec` からの suffix に対し、元の prefix 署名を保持する。その署名に `posBase` があり、実際の呼出し側が残ることも検査する。
@@ -274,10 +274,12 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   負のファイルは対照に、別宣言 `specCallSpec` の証拠の流用、変更前の証拠の変更後 Core への流用、部分証拠による全体の合成の3件だけを加える。
   その3行だけの型不一致・構文/import/未証明の穴のエラーなしを要求する。現在の入力・実生成物・正しい証拠は保持する。
   `CallStatementsReadWrong.lean` は論理の取り違えに加えて、spec 呼出し先・名前付き引数・UFCS の受け手・spec→runtime→input の解釈の誤配線を実生成文字列から作る。
-  型が合う5件の隔離宣言と任意 input/仮引数の正しい対照は通り、接続定理の5行だけが失敗する。各 `different_*` の閉じた非同値反例も kernel 検査・公理監査し、5件の監査の欠落は失敗にする。
-  呼出しを含む Surface AST からの保存とその負検体、別モジュールの接続、同じ署名の複数 input 等(C55〜C58 の残り)は未完了。
+  型が合う6件の隔離宣言と任意 input/仮引数の正しい対照は通り、接続定理の6行だけが失敗する。各 `different_*` の閉じた非同値反例も kernel 検査・公理監査し、6件の監査の欠落は失敗にする。
+  呼出しを含む Surface AST からの保存とその負検体、別モジュールの接続等(C55〜C58 の残り)は未完了。
 
-C56 の任意解釈から Lean への写しは `CallInputs.lean` の `exists_fn` / `input_representable` / `inputs_representable`。`lake build NaruSem` と同じ semantics / regression 入口で公理監査し、必須監査一覧からの欠落を失敗にする。型外で値を返す解釈の対照 `illtyped_total` / `illtyped_not_equal` も kernel 検査する。`CallModelCheck.lean` の `irepr_seed` / `irepr_bias` / `irepr_flag` と `ireprs_call` は現在の引用 Core の input の鍵・署名と、任意の `RespectsInputs` 解釈に対する全引数の対応を検査する。これら4証拠の監査欠落も失敗とする。型内の一致から関数全体の等式 `SameInputs` は導かない。`InputsAgree` を前提とする一般合成 `interp_inputs_agree` / `interpFrom_inputs_agree` / `fn_value_inputs` と `interp_prop_inputs_agree` / `interpFrom_prop_inputs_agree` を同じ入口から kernel 検査・公理監査する。`SameInputs.agree` は従来 API を保つ系。`inputs_generated_agree` が任意の元解釈の全 input を同時に表現し、現在の生成環境の lookup 証拠から型内一致を導く。型内一致が成立しても関数全体の等式は成立しない対照 `typed_only_agree` / `typed_only_not_same` も必須監査対象。`CallModelCheck.lean` の `cinputs_generated` と `cgen_inputs_call`、`CallStatementsReadCheck.lean` の `cprops_inputs_call` / `cinputs_connect` は、現在の実3inputの抽出値を実生成15fn/9specへ渡し、任意の元解釈で値対応と双方向の命題同値を同時に検査する。これら4証拠の監査欠落を失敗にする。同型複数input・inputのみの別モジュール・Surface呼出し保存は未完了であり、C56全体の達成とは区別する。
+C56 の任意解釈から Lean への写しは `CallInputs.lean` の `exists_fn` / `input_representable` / `inputs_representable`。`lake build NaruSem` と同じ semantics / regression 入口で公理監査し、必須監査一覧からの欠落を失敗にする。型外で値を返す解釈の対照 `illtyped_total` / `illtyped_not_equal` も kernel 検査する。`CallModelCheck.lean` の `irepr_seed` / `irepr_bias` / `irepr_otherBias` / `irepr_flag` と `ireprs_call` は現在の引用 Core の input の鍵・署名と、任意の `RespectsInputs` 解釈に対する全引数の対応を検査する。これら5証拠の監査欠落も失敗とする。型内の一致から関数全体の等式 `SameInputs` は導かない。`InputsAgree` を前提とする一般合成 `interp_inputs_agree` / `interpFrom_inputs_agree` / `fn_value_inputs` と `interp_prop_inputs_agree` / `interpFrom_prop_inputs_agree` を同じ入口から kernel 検査・公理監査する。`SameInputs.agree` は従来 API を保つ系。`inputs_generated_agree` が任意の元解釈の全 input を同時に表現し、現在の生成環境の lookup 証拠から型内一致を導く。型内一致が成立しても関数全体の等式は成立しない対照 `typed_only_agree` / `typed_only_not_same` も必須監査対象。`CallModelCheck.lean` の `cinputs_generated` と `cgen_inputs_call`、`CallStatementsReadCheck.lean` の `cprops_inputs_call` / `cinputs_connect` は、現在の実4inputの抽出値を実生成17fn/10specへ渡し、任意の元解釈で値対応と双方向の命題同値を同時に検査する。これら4証拠の監査欠落を失敗にする。inputのみの別モジュール・Surface呼出し保存は未完了であり、C56全体の達成とは区別する。
+
+同型inputの検体(C56)では `bias` と `otherBias` がともに Nat → Nat。`inputPair` が二つを区別し、`sharedInputs` は `inputPair` と `useInputArg` で共有する `bias` / `seed` を重複せず引き回す。`specSharedInputs` はその二段のruntime呼出しに加えて同じ二つのinputを直接参照する。三宣言の推移input列を独立した期待列 `[bias, otherBias, seed]` と照合し、任意の解釈・引数での実生成接続と全宣言群の合成を kernel 検査・公理監査する。`CallModelWrong` は片方のcalleeに渡す二つの解釈だけを交換し、`CallStatementsReadWrong` は spec→runtime の受け渡しで交換する。どちらも型は合うが接続行だけで失敗し、正しい対照は成功する。閉じた差の証拠 `different_sharedInputs` / `different_specSharedInputs` も kernel 検査・監査し、欠落は失敗とする。具体反例は任意解釈での接続の代用にしない。
 
 ## golden test(C10)
 
@@ -318,6 +320,6 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 
 呼出しを含む spec 式の検査(C55 の進展)も `lake exe naru_test semantics` と `lake exe naru_test regression` から実行する。
 `CallDenoteProp.lean` の `Call.Sem_denote` / `Sem_denoteP` / `check_sound_prop` と命題環境の一致・署名包含の補題を `NaruSem.lean` で公理監査し、`requiredTheorems` が欠落を失敗にする。
-実際の CLI が生成した `gencall/Statements/Sem/Call.lean` を Lean モジュールとしてビルドし、`CallStatementsReadCheck.lean` が現在の引用 Core と9個の実生成 spec の読みの接続 `read_*` を任意の input 解釈・仮引数について検査・監査する。
-`CallStatementsReadWrong.lean` の5件は、`specCallSpec` の `∧`→`∨`、`specTwoStep` の spec 呼出し先の置換、`specNamed` の名前付き引数の交換、`specUfcs` の受け手の交換、`specBoolCall` の runtime 経由の input 解釈の変更。型検査・正しい対照・非同値反例 `different_*` の kernel 検査と公理監査は成功し、同じ正しい Core への接続定理の5行だけで失敗する。反例の引数は [architecture.md](architecture.md) に記載する。宣言数・5件の監査・期待するエラー行の欠落は失敗にする。
-`CallComposeProp.lean` の `interp_prop_agree` / `interpFrom_prop_agree` / `curried_wrapP` / `specConn_of_curried` も一般定理の必須監査対象。各 spec の前の署名 `Δprefix_*` で `read_*` を検査し、`spevid_*` と全宣言の `spevid_call`、任意の同じ input 解釈で独立宣言群と実生成命題環境が同値となる `cprops_call` を検査・監査する。9 spec の接続・合成証拠の欠落も失敗にする。呼出しを含む Surface 保存と別モジュールの実生成接続は未完了。
+実際の CLI が生成した `gencall/Statements/Sem/Call.lean` を Lean モジュールとしてビルドし、`CallStatementsReadCheck.lean` が現在の引用 Core と10個の実生成 spec の読みの接続 `read_*` を任意の input 解釈・仮引数について検査・監査する。
+`CallStatementsReadWrong.lean` の6件は、`specCallSpec` の `∧`→`∨`、`specTwoStep` の spec 呼出し先の置換、`specNamed` の名前付き引数の交換、`specUfcs` の受け手の交換、`specBoolCall` の runtime 経由の input 解釈の変更、`specSharedInputs` の同型inputの交換。型検査・正しい対照・非同値反例 `different_*` の kernel 検査と公理監査は成功し、同じ正しい Core への接続定理の6行だけで失敗する。反例の引数は [architecture.md](architecture.md) に記載する。宣言数・6件の監査・期待するエラー行の欠落は失敗にする。
+`CallComposeProp.lean` の `interp_prop_agree` / `interpFrom_prop_agree` / `curried_wrapP` / `specConn_of_curried` も一般定理の必須監査対象。各 spec の前の署名 `Δprefix_*` で `read_*` を検査し、`spevid_*` と全宣言の `spevid_call`、任意の同じ input 解釈で独立宣言群と実生成命題環境が同値となる `cprops_call` を検査・監査する。10 spec の接続・合成証拠の欠落も失敗にする。呼出しを含む Surface 保存と別モジュールの実生成接続は未完了。
