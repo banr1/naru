@@ -233,6 +233,7 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の双方向同値は未証明 |
 | `Surf.Call.SpecLetsBridge.sem_iff` / `Surf.Call.lowerStmtsS_sem_iff` | 子spec式と末尾の双方向意味対応から、任意の値・命題let列をCoreの入れ子のletへ合成する局所保存 | 明示的な `SpecLetsBridge`、同じ局所環境、署名を守る関数/input環境。公開入口はlet列の適格性と独立lowering出力も照合する。全spec式の一般帰納保存ではない |
 | `Surf.Call.SpecArmsBridge.lower` / `Surf.Call.SpecArmsBridge.sem_iff` / `Surf.Call.lowerS_match_sem_iff` | 各腕のガード・本体の双方向対応から、任意のガード付きmatchの腕列を実lowerS出力へ合成する局所保存 | 明示的な `SpecArmsBridge`、同じ局所環境・任意spec解釈。scrutineeは適格な値で、関数/inputは署名を守る。意味の存在・全spec帰納保存・宣言群保存は結論にしない |
+| `Surf.Call.lowerBinders_sem_iff` / `Surf.Call.lowerS_quant_equiv` / `Surf.Call.lowerS_quant_sem_iff` | 拡張後の任意環境における本体の双方向対応から、任意長のNat/Bool束縛列のforall/existsを実lowerS出力へ合成する局所保存。名前・順序・量化範囲と同名shadowingを保持する | 本体の `SpecSemEquiv`、束縛注釈と文脈の対応、同じ関数/input/spec解釈。公開入口は本体の適格性と実lowering出力も照合する。意味の存在・全spec帰納保存・宣言群保存は含めない |
 | `Surf.Call.lowerS_typed_all` / `Surf.Call.lowerS_typed` / `Surf.Call.lowerS_total` / `Surf.Call.lowerS_wt` | 呼出しを含むspecの独立loweringの全域性と型保存。式・let列・腕列・腕の相互帰納から変換先の存在とCoreの同じ型を導く。命題の同値・宣言群の意味合成は含めない | 任意の宣言表・文脈・適格なspec式と型。実Coreとの一致は別途kernel検査 |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。

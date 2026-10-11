@@ -96,7 +96,8 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.SpecArmsBridge.lower", "NaruSem.Surf.Call.SpecArmsBridge.sem_iff", "NaruSem.Surf.Call.lowerS_match_sem_iff", "NaruSem.Surf.Call.match_sem_wt", "NaruSem.Surf.Call.match_sem_lower", "NaruSem.Surf.Call.match_sem_bridge", "NaruSem.Surf.Call.match_sem_arbitrary", "NaruSem.Surf.Call.match_sem_ctx", "NaruSem.Surf.Call.match_sem_respects", "NaruSem.Surf.Call.match_sem_first_hit", "NaruSem.Surf.Call.match_sem_guards", "NaruSem.Surf.Call.match_sem_guard_false_restores_outer", "NaruSem.Surf.Call.match_sem_guard_true_shadows_outer", "NaruSem.Surf.Call.match_sem_missing_guard", "NaruSem.Surf.Call.match_sem_wrong_wt", "NaruSem.Surf.Call.match_sem_wrong_meaning", "NaruSem.Surf.Call.match_sem_wrong_not_preserved", "NaruSem.Surf.Call.match_sem_missing_guard_core", "NaruSem.Surf.Call.match_sem_nat_wt", "NaruSem.Surf.Call.match_sem_nat_bridge", "NaruSem.Surf.Call.match_sem_nat_arbitrary", "NaruSem.Surf.Call.match_sem_nat_successor", "NaruSem.Surf.Call.match_sem_empty",
+  [ "NaruSem.Surf.Call.lowerBinders_sem_iff", "NaruSem.Surf.Call.lowerS_quant_equiv", "NaruSem.Surf.Call.lowerS_quant_sem_iff", "NaruSem.Surf.Call.quant_sem_ctx", "NaruSem.Surf.Call.quant_sem_binders_lower", "NaruSem.Surf.Call.quant_sem_binders_ctx", "NaruSem.Surf.Call.quant_sem_wt", "NaruSem.Surf.Call.quant_sem_lower", "NaruSem.Surf.Call.quant_sem_arbitrary", "NaruSem.Surf.Call.quant_sem_forall_equiv", "NaruSem.Surf.Call.quant_sem_exists_binders", "NaruSem.Surf.Call.quant_sem_empty", "NaruSem.Surf.Call.quant_sem_forall_false", "NaruSem.Surf.Call.quant_sem_exists_true", "NaruSem.Surf.Call.quant_sem_wrong_wt", "NaruSem.Surf.Call.quant_sem_wrong_not_lower", "NaruSem.Surf.Call.quant_sem_wrong_exists_not_preserved", "NaruSem.Surf.Call.quant_sem_wrong_forall_not_preserved", "NaruSem.Surf.Call.quant_sem_pred_arbitrary", "NaruSem.Surf.Call.quant_sem_pred_missing", "NaruSem.Surf.Call.quant_sem_unannotated_rejected", "NaruSem.Surf.Call.quant_sem_unsupported_rejected",
+    "NaruSem.Surf.Call.SpecArmsBridge.lower", "NaruSem.Surf.Call.SpecArmsBridge.sem_iff", "NaruSem.Surf.Call.lowerS_match_sem_iff", "NaruSem.Surf.Call.match_sem_wt", "NaruSem.Surf.Call.match_sem_lower", "NaruSem.Surf.Call.match_sem_bridge", "NaruSem.Surf.Call.match_sem_arbitrary", "NaruSem.Surf.Call.match_sem_ctx", "NaruSem.Surf.Call.match_sem_respects", "NaruSem.Surf.Call.match_sem_first_hit", "NaruSem.Surf.Call.match_sem_guards", "NaruSem.Surf.Call.match_sem_guard_false_restores_outer", "NaruSem.Surf.Call.match_sem_guard_true_shadows_outer", "NaruSem.Surf.Call.match_sem_missing_guard", "NaruSem.Surf.Call.match_sem_wrong_wt", "NaruSem.Surf.Call.match_sem_wrong_meaning", "NaruSem.Surf.Call.match_sem_wrong_not_preserved", "NaruSem.Surf.Call.match_sem_missing_guard_core", "NaruSem.Surf.Call.match_sem_nat_wt", "NaruSem.Surf.Call.match_sem_nat_bridge", "NaruSem.Surf.Call.match_sem_nat_arbitrary", "NaruSem.Surf.Call.match_sem_nat_successor", "NaruSem.Surf.Call.match_sem_empty",
     "NaruSem.Surf.Call.SpecSemEquiv.iff", "NaruSem.Surf.Call.SpecLetsBridge.lower", "NaruSem.Surf.Call.SpecLetsBridge.sem_iff", "NaruSem.Surf.Call.lowerStmtsS_sem_iff", "NaruSem.Surf.Call.lowerS_block_sem_iff",
     "NaruSem.Surf.Call.lets_sem_wt", "NaruSem.Surf.Call.lets_sem_lower", "NaruSem.Surf.Call.lets_sem_bridge", "NaruSem.Surf.Call.lets_sem_arbitrary", "NaruSem.Surf.Call.lets_sem_meaning", "NaruSem.Surf.Call.lets_sem_closed_respects", "NaruSem.Surf.Call.lets_sem_closed_positive", "NaruSem.Surf.Call.lets_sem_wrong_wt", "NaruSem.Surf.Call.lets_sem_wrong_meaning", "NaruSem.Surf.Call.lets_sem_wrong_not_true", "NaruSem.Surf.Call.lets_sem_wrong_not_preserved",
     "NaruSem.Surf.Call.exhaustiveFrom_lowerPat_cons", "NaruSem.Surf.Call.proppyS_lowerS", "NaruSem.Surf.Call.proppyS_lowerS_view",
@@ -1875,6 +1876,32 @@ def checkCallSpecEvidence (ib ia : String) (specs : List CallFn) (prog : NaruSem
     | _ => fail "C57(spec): cannot derive a stale body from the current posBase declaration"
   | _, _ => fail "C57(spec): required current posBase/specCallSpec declarations are missing"
 
+/-- 型の合う量化の交換を、局所接続の証拠の流用でも拒否する。 -/
+def checkQuantifierConnection (lp : String) : M Unit := do
+  let control := "import NaruSem.SurfaceCallQuantSemExamples\nimport NaruSem.Audit\nopen NaruSem NaruSem.Surf NaruSem.Surf.Call\ntheorem quant_control_forall : lowerS quantSemTable quantSemCtx (quantSemSurface .forall_) = some (quantSemCore .forall_) := quant_sem_lower .forall_\ntheorem quant_control_exists : lowerS quantSemTable quantSemCtx (quantSemSurface .exists_) = some (quantSemCore .exists_) := quant_sem_lower .exists_\ntheorem quant_wrong_type_forall : NaruSem.Call.wtS quantSemTable.Δ quantSemCtx (quantSemCore .forall_) = some .prop := quant_sem_wrong_wt .forall_\ntheorem quant_wrong_type_exists : NaruSem.Call.wtS quantSemTable.Δ quantSemCtx (quantSemCore .exists_) = some .prop := quant_sem_wrong_wt .exists_\n#audit_axioms quant_control_forall quant_control_exists quant_wrong_type_forall quant_wrong_type_exists\n"
+  let goodFile := outDir / "CallQuantControl.lean"
+  IO.FS.writeFile goodFile control
+  let good ← step "C55: quantifier controls and both same-typed outputs must succeed" "lean" #[goodFile.toString]
+    (env := #[("LEAN_PATH", some lp)])
+  if good.exitCode == 0 && (auditedNames good.stdout).length == 4 then
+    ok "C55: both real quantifier connections and swapped-output type controls are kernel-checked and audited"
+  else fail s!"C55: quantifier controls or audit failed\n{tail (good.stdout ++ good.stderr) 1500}"
+  let wrongForall := "theorem quant_wrong_forall : lowerS quantSemTable quantSemCtx (quantSemSurface .forall_) = some (quantSemCore .exists_) := quant_sem_lower .forall_\n"
+  let wrongExists := "theorem quant_wrong_exists : lowerS quantSemTable quantSemCtx (quantSemSurface .exists_) = some (quantSemCore .forall_) := quant_sem_lower .exists_\n"
+  let wrong := control ++ wrongForall ++ wrongExists
+  let failing := [(control.splitOn "\n").length, ((control ++ wrongForall).splitOn "\n").length]
+  let wrongFile := outDir / "CallQuantWrong.lean"
+  IO.FS.writeFile wrongFile wrong
+  let bad ← step "C55: exchanging forall and exists must fail only the two real-output connections" "lean" #[wrongFile.toString]
+    (expectExit := 1) (env := #[("LEAN_PATH", some lp)])
+  let output := bad.stdout ++ "\n" ++ bad.stderr
+  let errors := errorLines output
+  if bad.exitCode == 1 && errors.length == 2 && errors.all failing.contains && failing.all errors.contains &&
+      (auditedNames bad.stdout).length == 4 && (output.splitOn "Type mismatch").length == 3 &&
+      !(["unknown", "unexpected token", "import", "sorry"].any (contains output)) then
+    ok s!"C55: exactly the 2 swapped-quantifier connections fail (lines {failing}); typed controls succeed without syntax/import failure"
+  else fail s!"C55: expected exactly 2 quantifier evidence mismatches on lines {failing}, got {errors}\n{tail output 2500}"
+
 def checks : M Unit := do
   let t0 ← IO.monoMsNow
   IO.FS.createDirAll outDir
@@ -1902,6 +1929,8 @@ def checks : M Unit := do
   let e ← runProc "lake" #["env", "printenv", "LEAN_PATH"]
   let leanPath := e.stdout.trimAscii.toString
   if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
+  heading "C55 local quantifier connections"
+  checkQuantifierConnection leanPath
   heading "C39 scope of the Core produced by the compiler"
   let (diags, checked) ← Naru.compileFiles [source]
   if diags.isEmpty then ok s!"C39: {source} compiles without diagnostics ({checked.core.size} module(s))"

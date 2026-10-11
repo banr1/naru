@@ -2,10 +2,10 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallTotality
 
 /-!
-# spec の let 列・ガード付き match の局所意味合成
+# spec の let 列・ガード付き match・量化の局所意味合成
 
 値の子式には既存の runtime 評価保存を使う。命題の子式と末尾の
-双方向対応、および match のガード・本体の対応は明示的な前提であり、
+双方向対応、match のガード・本体と量化の本体の対応は明示的な前提であり、
 全 spec 式の帰納保存や宣言群の保存ではない。
 存在する意味の証人を双方向に運び、意味の無い子式に True / False を補わない。
 意味の存在そのものはこの局所対応の主張ではない。
@@ -325,5 +325,105 @@ theorem lowerS_match_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.
   obtain ⟨v, hs, hv⟩ := eval_total hw Φ ρ hΓ hΦ
   have hcs : NaruSem.Call.eval Φ ρ.vals cs = some v := (lower_eval hw hc hΓ hΦ) ▸ hs
   exact h.sem_iff hΓ hs hcs hv sp P
+
+/-! ## Nat / Bool の量化の局所意味合成 -/
+
+/-- 任意長の束縛列を、同じ Nat / Bool の全量化範囲で双方向に運ぶ。
+本体の対応は拡張後の任意環境で要求する。名前の重複・外側の命題の隠蔽を許す。
+意味の存在や本体の対応をこの定理だけから導くものではない。 -/
+theorem lowerBinders_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {b : Expr} {cb : Core.Expr} (bs : List Binder) :
+    ∀ {Γ Γ' : SCtx} {cbs : List (String × TyV)} {ρ : SEnv},
+      Surf.lowerBinders bs = some cbs → SCtx.extBinders Γ bs = some Γ' → Γ = ρ.ctx →
+      SpecSemEquiv T Φ Ψ Γ' b cb → ∀ (sp : Span) (q : Quant) (P : Prop),
+      Sem T Φ Ψ ρ (.quant sp q bs b) P ↔
+        NaruSem.Call.Sem T.Δ Φ Ψ ρ (.quant q cbs cb) P := by
+  induction bs with
+  | nil =>
+    intro Γ Γ' cbs ρ hcbs hb hΓ child sp q P
+    simp only [Surf.lowerBinders, Option.some.injEq] at hcbs
+    subst cbs
+    simp only [SCtx.extBinders, Option.some.injEq] at hb
+    subst Γ'
+    constructor
+    · intro h
+      cases h with
+      | quantNil h => exact .quantNil ((child.iff hΓ _).mp h)
+    · intro h
+      cases h with
+      | quantNil h => exact .quantNil ((child.iff hΓ _).mpr h)
+  | cons bd rest ih =>
+    obtain ⟨x, ty, bsp⟩ := bd
+    intro Γ Γ' cbs ρ hcbs hb hΓ child sp q P
+    simp only [Surf.lowerBinders] at hcbs
+    simp only [SCtx.extBinders] at hb
+    cases ty with
+    | none => simp at hb
+    | some ty =>
+      simp only at hb hcbs
+      cases ht : ty.toTy? with
+      | none => simp [ht] at hb
+      | some t =>
+        simp only [ht] at hb hcbs
+        cases hr : Surf.lowerBinders rest with
+        | none => simp [hr] at hcbs
+        | some crest =>
+          simp only [hr, Option.some.injEq] at hcbs
+          subst cbs
+          have hctx (a : t.carrier) :
+              Γ.ext x (.val t) = (ρ.ext x (.val (Val.of t a))).ctx := by
+            rw [SEnv.ctx_ext, ← hΓ]
+            simp [SVal.ty]
+          constructor
+          · intro h
+            cases h with
+            | forallCons ht' h =>
+              rw [ht] at ht'
+              cases ht'
+              exact .forallCons (TyV.toTy?_toTyV t)
+                (fun a => (ih hr hb (hctx a) child sp .forall_ _).mp (h a))
+            | existsCons ht' h =>
+              rw [ht] at ht'
+              cases ht'
+              exact .existsCons (TyV.toTy?_toTyV t)
+                (fun a => (ih hr hb (hctx a) child sp .exists_ _).mp (h a))
+          · intro h
+            cases h with
+            | forallCons ht' h =>
+              rw [TyV.toTy?_toTyV] at ht'
+              cases ht'
+              exact .forallCons ht
+                (fun a => (ih hr hb (hctx a) child sp .forall_ _).mpr (h a))
+            | existsCons ht' h =>
+              rw [TyV.toTy?_toTyV] at ht'
+              cases ht'
+              exact .existsCons ht
+                (fun a => (ih hr hb (hctx a) child sp .exists_ _).mpr (h a))
+
+/-- 本体の双方向対応を任意の束縛列の対応へ合成する。 -/
+theorem lowerS_quant_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ Γ' : SCtx} {bs : List Binder} {cbs : List (String × TyV)}
+    {b : Expr} {cb : Core.Expr} {sp : Span} {q : Quant}
+    (hb : SCtx.extBinders Γ bs = some Γ') (hcbs : Surf.lowerBinders bs = some cbs)
+    (child : SpecSemEquiv T Φ Ψ Γ' b cb) :
+    SpecSemEquiv T Φ Ψ Γ (.quant sp q bs b) (.quant q cbs cb) := by
+  intro ρ hΓ P
+  have h := lowerBinders_sem_iff bs hcbs hb hΓ child sp q P
+  exact ⟨fun hs => ⟨P, h.mp hs, Iff.rfl⟩, fun hc => ⟨P, h.mpr hc, Iff.rfl⟩⟩
+
+/-- 適格性・本体の lowering・実量化出力との一致を照合する公開入口。
+本体の対応は前提であり、全 spec 式の一般帰納保存ではない。 -/
+theorem lowerS_quant_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ Γ' : SCtx} {bs : List Binder} {cbs : List (String × TyV)}
+    {b : Expr} {cb d : Core.Expr} {sp : Span} {q : Quant} {τ : STy}
+    (hb : SCtx.extBinders Γ bs = some Γ') (hcbs : Surf.lowerBinders bs = some cbs)
+    (_hw : wtS T Γ' b = some τ) (hc : lowerS T Γ' b = some cb)
+    (hl : lowerS T Γ (.quant sp q bs b) = some d)
+    (child : SpecSemEquiv T Φ Ψ Γ' b cb) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.quant sp q bs b) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have hd : d = .quant q cbs cb := by
+    simpa only [lowerS, hb, hcbs, hc, Option.some.injEq] using hl.symm
+  rw [hd]
+  exact lowerBinders_sem_iff bs hcbs hb hΓ child sp q P
 
 end NaruSem.Surf.Call

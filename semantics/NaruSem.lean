@@ -30,6 +30,7 @@ import NaruSem.SurfaceCallLowerSpec
 import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallLowerSpecSem
 import NaruSem.SurfaceCallLowerSpecSemExamples
+import NaruSem.SurfaceCallQuantSemExamples
 import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
@@ -43,6 +44,8 @@ import NaruSem.Audit
 #audit_axioms NaruSem.Surf.Call.lowerS_typed_all NaruSem.Surf.Call.lowerS_typed NaruSem.Surf.Call.lowerS_total NaruSem.Surf.Call.lowerS_wt
 #audit_axioms NaruSem.Surf.Call.SpecSemEquiv.iff NaruSem.Surf.Call.SpecLetsBridge.lower NaruSem.Surf.Call.SpecLetsBridge.sem_iff NaruSem.Surf.Call.lowerStmtsS_sem_iff
 #audit_axioms NaruSem.Surf.Call.lowerS_block_sem_iff
+#audit_axioms NaruSem.Surf.Call.lowerBinders_sem_iff NaruSem.Surf.Call.lowerS_quant_equiv NaruSem.Surf.Call.lowerS_quant_sem_iff
+#audit_axioms NaruSem.Surf.Call.quant_sem_ctx NaruSem.Surf.Call.quant_sem_binders_lower NaruSem.Surf.Call.quant_sem_binders_ctx NaruSem.Surf.Call.quant_sem_wt NaruSem.Surf.Call.quant_sem_lower NaruSem.Surf.Call.quant_sem_arbitrary NaruSem.Surf.Call.quant_sem_forall_equiv NaruSem.Surf.Call.quant_sem_exists_binders NaruSem.Surf.Call.quant_sem_empty NaruSem.Surf.Call.quant_sem_forall_false NaruSem.Surf.Call.quant_sem_exists_true NaruSem.Surf.Call.quant_sem_wrong_wt NaruSem.Surf.Call.quant_sem_wrong_not_lower NaruSem.Surf.Call.quant_sem_wrong_exists_not_preserved NaruSem.Surf.Call.quant_sem_wrong_forall_not_preserved NaruSem.Surf.Call.quant_sem_pred_arbitrary NaruSem.Surf.Call.quant_sem_pred_missing NaruSem.Surf.Call.quant_sem_unannotated_rejected NaruSem.Surf.Call.quant_sem_unsupported_rejected
 #audit_axioms NaruSem.Surf.Call.SpecArmsBridge.lower NaruSem.Surf.Call.SpecArmsBridge.sem_iff NaruSem.Surf.Call.lowerS_match_sem_iff
 #audit_axioms NaruSem.Surf.Call.match_sem_wt NaruSem.Surf.Call.match_sem_lower NaruSem.Surf.Call.match_sem_bridge NaruSem.Surf.Call.match_sem_arbitrary NaruSem.Surf.Call.match_sem_ctx NaruSem.Surf.Call.match_sem_respects NaruSem.Surf.Call.match_sem_first_hit NaruSem.Surf.Call.match_sem_guards NaruSem.Surf.Call.match_sem_guard_false_restores_outer NaruSem.Surf.Call.match_sem_guard_true_shadows_outer NaruSem.Surf.Call.match_sem_missing_guard NaruSem.Surf.Call.match_sem_wrong_wt NaruSem.Surf.Call.match_sem_wrong_meaning NaruSem.Surf.Call.match_sem_wrong_not_preserved NaruSem.Surf.Call.match_sem_missing_guard_core NaruSem.Surf.Call.match_sem_nat_wt NaruSem.Surf.Call.match_sem_nat_bridge NaruSem.Surf.Call.match_sem_nat_arbitrary NaruSem.Surf.Call.match_sem_nat_successor NaruSem.Surf.Call.match_sem_empty
 #audit_axioms NaruSem.Surf.Call.lets_sem_wt NaruSem.Surf.Call.lets_sem_lower NaruSem.Surf.Call.lets_sem_bridge NaruSem.Surf.Call.lets_sem_arbitrary NaruSem.Surf.Call.lets_sem_meaning NaruSem.Surf.Call.lets_sem_closed_respects NaruSem.Surf.Call.lets_sem_closed_positive NaruSem.Surf.Call.lets_sem_wrong_wt NaruSem.Surf.Call.lets_sem_wrong_meaning NaruSem.Surf.Call.lets_sem_wrong_not_true NaruSem.Surf.Call.lets_sem_wrong_not_preserved
