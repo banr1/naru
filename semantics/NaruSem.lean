@@ -118,6 +118,17 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.Call.lower_call_eval NaruSem.Surf.Call.lower_ufcs_eval
   NaruSem.Surf.Call.named_call NaruSem.Surf.Call.ufcs_call NaruSem.Surf.Call.zero_args
   NaruSem.Surf.Call.named_wt NaruSem.Surf.Call.swapped_values
+  NaruSem.Surf.Call.wtR_mkLets
+  NaruSem.Surf.Call.eval_mkLets
+  NaruSem.Surf.Call.lowerStmts_cons_eval
+  NaruSem.Surf.Call.lower_block_eval
+  NaruSem.Surf.Call.block_shadow
+  NaruSem.Surf.Call.stmt_shadow
+  NaruSem.Surf.Call.binds_shadow_wt
+  NaruSem.Surf.Call.binds_missing_call
+  NaruSem.Surf.Call.binds_wrong_annotation
+  NaruSem.Surf.Call.binds_failed_call
+  NaruSem.Surf.Call.binds_call_shadow
 
 #audit_axioms NaruSem.eval_total NaruSem.Eval_unique NaruSem.wtR_total_all
   NaruSem.Sem_exists NaruSem.Sem_unique NaruSem.Sem_exists_all

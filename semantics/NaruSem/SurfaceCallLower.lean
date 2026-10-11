@@ -257,4 +257,106 @@ theorem lower_ufcs_eval {T : Table} {Γ : SCtx} {ρ : SEnv} {Φ : NaruSem.Call.F
     simp only [hρ, ite_true, har, ha]
     exact hec.symm
 
+
+/-! ## ブロックの束縛列の合成
+
+呼出しを含む Core の評価・型付けで束縛列を読む。子式と後続列の対応は
+明示した合成前提であり、全式の帰納保存を仮定せずに証明したとはしない。
+-/
+
+/-- 呼出しの署名を保持した Core 束縛列の型付け。 -/
+def wtBinds (Δ : NaruSem.Call.SigEnv) (Γ : Ctx) :
+    List (String × TyV × Core.Expr) → Option Ctx
+  | [] => some Γ
+  | (x, ty, v) :: rest =>
+    match NaruSem.Call.wtR Δ Γ v, TyV.toTy? ty with
+    | some tv, some ta => if tv = ta then wtBinds Δ (Γ.ext x tv) rest else none
+    | _, _ => none
+
+/-- 同じ関数・input環境を使い、前から順に束縛する。失敗は後続へ進めない。 -/
+def evalBinds (Φ : NaruSem.Call.FEnv) (ρ : Env) :
+    List (String × TyV × Core.Expr) → Option Env
+  | [] => some ρ
+  | (x, _, v) :: rest =>
+    match NaruSem.Call.eval Φ ρ v with
+    | some w => evalBinds Φ (ρ.ext x w) rest
+    | none => none
+
+/-- 型付けされた束縛列と末尾式から、入れ子のletの適格性を合成する。 -/
+theorem wtR_mkLets {Δ : NaruSem.Call.SigEnv} {Γ Γ' : Ctx}
+    {binds : List (String × TyV × Core.Expr)} (hb : wtBinds Δ Γ binds = some Γ')
+    {c : Core.Expr} {t : NaruSem.Ty} (hc : NaruSem.Call.wtR Δ Γ' c = some t) :
+    NaruSem.Call.wtR Δ Γ (Surf.mkLets binds c) = some t := by
+  induction binds generalizing Γ with
+  | nil =>
+    simp only [wtBinds, Option.some.injEq] at hb
+    subst hb
+    simpa using hc
+  | cons b rest ih =>
+    obtain ⟨x, ty, v⟩ := b
+    simp only [wtBinds] at hb
+    cases hv : NaruSem.Call.wtR Δ Γ v with
+    | none => simp [hv] at hb
+    | some tv =>
+      cases hty : TyV.toTy? ty with
+      | none => simp [hv, hty] at hb
+      | some ta =>
+        simp only [hv, hty] at hb
+        split at hb
+        · rename_i heq
+          subst heq
+          simp only [Surf.mkLets_cons, NaruSem.Call.wtR, hv, hty, ite_true]
+          exact ih hb
+        · cases hb
+
+/-- 任意の束縛列・環境についてCoreの入れ子のletと順次評価が一致する。 -/
+theorem eval_mkLets (Φ : NaruSem.Call.FEnv) (ρ : Env)
+    (binds : List (String × TyV × Core.Expr)) (c : Core.Expr) :
+    NaruSem.Call.eval Φ ρ (Surf.mkLets binds c) =
+      match evalBinds Φ ρ binds with
+      | some ρ' => NaruSem.Call.eval Φ ρ' c
+      | none => none := by
+  induction binds generalizing ρ with
+  | nil => simp [evalBinds]
+  | cons b rest ih =>
+    obtain ⟨x, ty, v⟩ := b
+    simp only [Surf.mkLets_cons, NaruSem.Call.eval, evalBinds]
+    cases NaruSem.Call.eval Φ ρ v <;> simp [ih]
+
+/-- 子式と後続束縛列の対応をlet一つへ合成する。失敗も両側で一致する。 -/
+theorem lowerStmts_cons_eval {T : Table} {Φ : NaruSem.Call.FEnv} {ρ : SEnv}
+    {sp : Span} {x : String} {ty : Option Ty} {v : Expr} {cv : Core.Expr}
+    {cty : TyV} {rest : List Stmt} {binds : List (String × TyV × Core.Expr)}
+    (hv : eval T Φ ρ v = NaruSem.Call.eval Φ ρ.vals cv)
+    (hb : ∀ w, (evalStmts T Φ (ρ.ext x (.val w)) rest).map SEnv.vals =
+      evalBinds Φ (ρ.vals.ext x w) binds) :
+    (evalStmts T Φ ρ (.letS sp x ty v :: rest)).map SEnv.vals =
+      evalBinds Φ ρ.vals ((x, cty, cv) :: binds) := by
+  rw [evalStmts_cons, hv]
+  simp only [evalBinds]
+  cases NaruSem.Call.eval Φ ρ.vals cv with
+  | none => rfl
+  | some w => exact hb w
+
+/-- 束縛列と末尾式の対応から、独立loweringのブロック評価を合成する。 -/
+theorem lower_block_eval {T : Table} {Γ Γ' : SCtx} {Φ : NaruSem.Call.FEnv}
+    {sp : Span} {stmts : List Stmt} {e : Expr}
+    {binds : List (String × TyV × Core.Expr)} {c : Core.Expr}
+    (hΓ : wtStmtsR T Γ stmts = some Γ')
+    (hl : lowerStmts T Γ stmts = some binds) (hc : lower T Γ' e = some c)
+    (hb : ∀ ρ, (evalStmts T Φ ρ stmts).map SEnv.vals = evalBinds Φ ρ.vals binds)
+    (he : ∀ ρ, eval T Φ ρ e = NaruSem.Call.eval Φ ρ.vals c) :
+    lower T Γ (.block sp stmts (some e)) = some (Surf.mkLets binds c) ∧
+      ∀ ρ, eval T Φ ρ (.block sp stmts (some e)) =
+        NaruSem.Call.eval Φ ρ.vals (Surf.mkLets binds c) := by
+  constructor
+  · rw [lower.eq_def]
+    simp only [hΓ, hl, hc, Option.map_some]
+  · intro ρ
+    rw [eval.eq_def, eval_mkLets, ← hb ρ]
+    simp only
+    cases evalStmts T Φ ρ stmts with
+    | none => rfl
+    | some ρ' => exact he ρ'
+
 end NaruSem.Surf.Call

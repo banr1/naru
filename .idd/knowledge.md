@@ -101,3 +101,6 @@
 
 - 呼出しruntimeの構造的loweringは `semantics/NaruSem/SurfaceCallLower.lean` の `Surf.Call.lower T Γ`。宣言ごとのprefix表と仮引数のSCtxを使い、名前付き引数を `lowerArgs`→`lowerCall`/`arrange` で一度並べ、UFCS受け手を先頭に置く。`naru_test semantics` は `SurfaceCallLowerCheck.lean` に現在17fnの包装/仮引数/本体/適格性/実Core一致の85証拠を書きkernel検査・監査する。`SurfaceCallLowerWrong.lean` の型が合う別callee・名前付き引数・UFCS・同型input・ガードの5件は正対照成功、一致検査5行だけ失敗を要求する。lowering単独は適格性を保証せず、任意式/環境の意味保存・spec lowering・Surface/Coreの宣言群意味合成は未証明。
 - 呼出しの局所的な合成は同ファイルの `arrange_eval` / `arrange_wt` と `lower_call_eval` / `lower_ufcs_eval`。引数の名前を保つ写像と `arrange_map` の可換性から、各子式の評価/型の対応を仮引数順へ運ぶ。`evalArgs_allSome` はCoreの部分評価列を `allSome` でまとめる補題。任意のcallee環境を使い不在や失敗も保持する。全式の帰納証明は未完了。新しい9補題と5検体は監査と `requiredTheorems` の対象。
+
+- 呼出しのブロック合成は `Surf.Call.wtBinds` / `evalBinds` と `wtR_mkLets` / `eval_mkLets` / `lowerStmts_cons_eval` / `lower_block_eval`。同じ署名・関数/input環境でCoreの束縛列と入れ子のletを結び、子式・後続列・末尾式の対応を明示した前提から合成する。Nat→Boolの同名束縛、型注釈不一致、callee不在/失敗/任意成功値の7検体と4補題は公理監査・requiredTheorems対象。全式の帰納保存は含めない。`rw [eval.eq_def]` の後は `simp only` で外側のconstructorのmatchを簡約してから、内側の部分評価をcasesすると等式が両辺へ届く。`SEnv.vals_ext_val` は `DenoteProp.lean` にあるため、使う検体は同モジュールをimportする。
+- ZedのWindowメニューの窓名を比較するときは、AX窓数と実際の窓名の一覧を使う。Full Screen Tile / Move to iPad等の配置項目は実操作の前後でも変化するため、メニュー全体の文字列の一致を窓の保存条件にしない。長い検査の間に人間が窓を追加することがあるので、実操作の直前に既存窓を取り直す。

@@ -341,3 +341,12 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `SurfaceCallLowerExamples.lean` の5検体を `NaruSem.lean` で公理監査し、`requiredTheorems` が全14件の欠落を失敗にする。
 名前付き実引数の順序・UFCS受け手・ゼロ引数の引数評価・任意環境でのcallee不在や失敗を扱う。
 子式の評価・型の対応は明示した合成前提であり、全式の一般保存は未完了である。
+
+
+ブロックの束縛列の合成も `lake exe naru_test semantics` (および `regression`) から検査する。
+`Surf.Call.wtR_mkLets` / `eval_mkLets` / `lowerStmts_cons_eval` / `lower_block_eval` と
+`block_shadow` / `stmt_shadow` / `binds_shadow_wt` / `binds_missing_call` / `binds_wrong_annotation` /
+`binds_failed_call` / `binds_call_shadow` の全11件を公理監査と `requiredTheorems` の照合に追加している。
+NatからBoolへの同名束縛、注釈の型不一致、calleeの不在・失敗・任意の成功値の対照をkernelが検査する。
+任意の関数・input環境を保持し、列や末尾式の対応を前提としてブロックへ合成する段階である。
+全式の帰納保存、specのlowering、Surface/Core宣言群の合成は引き続き未完了である。
