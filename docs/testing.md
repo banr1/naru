@@ -273,7 +273,9 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   署名で呼出し先を知っていてもその接続は証明していないため、この suffix の証拠だけで全体の `Call.interp_prop_agree` は適用できない。
   負のファイルは対照に、別宣言 `specCallSpec` の証拠の流用、変更前の証拠の変更後 Core への流用、部分証拠による全体の合成の3件だけを加える。
   その3行だけの型不一致・構文/import/未証明の穴のエラーなしを要求する。現在の入力・実生成物・正しい証拠は保持する。
-  呼出しを含む Surface AST からの保存、別モジュールの接続、spec の呼出し先や input 誤配線の負検体(C55〜C58 の残り)は未完了。
+  `CallStatementsReadWrong.lean` は論理の取り違えに加えて、spec 呼出し先・名前付き引数・UFCS の受け手・spec→runtime→input の解釈の誤配線を実生成文字列から作る。
+  型が合う5件の隔離宣言と任意 input/仮引数の正しい対照は通り、接続定理の5行だけが失敗する。各 `different_*` の閉じた非同値反例も kernel 検査・公理監査し、5件の監査の欠落は失敗にする。
+  呼出しを含む Surface AST からの保存とその負検体、別モジュールの接続、同じ署名の複数 input 等(C55〜C58 の残り)は未完了。
 
 ## golden test(C10)
 
@@ -315,5 +317,5 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 呼出しを含む spec 式の検査(C55 の進展)も `lake exe naru_test semantics` と `lake exe naru_test regression` から実行する。
 `CallDenoteProp.lean` の `Call.Sem_denote` / `Sem_denoteP` / `check_sound_prop` と命題環境の一致・署名包含の補題を `NaruSem.lean` で公理監査し、`requiredTheorems` が欠落を失敗にする。
 実際の CLI が生成した `gencall/Statements/Sem/Call.lean` を Lean モジュールとしてビルドし、`CallStatementsReadCheck.lean` が現在の引用 Core と9個の実生成 spec の読みの接続 `read_*` を任意の input 解釈・仮引数について検査・監査する。
-`CallStatementsReadWrong.lean` の対照は接続成功、`specCallSpec` の `∧` を `∨` にした隔離出力は型検査に成功し接続定理の行だけで失敗する。宣言数・監査・期待するエラー行の欠落は失敗にする。
+`CallStatementsReadWrong.lean` の5件は、`specCallSpec` の `∧`→`∨`、`specTwoStep` の spec 呼出し先の置換、`specNamed` の名前付き引数の交換、`specUfcs` の受け手の交換、`specBoolCall` の runtime 経由の input 解釈の変更。型検査・正しい対照・非同値反例 `different_*` の kernel 検査と公理監査は成功し、同じ正しい Core への接続定理の5行だけで失敗する。反例の引数は [architecture.md](architecture.md) に記載する。宣言数・5件の監査・期待するエラー行の欠落は失敗にする。
 `CallComposeProp.lean` の `interp_prop_agree` / `interpFrom_prop_agree` / `curried_wrapP` / `specConn_of_curried` も一般定理の必須監査対象。各 spec の前の署名 `Δprefix_*` で `read_*` を検査し、`spevid_*` と全宣言の `spevid_call`、任意の同じ input 解釈で独立宣言群と実生成命題環境が同値となる `cprops_call` を検査・監査する。9 spec の接続・合成証拠の欠落も失敗にする。呼出しを含む Surface 保存と別モジュールの実生成接続は未完了。

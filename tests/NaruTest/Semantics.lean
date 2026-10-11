@@ -835,7 +835,8 @@ def deriveWrongs (what : String) (text : String) (leanNameOf : String → String
   return wrongs
 
 /-- 負の検体のプログラムを `lean` に掛け、ちょうど `conn_wrong_*` の行だけで失敗することを確かめる(構文 / import の誤りではなく、意味の対応の不成立)。 -/
-def checkWrong (what : String) (file : System.FilePath) (program : String × List Nat) (wrongs : List (Mistranslation × String)) (lp : String) : M Unit := do
+def checkWrong (what : String) (file : System.FilePath) (program : String × List Nat) (wrongs : List (Mistranslation × String)) (lp : String)
+    (audits : List String := []) : M Unit := do
   let (wrongText, failing) := program
   IO.FS.writeFile file wrongText
   let w ← step s!"C46: lean {file} must fail (the {wrongs.length} mistranslations of the generated {what} type-check but do not connect)" "lean" #[file.toString]
@@ -846,9 +847,11 @@ def checkWrong (what : String) (file : System.FilePath) (program : String × Lis
   let allWrong := failing.all errs.contains
   let named := wrongs.all fun (mt, _) => contains out mt.wrong
   let syntactic := contains out "unknown" || contains out "unexpected token" || contains out "import" || contains out "sorry"
-  if w.exitCode != 0 && failing.length == wrongs.length && onlyWrong && allWrong && named && !syntactic then
+  let missingAudits := audits.filter fun n => !(auditedNames out).contains n
+  if w.exitCode != 0 && failing.length == wrongs.length && onlyWrong && allWrong && named && !syntactic && missingAudits.isEmpty then
     ok s!"C46: exactly the {wrongs.length} connection checks of the mistranslations of the {what} fail (lines {failing}: the reading of the correct Core is not reached), the controls succeed, no syntax / import error"
-  else fail s!"C46: expected the connection failures exactly on lines {failing}: exit {w.exitCode}, error lines {errs}\n{tail out 2500}"
+    if !audits.isEmpty then ok s!"C58: all {audits.length} semantic counterexamples are kernel-checked and audited with 0 forbidden dependencies"
+  else fail s!"C46: expected the connection failures exactly on lines {failing}: exit {w.exitCode}, error lines {errs}, missing audits {missingAudits}\n{tail out 2500}"
 
 /-! ### 宣言群の引用と適格性(C54)
 
@@ -1322,17 +1325,47 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
   s!"  NaruSem.Call.interp_prop_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) (spevid_call {ia})\n\n" ++
   s!"#audit_axioms spevid_call cprops_call {" ".intercalate (specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"])}\n"
 
-/-- 同じ current Core に対する、型は合うが前提を弱めた隔離 spec 出力。 -/
+/-- C58: 実生成 spec 出力の論理・呼出し先・名前付き引数・UFCS・推移的 input の誤配線。 -/
 def callSpecMistranslations : List Mistranslation :=
   [ { key := "Sem.Call.specCallSpec", wrong := "Wrong.specCallSpec",
       good := "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))",
       bad := "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
       transform := fun s => s.replace "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))"
         "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
-      note := "the conjunction in specCallSpec replaced by disjunction (well-typed but a weaker proposition)" } ]
+      note := "the conjunction in specCallSpec replaced by disjunction (well-typed but a weaker proposition)" },
+    { key := "Sem.Call.specTwoStep", wrong := "Wrong.specTwoStep",
+      good := "Statements.Sem.Call.specInput seed' «x»", bad := "Statements.Sem.Call.specCallSpec «x»",
+      transform := fun s => s.replace "Statements.Sem.Call.specInput seed' «x»" "Statements.Sem.Call.specCallSpec «x»",
+      note := "the spec callee replaced by another Nat-to-Prop declaration, after its input argument is applied" },
+    { key := "Sem.Call.specNamed", wrong := "Wrong.specNamed",
+      good := "Model.Sem.Call.addTo «b» «a»", bad := "Model.Sem.Call.addTo «a» «b»",
+      transform := fun s => s.replace "Model.Sem.Call.addTo «b» «a»" "Model.Sem.Call.addTo «a» «b»",
+      note := "the two Nat named arguments are swapped in the spec's runtime call" },
+    { key := "Sem.Call.specUfcs", wrong := "Wrong.specUfcs",
+      good := "Model.Sem.Call.addTo «a» «b»", bad := "Model.Sem.Call.addTo «b» «a»",
+      transform := fun s => s.replace "Model.Sem.Call.addTo «a» «b»" "Model.Sem.Call.addTo «b» «a»",
+      note := "the UFCS receiver and its Nat argument are swapped in the spec's runtime call" },
+    { key := "Sem.Call.specBoolCall", wrong := "Wrong.specBoolCall",
+      good := "Model.Sem.Call.boolCall flag' «b»", bad := "Model.Sem.Call.boolCall (fun v => flag' (!v)) «b»",
+      transform := fun s => s.replace "Model.Sem.Call.boolCall flag' «b»" "Model.Sem.Call.boolCall (fun v => flag' (!v)) «b»",
+      note := "a different Bool-to-Bool input interpretation is passed through spec -> runtime -> input" } ]
+
+/-- 閉じた反例は非同値を補助的に示す。任意 input/仮引数での正しい接続の代用にはしない。 -/
+def callSpecCounterexample (m : Mistranslation) : String :=
+  let (args, unfolds) := match m.key with
+    | "Sem.Call.specCallSpec" => ("10", "Statements.Sem.Call.posBase Model.Sem.Call.base")
+    | "Sem.Call.specTwoStep" => ("0 10", "Statements.Sem.Call.specCallSpec Statements.Sem.Call.posBase Statements.Sem.Call.specInput Model.Sem.Call.useInput Model.Sem.Call.base")
+    | "Sem.Call.specNamed" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.callNamed")
+    | "Sem.Call.specUfcs" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.ufcs")
+    | "Sem.Call.specBoolCall" => ("(fun b => b) false", "Model.Sem.Call.boolCall")
+    | _ => ("", "")
+  let name := s!"different_{shortName m.key}"
+  let original := Naru.Backend.Statements.stmtName m.key
+  s!"theorem {name} : ¬ ({original} {args} ↔ {m.wrong} {args}) := by unfold {original} {m.wrong} {unfolds}; decide\n#audit_axioms {name}\n"
 
 def callSpecWrongProgram (ib ia : String) (specs : List CallFn) (wrongs : List (Mistranslation × String)) : String × List Nat :=
-  wrongProgramWith "Statements (calls and inputs)" ["CallStatementsReadCheck"] wrongs fun thm lean key =>
+  let witnessed := wrongs.map fun (m, text) => (m, text ++ "\n" ++ callSpecCounterexample m)
+  wrongProgramWith "Statements (calls and inputs)" ["CallStatementsReadCheck"] witnessed fun thm lean key =>
     (specs.find? fun f => f.key == key).map fun f => callSpecConnStmt ib ia thm (if lean.isEmpty then Naru.Backend.Statements.stmtName f.key else lean) f
 
 /-- 負の検体(C58): 実生成 Model(呼出しと input)の文字列から作る、型は合うが意味の異なる誤出力。同じ署名の別の呼出し先への置換、同型の名前付き実引数の
@@ -1873,6 +1906,7 @@ def checks : M Unit := do
         let (sib, sia) := inputBinders inputs
         checkWrong "Statements (calls)" (outDir / "CallStatementsReadWrong.lean")
           (callSpecWrongProgram sib sia specs specReadWrongs) specReadWrongs lpCall
+          ["different_specCallSpec", "different_specTwoStep", "different_specNamed", "different_specUfcs", "different_specBoolCall"]
         -- C58: 隔離した誤出力(同じ署名の別の呼出し先・名前付き実引数の取り違え・UFCS の受け手の誤対応・input の誤配線)は型検査を通るが接続検査に失敗する
         let (ib, ia) := inputBinders inputs
         let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations

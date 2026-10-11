@@ -456,7 +456,8 @@ spec の式の一般同値は `CallDenoteProp.lean` の `Call.Sem_denote`。型�
 `PEnv.Agree` は各 spec 鍵に命題関数が存在し、型の合う任意の実引数で同値であること。Bool の if と等値を常に命題の形で読むため、backend の Bool の if / 値の等値とは定義的に異なる場合があり、接続は `↔` を使う。
 `CallStatementsReadCheck.lean` は同じ現在のソースから実際に生成・elaboration した9個の Statements 宣言について、任意の input 解釈・仮引数で命題が現在の引用 Core の読みと同値であることを検査・公理監査する。
 命題環境の表 `Ψgen_call` は実生成 spec 定数を型に沿って包み、値環境には既存の `Φgen_call`、署名には同じ `cprog_call` の各宣言より前の有限 prefix を使う。引用の同一性は `CallScope` の再コンパイルで確認する。
-`CallStatementsReadWrong.lean` は `specCallSpec` の `∧` を `∨` にした型の合う隔離出力が、同じ正しい Core への接続だけに失敗することを確かめる。正しい対照は成功する。
+`CallStatementsReadWrong.lean` は実生成文字列から5件の型の合う隔離出力を作る。`specCallSpec` の `∧`→`∨`、`specTwoStep` の spec 呼出し先を input 適用後に同じ Nat→Prop 署名の `specCallSpec` へ置換、`specNamed` の同型の名前付き引数の交換、`specUfcs` の受け手と引数の交換、`specBoolCall` が runtime の `boolCall` 経由で input に渡す解釈を `flag'` から `fun v => flag' (!v)` へ変更する。5件とも同じ正しい Core への接続定理の行だけが失敗し、正しい対照は任意の input 解釈・仮引数で成功する。
+各誤出力には閉じた非同値の反例 `different_*` もある(順に `x=10`、`seed'=0,x=10`、`a=0,b=1`、`a=0,b=1`、`flag'=id,b=false`)。kernel 検査と公理監査を要求して、定義的等しさの相違だけを意味の違いと誤認しない。反例は一般保存定理と任意引数の接続証拠を補助するもので、代用ではない。
 `CallComposeProp.lean` の `SpecEvidence` は宣言順に prefix 署名を更新して各 `SpecConn` を束ねる。検査は各 `read_*` を `spevid_*` に写し、全宣言の `spevid_call` と `cprops_call` を kernel 検査・公理監査する。`cprops_call` は任意の署名を守る input 解釈で、同じ input を渡す独立宣言群の命題環境と実生成 `Ψgen_call` の双方向同値を示す。全 fn の接続も必要で、証拠欠落を仮定で埋めない。呼出しを含む Surface AST → Core の値/命題対応と別モジュールの実生成接続は未完了。
 証拠は宣言と本体に結び付いている。`CallEvidenceCheck.lean` / `CallEvidenceWrong.lean` は、同じ署名の別宣言・変更前の Core の証拠と、呼出し先の証拠が欠けた束による runtime 合成を拒否する(C57)。
 spec の `CallSpecEvidenceCheck.lean` / `CallSpecEvidenceWrong.lean` も、別宣言・変更前の Core の証拠の流用と、呼出し先の証拠欠落による全体の命題同値の合成を拒否する。

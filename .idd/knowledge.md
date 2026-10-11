@@ -86,3 +86,5 @@
 - Lean の命題を返す再帰関数 `wrapP` の展開は、`rw [wrapP.eq_def]` が symbolic な型列で whnf の上限に達することがある。`wrapP_nil` / `wrapP_nat` / `wrapP_bool` を `rfl` で証明して限定した展開に使えば、標準の heartbeat 上限でカリー化の接続補題を検査できる。
 
 - C57 の spec 証拠検査は `tests/NaruTest/Semantics.lean` の `checkCallSpecEvidence`。`CallSpecEvidenceCheck.lean` は現在の `posBase` / `specCallSpec` の実呼出し・同じ署名を照合し、呼出し側からの suffix に元の prefix 署名で `SpecEvidence` を構成する。署名に呼出し先があってもその接続証拠の代用にはならず、この部分証拠は全体の `interp_prop_agree` に使えない。対照8定理を公理監査し、`CallSpecEvidenceWrong.lean` の別宣言・変更前Core・呼出し先証拠欠落の3行だけの型不一致を要求する。`decide` は input を含む意味の差の命題で自由変数を拒否するので、現在の読みと定義的に同じ閉じた命題へ `change` してから使う。
+
+- C58 の spec 誤出力は `callSpecMistranslations` / `callSpecCounterexample` が実生成文字列から `CallStatementsReadWrong.lean` に作る。論理・呼出し先・名前付き引数・UFCS・spec→runtime→input の解釈の5件は、閉じた非同値反例 `different_*` の kernel 検査と公理監査も要求する。`checkWrong` の任意引数 `audits` に5名を固定し、接続定理の5行以外のエラー・対照や反例の失敗・監査欠落を拒否する。反例は一般保存や任意input/仮引数の正しい接続の代用ではない。
