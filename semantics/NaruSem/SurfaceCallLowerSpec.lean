@@ -6,8 +6,9 @@ import NaruSem.LowerSpec
 
 論理の位置は `lowerS`、値の位置と実引数は runtime の `lower` / `lowerArgs`。
 名前付き引数・UFCS を署名の仮引数順へ並べ、命題の let・量化・ガードを保つ。
-現在の spec AST / 実Coreの一致を kernel 検査する。一般の型保存・双方向同値、
-宣言群からの環境対応、Surfaceから実生成Leanまでの合成はまだ証明しない。
+現在の spec AST / 実Coreの一致を kernel 検査する。一般の型保存・全域性は
+`SurfaceCallLowerSpecSound` で証明する。双方向同値、宣言群からの環境対応、
+Surfaceから実生成Leanまでの合成はまだ証明しない。
 -/
 
 namespace NaruSem.Surf.Call

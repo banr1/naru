@@ -7,6 +7,7 @@ import NaruSem.LowerSpec
 import NaruSem.CallQuote
 import NaruSem.SurfaceCallLower
 import NaruSem.SurfaceCallLowerSpec
+import NaruSem.SurfaceCallLowerSpecSound
 
 /-!
 # `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の AST・Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C43 / C44 / C45 / C46 / C47 / C48〜C52)
@@ -95,7 +96,11 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.spec_lower_call", "NaruSem.Surf.Call.spec_lower_runtime_reject", "NaruSem.Surf.Call.spec_lower_missing", "NaruSem.Surf.Call.spec_lower_shadow", "NaruSem.Surf.Call.spec_lower_value_arg_reject", "NaruSem.Surf.Call.spec_lower_bool_value", "NaruSem.Surf.Call.spec_lower_bool_let", "NaruSem.Surf.Call.spec_lower_prop_let", "NaruSem.Surf.Call.spec_lower_prop_let_kind", "NaruSem.Surf.Call.spec_lower_match_guard", "NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject",
+  [ "NaruSem.Surf.Call.exhaustiveFrom_lowerPat_cons", "NaruSem.Surf.Call.proppyS_lowerS", "NaruSem.Surf.Call.proppyS_lowerS_view",
+    "NaruSem.Call.ValueScope.ext", "NaruSem.Call.ValueScope.pat", "NaruSem.Call.wtArgs_members", "NaruSem.Call.wtArmsR_members", "NaruSem.Call.proppyS_false_of_wtR_all", "NaruSem.Call.proppyS_false_of_wtR", "NaruSem.Surf.Call.RuntimeScope.ext", "NaruSem.Surf.Call.RuntimeScope.pat", "NaruSem.Surf.Call.RuntimeScope.ufcs", "NaruSem.Surf.Call.callTy_not_spec", "NaruSem.Surf.Call.wtArgs_members", "NaruSem.Surf.Call.wtArmsR_members", "NaruSem.Surf.Call.proppyS_false_of_wtR_all", "NaruSem.Surf.Call.proppyS_false_of_wtR", "NaruSem.Surf.Call.ScopeView.refl",
+    "NaruSem.Surf.Call.lowerS_typed_all", "NaruSem.Surf.Call.lowerS_typed",
+    "NaruSem.Surf.Call.lowerS_total", "NaruSem.Surf.Call.lowerS_wt",
+    "NaruSem.Surf.Call.spec_lower_call", "NaruSem.Surf.Call.spec_lower_runtime_reject", "NaruSem.Surf.Call.spec_lower_missing", "NaruSem.Surf.Call.spec_lower_shadow", "NaruSem.Surf.Call.spec_lower_value_arg_reject", "NaruSem.Surf.Call.spec_lower_bool_value", "NaruSem.Surf.Call.spec_lower_bool_let", "NaruSem.Surf.Call.spec_lower_prop_let", "NaruSem.Surf.Call.spec_lower_prop_let_kind", "NaruSem.Surf.Call.spec_lower_match_guard", "NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject",
     "NaruSem.Surf.Call.lowerCallS_eq", "NaruSem.Surf.Call.lowerCallS_spec_wt",
     "NaruSem.Surf.Call.lowerCallS_spec_Sem", "NaruSem.Surf.Call.lowerCallS_value_Sem",
     "NaruSem.Surf.Call.arrange_core_total",
@@ -1276,7 +1281,7 @@ def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call
 /-- 現在の spec AST の包装・適格性と独立 lowering の実Core一致。
 一般の spec 保存定理の代用にはしない。 -/
 def callSpecLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
-  let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLowerSpec\n\n"
+  let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLowerSpecSound\n\n"
   for (d, i) in sprog.zipIdx do
     if d.kind.phase != .spec then continue
     let n := shortName d.key
@@ -1286,6 +1291,11 @@ def callSpecLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
     match d.sig?, d.body with
     | some (.spec ps), some b =>
       let ctx := NaruSem.Surf.Quote.ctxTerm ps true
+      let T := NaruSem.Surf.Call.tableOf sprog (sprog.take i)
+      let Γ := NaruSem.SCtx.ofList (ps.map fun (x, ty) => (x, .val ty))
+      let some τ := NaruSem.Surf.Call.wtS T Γ b
+        | text := text ++ s!"#audit_axioms missing_spec_lower_type_{n}\n"
+          continue
       text := text ++ s!"def ssdecl_{n} : NaruSem.Surf.Call.Decl := {decl}\n" ++
         s!"theorem sspack_{n} : sprog_call[{i}]? = some ssdecl_{n} := rfl\n" ++
         s!"def sstable_{n} := NaruSem.Surf.Call.tableOf sprog_call (sprog_call.take {i})\n" ++
@@ -1297,7 +1307,9 @@ def callSpecLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
         s!"theorem ssform_{n} : (ssty_{n}.map NaruSem.STy.isForm) = some true := by decide\n" ++
         s!"theorem sslower_{n} : NaruSem.Surf.Call.lowerS sstable_{n} ssctx_{n} ssast_{n} = some ccore_{n} := rfl\n" ++
         s!"theorem ssctype_{n} : NaruSem.Call.wtS sstable_{n}.Δ ssctx_{n} ccore_{n} = ssty_{n} := by decide\n" ++
-        s!"#audit_axioms sspack_{n} ssparams_{n} ssbody_{n} sstype_{n} ssform_{n} sslower_{n} ssctype_{n}\n\n"
+        s!"theorem sswtype_{n} : NaruSem.Surf.Call.wtS sstable_{n} ssctx_{n} ssast_{n} = some {styTerm τ} := by decide\n" ++
+        s!"theorem ssctyped_{n} : NaruSem.Call.wtS sstable_{n}.Δ ssctx_{n} ccore_{n} = some {styTerm τ} := NaruSem.Surf.Call.lowerS_wt sswtype_{n} sslower_{n}\n" ++
+        s!"#audit_axioms sspack_{n} ssparams_{n} ssbody_{n} sstype_{n} ssform_{n} sslower_{n} ssctype_{n} sswtype_{n} ssctyped_{n}\n\n"
     | _, _ => text := text ++ s!"#audit_axioms missing_spec_lower_body_{n}\n"
   return text
 
@@ -1333,7 +1345,7 @@ def callSpecLowerWrongs : List CoreMistranslation :=
       transform := negateLetConclusion, note := "Prop let conclusion negated" } ]
 
 def checkCallSpecLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
-  heading "C55: spec Surface AST to actual Core (structural lowering; general equivalence remains unfinished)"
+  heading "C55: spec Surface AST to actual Core (general type preservation; equivalence remains unfinished)"
   let mut count := 0
   let mut wrongs : List (Mistranslation × String) := []
   for (d, i) in sprog.zipIdx do
@@ -1366,7 +1378,7 @@ def checkCallSpecLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Pr
   IO.FS.writeFile file (callSpecLowerProgram sprog)
   let r ← step "C55: kernel-check current spec AST / Core lowering and packaging" "lean"
     #[s!"--root={outDir}", "-o", (outDir / "SurfaceCallLowerSpecCheck.olean").toString, file.toString] (env := #[("LEAN_PATH", some lp)])
-  let required := expected.flatMap fun n => [s!"sspack_{n}", s!"ssparams_{n}", s!"ssbody_{n}", s!"sstype_{n}", s!"ssform_{n}", s!"sslower_{n}", s!"ssctype_{n}"]
+  let required := expected.flatMap fun n => [s!"sspack_{n}", s!"ssparams_{n}", s!"ssbody_{n}", s!"sstype_{n}", s!"ssform_{n}", s!"sslower_{n}", s!"ssctype_{n}", s!"sswtype_{n}", s!"ssctyped_{n}"]
   let missing := required.filter fun n => !(auditedNames r.stdout).contains n
   if r.exitCode == 0 && missing.isEmpty then
     ok s!"C55: {required.length} spec lowering / packaging certificates for all {expected.length} actual spec declarations audited"

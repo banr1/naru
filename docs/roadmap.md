@@ -22,4 +22,4 @@
 `Surf.Call.lower_eval_agree` / `lower_denote_sound` はその対応証拠を前提として評価とCoreの読みへ合成し、現在17 fnで検査する。
 型外の引数での閉包の等式は要求しない。Surface/Coreの宣言群から環境対応を導く証明、spec loweringの双方向同値、Surface宣言群から実生成Leanへの合成は未完了である。
 
-呼出しを含むspecの独立した `Surf.Call.lowerS` と現在10宣言の実Core一致はkernel検査する。命題のlet・Bool値・量化・ガードを保持し、型が合う誤callee・名前付き引数・UFCS・input・命題letの5検体を拒否する。一般の型保存・双方向同値とSurface/Core宣言群から実生成Leanまでの合成は未完了である。
+呼出しを含むspecの独立した `Surf.Call.lowerS` の全域性とCoreへの型保存は、任意の宣言表・文脈・適格な式に対する `Surf.Call.lowerS_typed` でkernel検査する。現在10宣言の実AST/実Core一致と、この一般定理の適用を含む90証拠を検査・公理監査する。命題のlet・Bool値・量化・ガードを区別し、型が合う誤callee・名前付き引数・UFCS・input・命題letの5検体を拒否する。specの双方向同値とSurface/Core宣言群から実生成Leanまでの合成は未完了である。

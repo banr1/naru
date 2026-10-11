@@ -230,7 +230,8 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Call.interp_prop_agree`(`Call.interpFrom_prop_agree` / `Call.specConn_of_curried` / `Call.curried_wrapP`) | **spec 宣言群の合成(C55)**: 適格な宣言群、同じ任意 input 解釈、全 fn の `Evidence` と全 spec の `SpecEvidence` から `PEnv.Agree (interp I P).Ψ Ψ' Δ` を導く。`SpecConn` は任意の型の合う実引数で、その宣言より前の署名での本体の読みと実生成命題を接続する。依存 prefix の値一致と命題同値を帰納的に更新し、独立意味論の `∃ Q, Sem … Q ∧ Q` を読みと双方向同値にする。カリー化の接続を `specConn_of_curried` で証拠へ写す | 宣言群の適格性 + input 署名遵守 + 同じ input 解釈 + 全 fn/spec の kernel 検査済み接続。Surface 保存は未完了。input のみの別モジュールと、別モジュールのfn/spec呼出し先への実生成接続は検査する |
 | `Call.fn_value` | **fn の意味は実生成定数の値(系)**: 宣言群の各 fn `k` について、`Φ'` の関数 `f'` が型の合う実引数 `vs` に `v` を返すなら、`(Call.interp I P).Φ k = some f` で `f vs = some v` | 同上 |
 | `Call.SubV_of_cover` / `Call.fnConn_of_curried` | 検査プログラムの形との結び: 宣言群の各 fn / input の署名が表にあれば(`decide` で確かめる)`wtProg` の署名は表の署名に含まれる(`Call.wtProg_keys`: 署名の鍵は始めの文脈か宣言群の宣言のもの)。接続検査 `conn_<f>`(カリー化の形 `Call.Curried`: 仮引数ごとに量化し、実生成の関数に実引数を渡した値 = 実引数を束ねた環境での本体の読み)と、`Φ'` の鍵がその関数を包んだものであることから接続の証拠 `FnConn`(`Call.curried_wrap`) | — |
-| `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の一般型保存・双方向同値は未証明 |
+| `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の双方向同値は未証明 |
+| `Surf.Call.lowerS_typed_all` / `Surf.Call.lowerS_typed` / `Surf.Call.lowerS_total` / `Surf.Call.lowerS_wt` | 呼出しを含むspecの独立loweringの全域性と型保存。式・let列・腕列・腕の相互帰納から変換先の存在とCoreの同じ型を導く。命題の同値・宣言群の意味合成は含めない | 任意の宣言表・文脈・適格なspec式と型。実Coreとの一致は別途kernel検査 |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -611,8 +612,13 @@ letのshadowingとガードfalse後の元の環境への継続を保つ。
 specのloweringの双方向同値、Surfaceから実生成Leanまでの宣言群の合成は未完了であり、C55全体の完成とはしない。
 
 呼出しを含む spec の独立変換 `Surf.Call.lowerS` は `SurfaceCallLowerSpec.lean` にある。
-現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の70証拠でkernel検査・公理監査する。
+現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の90証拠でkernel検査・公理監査する。
 論理の位置はspec変換、値の位置と実引数はruntime変換を使い、命題のlet・Bool値・量化・ガードを区別する。
 `lowerCallS_eq` / `lowerCallS_spec_wt` / `lowerCallS_spec_Sem` / `lowerCallS_value_Sem` は、解決・署名と引数の型または評価の対応から呼出しの形・命題型・意味を局所的に合成する。
 `SurfaceCallLowerSpecWrong.lean` の5件はspec呼出し先・名前付き引数・UFCS受け手・同型input・命題letの型が合う誤対応を作り、正しい対照を成功させ、一致の5行だけで失敗させる。
-一般のspec loweringの型保存と双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。
+`SurfaceCallLowerSpecSound.lean` の `Surf.Call.lowerS_typed` は任意の宣言表 `T`・文脈 `Γ`・適格なspec式 `e`・型 `τ` に対し、`wtS T Γ e = some τ` から変換先の存在とCoreの同じ型を示す。
+`lowerS_typed_all` は式・let列・腕列・腕を同時に帰納し、値の位置と実引数にはruntimeの型保存を使う。`lowerS_total` / `lowerS_wt` はその系である。
+命題専用の構文区分も `proppyS_lowerS` で同じ文脈のAST/Core間で保存する。`proppyS_lowerS_view` は名前の可視性を保ち、命題束縛を増やさない `ScopeView Γ Γ₀` を前提に構文走査文脈へ拡張する。
+`SurfaceCallProppy.lean` のruntime命題除外補題を使い、Propを実行可能なBoolへ戻さない。これらの公開補題も必須監査に含める。
+現在10宣言の具体的なAST型 `sswtype_*` と実Core一致 `sslower_*` から一般定理を適用した `ssctyped_*` を検査・公理監査し、90証拠と一般定理の欠落を拒否する。
+この型保存と変換の存在はspecの双方向同値を保証しない。一般のspec loweringの双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。

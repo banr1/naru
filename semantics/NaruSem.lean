@@ -27,6 +27,7 @@ import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
 import NaruSem.SurfaceCallLower
 import NaruSem.SurfaceCallLowerSpec
+import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
@@ -34,6 +35,10 @@ import NaruSem.CallQuote
 import NaruSem.Audit
 
 #audit_axioms NaruSem.Surf.Call.spec_lower_call NaruSem.Surf.Call.spec_lower_runtime_reject NaruSem.Surf.Call.spec_lower_missing NaruSem.Surf.Call.spec_lower_shadow NaruSem.Surf.Call.spec_lower_value_arg_reject NaruSem.Surf.Call.spec_lower_bool_value NaruSem.Surf.Call.spec_lower_bool_let NaruSem.Surf.Call.spec_lower_prop_let NaruSem.Surf.Call.spec_lower_prop_let_kind NaruSem.Surf.Call.spec_lower_match_guard NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject
+#audit_axioms NaruSem.Call.ValueScope.ext NaruSem.Call.ValueScope.pat NaruSem.Call.wtArgs_members NaruSem.Call.wtArmsR_members NaruSem.Call.proppyS_false_of_wtR_all NaruSem.Call.proppyS_false_of_wtR NaruSem.Surf.Call.RuntimeScope.ext NaruSem.Surf.Call.RuntimeScope.pat NaruSem.Surf.Call.RuntimeScope.ufcs NaruSem.Surf.Call.callTy_not_spec NaruSem.Surf.Call.wtArgs_members NaruSem.Surf.Call.wtArmsR_members NaruSem.Surf.Call.proppyS_false_of_wtR_all NaruSem.Surf.Call.proppyS_false_of_wtR NaruSem.Surf.Call.ScopeView.refl
+#audit_axioms NaruSem.Surf.Call.proppyS_lowerS NaruSem.Surf.Call.proppyS_lowerS_view
+#audit_axioms NaruSem.Surf.Call.exhaustiveFrom_lowerPat_cons
+#audit_axioms NaruSem.Surf.Call.lowerS_typed_all NaruSem.Surf.Call.lowerS_typed NaruSem.Surf.Call.lowerS_total NaruSem.Surf.Call.lowerS_wt
 #audit_axioms NaruSem.Surf.Call.lowerCallS_eq NaruSem.Surf.Call.lowerCallS_spec_wt
 #audit_axioms NaruSem.Surf.Call.lowerCallS_spec_Sem NaruSem.Surf.Call.lowerCallS_value_Sem
 

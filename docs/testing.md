@@ -383,8 +383,13 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 全6定理と各fnの2証拠の監査欠落を失敗にする。宣言群から環境対応を導く証明と実生成定数へのSurface宣言群合成は未完了である。
 
 呼出しを含む spec の独立変換 `Surf.Call.lowerS` は `SurfaceCallLowerSpec.lean` にある。
-現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の70証拠でkernel検査・公理監査する。
+現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の90証拠でkernel検査・公理監査する。
 論理の位置はspec変換、値の位置と実引数はruntime変換を使い、命題のlet・Bool値・量化・ガードを区別する。
 `lowerCallS_eq` / `lowerCallS_spec_wt` / `lowerCallS_spec_Sem` / `lowerCallS_value_Sem` は、解決・署名と引数の型または評価の対応から呼出しの形・命題型・意味を局所的に合成する。
 `SurfaceCallLowerSpecWrong.lean` の5件はspec呼出し先・名前付き引数・UFCS受け手・同型input・命題letの型が合う誤対応を作り、正しい対照を成功させ、一致の5行だけで失敗させる。
-一般のspec loweringの型保存と双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。
+`SurfaceCallLowerSpecSound.lean` の `Surf.Call.lowerS_typed` は任意の宣言表 `T`・文脈 `Γ`・適格なspec式 `e`・型 `τ` に対し、`wtS T Γ e = some τ` から変換先の存在とCoreの同じ型を示す。
+`lowerS_typed_all` は式・let列・腕列・腕を同時に帰納し、値の位置と実引数にはruntimeの型保存を使う。`lowerS_total` / `lowerS_wt` はその系である。
+命題専用の構文区分も `proppyS_lowerS` で同じ文脈のAST/Core間で保存する。`proppyS_lowerS_view` は名前の可視性を保ち、命題束縛を増やさない `ScopeView Γ Γ₀` を前提に構文走査文脈へ拡張する。
+`SurfaceCallProppy.lean` のruntime命題除外補題を使い、Propを実行可能なBoolへ戻さない。これらの公開補題も必須監査に含める。
+現在10宣言の具体的なAST型 `sswtype_*` と実Core一致 `sslower_*` から一般定理を適用した `ssctyped_*` を検査・公理監査し、90証拠と一般定理の欠落を拒否する。
+この型保存と変換の存在はspecの双方向同値を保証しない。一般のspec loweringの双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。
