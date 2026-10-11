@@ -127,8 +127,9 @@ def requiredTheorems : List String :=
     "NaruSem.Call.denote_sound", "NaruSem.Call.denote_sound_self", "NaruSem.Call.preserve_nat", "NaruSem.Call.preserve_bool", "NaruSem.Call.denoteArms_sound",
     "NaruSem.Call.check_sound_nat", "NaruSem.Call.check_sound_bool", "NaruSem.Call.wrap_respects", "NaruSem.Call.ofGens_respects",
     "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried",
-    -- C55(spec): 式の一般同値。宣言群のspec環境との一致・Surface合成は別の未完了の義務。
+    -- C55(spec): 式の一般同値。宣言群のspec環境の一致はprefix証拠から合成。Surface合成は未完了。
     "NaruSem.Call.Sem_denote_all", "NaruSem.Call.Sem_denote", "NaruSem.Call.Sem_denoteP", "NaruSem.Call.Sem_denote_self", "NaruSem.Call.check_sound_prop",
+    "NaruSem.Call.interpFrom_prop_agree", "NaruSem.Call.interp_prop_agree", "NaruSem.Call.curried_wrapP", "NaruSem.Call.specConn_of_curried",
     "NaruSem.Call.PEnv.Agree.refl", "NaruSem.Call.PEnv.Agree.defined", "NaruSem.Call.PEnv.Defined.mono", "NaruSem.Call.SigEnv.SubP.refl" ]
 
 /-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 15、spec 宣言 9。欠けていれば FAIL。 -/
@@ -1271,17 +1272,17 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
   "".intercalate (fns.map (callValOf ib ia)) ++
   s!"#audit_axioms {" ".intercalate names}\n"
 
-/-- 呼出しを含む実生成 Statements の読みへの接続。宣言群の spec 環境との一致の合成は別の義務で、ここでは仮定して済ませない。 -/
+/-- 呼出しを含む実生成 Statements と、その宣言より前の署名での読みへの接続。 -/
 def callSpecConnStmt (ib ia thm lean : String) (f : CallFn) : String :=
   let bs := f.params.filterMap specBinderOf
   let quant (s : String) := if bs.isEmpty then s else s!"∀ {" ".intercalate (bs.map (·.1))}, {s}"
   let env := "[" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
   let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
   let hdr := if ib.isEmpty then s!"theorem {thm}" else s!"theorem {thm} {ib}"
-  s!"{hdr} : {quant s!"{call} ↔ NaruSem.Call.denoteP Δread_call (Φgen_call {ia}) (Ψgen_call {ia}) (NaruSem.SEnv.ofList {env}) ccore_{shortName f.key}"} := " ++
+  s!"{hdr} : {quant s!"{call} ↔ NaruSem.Call.denoteP Δprefix_{shortName f.key} (Φgen_call {ia}) (Ψgen_call {ia}) (NaruSem.SEnv.ofList {env}) ccore_{shortName f.key}"} := " ++
   (if bs.isEmpty then "Iff.rfl" else s!"fun {" ".intercalate (bs.map (·.2.2))} => Iff.rfl")
 
-def callStatementsProgram (specs : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) : String :=
+def callStatementsProgram (specs : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) (prog : List NaruSem.Call.Decl) : String :=
   let (ib, ia) := inputBinders inputs
   let hdr (kw name : String) := if ib.isEmpty then s!"{kw} {name}" else s!"{kw} {name} {ib}"
   let pg (f : CallFn) :=
@@ -1289,7 +1290,7 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
     let applied := " ".intercalate ([Naru.Backend.Statements.stmtName f.key] ++ f.inputs.map Naru.Backend.Model.inputBinder)
     s!"({f.key.quote}, wrapP {NaruSem.Call.Quote.list (ps.map tyTerm)} ({applied}))"
   "-- Current generated Statements versus the reading of the current quoted Core, for arbitrary inputs and parameters.\n" ++
-  "-- This is an expression connection check; spec declaration-group composition and Surface preservation are still separate obligations.\n" ++
+  "-- This is an expression connection check; per-spec prefix evidence is composed into declaration-group proposition equivalence; Surface preservation is a separate obligation.\n" ++
   "import CallModelCheck\nimport Statements.Sem.Call\n\n" ++
   "-- General equivalence: any well-formed expression and matching environment, with value equality and proposition equivalence on callee signatures.\n" ++
   "example {Δ Δ' : NaruSem.Call.SigEnv} {Φ Φ' : NaruSem.Call.FEnv} {Ψ Ψ' : NaruSem.Call.PEnv}\n" ++
@@ -1297,15 +1298,27 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
   "    {Γ : NaruSem.SCtx} {e : Naru.Core.Expr} {τ : NaruSem.STy} (hw : NaruSem.Call.wtS Δ Γ e = some τ)\n" ++
   "    (ρ : NaruSem.SEnv) (hρ : Γ = ρ.ctx) {P : Prop} (h : NaruSem.Call.Sem Δ Φ Ψ ρ e P) : P ↔ NaruSem.Call.denoteP Δ Φ' Ψ' ρ e :=\n" ++
   "  NaruSem.Call.Sem_denote hΔ hΦ' hA hPA hw ρ hρ h\n\n" ++
-  "def PFn : List NaruSem.Ty → Type\n  | [] => Prop\n  | t :: ps => t.carrier → PFn ps\n" ++
-  "def wrapP : (ps : List NaruSem.Ty) → PFn ps → List NaruSem.Val → Prop\n" ++
-  "  | [], g, [] => g\n  | .nat :: ps, g, .nat n :: vs => wrapP ps (g n) vs\n" ++
-  "  | .bool :: ps, g, .bool b :: vs => wrapP ps (g b) vs\n  | _, _, _ => False\n" ++
-  "def Δread_call : NaruSem.Call.SigEnv := fun k => (cprog_call.find? fun d => d.key == k).map NaruSem.Call.Decl.sig\n" ++
+  "open NaruSem.Call (wrapP)\n" ++
+  "def prefix_call (n : Nat) : NaruSem.Call.SigEnv := (cprog_call.take n).foldl (fun Δ d => Δ.ext d.key d.sig) NaruSem.Call.SigEnv.empty\n" ++
+  "".intercalate (specs.map fun f => s!"def Δprefix_{shortName f.key} : NaruSem.Call.SigEnv := prefix_call {f.index}\n") ++
   s!"{hdr "def" "props_call"} : List (String × (List NaruSem.Val → Prop)) :=\n  [{",\n   ".intercalate (specs.map pg)}]\n" ++
   s!"{hdr "def" "Ψgen_call"} : NaruSem.Call.PEnv := fun k => (props_call {ia}).lookup k\n\n" ++
   "\n".intercalate (specs.map fun f => callSpecConnStmt ib ia s!"read_{shortName f.key}" (Naru.Backend.Statements.stmtName f.key) f) ++ "\n" ++
-  s!"#audit_axioms {" ".intercalate (specs.map fun f => s!"read_{shortName f.key}")}\n"
+  "\n".intercalate (specs.map fun f =>
+    let n := shortName f.key
+    let ps := NaruSem.Call.Quote.params (f.params.filterMap NaruSem.Call.Quote.paramOf?)
+    let applied := " ".intercalate ([Naru.Backend.Statements.stmtName f.key] ++ f.inputs.map Naru.Backend.Model.inputBinder)
+    s!"{hdr "theorem" s!"spevid_{n}"} : NaruSem.Call.SpecConn Δprefix_{n} (Φgen_call {ia}) (Ψgen_call {ia}) {f.key.quote} {ps} ccore_{n} :=\n" ++
+    s!"  NaruSem.Call.specConn_of_curried Δprefix_{n} (Φgen_call {ia}) (Ψgen_call {ia}) {f.key.quote} {ps} ccore_{n} ({applied}) (read_{n} {ia}) rfl\n") ++
+  s!"{hdr "theorem" "spevid_call"} : NaruSem.Call.SpecEvidence (Φgen_call {ia}) (Ψgen_call {ia}) NaruSem.Call.SigEnv.empty cprog_call := by\n" ++
+  "".intercalate (prog.map fun d => match d with
+    | .spec k .. => s!"  refine ⟨spevid_{shortName k} {ia}, ?_⟩\n"
+    | _ => "  refine ⟨True.intro, ?_⟩\n") ++ "  trivial\n\n" ++
+  s!"{hdr "theorem" "cprops_call"} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
+  s!"    NaruSem.Call.PEnv.Agree (NaruSem.Call.interp I cprog_call).Ψ (Ψgen_call {ia}) Δ :=\n" ++
+  s!"  NaruSem.Call.interp_prop_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) (spevid_call {ia})\n\n" ++
+  s!"#audit_axioms spevid_call cprops_call {" ".intercalate (specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"])}\n"
 
 /-- 同じ current Core に対する、型は合うが前提を弱めた隔離 spec 出力。 -/
 def callSpecMistranslations : List Mistranslation :=
@@ -1763,24 +1776,26 @@ def checks : M Unit := do
         let _ ← step "C55: compile the generated Statements as the Lean module `Statements.Sem.Call`" "lean"
           #[s!"--root={callGenDir}", "-o", (callGenDir / "Statements" / "Sem" / "Call.olean").toString, callStmtFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let mut specs : List CallFn := []
+        let mut specIdx := 0
         for d in cprog do
           match d with
           | .spec k _ b =>
             match NaruSem.Quote.fnOf? k cchecked.core with
-            | some (cparams, _) => specs := specs ++ [{ key := k, params := cparams, ret := .bool, body := b, inputs := (inputsTable.lookup k).getD [], index := 0 }]
+            | some (cparams, _) => specs := specs ++ [{ key := k, params := cparams, ret := .bool, body := b, inputs := (inputsTable.lookup k).getD [], index := specIdx }]
             | none => fail s!"C55: the spec Core of `{k}` was not found in the current compiled unit"
           | _ => pure ()
+          specIdx := specIdx + 1
         let callStmtCheck := outDir / "CallStatementsReadCheck.lean"
-        IO.FS.writeFile callStmtCheck (callStatementsProgram specs inputs)
+        IO.FS.writeFile callStmtCheck (callStatementsProgram specs inputs cprog)
         let sc ← step s!"C55: lean {callStmtCheck} (connection of {specs.length} current generated spec declarations to the reading of their current Core; arbitrary input interpretations and parameters)"
           "lean" #[s!"--root={outDir}", "-o", (outDir / "CallStatementsReadCheck.olean").toString, callStmtCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
         let stmtAudited := auditedNames sc.stdout
-        let stmtRequired := specs.map fun f => s!"read_{shortName f.key}"
+        let stmtRequired := ["spevid_call", "cprops_call"] ++ specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"]
         let stmtMissing := stmtRequired.filter fun n => !stmtAudited.contains n
         let stmtCount := (c54Decls.filter fun (_, k) => k != .fn && k != .input).length
         if sc.exitCode == 0 && stmtMissing.isEmpty && specs.length == stmtCount && stmtCount > 0 &&
             !(contains sc.stdout "forbidden") && !(contains sc.stderr "forbidden") then
-          ok s!"C55: all {specs.length} generated spec reading connections are audited with 0 forbidden dependencies (declaration-group spec composition and Surface preservation are still separate obligations)"
+          ok s!"C55: all {specs.length} generated spec prefix connections and declaration-group proposition equivalence are audited with 0 forbidden dependencies (Surface preservation remains a separate obligation)"
         else fail s!"C55: spec reading connections: exit {sc.exitCode}, missing audits {stmtMissing}, {specs.length} of {stmtCount} declarations\n{tail sc.stdout 1500}\n{tail sc.stderr 1500}"
         let specText ← IO.FS.readFile callStmtFile
         let specReadWrongs ← deriveWrongs "Statements (calls)" specText Naru.Backend.Statements.stmtName callSpecMistranslations

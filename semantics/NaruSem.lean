@@ -20,6 +20,7 @@ import NaruSem.Call
 import NaruSem.CallTotality
 import NaruSem.CallDenote
 import NaruSem.CallDenoteProp
+import NaruSem.CallComposeProp
 import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
@@ -287,5 +288,6 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 
 -- C55(spec): 呼出しを含む式の一般同値と、対応環境・値引数・命題環境の双方向の同値。宣言群のspec合成とは区別する。
 #audit_axioms NaruSem.Call.Sem_denote_all NaruSem.Call.Sem_denote NaruSem.Call.Sem_denoteP NaruSem.Call.Sem_denote_self NaruSem.Call.check_sound_prop
+#audit_axioms NaruSem.Call.interpFrom_prop_agree NaruSem.Call.interp_prop_agree NaruSem.Call.curried_wrapP NaruSem.Call.specConn_of_curried
   NaruSem.Call.PEnv.Agree.refl NaruSem.Call.PEnv.Agree.defined NaruSem.Call.PEnv.Defined.mono NaruSem.Call.SigEnv.SubP.refl
   NaruSem.Call.wtS_noExh NaruSem.Call.wtArmsS_head NaruSem.Call.wtArmsS_tail

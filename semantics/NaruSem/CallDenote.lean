@@ -27,7 +27,7 @@ import NaruSem.Denote
 
 採用方式(「コンパイラ意味論保存の保証方式」): 汎用翻訳方式(一般定理 `denote_sound` / `interp_agree`)+ 生成物ごとの接続検査(`conn_<f>`)。
 保証は「接続検査に成功した実生成宣言」の宣言群に対するもので、呼出し先を含む必要な証拠が欠けた宣言は検証済みにならない。spec の式の読みと一般同値は `CallDenoteProp.lean`。
-宣言群の spec 合成と Surface AST からの合成は未完了。
+宣言群の spec 合成は `CallComposeProp.lean`。Surface AST からの合成は未完了。
 -/
 
 namespace NaruSem.Call

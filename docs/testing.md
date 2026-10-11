@@ -309,4 +309,4 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `CallDenoteProp.lean` の `Call.Sem_denote` / `Sem_denoteP` / `check_sound_prop` と命題環境の一致・署名包含の補題を `NaruSem.lean` で公理監査し、`requiredTheorems` が欠落を失敗にする。
 実際の CLI が生成した `gencall/Statements/Sem/Call.lean` を Lean モジュールとしてビルドし、`CallStatementsReadCheck.lean` が現在の引用 Core と9個の実生成 spec の読みの接続 `read_*` を任意の input 解釈・仮引数について検査・監査する。
 `CallStatementsReadWrong.lean` の対照は接続成功、`specCallSpec` の `∧` を `∨` にした隔離出力は型検査に成功し接続定理の行だけで失敗する。宣言数・監査・期待するエラー行の欠落は失敗にする。
-一般定理は任意の適格式に対する双方向同値だが、値・命題環境の一致を条件にする。宣言群の spec 環境の一致を証拠から合成する義務と Surface 保存は未完了であり、この式の接続を宣言群全体の保存と扱わない。
+`CallComposeProp.lean` の `interp_prop_agree` / `interpFrom_prop_agree` / `curried_wrapP` / `specConn_of_curried` も一般定理の必須監査対象。各 spec の前の署名 `Δprefix_*` で `read_*` を検査し、`spevid_*` と全宣言の `spevid_call`、任意の同じ input 解釈で独立宣言群と実生成命題環境が同値となる `cprops_call` を検査・監査する。9 spec の接続・合成証拠の欠落も失敗にする。呼出しを含む Surface 保存と別モジュールの実生成接続は未完了。
