@@ -330,7 +330,7 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 
 同じ `lake exe naru_test semantics` / `lake exe naru_test regression` は呼出しを含む runtime の AST → Core の構造的対応も検査する。
 `SurfaceCallLowerCheck.lean` は再構文解析・再コンパイルで一致を確認した31宣言から、全17 fnの実際の包装・仮引数・本体・prefix宣言表を取る。
-独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性と包装の計85証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
+独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計102証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
 `SurfaceCallLowerWrong.lean` の5件は別callee・名前付き引数の交換・UFCS受け手の交換・同型inputの交換・matchガードの否定。
 現在のCoreから作った各検体は同じCore型を持ち、正しい対照が成功し、同じ正しいASTとの変換の一致の5行だけで失敗することを要求する。
 この検査は一般意味保存の代用ではなく、任意の環境での意味の対応とspec側のloweringは未完了である。
@@ -364,3 +364,10 @@ matchの腕の局所合成も同じ `lake exe naru_test semantics` / `regression
 falseガードの後に束縛を漏らしてscrutineeを返す結果との不一致を証明する。具体的な誤変換Coreの型検査ではない。
 署名外の環境の対照は失敗の保持の検査であり、適格な宣言群の一般保証ではない。
 子式の対応を合成前提とする段階で、全式の帰納保存やspecのloweringの完成は含めない。
+
+runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` の一般定理を同じ入口で検査する。
+`Surf.Call.lower_typed` / `lower_total` / `lower_wt` と相互帰納の補題は公理監査と欠落検査の対象となる。
+`SurfaceCallLowerCheck.lean` は現在の全17 fnについて、包装・仮引数・本体・ASTの適格性・実Coreとの一致に加え、
+一般定理 `lower_wt` から得た実Coreの型保存 `sctyped_*` を検査する(17 × 6 = 102証拠)。
+型が合う別callee・引数交換・UFCS・input誤配線・ガード否定の5負検体は維持し、型保存だけでは意味の誤りを検出できないことを区別する。
+評価の帰納保存、specのloweringと同値、宣言群の意味合成はこの型保存の成功を代用証拠にせず、未完了として扱う。

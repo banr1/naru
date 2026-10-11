@@ -107,3 +107,5 @@
 
 - 呼出しruntimeのmatchの局所合成は `Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` と `lowerArm_eval` / `lowerArms_eval` / `lower_match_eval` / `lower_match_wt`。網羅性はloweringの成功だけから走査の一致を示せるが、型は子式・腕列の適格性を別に要求する。`ArmsEval` は各腕の継続の証拠を同じ長さと順序で束ねる。照合後の本体/ガードは `SEnv.extVals` と `Env.extList` で対応し、ガードfalseの後続は元の環境で読む。不在/失敗/非Boolのガードは `none`、パターン不一致はガードを読まず後続へ進む。6補題/13検体を監査・requiredTheoremsに含める。全式・spec・宣言群の一般保存は含めない。
 - `lowerArm` のガードに関する `cases` は定義を展開する前に行い、各分岐で `rw [lowerArm.eq_1, hp]` を使う。先に `simp only [lowerArm, hp]` で依存したmatchを変換してから `cases g` した初回証明はkernelのapplication type mismatchとなった。部分評価の `cases` の後も、外側matchを `simp only` で簡約してから内側評価へ `rw` する。
+
+- 呼出しruntimeのloweringの全域性/型保存は `SurfaceCallLowerSound.lean` の `Surf.Call.lower_typed_all`。`wtR.mutual_induct T` の45ケースで式・let列・腕列・腕・実引数列を同時帰納する。引数のmotiveは名前の印を保つCore型のmap一致、let列は `wtBinds T.Δ Γ.vals binds = some Γ'.vals`、腕列はCoreの同じscrutinee型を使う。`arrange_core_total` はmap一致から並べ替え先の存在と型を導く。`lower_typed` / `lower_total` / `lower_wt` は系。現在17fnの `stype_*` と実Core一致 `slow_*` から `sctyped_*` をkernel検査/監査する(計102証拠)。この型保存は評価保存やspec同値を含まない。

@@ -94,7 +94,10 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.lowerCall_eq",
+  [ "NaruSem.Surf.Call.arrange_core_total",
+    "NaruSem.Surf.Call.lower_typed_all", "NaruSem.Surf.Call.lower_typed",
+    "NaruSem.Surf.Call.lower_total", "NaruSem.Surf.Call.lower_wt",
+    "NaruSem.Surf.Call.lowerCall_eq",
     "NaruSem.Surf.Call.allSome_some", "NaruSem.Surf.Call.evalArgs_allSome",
     "NaruSem.Surf.Call.arrange_eval", "NaruSem.Surf.Call.wtArgs_of_map", "NaruSem.Surf.Call.arrange_wt",
     "NaruSem.Surf.Call.lowerCall_wt", "NaruSem.Surf.Call.lowerCall_eval",
@@ -1172,7 +1175,7 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
 文脈はその宣言の仮引数から取り、包装・本体・型と変換の一致を kernel 検査する。
 この段階では呼出しの一般意味保存・宣言群の意味の合成は主張しない。 -/
 def callRuntimeLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
-  let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLower\n\n"
+  let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLowerSound\n\n"
   for (i, d) in sprog.zipIdx |>.map (fun (d, i) => (i, d)) do
     if d.kind != .fn then continue
     let n := shortName d.key
@@ -1191,7 +1194,8 @@ def callRuntimeLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run 
         s!"theorem sbody_{n} : sdecl_{n}.body = some sast_{n} := rfl\n" ++
         s!"theorem stype_{n} : NaruSem.Surf.Call.wtR stable_{n} sctx_{n} sast_{n} = some {tyTerm t} := by decide\n" ++
         s!"theorem slow_{n} : NaruSem.Surf.Call.lower stable_{n} sctx_{n} sast_{n} = some ccore_{n} := rfl\n" ++
-        s!"#audit_axioms spack_{n} sparams_{n} sbody_{n} stype_{n} slow_{n}\n\n"
+        s!"theorem sctyped_{n} : NaruSem.Call.wtR stable_{n}.Δ sctx_{n}.vals ccore_{n} = some {tyTerm t} := NaruSem.Surf.Call.lower_wt stype_{n} slow_{n}\n" ++
+        s!"#audit_axioms spack_{n} sparams_{n} sbody_{n} stype_{n} slow_{n} sctyped_{n}\n\n"
     | _, _ => text := text ++ s!"#audit_axioms missing_runtime_body_{n}\n"
   return text
 
@@ -1242,7 +1246,7 @@ def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call
   IO.FS.writeFile file (callRuntimeLowerProgram sprog)
   let r ← step "C55: kernel-check current runtime AST / Core lowering and declaration packaging" "lean"
     #[s!"--root={outDir}", "-o", (outDir / "SurfaceCallLowerCheck.olean").toString, file.toString] (env := #[("LEAN_PATH", some lp)])
-  let required := expected.flatMap fun n => [s!"spack_{n}", s!"sparams_{n}", s!"sbody_{n}", s!"stype_{n}", s!"slow_{n}"]
+  let required := expected.flatMap fun n => [s!"spack_{n}", s!"sparams_{n}", s!"sbody_{n}", s!"stype_{n}", s!"slow_{n}", s!"sctyped_{n}"]
   let missing := required.filter fun n => !(auditedNames r.stdout).contains n
   if r.exitCode == 0 && missing.isEmpty then
     ok s!"C55: {required.length} runtime lowering / packaging certificates for all {expected.length} actual fn declarations audited"

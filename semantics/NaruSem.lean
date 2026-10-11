@@ -26,6 +26,7 @@ import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
 import NaruSem.SurfaceCallLower
+import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
@@ -101,6 +102,8 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/SurfaceCallLower.lean` — 呼出しを含む runtime の独立 lowering。現在の17 fnの AST / Core の構造的対応を検査する。
   任意の式・環境の一般意味保存、spec の lowering、宣言群の意味の合成は未完了。
+- `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
+  式・実引数・let列・腕列・腕を同時帰納し、実際の17 fnへの適用もkernelが検査する。評価の保存は別の義務。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -111,6 +114,10 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -/
 
 -- C39: 意味論の全域性・一意性と、環境と文脈の対応の補題
+#audit_axioms NaruSem.Surf.Call.arrange_core_total
+  NaruSem.Surf.Call.lower_typed_all NaruSem.Surf.Call.lower_typed
+  NaruSem.Surf.Call.lower_total NaruSem.Surf.Call.lower_wt
+
 #audit_axioms NaruSem.Surf.Call.lowerCall_eq
   NaruSem.Surf.Call.allSome_some NaruSem.Surf.Call.evalArgs_allSome
   NaruSem.Surf.Call.arrange_eval NaruSem.Surf.Call.wtArgs_of_map NaruSem.Surf.Call.arrange_wt
