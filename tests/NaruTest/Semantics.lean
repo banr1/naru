@@ -149,11 +149,11 @@ def requiredTheorems : List String :=
 /-- C54 の検体 `tests/units/accept/sem_calls/src/Sem/Call.naru` の宣言群(修飾名, 種別): input 4、fn 17、spec 宣言 10。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
   [ ("Sem.Inputs.seed", .input), ("Sem.Inputs.bias", .input), ("Sem.Inputs.otherBias", .input), ("Sem.Inputs.flag", .input),
-    ("Sem.Call.base", .fn), ("Sem.Call.zero", .fn), ("Sem.Call.addTo", .fn), ("Sem.Call.callBase", .fn), ("Sem.Call.callNamed", .fn),
+    ("Sem.Callees.base", .fn), ("Sem.Callees.zero", .fn), ("Sem.Callees.addTo", .fn), ("Sem.Call.callBase", .fn), ("Sem.Call.callNamed", .fn),
     ("Sem.Call.callMixed", .fn), ("Sem.Call.ufcs", .fn), ("Sem.Call.ufcsNamed", .fn), ("Sem.Call.useInput", .fn), ("Sem.Call.useInputArg", .fn),
     ("Sem.Call.twoStep", .fn), ("Sem.Call.boolCall", .fn), ("Sem.Call.zeroCall", .fn), ("Sem.Call.callInLet", .fn), ("Sem.Call.callInMatch", .fn),
     ("Sem.Call.inputPair", .fn), ("Sem.Call.sharedInputs", .fn),
-    ("Sem.Call.posBase", .predicate), ("Sem.Call.specCallSpec", .predicate), ("Sem.Call.specInput", .predicate), ("Sem.Call.specNamed", .predicate),
+    ("Sem.Callees.posBase", .predicate), ("Sem.Call.specCallSpec", .predicate), ("Sem.Call.specInput", .predicate), ("Sem.Call.specNamed", .predicate),
     ("Sem.Call.specUfcs", .predicate), ("Sem.Call.specBoolCall", .predicate), ("Sem.Call.specLetCall", .predicate), ("Sem.Call.specQuantCall", .predicate),
     ("Sem.Call.specTwoStep", .predicate), ("Sem.Call.specSharedInputs", .predicate) ]
 
@@ -874,7 +874,8 @@ def checkWrong (what : String) (file : System.FilePath) (program : String × Lis
 
 def callSource : String := "tests/units/accept/sem_calls/src/Sem/Call.naru"
 def callInputSource : String := "tests/units/accept/sem_calls/src/Sem/Inputs.naru"
-def callSources : List String := [callSource, callInputSource]
+def callCalleeSource : String := "tests/units/accept/sem_calls/src/Sem/Callees.naru"
+def callSources : List String := [callSource, callInputSource, callCalleeSource]
 
 /-- Core の式の中の呼出し先の鍵(出現順、重複あり)。 -/
 partial def callKeysOf : Naru.Core.Expr → List String
@@ -946,16 +947,16 @@ def coreWrongProgs (prog : List NaruSem.Call.Decl) : List (String × String × L
   let others := prog.filter fun d => d.key != "Sem.Call.callBase"
   [ ("reversed", "the declarations in reverse order (callees after their callers: not in dependency order)", prog.reverse),
     ("retarget", "`callBase` calling `addTo` (a different callee with 2 parameters) instead of `base`",
-      mapDecl "Sem.Call.callBase" (retargetCalls "Sem.Call.base" "Sem.Call.addTo") prog),
+      mapDecl "Sem.Call.callBase" (retargetCalls "Sem.Callees.base" "Sem.Callees.addTo") prog),
     ("phase", "`callBase` (runtime) calling the spec declaration `posBase` instead of `base` (placed after `posBase`)",
-      others ++ (callBase.map (mapBody (retargetCalls "Sem.Call.base" "Sem.Call.posBase")))),
+      others ++ (callBase.map (mapBody (retargetCalls "Sem.Callees.base" "Sem.Callees.posBase")))),
     ("cycle", "`base` calling `callBase`, which calls `base` (a cycle: the callee is not an earlier declaration)",
-      mapDecl "Sem.Call.base" (fun _ => .call "Sem.Call.callBase" [.var "x"]) prog),
-    ("duplicate", "`base` declared twice", prog ++ (prog.filter fun d => d.key == "Sem.Call.base")),
+      mapDecl "Sem.Callees.base" (fun _ => .call "Sem.Call.callBase" [.var "x"]) prog),
+    ("duplicate", "`base` declared twice", prog ++ (prog.filter fun d => d.key == "Sem.Callees.base")),
     ("arity", "`useInput` calling the input `seed` with an argument (its signature has none)",
       mapDecl "Sem.Call.useInput" (addArgTo "Sem.Inputs.seed" (.var "x")) prog),
     ("argtype", "`callBase` passing a Bool to `base` (whose parameter is Nat)",
-      mapDecl "Sem.Call.callBase" (fun _ => .binop "*" (.call "Sem.Call.base" [.lit (.bool true) .bool]) (.lit (.nat 2) .nat) .nat) prog) ]
+      mapDecl "Sem.Call.callBase" (fun _ => .binop "*" (.call "Sem.Callees.base" [.lit (.bool true) .bool]) (.lit (.nat 2) .nat) .nat) prog) ]
 
 /-- Core の宣言群の項。本体は引用した Core をその場に書く(`named = false`。負の検体)か、`ccore_<f>` の名前で参照する(`named = true`。実際の宣言群:
 `CallModelCheck.lean` の接続の定理が同じ `ccore_<f>` を指す)。 -/
@@ -1050,7 +1051,7 @@ def callScopeProgram (prog : List NaruSem.Call.Decl) (Δ : NaruSem.Call.SigEnv) 
   "    (NaruSem.Call.interp I cprog_call).Ψ.Defined (Classical.choose cΔ_call) :=\n" ++
   "  fun I hI => NaruSem.Call.interp_defined (Classical.choose_spec cΔ_call) hI\n" ++
   "#audit_axioms cwt_call cΔ_call cresp_call cdef_call cstuck_useInput\n" ++
-  s!"\n-- the quoted declarations are the Core the compiler produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Call.Quote.checkProg {callSource.quote} cprog_call [{callInputSource.quote}]\n"
+  s!"\n-- the quoted declarations are the Core the compiler produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Call.Quote.checkProg {callSource.quote} cprog_call [{callInputSource.quote}, {callCalleeSource.quote}]\n"
 
 /-- Surface AST の式の呼出し先・UFCS のメソッド名 `from` を `to` に(負の検体: 未解決の名前)。 -/
 partial def renameCallee (src dst : String) : NaruSem.Surf.Call.Expr → NaruSem.Surf.Call.Expr
@@ -1127,7 +1128,7 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
   "#audit_axioms swt_call sresp_call sdef_call\n" ++
   "\n-- negative specimens made from the actual AST: not well-formed\n" ++
   "".intercalate negs ++
-  s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call [{callInputSource.quote}]\n"
+  s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call [{callInputSource.quote}, {callCalleeSource.quote}]\n"
 
 /-! ### 実生成 Model への接続と宣言群の意味の合成(C55 / C56 / C57 / C58、runtime)
 
@@ -1402,22 +1403,22 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
 /-- C58: 実生成 spec 出力の論理・呼出し先・名前付き引数・UFCS・推移的 input の誤配線。 -/
 def callSpecMistranslations : List Mistranslation :=
   [ { key := "Sem.Call.specCallSpec", wrong := "Wrong.specCallSpec",
-      good := "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))",
-      bad := "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
-      transform := fun s => s.replace "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))"
-        "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
+      good := "(Statements.Sem.Callees.posBase «x») ∧ («x» < (10 : Nat))",
+      bad := "(Statements.Sem.Callees.posBase «x») ∨ («x» < (10 : Nat))",
+      transform := fun s => s.replace "(Statements.Sem.Callees.posBase «x») ∧ («x» < (10 : Nat))"
+        "(Statements.Sem.Callees.posBase «x») ∨ («x» < (10 : Nat))",
       note := "the conjunction in specCallSpec replaced by disjunction (well-typed but a weaker proposition)" },
     { key := "Sem.Call.specTwoStep", wrong := "Wrong.specTwoStep",
       good := "Statements.Sem.Call.specInput seed' «x»", bad := "Statements.Sem.Call.specCallSpec «x»",
       transform := fun s => s.replace "Statements.Sem.Call.specInput seed' «x»" "Statements.Sem.Call.specCallSpec «x»",
       note := "the spec callee replaced by another Nat-to-Prop declaration, after its input argument is applied" },
     { key := "Sem.Call.specNamed", wrong := "Wrong.specNamed",
-      good := "Model.Sem.Call.addTo «b» «a»", bad := "Model.Sem.Call.addTo «a» «b»",
-      transform := fun s => s.replace "Model.Sem.Call.addTo «b» «a»" "Model.Sem.Call.addTo «a» «b»",
+      good := "Model.Sem.Callees.addTo «b» «a»", bad := "Model.Sem.Callees.addTo «a» «b»",
+      transform := fun s => s.replace "Model.Sem.Callees.addTo «b» «a»" "Model.Sem.Callees.addTo «a» «b»",
       note := "the two Nat named arguments are swapped in the spec's runtime call" },
     { key := "Sem.Call.specUfcs", wrong := "Wrong.specUfcs",
-      good := "Model.Sem.Call.addTo «a» «b»", bad := "Model.Sem.Call.addTo «b» «a»",
-      transform := fun s => s.replace "Model.Sem.Call.addTo «a» «b»" "Model.Sem.Call.addTo «b» «a»",
+      good := "Model.Sem.Callees.addTo «a» «b»", bad := "Model.Sem.Callees.addTo «b» «a»",
+      transform := fun s => s.replace "Model.Sem.Callees.addTo «a» «b»" "Model.Sem.Callees.addTo «b» «a»",
       note := "the UFCS receiver and its Nat argument are swapped in the spec's runtime call" },
     { key := "Sem.Call.specBoolCall", wrong := "Wrong.specBoolCall",
       good := "Model.Sem.Call.boolCall flag' «b»", bad := "Model.Sem.Call.boolCall (fun v => flag' (!v)) «b»",
@@ -1431,10 +1432,10 @@ def callSpecMistranslations : List Mistranslation :=
 /-- 閉じた反例は非同値を補助的に示す。任意 input/仮引数での正しい接続の代用にはしない。 -/
 def callSpecCounterexample (m : Mistranslation) : String :=
   let (args, unfolds) := match m.key with
-    | "Sem.Call.specCallSpec" => ("10", "Statements.Sem.Call.posBase Model.Sem.Call.base")
-    | "Sem.Call.specTwoStep" => ("0 10", "Statements.Sem.Call.specCallSpec Statements.Sem.Call.posBase Statements.Sem.Call.specInput Model.Sem.Call.useInput Model.Sem.Call.base")
-    | "Sem.Call.specNamed" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.callNamed")
-    | "Sem.Call.specUfcs" => ("0 1", "Model.Sem.Call.addTo Model.Sem.Call.ufcs")
+    | "Sem.Call.specCallSpec" => ("10", "Statements.Sem.Callees.posBase Model.Sem.Callees.base")
+    | "Sem.Call.specTwoStep" => ("0 10", "Statements.Sem.Call.specCallSpec Statements.Sem.Callees.posBase Statements.Sem.Call.specInput Model.Sem.Call.useInput Model.Sem.Callees.base")
+    | "Sem.Call.specNamed" => ("0 1", "Model.Sem.Callees.addTo Model.Sem.Call.callNamed")
+    | "Sem.Call.specUfcs" => ("0 1", "Model.Sem.Callees.addTo Model.Sem.Call.ufcs")
     | "Sem.Call.specBoolCall" => ("(fun b => b) false", "Model.Sem.Call.boolCall")
     | "Sem.Call.specSharedInputs" => ("(fun n => n * 10) (fun _ => 1) 0 1", "Model.Sem.Call.sharedInputs Model.Sem.Call.inputPair Model.Sem.Call.useInputArg")
     | _ => ("", "")
@@ -1450,14 +1451,14 @@ def callSpecWrongProgram (ib ia : String) (specs : List CallFn) (wrongs : List (
 /-- 負の検体(C58): 実生成 Model(呼出しと input)の文字列から作る、型は合うが意味の異なる誤出力。同じ署名の別の呼出し先への置換、同型の名前付き実引数の
 取り違え、UFCS の受け手の誤対応、複数段の input の誤配線。 -/
 def callMistranslations : List Mistranslation :=
-  [ { key := "Sem.Call.twoStep", wrong := "Wrong.twoStep", good := "Model.Sem.Call.callBase (", bad := "Model.Sem.Call.base (",
-      transform := fun s => s.replace "Model.Sem.Call.callBase (" "Model.Sem.Call.base (",
+  [ { key := "Sem.Call.twoStep", wrong := "Wrong.twoStep", good := "Model.Sem.Call.callBase (", bad := "Model.Sem.Callees.base (",
+      transform := fun s => s.replace "Model.Sem.Call.callBase (" "Model.Sem.Callees.base (",
       note := "`twoStep` calling `base` instead of `callBase` (a different callee with the same signature Nat → Nat)" },
-    { key := "Sem.Call.callNamed", wrong := "Wrong.callNamed", good := "Model.Sem.Call.addTo «b» «a»", bad := "Model.Sem.Call.addTo «a» «b»",
-      transform := fun s => s.replace "Model.Sem.Call.addTo «b» «a»" "Model.Sem.Call.addTo «a» «b»",
+    { key := "Sem.Call.callNamed", wrong := "Wrong.callNamed", good := "Model.Sem.Callees.addTo «b» «a»", bad := "Model.Sem.Callees.addTo «a» «b»",
+      transform := fun s => s.replace "Model.Sem.Callees.addTo «b» «a»" "Model.Sem.Callees.addTo «a» «b»",
       note := "the named arguments of `callNamed` (`addTo(y = a, x = b)`) passed in parameter order instead of by name (same-typed named arguments swapped)" },
-    { key := "Sem.Call.ufcs", wrong := "Wrong.ufcs", good := "Model.Sem.Call.addTo «a» «b»", bad := "Model.Sem.Call.addTo «b» «a»",
-      transform := fun s => s.replace "Model.Sem.Call.addTo «a» «b»" "Model.Sem.Call.addTo «b» «a»",
+    { key := "Sem.Call.ufcs", wrong := "Wrong.ufcs", good := "Model.Sem.Callees.addTo «a» «b»", bad := "Model.Sem.Callees.addTo «b» «a»",
+      transform := fun s => s.replace "Model.Sem.Callees.addTo «a» «b»" "Model.Sem.Callees.addTo «b» «a»",
       note := "the UFCS receiver of `ufcs` (`a.addTo(b)`) passed as the second argument instead of the first" },
     { key := "Sem.Call.useInputArg", wrong := "Wrong.useInputArg", good := "(bias' (seed'))", bad := "(bias' «x») + (bias' «x»)",
       transform := fun s => s.replace "(bias' (seed'))" "(bias' «x»)",
@@ -1481,7 +1482,7 @@ def callWrongProgram (ib ia : String) (fns : List CallFn) (wrongs : List (Mistra
 /-- C57: 正しい接続証拠を違う宣言・古い本体に使う、または呼出し先の証拠を抜いた束で宣言群の保存を合成する検体。
 対照は別ファイルで exit 0 と公理監査を要求する。負のファイルはその対照に 3 つの不正な証拠の使用だけを加える。 -/
 def checkCallEvidence (ib ia : String) (fns : List CallFn) (lp : String) : M Unit := do
-  match fns.find? (fun f => f.key == "Sem.Call.base"), fns.find? (fun f => f.key == "Sem.Call.callBase") with
+  match fns.find? (fun f => f.key == "Sem.Callees.base"), fns.find? (fun f => f.key == "Sem.Call.callBase") with
   | some base, some caller =>
     match base.body with
     | .binop op lhs (.lit (.nat n) ty) resultTy =>
@@ -1545,7 +1546,7 @@ def checkCallEvidence (ib ia : String) (fns : List CallFn) (lp : String) : M Uni
 /-- C57(spec): 現在の prefix 接続証拠の別宣言/古い本体への流用と、呼出し先を証明しない suffix の証拠による全体の合成を拒否する。
 suffix の署名は元の prefix を保持する。署名に呼出し先があるだけでは、その接続証拠を持つことにはならない。 -/
 def checkCallSpecEvidence (ib ia : String) (specs : List CallFn) (prog : NaruSem.Call.Prog) (lp : String) : M Unit := do
-  match specs.find? (fun f => f.key == "Sem.Call.posBase"), specs.find? (fun f => f.key == "Sem.Call.specCallSpec") with
+  match specs.find? (fun f => f.key == "Sem.Callees.posBase"), specs.find? (fun f => f.key == "Sem.Call.specCallSpec") with
   | some base, some caller =>
     match base.body with
     | .binop op lhs (.lit (.nat n) ty) resultTy =>
@@ -1854,9 +1855,23 @@ def checks : M Unit := do
       if okKind then ok s!"C54: `{key}` ({kind.describe}) is an in-scope declaration of the group"
       else fail s!"C54: `{key}` has an unexpected kind in the Core"
     | none => fail s!"C54: {callSource} has no in-scope fn / input / spec declaration `{key}`"
+  -- These edges are part of the intended fixture, independent of the generated proof text.
+  for (caller, callee) in [("Sem.Call.callBase", "Sem.Callees.base"),
+      ("Sem.Call.zeroCall", "Sem.Callees.zero"), ("Sem.Call.callNamed", "Sem.Callees.addTo"),
+      ("Sem.Call.ufcs", "Sem.Callees.addTo"), ("Sem.Call.specCallSpec", "Sem.Callees.posBase"),
+      ("Sem.Call.specLetCall", "Sem.Callees.posBase"), ("Sem.Call.specQuantCall", "Sem.Callees.base")] do
+    match cdecls.lookup caller, cdecls.lookup callee with
+    | some d, some _ =>
+      if (declCallKeys d).contains callee then
+        ok s!"C55: actual cross-module call `{caller}` → `{callee}` (runtime/spec, qualified/named/UFCS/zero-argument coverage)"
+      else fail s!"C55: expected actual cross-module call `{caller}` → `{callee}` is absent"
+    | _, _ => fail s!"C55: cross-module call specimen lacks `{caller}` or `{callee}`"
   if cdecls.length != c54Decls.length then
     fail s!"C54: expected {c54Decls.length} in-scope declarations, found {cdecls.length}: {cdecls.map (·.1)}"
-  match dependencyOrder cdecls with
+  -- Stable specimen order preserves the prefix used by the missing-callee evidence controls.
+  -- All actual declarations are checked above and again by Quote.checkProg.
+  let ranked := c54Decls.filterMap fun (k, _) => (cdecls.lookup k).map fun d => (k, d)
+  match dependencyOrder ranked with
   | none => fail "C54: the declarations cannot be ordered by dependency (a cycle or an unresolved callee)"
   | some ordered =>
     let cprog := ordered.map (·.2)
@@ -1925,7 +1940,7 @@ def checks : M Unit := do
       -- C55 / C56 / C57 / C58: 実生成 Model(呼出しと input)への接続と、宣言群の意味との合成
       heading "C55 / C56 / C57 connection of the generated Model with calls and inputs to the meaning of the declaration group"
       if ← callGenDir.pathExists then IO.FS.removeDirAll callGenDir
-      let _ ← step "C57: generate the Model of the call specimen with the real CLI" "lake" #["exe", "naru", "compile", "--out", callGenDir.toString, callSource, callInputSource]
+      let _ ← step "C57: generate the Model of the call specimen with the real CLI" "lake" (#["exe", "naru", "compile", "--out", callGenDir.toString] ++ callSources.toArray)
       let _ ← checkOmission "C56: input-only module with arbitrary interpretations" callGenDir cchecked.core
       let callModelFile := callGenDir / "Model" / "Sem" / "Call.lean"
       let callModelText ← if ← callModelFile.pathExists then IO.FS.readFile callModelFile else pure ""
@@ -1934,6 +1949,9 @@ def checks : M Unit := do
       else
         ok s!"C57: the generated Model {callModelFile} exists ({(callModelText.splitOn "\n").length} lines)"
         let lpCall := s!"{callGenDir}:{outDir}:{leanPath}"
+        let calleeModelFile := callGenDir / "Model" / "Sem" / "Callees.lean"
+        let _ ← step "C55: compile the actual cross-module runtime callees as `Model.Sem.Callees`" "lean"
+          #[s!"--root={callGenDir}", "-o", (callGenDir / "Model" / "Sem" / "Callees.olean").toString, calleeModelFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let _ ← step "C57: compile the generated Model as the Lean module `Model.Sem.Call`" "lean"
           #[s!"--root={callGenDir}", "-o", (callGenDir / "Model" / "Sem" / "Call.olean").toString, callModelFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let inputsTable := inputsOf cprog
@@ -1970,6 +1988,9 @@ def checks : M Unit := do
           ok s!"C55 / C56 / C57: the connection evidence of {fns.length} generated fn declarations with calls and inputs ({expectedCall.length} theorems: per-fn `conn_` / `evid_` / `cval_`, the group's `cevid_call` / `cgen_call`; {inputs.length} input representations `irepr_*` / `ireprs_call` for any signature-respecting interpretation) is audited with 0 forbidden dependencies"
         else fail s!"C55 / C56 / C57: connection evidence (calls): exit {mc.exitCode}, not audited: {missingCall} ({fns.length} of {fnCount} fn)\n{tail mc.stdout 1500}\n{tail mc.stderr 1500}"
         -- C55(spec): 現在の実生成 Statements と現在の引用 Core の読みを任意の input / 仮引数で接続する。
+        let calleeStmtFile := callGenDir / "Statements" / "Sem" / "Callees.lean"
+        let _ ← step "C55: compile the actual cross-module spec callee as `Statements.Sem.Callees`" "lean"
+          #[s!"--root={callGenDir}", "-o", (callGenDir / "Statements" / "Sem" / "Callees.olean").toString, calleeStmtFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let callStmtFile := callGenDir / "Statements" / "Sem" / "Call.lean"
         let _ ← step "C55: compile the generated Statements as the Lean module `Statements.Sem.Call`" "lean"
           #[s!"--root={callGenDir}", "-o", (callGenDir / "Statements" / "Sem" / "Call.olean").toString, callStmtFile.toString] (env := #[("LEAN_PATH", some lpCall)])

@@ -1,0 +1,8 @@
+// C55: 別モジュールのruntime/spec呼出し先。任意引数の実生成接続を呼出し側へ合成する。
+module Sem.Callees
+
+fn base(x: Nat) -> Nat { x + 1 }
+fn zero() -> Nat { 0 }
+fn addTo(x: Nat, y: Nat) -> Nat { x + y * 2 }
+
+predicate posBase(x: Nat) { base(x) > 0 }

@@ -2,16 +2,14 @@
 // 位置引数・名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・spec から runtime / spec の呼出しについて 1 宣言ずつ使う。
 // `lake exe naru_test semantics` がこのファイルを実際の compiler 経路でコンパイルし、宣言群の Core(依存順)と構文解析の出力(Surface AST)を
 // Lean の項として引用して、`semantics/NaruSem/Call.lean` / `SurfaceCall.lean` の宣言群の適格性(`wtProg`)を Lean で検査する。
-// inputの宣言元は別モジュールSem.Inputs。fn/specの呼出し先はこのモジュールで先に宣言する。
+// input元はSem.Inputs、基礎のfn/spec呼出し先はSem.Callees。別モジュールの接続証拠も合成する。
 module Sem.Call
 
 import Sem.Inputs
+import Sem.Callees
 
 // runtime(Model)
-fn base(x: Nat) -> Nat { x + 1 }
-fn zero() -> Nat { 0 }
-fn addTo(x: Nat, y: Nat) -> Nat { x + y * 2 }
-fn callBase(x: Nat) -> Nat { base(x) * 2 }
+fn callBase(x: Nat) -> Nat { Sem.Callees.base(x) * 2 }
 fn callNamed(a: Nat, b: Nat) -> Nat { addTo(y = a, x = b) }
 fn callMixed(a: Nat, b: Nat) -> Nat { addTo(a, y = b) }
 fn ufcs(a: Nat, b: Nat) -> Nat { a.addTo(b) }
@@ -35,8 +33,7 @@ fn inputPair(x: Nat) -> Nat { bias(x) + otherBias(seed()) * 2 }
 fn sharedInputs(x: Nat) -> Nat { inputPair(x) + useInputArg(x) }
 
 // spec(Statements)
-predicate posBase(x: Nat) { base(x) > 0 }
-predicate specCallSpec(x: Nat) { posBase(x) && x < 10 }
+predicate specCallSpec(x: Nat) { Sem.Callees.posBase(x) && x < 10 }
 predicate specInput(x: Nat) { useInput(x) >= x && seed() >= 0 }
 predicate specNamed(a: Nat, b: Nat) { addTo(y = a, x = b) == callNamed(a, b) }
 predicate specUfcs(a: Nat, b: Nat) { a.addTo(b) == ufcs(a, b) }
