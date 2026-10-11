@@ -15,5 +15,5 @@
 - enum / Option / Bool / tuple の match の網羅性検査(Lean に任せている)
 - Bool の値が要る位置に置いた Prop(量化・spec 宣言の呼出し)の診断(いまは Lean が拒否する)
 - `Set` / `Table` の不変条件の型への取り込み([architecture.md](architecture.md)「Statements backend」の既知の制限。コンパイラ意味論保存を Set / Table へ広げるときの方針は同「後続拡張の設計判断」)
-- コンパイラ意味論保存の関数呼出しと input の段階の残り(C55〜C58): 呼出しを含む Surface AST → Core の変換と値 / 命題の対応、実生成 Lean(fn / spec 宣言の Lean の定義と input の引数 `name'`)への接続と呼出し先の証拠の合成、型が合う誤変換の負の検体。独立意味論・適格性・意味が定まること(Core と Surface AST)・宣言群の引用(C54)は [architecture.md](architecture.md)「関数・input の保存対象の意味論」
+- コンパイラ意味論保存の関数呼出しと input の段階の残り(C55〜C58): spec(Statements)の呼出しを含む読みと双方向の同値、呼出し・名前付き引数・UFCS を含む Surface AST → Core の変換と値 / 命題の対応、実生成 Statements への接続と呼出し先の証拠の合成、spec 側の型が合う誤変換の負の検体。独立意味論・適格性・意味が定まること(Core と Surface AST)・宣言群の引用(C54)と、runtime の Core → 実生成 Model の保存(読み `Call.denoteN`、一般定理 `Call.denote_sound`、宣言群の意味と実生成定数の一致 `Call.interp_agree`、実際の宣言群の接続と負の検体。C55〜C57 の runtime 側)は [architecture.md](architecture.md)「関数・input の保存対象の意味論」
 - コンパイラ意味論保存のその先の段階(再帰とコレクション、状態機械の一ステップ …。[architecture.md](architecture.md)「後続拡張の設計判断」、IDEAL.md「延期」)

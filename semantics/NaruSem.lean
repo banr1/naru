@@ -18,6 +18,7 @@ import NaruSem.LowerSpec
 import NaruSem.LowerSpecExamples
 import NaruSem.Call
 import NaruSem.CallTotality
+import NaruSem.CallDenote
 import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
@@ -25,7 +26,7 @@ import NaruSem.CallQuote
 import NaruSem.Audit
 
 /-!
-# `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜C52)
+# `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜C53、C54〜C59)
 
 `lake build NaruSem` が、意味論・適格性の定義、一般定理、検体、公理監査をまとめて Lean kernel に検査させる(C45 の検査入口。
 走らせ方は `docs/testing.md`「コンパイラ意味論保存」、構成と定理の一覧は `docs/architecture.md`「コンパイラ意味論保存」)。
@@ -85,6 +86,13 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   と一意性 `Surf.Call.Eval_unique`、spec の意味の存在 `Surf.Call.Sem_exists` と一意性 `Surf.Call.Sem_unique`(`Surf.Call.Sem_not_nat`、評価の単調性
   `Surf.Call.eval_mono`)、名前付き引数の並べ替えの可換性 `Surf.Call.arrange_map`、宣言群の `Surf.Call.interp_respects` / `interp_defined` /
   `fn_total` / `spec_defined` / `spec_meaning`。
+- `NaruSem/CallDenote.lean` — 関数・input を含む Model の保存と実生成宣言への接続(C55 / C56 / C57、runtime): 生成 Model の読み `Call.denoteN` / `denoteB`
+  (+ 実引数の列 `denoteArgs`、腕の列 `denoteArmsN` / `denoteArmsB`。呼出しは署名の仮引数の型で実引数を読み関数環境の関数に渡す)、一般定理
+  `Call.denote_sound`(独立意味論の結果 = 実生成定数の環境での読み。評価の環境と読みの環境は署名の鍵で一致 `FEnv.Agree` すればよい)/ `preserve_nat` /
+  `preserve_bool` / `denoteArms_sound` / `check_sound_nat` / `check_sound_bool`、実生成定数を値の列の関数に包む `Call.Fn` / `wrap`(`wrap_respects`)と
+  実生成宣言の表 `Call.Shape` / `Gen`(`FEnv.ofGens` / `SigEnv.ofShapes`、`ofGens_respects`)、宣言群の意味と実生成定数の一致 `Call.interp_agree`
+  (同じ input 解釈 `SameInputs` と各 fn の接続の証拠 `Evidence` / `FnConn` から、宣言群の意味 `interp` は実生成定数の環境と署名の鍵で一致: 呼出し先の証拠の
+  呼出し側への合成)と系 `Call.fn_value`、署名の包含 `SubV_of_cover`、接続検査の形 `Curried` と `fnConn_of_curried`。
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
@@ -262,3 +270,16 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.Call.wtProgFrom_cons NaruSem.Surf.Call.wtProgFrom_fresh NaruSem.Surf.Call.wtProgFrom_sig NaruSem.Surf.Call.wtProg_sig
   NaruSem.Surf.Call.wtDecl_sig NaruSem.Surf.Call.sigsOf_append_self NaruSem.Surf.Call.sigsOf_append_ne NaruSem.Surf.Call.sigsOf_none_of_append
   NaruSem.Surf.Call.Δ_append_self NaruSem.Surf.Call.Δ_append_ne NaruSem.Surf.Call.init_respects NaruSem.Surf.Call.init_defined
+
+-- C55 / C56 / C57(runtime): 関数・input を含む Model の保存 — 生成 Lean の読み(呼出しを含む)と一般定理 `Call.denote_sound`(評価の環境と読みの環境は署名の鍵で
+-- 一致すればよい: `FEnv.Agree`)、腕の列の保存、接続検査の健全性、実生成定数を包む `wrap` が署名を守ること、実生成宣言の表から作った環境が表の署名を守ること、
+-- 宣言群の意味と実生成定数の一致 `Call.interp_agree`(呼出し先の証拠の呼出し側への合成)と系 `Call.fn_value`、署名の包含、接続検査の形から接続の証拠へ
+#audit_axioms NaruSem.Call.denote_sound NaruSem.Call.denote_sound_all NaruSem.Call.denote_sound_self NaruSem.Call.preserve_nat NaruSem.Call.preserve_bool
+  NaruSem.Call.denoteArms_sound NaruSem.Call.check_sound_nat NaruSem.Call.check_sound_bool
+  NaruSem.Call.denoteArmsV_hit NaruSem.Call.denoteArmsV_miss NaruSem.Call.denoteArmsV_guard_true NaruSem.Call.denoteArmsV_guard_false
+  NaruSem.Call.FEnv.Agree.refl NaruSem.Call.FEnv.Agree.respects NaruSem.Call.FEnv.Respects.mono NaruSem.Call.SigEnv.SubV.refl
+  NaruSem.Call.wrap_respects NaruSem.Call.wrap_nil NaruSem.Call.wrap_nat NaruSem.Call.wrap_bool NaruSem.Call.Val.of_ty NaruSem.Call.Val.of_denoteT
+  NaruSem.Call.ofGens_respects NaruSem.Call.Shape.sig_value? NaruSem.Call.find?_map_shape
+  NaruSem.Call.interp_agree NaruSem.Call.interpFrom_agree NaruSem.Call.fn_value NaruSem.Call.SubV_of_cover NaruSem.Call.SubV_of_wtProg NaruSem.Call.wtProg_keys
+  NaruSem.Call.fnConn_of_curried NaruSem.Call.curried_wrap NaruSem.Call.Interp.step_Φ_fn NaruSem.Call.Interp.step_Φ_input NaruSem.Call.FEnv.ext_self
+  NaruSem.Call.denoteArgs_nil NaruSem.Call.denoteArgs_cons NaruSem.Call.denoteArmsN_cons NaruSem.Call.denoteArmsB_cons

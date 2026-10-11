@@ -69,6 +69,13 @@ import NaruSem.CallQuote
    検査する。実際の Core / AST から作った負の検体(依存順の反転、違う呼出し先、runtime から spec 宣言の呼出し、循環、重複、引数の数と型、未解決の名前、名前付き引数の
    名前・順序・二重指定の誤り)は `wtProg` が `none` / `false` になる。input の解釈を与えた宣言群の意味(`NaruSem.Call.interp`)の fn の値と、署名に合わない解釈では
    呼出しが行き詰まる(`none`)ことも kernel が計算する。
+11. C55 / C56 / C57 / C58(実生成 Model への接続と宣言群の意味の合成、runtime): 同じ検体を実際の CLI で `.lake/naru/test/semantics/gencall/` に生成し、生成 Model
+   `Model/Sem/Call.lean`(fn は input の引数 `name'` を名前順に先頭に取る)をモジュール `Model.Sem.Call` にして、検査プログラム `CallModelCheck.lean` が実生成宣言の表
+   (`shapes_call` / `gens_call <inputs>`)から作った署名 `Δgen_call` と関数環境 `Φgen_call <inputs>` が表の署名を守ること(`Φgen_call_respects`)、宣言群の署名が表に
+   含まれること(`cover_call`、`decide`)、各 fn の接続 `conn_<f>`(実生成宣言 = 読み `NaruSem.Call.denoteN` / `denoteB`。`rfl` / `cases` の後に `rfl`)と接続の証拠
+   `evid_<f>`、宣言群全体の証拠 `cevid_call` と宣言群の意味と実生成定数の一致 `cgen_call`(`NaruSem.Call.interp_agree`: 任意の input 解釈で、`I` と `Φgen_call` が
+   input の鍵で同じなら `interp I cprog_call` の fn / input は `Φgen_call` と署名の鍵で一致)、各 fn の値 `cval_<f>`(`fn_value`)を kernel に検査させ、公理監査に載せる。
+   負の検体 `CallModelWrong.lean`(同じ署名の別の呼出し先への置換、名前付き実引数の取り違え、UFCS の受け手の誤対応、input の誤配線)は型検査を通るが接続検査だけが失敗する。
 -/
 
 namespace NaruTest.Semantics
@@ -112,7 +119,13 @@ def requiredTheorems : List String :=
     "NaruSem.Surf.Call.eval_total", "NaruSem.Surf.Call.Eval_unique", "NaruSem.Surf.Call.evalArgs_total", "NaruSem.Surf.Call.Sem_exists",
     "NaruSem.Surf.Call.Sem_unique", "NaruSem.Surf.Call.eval_mono", "NaruSem.Surf.Call.Sem_not_nat", "NaruSem.Surf.Call.arrange_map",
     "NaruSem.Surf.Call.interp_respects", "NaruSem.Surf.Call.interp_defined", "NaruSem.Surf.Call.fn_total", "NaruSem.Surf.Call.spec_defined",
-    "NaruSem.Surf.Call.spec_meaning" ]
+    "NaruSem.Surf.Call.spec_meaning",
+    -- C55 / C56 / C57(runtime): 関数・input を含む Model の保存(独立意味論の結果 = 実生成定数の環境での読み。評価の環境と読みの環境は署名の鍵で一致すれば
+    -- よい)、腕の列の保存、接続検査の健全性、実生成定数を包む `wrap` が署名を守ること、実生成宣言の表から作った環境が表の署名を守ること、宣言群の意味と
+    -- 実生成定数の一致(呼出し先の証拠の呼出し側への合成)と fn の値の系、署名の包含、接続検査の形から接続の証拠へ
+    "NaruSem.Call.denote_sound", "NaruSem.Call.denote_sound_self", "NaruSem.Call.preserve_nat", "NaruSem.Call.preserve_bool", "NaruSem.Call.denoteArms_sound",
+    "NaruSem.Call.check_sound_nat", "NaruSem.Call.check_sound_bool", "NaruSem.Call.wrap_respects", "NaruSem.Call.ofGens_respects",
+    "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried" ]
 
 /-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 16、spec 宣言 9。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
@@ -593,11 +606,11 @@ def specMistranslations : List Mistranslation :=
 
 /-- 負の検体のプログラムと、接続検査が失敗しなければならない行(1 始まり)。誤出力(型検査は通る)の宣言の後に、正しい出力の対照 `conn_<f>_ok` と
 誤出力への接続 `conn_wrong_<f>` を置く(`connOf 定理名 Lean 名 検体の宣言名` が接続の定理 1 行を返す。宣言が無ければ `none`)。 -/
-def wrongProgramWith (what importMod : String) (wrongs : List (Mistranslation × String))
+def wrongProgramWith (what : String) (imports : List String) (wrongs : List (Mistranslation × String))
     (connOf : String → String → String → Option String) : String × List Nat := Id.run do
   let mut lines : List String :=
-    [ s!"-- naru_test semantics (C46): generated from NaruTest/Semantics.lean. Isolated mistranslations of the generated {what} (they type-check) must fail the connection check.",
-      "import Scope", s!"import {importMod}", "" ]
+    [ s!"-- naru_test semantics (C46): generated from NaruTest/Semantics.lean. Isolated mistranslations of the generated {what} (they type-check) must fail the connection check." ] ++
+    imports.map (s!"import {·}") ++ [""]
   for (m, text) in wrongs do
     lines := lines ++ [s!"-- {m.note}"] ++ text.splitOn "\n" ++ [""]
   lines := lines ++ ["-- controls: the correct generated declarations connect"]
@@ -614,7 +627,7 @@ def wrongProgramWith (what importMod : String) (wrongs : List (Mistranslation ×
 /-- 負の検体 `ModelWrong.lean`(Model)。Lean 名が空なら正しい実生成宣言(対照)。 -/
 def wrongProgram (decls : List (String × List Naru.Core.Param × NaruSem.Ty × Naru.Core.Expr))
     (wrongs : List (Mistranslation × String)) : String × List Nat :=
-  wrongProgramWith "Model" "Model.Sem.Core" wrongs fun thm lean key =>
+  wrongProgramWith "Model" ["Scope", "Model.Sem.Core"] wrongs fun thm lean key =>
     (decls.find? fun (k, _, _, _) => k == key).map fun (key, params, t, body) =>
       let name := if lean.isEmpty then Naru.Backend.Model.leanName key else lean
       connStmt thm name params t s!"core_{shortName key}" (proofOf params body)
@@ -622,7 +635,7 @@ def wrongProgram (decls : List (String × List Naru.Core.Param × NaruSem.Ty × 
 /-- 負の検体 `StatementsWrong.lean`(Statements)。 -/
 def specWrongProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) (wrongs : List (Mistranslation × String)) :
     String × List Nat :=
-  wrongProgramWith "Statements" "Statements.Sem.Core" wrongs fun thm lean key =>
+  wrongProgramWith "Statements" ["Scope", "Statements.Sem.Core"] wrongs fun thm lean key =>
     (decls.find? fun (k, _, _, _) => k == key).map fun (key, params, body, _) =>
       let name := if lean.isEmpty then Naru.Backend.Statements.stmtName key else lean
       specConnStmt thm name params body s!"core_{shortName key}"
@@ -667,7 +680,7 @@ def coreMistranslations : List CoreMistranslation :=
 /-- 負の検体 `SurfaceWrong.lean`(AST → Core): 誤った Core の定義と適格性(`decide`)の後に、対照 `conn_<f>_ok` と誤った Core への対応 `conn_wrong_<f>`(`rfl`)。 -/
 def surfaceWrongProgram (decls : List (String × List Naru.Core.Param × NaruSem.Ty × Naru.Core.Expr)) (wrongs : List (Mistranslation × String)) :
     String × List Nat :=
-  wrongProgramWith "Core" "SurfaceScope" wrongs fun thm lean key =>
+  wrongProgramWith "Core" ["Scope", "SurfaceScope"] wrongs fun thm lean key =>
     (decls.find? fun (k, _, _, _) => k == key).map fun (key, _, _, _) =>
       let n := shortName key
       let target := if lean.isEmpty then s!"core_{n}" else lean
@@ -765,7 +778,7 @@ def senvTerm (env : List (String × NaruSem.Val)) : String :=
 `conn_wrong_<f>`(`rfl`)。 -/
 def surfaceSpecWrongProgram (decls : List (String × List Naru.Core.Param × Naru.Core.Expr × Bool)) (wrongs : List (Mistranslation × String)) :
     String × List Nat :=
-  wrongProgramWith "spec Core" "SurfaceScope" wrongs fun thm lean key =>
+  wrongProgramWith "spec Core" ["Scope", "SurfaceScope"] wrongs fun thm lean key =>
     (decls.find? fun (k, _, _, _) => k == key).map fun (key, _, _, _) =>
       let n := shortName key
       let target := if lean.isEmpty then s!"core_{n}" else lean
@@ -919,12 +932,20 @@ def coreWrongProgs (prog : List NaruSem.Call.Decl) : List (String × String × L
     ("argtype", "`callBase` passing a Bool to `base` (whose parameter is Nat)",
       mapDecl "Sem.Call.callBase" (fun _ => .binop "*" (.call "Sem.Call.base" [.lit (.bool true) .bool]) (.lit (.nat 2) .nat) .nat) prog) ]
 
-/-- Core の宣言群の項。 -/
-def coreProgTerm (prog : List NaruSem.Call.Decl) : String :=
+/-- Core の宣言群の項。本体は引用した Core をその場に書く(`named = false`。負の検体)か、`ccore_<f>` の名前で参照する(`named = true`。実際の宣言群:
+`CallModelCheck.lean` の接続の定理が同じ `ccore_<f>` を指す)。 -/
+def coreProgTerm (prog : List NaruSem.Call.Decl) (named : Bool := false) : String :=
   "[ " ++ ",\n    ".intercalate (prog.map fun d =>
     match d with
-    | .fn _ _ _ b | .spec _ _ b => NaruSem.Call.Quote.declWith d (NaruSem.Quote.expr b)
+    | .fn _ _ _ b | .spec _ _ b => NaruSem.Call.Quote.declWith d (if named then s!"ccore_{shortName d.key}" else NaruSem.Quote.expr b)
     | .input .. => NaruSem.Call.Quote.declWith d "") ++ " ]"
+
+/-- 実際の宣言群の各 fn / spec 宣言の本体の Core の引用 `ccore_<f>`(`CallScope.lean`)。 -/
+def coreBodyDefs (prog : List NaruSem.Call.Decl) : String :=
+  "".intercalate (prog.filterMap fun d =>
+    match d with
+    | .fn k _ _ b | .spec k _ b => some s!"-- {k}\ndef ccore_{shortName k} : Naru.Core.Expr :=\n  {NaruSem.Quote.expr b}\n"
+    | .input .. => none)
 
 def valTerm' : NaruSem.Val → String
   | .nat n => s!"(NaruSem.Val.nat {n})"
@@ -955,12 +976,12 @@ def callValue (I : NaruSem.Call.FEnv) (prog : List NaruSem.Call.Decl) (k : Strin
 /-- 期待する値(fn, 実引数, 値): `twoStep(1) = callBase(useInput(1)) = base(1 + 41) * 2 = 86`、`useInputArg(3) = bias(3) + bias(seed()) = 6 + 82`、
 `callNamed(1, 2) = addTo(y = 1, x = 2) = 2 + 1 * 2`、`callMixed(1, 2) = addTo(1, y = 2) = 1 + 4`、`ufcsNamed(2, 1) = addTo(2, y = 1) = 4`、
 `boolCall(true) = flag(true) && !flag(false) = false`、`boolCall(false) = flag(false) && !flag(true) = true`、`zeroCall() = 0`、`callInLet(3) = 5`、
-`callInMatch(0) = zero() = 0`(腕 `1`)、`callInMatch(5) = 6`(ガード `callBase(6) > 4` の腕)。 -/
+`callInMatch(1) = zero() = 0`(腕 `1`)、`callInMatch(5) = base(5) = 6`(ガード `callBase(5) > 4` の腕)、`callInMatch(0) = callBase(0) = 2`(ガード不成立の後の `_` の腕)。 -/
 def expectedCallValues : List (String × List NaruSem.Val × NaruSem.Val) :=
   [ ("Sem.Call.twoStep", [.nat 1], .nat 86), ("Sem.Call.useInputArg", [.nat 3], .nat 88), ("Sem.Call.callNamed", [.nat 1, .nat 2], .nat 4),
     ("Sem.Call.callMixed", [.nat 1, .nat 2], .nat 5), ("Sem.Call.ufcsNamed", [.nat 2, .nat 1], .nat 4), ("Sem.Call.boolCall", [.bool true], .bool false),
     ("Sem.Call.boolCall", [.bool false], .bool true), ("Sem.Call.zeroCall", [], .nat 0), ("Sem.Call.callInLet", [.nat 3], .nat 5),
-    ("Sem.Call.callInMatch", [.nat 0], .nat 0), ("Sem.Call.callInMatch", [.nat 5], .nat 6) ]
+    ("Sem.Call.callInMatch", [.nat 1], .nat 0), ("Sem.Call.callInMatch", [.nat 5], .nat 6), ("Sem.Call.callInMatch", [.nat 0], .nat 2) ]
 
 /-- 検査プログラム `CallScope.lean`(モジュール `CallScope`): 依存順の Core の宣言群 `cprog_call`、適格性(`decide`)、各宣言の署名(`decide`)、負の検体(`wtProg = none`、`decide`)、
 input の解釈の下の値(`decide`)と署名に合わない解釈の行き詰まり、引用の一致と網羅の照合(`run_cmd`)。 -/
@@ -978,7 +999,9 @@ def callScopeProgram (prog : List NaruSem.Call.Decl) (Δ : NaruSem.Call.SigEnv) 
     s!"theorem cval_{i} : ((NaruSem.Call.interp I_call cprog_call).Φ {k.quote}).bind (fun f => f {valsTerm args}) = some {valTerm' v} := by decide\n"
   s!"-- naru_test semantics (C54): generated from NaruTest/Semantics.lean. The Core declaration group of {callSource} as produced by the compiler, in dependency order.\n" ++
   "import NaruSem\n\n" ++
-  s!"def cprog_call : NaruSem.Call.Prog :=\n  {coreProgTerm prog}\n\n" ++
+  "-- the Core of each fn / spec declaration (quoted; `checkProg` below re-compiles the source and compares)\n" ++
+  coreBodyDefs prog ++
+  s!"\ndef cprog_call : NaruSem.Call.Prog :=\n  {coreProgTerm prog (named := true)}\n\n" ++
   "-- the declaration group is well-formed: dependency order, no duplicate keys, every body typed against the signatures of the earlier declarations (C54)\n" ++
   "theorem cwt_call : (NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call).isSome = true := by decide\n" ++
   "-- the signature of each declaration (identity, phase, parameter types, return type)\n" ++
@@ -1077,6 +1100,195 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
   "\n-- negative specimens made from the actual AST: not well-formed\n" ++
   "".intercalate negs ++
   s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call\n"
+
+/-! ### 実生成 Model への接続と宣言群の意味の合成(C55 / C56 / C57 / C58、runtime)
+
+検体 `tests/accept/sem_call.naru` を実際の CLI で生成した Model(`Model.Sem.Call`: fn は input の引数 `name'` を名前順に先頭に取る Lean の定義、ゼロ引数の fn は定数、
+呼出しは呼出し先の定数への適用)をそのまま Lean のモジュールにし、検査プログラム `CallModelCheck.lean`(モジュール `CallModelCheck`。`CallScope` を import)が:
+- 実生成宣言の表 `shapes_call` / `gens_call <inputs>`(`NaruSem.Call.Shape` / `Gen`: 鍵・input か・仮引数の型・戻り型・実生成の関数。input は解釈の Lean の値、
+  fn は生成定数に(推移的に)使う input の引数を適用したもの)から署名 `Δgen_call` と関数環境 `Φgen_call <inputs>` を作り、`Φgen_call_respects`(表の環境は表の署名を守る:
+  `ofGens_respects`)と `cover_call`(宣言群の各 fn / input の署名が表にある: `decide`)、
+- 各 fn の接続 `conn_<f> <inputs> : ∀ args, Model.Sem.Call.<f> <fn の input 引数> args = denoteN Δgen_call (Φgen_call <inputs>) (Env.ofList …) ccore_<f>`(kernel の定義的
+  等しさ。`proofOf`: リテラルパターンの `match` は scrutinee の `cases` の後に `rfl`)と、それを接続の証拠に写した `evid_<f>`(`fnConn_of_curried`)、
+- 宣言群全体の証拠 `cevid_call`(`Evidence`: 各 fn に `evid_<f>`)と、宣言群の意味と実生成定数の一致 `cgen_call`(`interp_agree`: 適格な宣言群・input の署名を守る任意の
+  解釈 `I`・`I` と `Φgen_call` が input の鍵で同じ(`SameInputs`)なら `(interp I cprog_call).Φ` は `Φgen_call` と署名の鍵で一致)、各 fn の値 `cval_<f>`(`fn_value`: 宣言群の
+  意味の fn は型の合う任意の実引数で実生成定数の値)
+を kernel に検査させ、公理監査に載せる。負の検体 `CallModelWrong.lean`(C58)は実生成文字列から作る誤出力(同じ署名の別の呼出し先、名前付き実引数の取り違え、
+UFCS の受け手の誤対応、input の誤配線)が型検査を通りつつ接続検査だけで失敗することを確かめる。 -/
+
+def callGenDir : System.FilePath := outDir / "gencall"
+
+/-- 実際の宣言群の fn 1 つ: 修飾名、Core の仮引数、戻り型、本体、推移的に使う input の鍵(名前順)、宣言群の中の位置。 -/
+structure CallFn where
+  key : String
+  params : List Naru.Core.Param
+  ret : NaruSem.Ty
+  body : Naru.Core.Expr
+  inputs : List String
+  index : Nat
+
+def tyLean : NaruSem.Ty → String
+  | .nat => "Nat"
+  | .bool => "Bool"
+
+/-- input の Lean の型(カリー化。backend の `inputTy` と同じ形): `Nat`、`(Nat → Nat)`、`(Bool → Bool)`。 -/
+def inputTyLean (ps : List NaruSem.Ty) (t : NaruSem.Ty) : String :=
+  if ps.isEmpty then tyLean t else "(" ++ " → ".intercalate (ps.map tyLean ++ [tyLean t]) ++ ")"
+
+/-- fn / spec 宣言が(推移的に)使う input の鍵(名前順。backend の `Env.inputs` と同じ規則: 直接呼ぶ input と、呼ぶ fn の input の和)。依存順の宣言群を前から畳み込む。 -/
+def inputsOf (prog : List NaruSem.Call.Decl) : List (String × List String) := Id.run do
+  let inputKeys := prog.filterMap fun d => match d with | .input k .. => some k | _ => none
+  let mut table : List (String × List String) := []
+  for d in prog do
+    match d with
+    | .input .. => pure ()
+    | _ =>
+      let calls := declCallKeys d
+      let direct := calls.filter inputKeys.contains
+      let via := calls.flatMap fun g => (table.lookup g).getD []
+      table := table ++ [(d.key, (direct ++ via).eraseDups.mergeSort (· ≤ ·))]
+  return table
+
+/-- 仮引数 → 値の項(`NaruSem.Val.nat «x»`)。 -/
+def valOfParam (p : Naru.Core.Param) : Option String :=
+  match p.ty with
+  | .nat => some s!"NaruSem.Val.nat «{p.name}»"
+  | .bool => some s!"NaruSem.Val.bool «{p.name}»"
+  | _ => none
+
+/-- `d ∈ cprog_call` の証明の項(`i` 番目の宣言)。 -/
+def memTerm : Nat → String
+  | 0 => "(List.mem_cons_self ..)"
+  | i + 1 => s!"(List.mem_cons_of_mem _ {memTerm i})"
+
+/-- input の束縛(定理の引数)と実引数: `(bias' : (Nat → Nat)) (flag' : (Bool → Bool)) (seed' : Nat)` / `bias' flag' seed'`(名前順)。 -/
+def inputBinders (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) : String × String :=
+  let sorted := inputs.mergeSort fun a b => a.1 ≤ b.1
+  (" ".intercalate (sorted.map fun (k, ps, t) => s!"({Naru.Backend.Model.inputBinder k} : {inputTyLean ps t})"),
+   " ".intercalate (sorted.map fun (k, _, _) => Naru.Backend.Model.inputBinder k))
+
+/-- 接続の定理 1 つ分(呼出しを含む宣言、1 行): input の束縛を定理の引数に取り、
+`<thm> <inputs> : ∀ args, <Lean 名> <fn の input 引数> args = denoteN Δgen_call (Φgen_call <inputs>) (Env.ofList …) <core> := <proof>`。 -/
+def callConnStmt (ib ia : String) (thm lean : String) (f : CallFn) (coreName proof : String) : String :=
+  let bs := f.params.filterMap binderOf
+  let binders := " ".intercalate (bs.map (·.1))
+  let env := "[" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
+  let den := match f.ret with | .nat => "NaruSem.Call.denoteN" | .bool => "NaruSem.Call.denoteB"
+  let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+  let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
+  let hdr := if ib.isEmpty then s!"theorem {thm} :" else s!"theorem {thm} {ib} :"
+  s!"{hdr} {quant s!"{call} = {den} Δgen_call (Φgen_call {ia}) (NaruSem.Env.ofList {env}) {coreName}"} := {proof}"
+
+/-- 1 つの fn の接続 `conn_<f>` と接続の証拠 `evid_<f>`。 -/
+def callConnOf (ib ia : String) (f : CallFn) : String :=
+  let n := shortName f.key
+  let lean := Naru.Backend.Model.leanName f.key
+  let applied := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder)
+  let appliedT := if f.inputs.isEmpty then lean else s!"({applied})"
+  let ps := NaruSem.Call.Quote.params (f.params.filterMap NaruSem.Call.Quote.paramOf?)
+  let hdr (name : String) := if ib.isEmpty then s!"theorem {name} :" else s!"theorem {name} {ib} :"
+  s!"-- {f.key}: the generated declaration `{lean}` (input arguments {f.inputs.map Naru.Backend.Model.inputBinder}) is definitionally the reading of its Core in the generated-constant environment (C55 / C57)\n" ++
+  callConnStmt ib ia s!"conn_{n}" lean f s!"ccore_{n}" (proofOf f.params f.body) ++ "\n" ++
+  s!"{hdr s!"evid_{n}"} NaruSem.Call.FnConn Δgen_call (Φgen_call {ia}) {f.key.quote} {ps} {tyTerm f.ret} ccore_{n} :=\n" ++
+  s!"  NaruSem.Call.fnConn_of_curried Δgen_call (Φgen_call {ia}) {f.key.quote} {ps} {tyTerm f.ret} ccore_{n} {appliedT} (conn_{n} {ia}) rfl\n\n"
+
+/-- 1 つの fn の値 `cval_<f>`: 宣言群の意味の fn は型の合う任意の実引数で実生成定数の値(`fn_value`。呼出し先の証拠は `cevid_call` で合成済み)。 -/
+def callValOf (ib ia : String) (f : CallFn) : String :=
+  let n := shortName f.key
+  let lean := Naru.Backend.Model.leanName f.key
+  let bs := f.params.filterMap binderOf
+  let vals := "[" ++ ", ".intercalate (f.params.filterMap valOfParam) ++ "]"
+  let binders := " ".intercalate (bs.map (·.1))
+  let args := " ".intercalate (bs.map (·.2.2))
+  let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+  let val := match f.ret with | .nat => "NaruSem.Val.nat" | .bool => "NaruSem.Val.bool"
+  let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
+  let lam (body : String) : String := if bs.isEmpty then body else s!"fun {args} => {body}"
+  let hdr := if ib.isEmpty then s!"theorem cval_{n}" else s!"theorem cval_{n} {ib}"
+  s!"-- {f.key}: under any input interpretation agreeing with the inputs, the meaning of the group gives `{lean}` on any well-typed arguments (C55)\n" ++
+  s!"{hdr} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
+  s!"    {quant s!"∃ f, (NaruSem.Call.interp I cprog_call).Φ {f.key.quote} = some f ∧ f {vals} = some ({val} ({call}))"} :=\n" ++
+  s!"  {lam s!"NaruSem.Call.fn_value hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) {memTerm f.index} rfl rfl rfl"}\n\n"
+
+/-- 検査プログラム `CallModelCheck.lean`。 -/
+def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) (prog : List NaruSem.Call.Decl) : String :=
+  let (ib, ia) := inputBinders inputs
+  let sortedInputs := inputs.mergeSort fun a b => a.1 ≤ b.1
+  let shapeOf (k : String) (input : Bool) (ps : List NaruSem.Ty) (t : NaruSem.Ty) : String :=
+    s!"⟨{k.quote}, {input}, {NaruSem.Call.Quote.list (ps.map tyTerm)}, {tyTerm t}⟩"
+  let fnTys (f : CallFn) : List NaruSem.Ty := f.params.filterMap fun p => (NaruSem.Call.Quote.paramOf? p).map (·.2)
+  let shapes := sortedInputs.map (fun (k, ps, t) => shapeOf k true ps t) ++ fns.map fun f => shapeOf f.key false (fnTys f) f.ret
+  let gens := sortedInputs.map (fun (k, ps, t) => s!"⟨{shapeOf k true ps t}, {Naru.Backend.Model.inputBinder k}⟩") ++ fns.map fun f =>
+    let applied := " ".intercalate ([Naru.Backend.Model.leanName f.key] ++ f.inputs.map Naru.Backend.Model.inputBinder)
+    s!"⟨{shapeOf f.key false (fnTys f) f.ret}, {applied}⟩"
+  let hdr (kw name : String) := if ib.isEmpty then s!"{kw} {name}" else s!"{kw} {name} {ib}"
+  let bullets := prog.map fun d => match d with
+    | .fn k .. => s!"  · exact evid_{shortName k} {ia}"
+    | _ => "  · trivial"
+  let rcasesPat := " | ".intercalate (prog.map fun _ => "rfl")
+  let names := ["Φgen_call_respects", "cover_call"] ++ fns.flatMap (fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}"]) ++
+    ["cevid_call", "cgen_call"] ++ fns.map (fun f => s!"cval_{shortName f.key}")
+  s!"-- naru_test semantics (C55 / C56 / C57 / C58): generated from NaruTest/Semantics.lean. Connection of the generated Model of {callSource} (calls and inputs) to the Core semantics and to the meaning of the declaration group.\n" ++
+  "import CallScope\nimport Model.Sem.Call\n\n" ++
+  "-- the general theorem quantifies over any signatures, well-formed expression, matching environment and function environments agreeing on the signatures (C55)\n" ++
+  "example : ∀ (Δ Δ' : NaruSem.Call.SigEnv) (Φ Φ' : NaruSem.Call.FEnv) (Γ : NaruSem.Ctx) (e : Naru.Core.Expr) (t : NaruSem.Ty) (ρ : NaruSem.Env),\n" ++
+  "    NaruSem.Call.SigEnv.SubV Δ Δ' → Φ'.Respects Δ' → NaruSem.Call.FEnv.Agree Φ Φ' Δ → NaruSem.Call.wtR Δ Γ e = some t → Γ = ρ.ty →\n" ++
+  "    NaruSem.Call.eval Φ ρ e = some (NaruSem.Call.denoteV Δ' Φ' ρ t e) :=\n" ++
+  "  fun _ _ _ _ _ _ _ _ hΔ hΦ' hA h hρ => NaruSem.Call.denote_sound hΔ hΦ' hA h _ hρ\n" ++
+  "-- the group theorem quantifies over any well-formed declaration group, any input interpretation respecting its signatures and any generated-constant\n" ++
+  "-- environment with the same inputs and per-fn evidence: the group's meaning agrees with the generated constants on every signature (C55 / C56)\n" ++
+  "example : ∀ (P : NaruSem.Call.Prog) (Δ Δ' : NaruSem.Call.SigEnv) (I Φ' : NaruSem.Call.FEnv),\n" ++
+  "    NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty P = some Δ → I.RespectsInputs P → NaruSem.Call.SigEnv.SubV Δ Δ' → Φ'.Respects Δ' →\n" ++
+  "    NaruSem.Call.SameInputs I Φ' P → NaruSem.Call.Evidence Δ' Φ' P → NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I P).Φ Φ' Δ :=\n" ++
+  "  fun _ _ _ _ _ hP hI hΔ hΦ' hin hev => NaruSem.Call.interp_agree hP hI hΔ hΦ' hin hev\n\n" ++
+  "-- the shapes (key, input?, parameter types, return type) of the fn / input declarations of the group\n" ++
+  s!"def shapes_call : List NaruSem.Call.Shape :=\n  [ {",\n    ".intercalate shapes} ]\n" ++
+  "-- the table of generated constants, parametrized by the inputs (name order, as the generated functions take them): an input is its interpretation as a Lean\n" ++
+  "-- value, a fn is the generated constant applied to the input arguments it (transitively) uses\n" ++
+  s!"{hdr "def" "gens_call"} : List NaruSem.Call.Gen :=\n  [ {",\n    ".intercalate gens} ]\n" ++
+  "def Δgen_call : NaruSem.Call.SigEnv := NaruSem.Call.SigEnv.ofShapes shapes_call\n" ++
+  s!"{hdr "def" "Φgen_call"} : NaruSem.Call.FEnv := NaruSem.Call.FEnv.ofGens (gens_call {ia})\n" ++
+  s!"{hdr "theorem" "gens_call_shape"} : (gens_call {ia}).map NaruSem.Call.Gen.shape = shapes_call := rfl\n" ++
+  "-- the generated-constant environment respects the signatures of the table, for any inputs (C56)\n" ++
+  s!"{hdr "theorem" "Φgen_call_respects"} : (Φgen_call {ia}).Respects Δgen_call := NaruSem.Call.ofGens_respects (gens_call {ia})\n" ++
+  "-- every fn / input of the group has its signature in the table, so the group's signatures are included in the table's (`SubV_of_cover`)\n" ++
+  "theorem cover_call : ∀ d ∈ cprog_call, d.sig.value?.isSome = true → Δgen_call d.key = some d.sig := by decide\n\n" ++
+  "".intercalate (fns.map (callConnOf ib ia)) ++
+  "-- every fn of the group has its connection evidence (C57)\n" ++
+  s!"{hdr "theorem" "cevid_call"} : NaruSem.Call.Evidence Δgen_call (Φgen_call {ia}) cprog_call := by\n" ++
+  "  intro d hd\n  simp only [cprog_call, List.mem_cons, List.mem_nil_iff, or_false] at hd\n" ++
+  s!"  rcases hd with {rcasesPat}\n" ++ "\n".intercalate bullets ++ "\n\n" ++
+  "-- the meaning of the actual group under any input interpretation agreeing with the inputs agrees with the generated constants on every signature (C55 / C56 / C57)\n" ++
+  s!"{hdr "theorem" "cgen_call"} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
+  s!"    NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I cprog_call).Φ (Φgen_call {ia}) Δ :=\n" ++
+  s!"  NaruSem.Call.interp_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia})\n\n" ++
+  "".intercalate (fns.map (callValOf ib ia)) ++
+  s!"#audit_axioms {" ".intercalate names}\n"
+
+/-- 負の検体(C58): 実生成 Model(呼出しと input)の文字列から作る、型は合うが意味の異なる誤出力。同じ署名の別の呼出し先への置換、同型の名前付き実引数の
+取り違え、UFCS の受け手の誤対応、複数段の input の誤配線。 -/
+def callMistranslations : List Mistranslation :=
+  [ { key := "Sem.Call.twoStep", wrong := "Wrong.twoStep", good := "Model.Sem.Call.callBase (", bad := "Model.Sem.Call.base (",
+      transform := fun s => s.replace "Model.Sem.Call.callBase (" "Model.Sem.Call.base (",
+      note := "`twoStep` calling `base` instead of `callBase` (a different callee with the same signature Nat → Nat)" },
+    { key := "Sem.Call.callNamed", wrong := "Wrong.callNamed", good := "Model.Sem.Call.addTo «b» «a»", bad := "Model.Sem.Call.addTo «a» «b»",
+      transform := fun s => s.replace "Model.Sem.Call.addTo «b» «a»" "Model.Sem.Call.addTo «a» «b»",
+      note := "the named arguments of `callNamed` (`addTo(y = a, x = b)`) passed in parameter order instead of by name (same-typed named arguments swapped)" },
+    { key := "Sem.Call.ufcs", wrong := "Wrong.ufcs", good := "Model.Sem.Call.addTo «a» «b»", bad := "Model.Sem.Call.addTo «b» «a»",
+      transform := fun s => s.replace "Model.Sem.Call.addTo «a» «b»" "Model.Sem.Call.addTo «b» «a»",
+      note := "the UFCS receiver of `ufcs` (`a.addTo(b)`) passed as the second argument instead of the first" },
+    { key := "Sem.Call.useInputArg", wrong := "Wrong.useInputArg", good := "(bias' (seed'))", bad := "(bias' «x») + (bias' «x»)",
+      transform := fun s => s.replace "(bias' (seed'))" "(bias' «x»)",
+      note := "the input `seed` mis-wired in `useInputArg` (`bias(seed())` reads the parameter `x` instead of the input argument `seed'`: a multi-stage input mis-wiring)" } ]
+
+/-- 負の検体 `CallModelWrong.lean`(Model、呼出し)。`CallModelCheck` を import して同じ `Δgen_call` / `Φgen_call` で接続する。 -/
+def callWrongProgram (ib ia : String) (fns : List CallFn) (wrongs : List (Mistranslation × String)) : String × List Nat :=
+  wrongProgramWith "Model (calls and inputs)" ["CallScope", "Model.Sem.Call", "CallModelCheck"] wrongs fun thm lean key =>
+    (fns.find? fun f => f.key == key).map fun f =>
+      let name := if lean.isEmpty then Naru.Backend.Model.leanName key else lean
+      callConnStmt ib ia thm name f s!"ccore_{shortName key}" (proofOf f.params f.body)
 
 def checks : M Unit := do
   let t0 ← IO.monoMsNow
@@ -1389,6 +1601,50 @@ def checks : M Unit := do
       if rs.exitCode == 0 && (contains rs.stdout agreeS || contains rs.stderr agreeS) then
         ok s!"C54 / C57: the {sprog.length} quoted Surface AST declarations embed to the declarations the parser produces for {callSource} and cover all its fn / input / spec declarations"
       else fail s!"C54 / C57: identity of the quoted Surface AST group: expected `{agreeS}` in the output of lean {surfaceCallScope}\n{tail rs.stdout 1500}\n{tail rs.stderr 1500}"
+      -- C55 / C56 / C57 / C58: 実生成 Model(呼出しと input)への接続と、宣言群の意味との合成
+      heading "C55 / C56 / C57 connection of the generated Model with calls and inputs to the meaning of the declaration group"
+      if ← callGenDir.pathExists then IO.FS.removeDirAll callGenDir
+      let _ ← step "C57: generate the Model of the call specimen with the real CLI" "lake" #["exe", "naru", "compile", "--out", callGenDir.toString, callSource]
+      let callModelFile := callGenDir / "Model" / "Sem" / "Call.lean"
+      let callModelText ← if ← callModelFile.pathExists then IO.FS.readFile callModelFile else pure ""
+      if callModelText.isEmpty then
+        fail s!"C57: the generated Model {callModelFile} is missing or empty"
+      else
+        ok s!"C57: the generated Model {callModelFile} exists ({(callModelText.splitOn "\n").length} lines)"
+        let lpCall := s!"{callGenDir}:{outDir}:{leanPath}"
+        let _ ← step "C57: compile the generated Model as the Lean module `Model.Sem.Call`" "lean"
+          #[s!"--root={callGenDir}", "-o", (callGenDir / "Model" / "Sem" / "Call.olean").toString, callModelFile.toString] (env := #[("LEAN_PATH", some lpCall)])
+        let inputsTable := inputsOf cprog
+        let mut fns : List CallFn := []
+        let mut idx := 0
+        for d in cprog do
+          match d with
+          | .fn k _ t b =>
+            match NaruSem.Quote.fnOf? k cchecked.core with
+            | some (cparams, _) =>
+              let ins := (inputsTable.lookup k).getD []
+              fns := fns ++ [{ key := k, params := cparams, ret := t, body := b, inputs := ins, index := idx }]
+              ok s!"C56: `{shortName k}` takes the input arguments {ins.map Naru.Backend.Model.inputBinder} (transitive inputs, name order); connection proof: `{proofOf cparams b}`"
+            | none => fail s!"C57: the Core of `{k}` was not found in the compiled unit"
+          | _ => pure ()
+          idx := idx + 1
+        let inputs := cprog.filterMap fun d => match d with | .input k ps t => some (k, ps.map (·.2), t) | _ => none
+        let callCheck := outDir / "CallModelCheck.lean"
+        IO.FS.writeFile callCheck (callModelProgram fns inputs cprog)
+        let mc ← step s!"C55 / C56 / C57: lean {callCheck} as module `CallModelCheck` (shape of the general theorems; the table of {inputs.length} inputs and {fns.length} generated fn declarations respects the signatures; connection `conn_*` of the {fns.length} generated declarations with calls and inputs; evidence `evid_*` composed into the meaning of the group `cevid_call` / `cgen_call`; values `cval_*`)"
+          "lean" #[s!"--root={outDir}", "-o", (outDir / "CallModelCheck.olean").toString, callCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
+        let callAudited := auditedNames mc.stdout
+        let expectedCall := ["Φgen_call_respects", "cover_call", "cevid_call", "cgen_call"] ++
+          fns.flatMap fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}", s!"cval_{shortName f.key}"]
+        let missingCall := expectedCall.filter fun n => !callAudited.contains n
+        let fnCount := (c54Decls.filter fun (_, k) => k == .fn).length
+        if mc.exitCode == 0 && missingCall.isEmpty && fns.length == fnCount && !(contains mc.stdout "forbidden") && !(contains mc.stderr "forbidden") then
+          ok s!"C55 / C56 / C57: the connection evidence of {fns.length} generated fn declarations with calls and inputs ({expectedCall.length} theorems: per-fn `conn_` / `evid_` / `cval_`, the group's `cevid_call` / `cgen_call`; any input interpretation agreeing with the inputs) is audited with 0 forbidden dependencies"
+        else fail s!"C55 / C56 / C57: connection evidence (calls): exit {mc.exitCode}, not audited: {missingCall} ({fns.length} of {fnCount} fn)\n{tail mc.stdout 1500}\n{tail mc.stderr 1500}"
+        -- C58: 隔離した誤出力(同じ署名の別の呼出し先・名前付き実引数の取り違え・UFCS の受け手の誤対応・input の誤配線)は型検査を通るが接続検査に失敗する
+        let (ib, ia) := inputBinders inputs
+        let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations
+        checkWrong "Model (calls and inputs)" (outDir / "CallModelWrong.lean") (callWrongProgram ib ia fns callWrongs) callWrongs lpCall
   heading "C45 the audit rejects forbidden dependencies"
   let negatives : List (String × String × String) :=
     [ ("sorry", "theorem bad : (1 : Nat) = 1 := sorry\n#audit_axioms bad\n", "sorryAx"),

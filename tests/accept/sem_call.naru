@@ -26,10 +26,10 @@ fn boolCall(b: Bool) -> Bool { flag(b) && !flag(!b) }
 fn zeroCall() -> Nat { zero() + zero() }
 fn callInLet(x: Nat) -> Nat { let y = base(x); let z = base(y); z }
 fn callInMatch(x: Nat) -> Nat {
-  match base(x) {
+  match x {
     1 => zero(),
-    n if callBase(n) > 4 => n,
-    _ => x,
+    n if callBase(n) > 4 => base(n),
+    _ => callBase(x),
   }
 }
 

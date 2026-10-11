@@ -140,8 +140,10 @@ Core IR の意味論(C39〜C47。下の各節)に加えて、構文解析の出�
 runtime の Surface AST → Core の変換と値の対応、spec の Surface AST → Core の変換と命題の双方向の同値、それぞれの実際の frontend と生成 Lean への接続
 (C49 / C50 / C51。「Surface AST → Core の対応」)がある。関数・input の保存対象(非再帰の fn / spec 宣言の呼出しと input。C54〜C59)は
 「関数・input の保存対象の意味論」の段階(C54: Core と Surface AST それぞれの独立した意味論・適格性と、適格な式・宣言群に意味が定まること、
-実際の宣言群の引用と適格性の検査)が揃っており、呼出しを含む AST → Core の保存と実生成 Lean への接続(C55〜C58)はまだ無い。
-保証の境界と未対応は「信頼する部分・方式・未対応」。
+実際の宣言群の引用と適格性の検査)と、runtime の Core → 実生成 Model の層(C55〜C57 の runtime 側: 呼出しを含む生成 Lean の読み、一般定理
+`Call.denote_sound`、宣言群の意味と実生成定数の一致 `Call.interp_agree`(呼出し先の証拠の呼出し側への合成)、実際の宣言群の実生成 Model への接続と
+負の検体)が揃っており、spec(Statements)の読みと双方向の同値、呼出しを含む Surface AST → Core の変換と対応、それらの実生成 Statements への接続
+(C55〜C58 の残り)はまだ無い。保証の境界と未対応は「信頼する部分・方式・未対応」。
 
 ### 対象(用語「今回の保存対象」)と範囲の判定(`NaruSem/Scope.lean`)
 
@@ -213,6 +215,13 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Surf.Call.interp_respects` / `Surf.Call.interp_defined` / `Surf.Call.fn_total` / `Surf.Call.spec_defined` | **Surface AST の宣言群の意味は署名を守る(C54)**: 適格な宣言群(`Surf.Call.wtProg P = true`: 依存順・鍵と単純名の重複なし・各本体がそれより前の宣言の表 `tableOf P seen` で適格)と input の署名を守る任意の解釈 `I`(`Surf.Call.RespectsInputs I P`)について、宣言群の意味 `Surf.Call.interp I P` の関数環境は宣言群全体の表 `tableOf P P` の署名を守り(各 fn / input は型の合う任意の実引数に型の合う値を返す: `fn_total`)、各 spec 宣言の意味は定義されている(`spec_defined`)。宣言群の帰納法(`Surf.Call.Interp.step_inv` / `interpFrom_inv`)で、表の署名は宣言を 1 つ足すごとにその宣言の鍵だけで伸びる(`Δ_append_self` / `Δ_append_ne`: 鍵の重複なしと各宣言の署名が対象であることから) | 宣言群の適格性 + input の解釈が署名を守る |
 | `Surf.Call.spec_meaning` | **spec 宣言の意味は本体の意味(C54、Surface)**: 適格な宣言群の spec 宣言の意味 `F` は、型の合う任意の実引数 `vs` について、実引数を束ねた環境での本体の(それより前の宣言の表 `T'` と意味 `m'` の下の)意味 `Q` と同値(`F vs ↔ Q`)。`Core` 側の `Call.spec_meaning` と同じ構成 | 同上 |
 | `Surf.Call.wtProgFrom_fresh` / `Surf.Call.wtProgFrom_sig` / `Surf.Call.wtProg_sig` / `Surf.Call.sigsOf_append_self` / `Surf.Call.sigsOf_append_ne` | 宣言群の適格性の補題(Surface): 残りの各宣言の鍵はそれまでの表に無く(重複しない)、各宣言の署名は宣言群全体の表にあり、宣言を 1 つ足した表の署名はその鍵だけで変わる | — |
+| `Call.denote_sound`(`Call.preserve_nat` / `Call.preserve_bool`、`Call.denote_sound_self`) | **関数・input を含む Model の保存(C55)**: `Call.wtR Δ Γ e = some t`、`Γ = ρ.ty`、読みの署名 `Δ'` が `Δ` の fn / input の署名を含み(`SigEnv.SubV Δ Δ'`)、読みの関数環境 `Φ'` が `Δ'` を守り(`Respects`)、評価の関数環境 `Φ` が `Φ'` と署名の鍵で一致する(`FEnv.Agree Φ Φ' Δ`: fn / input の鍵には両方に関数があり、型の合う実引数に同じ結果を返す)なら `Call.eval Φ ρ e = some (Call.denoteV Δ' Φ' ρ t e)` — 独立意味論の結果が、呼出しを含む生成 Lean の読み(下の「関数・input の保存対象の意味論」: 呼出しは署名の仮引数の型で実引数を読んだ値の列を `Φ'` の関数に渡す)の値に一致する。`Call.wtR.mutual_induct` で式・腕の列・腕・実引数の列を同時に示す(`Call.denote_sound_all`)。`Φ = Φ'` の形は系 `Call.denote_sound_self` | 適格性 + 署名の包含 + 読みの環境が署名を守る + 2 つの関数環境の一致。任意の式・任意の対応する環境 |
+| `Call.denoteArms_sound` / `Call.denoteArmsV_hit` / `Call.denoteArmsV_miss` / `Call.denoteArmsV_guard_true` / `Call.denoteArmsV_guard_false` | 腕の列の保存と腕の選択と束縛の形(呼出しを含む読みについて。`Denote.lean` の同名の定理と同じ内容) | 同上 |
+| `Call.check_sound_nat` / `Call.check_sound_bool` | **接続検査の健全性(呼出しを含む、C57)**: 仮引数の値の列 `xs` について、署名 `Δ` とその型の文脈で適格な式 `e` と、値 `v = Call.denoteN Δ' Φ' (Env.ofList xs) e`(各実生成宣言の接続検査 `conn_<f>` が確かめる等式)から、`Φ'` と署名の鍵で一致する任意の環境 `Φ` で `Call.eval Φ (Env.ofList xs) e = some (.nat v)` | 同上 + 接続検査の成功 |
+| `Call.wrap_respects` / `Call.ofGens_respects` | **実生成定数の環境は署名を守る(C56)**: 実生成の fn / input の Lean の関数(カリー化 `Call.Fn ps t`)を値の列の上の関数に包んだ `Call.wrap ps t g` は、型の合う任意の実引数に戻り型の値を返す(input の任意の全域関数の解釈もこの形)。実生成宣言の表 `Call.Gen`(形 `Call.Shape` = 鍵・input か・仮引数の型・戻り型 + 関数)から作った関数環境 `FEnv.ofGens gs` は表の署名 `SigEnv.ofShapes (gs.map Gen.shape)` を守る | — |
+| `Call.interp_agree`(`Call.interpFrom_agree`) | **宣言群の意味と実生成定数の一致(C55 / C56 / C57)**: 適格な宣言群 `P`(`Call.wtProg SigEnv.empty P = some Δ`)、input の署名を守る任意の解釈 `I`、署名 `Δ'`(`SigEnv.SubV Δ Δ'`)を守る実生成定数の環境 `Φ'` について、input の鍵で `I` と `Φ'` が同じ(`Call.SameInputs I Φ' P`: 同じ input 解釈)で、各 fn に接続の証拠(`Call.Evidence Δ' Φ' P`: 各 fn に `Call.FnConn` — 型の合う任意の実引数で `Φ'` の関数の値 = 仮引数に実引数を束ねた環境での本体の読み)があれば `FEnv.Agree (Call.interp I P).Φ Φ' Δ` — 宣言群の意味(呼出し先の本体を評価する閉包)は実生成定数の環境と署名の鍵で一致する。宣言群の帰納法で、各 fn の本体の評価を、それより前の宣言についての一致(帰納法の仮定)と `Call.denote_sound` で実生成定数の値に結ぶ = 呼出し先の証拠の呼出し側への合成 | 宣言群の適格性 + input の解釈が署名を守る + 同じ input 解釈 + 各 fn の接続の証拠 |
+| `Call.fn_value` | **fn の意味は実生成定数の値(系)**: 宣言群の各 fn `k` について、`Φ'` の関数 `f'` が型の合う実引数 `vs` に `v` を返すなら、`(Call.interp I P).Φ k = some f` で `f vs = some v` | 同上 |
+| `Call.SubV_of_cover` / `Call.fnConn_of_curried` | 検査プログラムの形との結び: 宣言群の各 fn / input の署名が表にあれば(`decide` で確かめる)`wtProg` の署名は表の署名に含まれる(`Call.wtProg_keys`: 署名の鍵は始めの文脈か宣言群の宣言のもの)。接続検査 `conn_<f>`(カリー化の形 `Call.Curried`: 仮引数ごとに量化し、実生成の関数に実引数を渡した値 = 実引数を束ねた環境での本体の読み)と、`Φ'` の鍵がその関数を包んだものであることから接続の証拠 `FnConn`(`Call.curried_wrap`) | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -406,7 +415,7 @@ runtime の変換 `Surf.lower` を値の文脈 `Γ.vals` で使う。
   `wtS` を通り、正しい Core の読みと意味の食い違う具体環境がある(`diff_*`: 読みの非同値 `¬ (denoteP ρ WrongCore.f ↔ denoteP ρ core_f)` を明示の命題と証明で
   kernel に検査させる。`Sem_denote` により読みは意味そのもの)が、正しい AST の変換との一致 `conn_wrong_*` だけが失敗する。
 
-### 関数・input の保存対象の意味論(`NaruSem/Call.lean`・`CallTotality.lean`・`CallExamples.lean`・`SurfaceCall.lean`・`SurfaceCallTotality.lean`・`CallQuote.lean`、C54)
+### 関数・input の保存対象の意味論(`NaruSem/Call.lean`・`CallTotality.lean`・`CallExamples.lean`・`SurfaceCall.lean`・`SurfaceCallTotality.lean`・`CallQuote.lean`、C54。`CallDenote.lean`、C55〜C57 の runtime)
 
 用語「関数・input の保存対象」(C39〜C53 の Nat / Bool の式・演算・束縛・ガード付き `match`・spec の量化を土台に、有限で非循環の宣言群に対する大域名で静的に識別できる
 非再帰の fn / spec 宣言の呼出しと input の呼出しを加えたもの)の独立した意味論と適格性。既存の `Scope.lean` / `Eval.lean` / `Sem.lean` / `Surface*.lean` の定義は
@@ -428,15 +437,23 @@ backend の出力・frontend の変換結果を意味と定義しない。
 | Surface の意味 | `Surf.Call.eval T Φ ρ e`(`ρ : SEnv`。`.call` / UFCS は実引数を評価し `callVal` が `arrange` で並べて `Φ k` に渡す)、`Surf.Call.Sem T Φ Ψ ρ e P`(`callVal` / `callSpec` / `ufcsVal` / `ufcsSpec`: 呼出し先の署名・解決・局所名による隠蔽・並べ替えを前提に持つ)。`Φ` / `Ψ` は Core と共有(鍵 → 値の列 → 値 / 命題) |
 | 宣言群(Surface) | `Surf.Call.Prog`(`Decl` の列、依存順)。`Surf.Call.wtProg P`: 前から順に鍵も単純名も未使用で、各宣言が `wtDecl (tableOf P seen)` で適格。`Surf.Call.interp I P`: `Call.interp` と同じ構成(本体はそれより前の宣言の表と環境で読む)。`Surf.Call.RespectsInputs` |
 | 意味が定まる(Surface) | 上の表の `Surf.Call.eval_total` / `Eval_unique` / `evalArgs_total` / `Sem_exists` / `Sem_unique`(前提は `Γ = ρ.ctx`・`Φ.Respects T.Δ`・`Ψ.Defined T.Δ`。`T.Δ` は表の署名から仮引数の名前を落とした Core 側の署名の文脈)、名前付き引数の並べ替えの可換性 `arrange_map` / `arrange_vals`、評価の単調性 `eval_mono` と `Sem_not_nat`、宣言群の `Surf.Call.interp_respects` / `interp_defined` / `fn_total` / `spec_defined` / `spec_meaning`(`SurfaceCallTotality.lean`) |
+| 生成 Model の読み(呼出しを含む。C55) | `Call.denoteN Δ Φ ρ e` / `Call.denoteB`(`CallDenote.lean`。`Denote.lean` の読みに `.call k args` を加えたもの: 署名 `Δ` の仮引数の型で実引数を読んだ値の列 `Call.denoteArgs` を関数環境 `Φ` の鍵 `k` の関数に渡し、Nat / Bool の結果を取り出す(無ければ既定値。一般定理は適格な式にだけ対応を主張する)。腕の列は `Call.denoteArmsN` / `denoteArmsB`)。実生成 Model の呼出し `Model.M.g <input の引数> args`(呼出し先の定数への適用)と input の参照 `name'` は、実生成定数の環境(下)の下でこの読みと定義的に等しい(接続検査) |
+| 実生成定数の環境(C56) | `Call.Fn ps t`(実生成の fn / input の Lean の型、カリー化: `Fn [Nat, Bool] Nat = Nat → Bool → Nat`)、`Call.wrap ps t g`(値の列の上の関数に包む: 型の合う実引数には結果の値、合わなければ `none`。`wrap_respects`)、実生成宣言の表 `Call.Shape`(鍵・input か・仮引数の型・戻り型)/ `Call.Gen`(形 + 関数。fn は生成定数に(推移的に)使う input の引数を名前順に適用したもの、input はその解釈の Lean の値 — 署名に従う任意の全域関数)、`SigEnv.ofShapes` / `FEnv.ofGens`(`ofGens_respects`: 表から作った環境は表の署名を守る) |
+| 宣言群の意味と実生成定数の一致(C55 / C56 / C57) | `Call.FEnv.Agree Φ Φ' Δ`(2 つの関数環境が署名の鍵で一致)、`Call.SigEnv.SubV`(署名の包含)、`Call.SameInputs I Φ' P`(同じ input 解釈: 宣言群の各 input の鍵で同じ)、`Call.FnConn` / `Call.DeclConn` / `Call.Evidence`(各 fn の接続の証拠)、`Call.Curried`(接続検査 `conn_<f>` の形)。上の表の `Call.denote_sound`(独立意味論の結果 = 読み。評価の環境は読みの環境と一致すればよい)/ `Call.interp_agree`(宣言群の意味 = 実生成定数の環境。呼出し先の証拠の呼出し側への合成)/ `Call.fn_value` / `Call.SubV_of_cover` / `Call.fnConn_of_curried` |
+| 実生成 Model への接続(C55 / C56 / C57 / C58) | `lake exe naru_test semantics` が検体を実際の CLI で生成し、生成 Model `Model.Sem.Call`(fn は input の引数 `name'` を名前順に先頭に取る Lean の定義、ゼロ引数の fn は定数、呼出しは呼出し先の定数への適用)をそのまま Lean のモジュールにして `CallModelCheck.lean` を kernel に検査させる: 表 `shapes_call` / `gens_call <inputs>` から作った `Δgen_call` / `Φgen_call <inputs>`(input の Lean の値 `bias'` / `flag'` / `seed'` で量化)が表の署名を守る(`Φgen_call_respects`)、宣言群の各 fn / input の署名が表にある(`cover_call`、`decide`)、各 fn の接続 `conn_<f> <inputs> : ∀ args, Model.Sem.Call.<f> <fn の input 引数> args = Call.denoteN Δgen_call (Φgen_call <inputs>) (Env.ofList …) ccore_<f>`(kernel の定義的等しさ `rfl`。リテラルパターンの `match` は scrutinee の仮引数の `cases` の後に `rfl`。`ccore_<f>` は `CallScope.lean` の実際の Core の引用で `checkProg` が再コンパイルして一致を照合)と接続の証拠 `evid_<f>`(`fnConn_of_curried`)、宣言群全体の証拠 `cevid_call`、宣言群の意味と実生成定数の一致 `cgen_call`(`interp_agree`: 任意の input 解釈 `I` が `Φgen_call` と input の鍵で同じなら `interp I cprog_call` の fn / input は `Φgen_call` と署名の鍵で一致)、各 fn の値 `cval_<f>`(`fn_value`: 宣言群の意味の fn は型の合う任意の実引数で実生成定数の値)。負の検体 `CallModelWrong.lean`(実生成文字列から作る: `twoStep` が同じ署名の `base` を `callBase` の代わりに呼ぶ、`callNamed` の名前付き実引数の取り違え、`ufcs` の UFCS の受け手の誤対応、`useInputArg` の input `seed` の誤配線)は型検査を通るが接続検査だけが失敗する(対照は成功)。検体の `match` の scrutinee は仮引数(呼出しの scrutinee のリテラル腕の接続は scrutinee の場合分けが要り、検査プログラムの `cases` は仮引数にだけ掛ける。一般定理は呼出しの scrutinee も扱う) |
 | 検体 | `NaruSem/CallExamples.lean`(Core。`decide` / 構成): 対象範囲は空でない(fn / input / spec 宣言の呼出し、値の位置の呼出し、命題の `let`)、不適格な Core(未解決・引数の数と型・phase・値の位置の spec 宣言・命題の実引数・関数の値としての参照)、宣言群(適格な 2 段の呼出しと input、自己再帰・相互再帰・依存順でない・重複・input の引数の不一致は `none`)、input の解釈による値(同じ宣言群を別の解釈で読めば別の値)、署名に合わない解釈は行き詰まり(`none`)で `RespectsInputs` を満たさない、`fn_total` / `spec_defined` の実例、`callVal` / `callSpec` の実例、行き詰まり。実際の compiler 経路の検体は `tests/accept/sem_call.naru`(下) |
 | 実際の宣言群の引用 | `NaruSem/CallQuote.lean`: `Call.Quote.declOf?`(Core の fn / input / spec 宣言 → `Call.Decl`)/ `declWith` / `checkProg`(同じソースを再びコンパイルし、引用した各宣言が実際の宣言(鍵・種別・仮引数の名前と型・戻り型・本体)と一致し、実際の fn / input / spec 宣言がすべて引用されている — 宣言群全体)、`Surf.Call.Quote.ofAst?` / `ofDeclAst?`(構文解析の宣言 → `Surf.Call.Decl`。モジュール名つき)/ `expr` / `declWith` / `checkProg`(再構文解析と `Decl.toAst` の `==`)。`lake exe naru_test semantics` が検体 `tests/accept/sem_call.naru`(input 3・fn 16・spec 宣言 9: 位置 / 名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・spec から runtime / spec の呼出し)の宣言群を依存順に引用した `CallScope.lean` / `SurfaceCallScope.lean` を書き、`Call.wtProg` / `Surf.Call.wtProg` と各宣言の署名を kernel の `decide` で、負の検体(実際の Core / AST から作る: 依存順の反転・違う呼出し先・phase・循環・重複・引数の数と型・未解決の名前・名前付き引数の名前 / 順序 / 二重指定)が不適格であること、input の解釈の下の fn の値と署名に合わない解釈の行き詰まりも kernel に検査させる([testing.md](testing.md)) |
 
 言語の意味(呼出しは実引数を仮引数に束ねて本体を読む、名前付き引数は仮引数の名前で、UFCS は受け手を先頭の引数に、input は環境からの入力。[language.md](language.md)「式」
-「scenario と observer」)はこの定義のために変えていない。この段階で保証するのは「意味が定まる」こと(Core と Surface AST の両方: 適格な式・宣言群と対応する環境、
-署名を守る任意の input の解釈について、runtime の値が存在して一意で、spec の意味が存在して一意で、各 fn は全域で各 spec 宣言の意味は本体の意味)と適格性の明示までで、
-呼出しを含む AST → Core の変換と値 / 命題の対応、実生成 Lean(fn / spec 宣言の Lean の定義と input の引数 `name'`)への接続は未対応(C55〜C58)。
+「scenario と observer」)はこの定義のために変えていない。この段階で保証するのは、「意味が定まる」こと(Core と Surface AST の両方: 適格な式・宣言群と対応する環境、
+署名を守る任意の input の解釈について、runtime の値が存在して一意で、spec の意味が存在して一意で、各 fn は全域で各 spec 宣言の意味は本体の意味)と適格性の明示(C54)、
+そして runtime の Core → 実生成 Model の保存(C55〜C57 の runtime 側: 任意の適格な宣言群・同じ input 解釈・型の合う任意の実引数について、宣言群の意味の fn の値 =
+実生成定数の値。呼出し先の一般保存定理と kernel 検査済みの接続証拠を呼出し側へ合成する `Call.interp_agree`)までで、spec(Statements)の読みと双方向の同値、
+呼出しを含む Surface AST → Core の変換と対応、実生成 Statements への接続は未対応(C55〜C58 の残り)。
 `lake exe naru_test semantics` の `CallScope.lean` / `SurfaceCallScope.lean` は、実際の宣言群に一般定理が適用できること(前提 `wtProg` の成立から
 `cresp_call` / `cdef_call` / `sresp_call` / `sdef_call`: 署名を守る任意の解釈の下で宣言群の意味が署名を守り spec 宣言の意味が定義される)も kernel に検査させ、公理監査に載せる。
+保証は「接続検査に成功した実生成宣言」の宣言群に対するもので、呼出し先を含む必要な証拠(`Evidence`)が欠けた宣言や対象外の宣言は検証済みにならず、コンパイラの全入力への
+無条件の保存とは呼ばない。
 
 ### 信頼する部分・方式・未対応
 
@@ -452,10 +469,12 @@ backend の出力・frontend の変換結果を意味と定義しない。
   Bool / 命題の条件の `if`・非再帰の Nat / Bool のガード付き `match`・命題を含む両辺の `==` / `!=`(C43)まで(接続は `rfl`、リテラルパターンの `match` は
   場合分け + `rfl`)。Surface AST → Core(C49 / C50)は汎用翻訳方式(runtime は `Surf.lower` + `Surf.lower_sound`、spec は `Surf.lowerS` + `Surf.lowerS_sound` /
   `Surf.Sem_lowerS_iff`)で、実際の AST と Core への接続は `rfl`(`low_<f>` / `lows_<f>`)、実生成宣言への合成は `apres_<f>`。
+  関数・input(C55〜C57、runtime)は汎用翻訳方式(一般定理 `Call.denote_sound` と宣言群の帰納法 `Call.interp_agree`)+ 生成物ごとの接続検査(`conn_<f>`、`rfl`)で、
+  呼出し先の証拠は `Call.Evidence` として呼出し側へ合成する(上の「関数・input の保存対象の意味論」)。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
-- 未対応: 関数呼出しと input の **保存**(呼出しを含む Surface AST → Core の変換と値 / 命題の対応、実生成 Lean への接続と呼出し先の証拠の合成。
-  C55〜C58。独立意味論・適格性・意味が定まること(Core と Surface AST)・宣言群の引用は上の「関数・input の保存対象の意味論」)、lambda・高階値、再帰、record / enum、
-  Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
+- 未対応: 関数呼出しと input の **保存** のうち、spec(Statements)の読みと双方向の同値、呼出し・名前付き引数・UFCS を含む Surface AST → Core の変換と
+  値 / 命題の対応、それらの実生成 Statements への接続と負の検体(C55〜C58 の残り。runtime の Core → 実生成 Model の層と実際の宣言群の接続・負の検体は上の
+  「関数・input の保存対象の意味論」)、lambda・高階値、再帰、record / enum、Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
   C49 / C50 の Surface AST → Core の対応は「Surface AST の保存対象」の式と最小の fn / spec 宣言の包装に限る(上の「Surface AST → Core の対応」)。ソース文字列からの保証
   (構文解析の正しさ)・型検査器全体の健全性・consensus 全体と基準実装の同値・プロトコルの Safety / Liveness・レビュー面は境界の外で、達成済みと呼ばない。
   `Set` / `Table` の生のリスト表現と数学的な集合 / 写像の区別は上の「Statements backend」の既知の制限のとおりで、後続拡張の設計判断は次の節。
