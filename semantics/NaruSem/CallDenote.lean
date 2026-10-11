@@ -26,8 +26,8 @@ import NaruSem.Denote
   `Curried` の形)で、`fnConn_of_curried` が `FnConn` に写す。`SubV_of_cover`: 宣言群の各 fn / input の署名が表にあれば `wtProg` の署名を含む。
 
 採用方式(「コンパイラ意味論保存の保証方式」): 汎用翻訳方式(一般定理 `denote_sound` / `interp_agree`)+ 生成物ごとの接続検査(`conn_<f>`)。
-保証は「接続検査に成功した実生成宣言」の宣言群に対するもので、呼出し先を含む必要な証拠が欠けた宣言は検証済みにならない。spec(Statements)の
-読みと同値、Surface AST からの合成は後続のファイル。
+保証は「接続検査に成功した実生成宣言」の宣言群に対するもので、呼出し先を含む必要な証拠が欠けた宣言は検証済みにならない。spec の式の読みと一般同値は `CallDenoteProp.lean`。
+宣言群の spec 合成と Surface AST からの合成は未完了。
 -/
 
 namespace NaruSem.Call

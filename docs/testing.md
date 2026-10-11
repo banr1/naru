@@ -304,3 +304,9 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
   失敗例として、周回 35 までの 3 つ組 `(kind, root, author)`(`H.Legacy`。confirmed の `none` を 99 に潰していた)が見逃す検体を `legacy-miss` で報告し、
   ドライバの `expectedLegacyMisses` がその見逃しを要求する(検体が元の不具合を捉えていることの確認)。
 - scenario 側の約束は [language.md](language.md) の「scenario と observer」。
+
+呼出しを含む spec 式の検査(C55 の進展)も `lake exe naru_test semantics` と `lake exe naru_test regression` から実行する。
+`CallDenoteProp.lean` の `Call.Sem_denote` / `Sem_denoteP` / `check_sound_prop` と命題環境の一致・署名包含の補題を `NaruSem.lean` で公理監査し、`requiredTheorems` が欠落を失敗にする。
+実際の CLI が生成した `gencall/Statements/Sem/Call.lean` を Lean モジュールとしてビルドし、`CallStatementsReadCheck.lean` が現在の引用 Core と9個の実生成 spec の読みの接続 `read_*` を任意の input 解釈・仮引数について検査・監査する。
+`CallStatementsReadWrong.lean` の対照は接続成功、`specCallSpec` の `∧` を `∨` にした隔離出力は型検査に成功し接続定理の行だけで失敗する。宣言数・監査・期待するエラー行の欠落は失敗にする。
+一般定理は任意の適格式に対する双方向同値だが、値・命題環境の一致を条件にする。宣言群の spec 環境の一致を証拠から合成する義務と Surface 保存は未完了であり、この式の接続を宣言群全体の保存と扱わない。

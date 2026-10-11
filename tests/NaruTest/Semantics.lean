@@ -126,9 +126,12 @@ def requiredTheorems : List String :=
     -- 実生成定数の一致(呼出し先の証拠の呼出し側への合成)と fn の値の系、署名の包含、接続検査の形から接続の証拠へ
     "NaruSem.Call.denote_sound", "NaruSem.Call.denote_sound_self", "NaruSem.Call.preserve_nat", "NaruSem.Call.preserve_bool", "NaruSem.Call.denoteArms_sound",
     "NaruSem.Call.check_sound_nat", "NaruSem.Call.check_sound_bool", "NaruSem.Call.wrap_respects", "NaruSem.Call.ofGens_respects",
-    "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried" ]
+    "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried",
+    -- C55(spec): 式の一般同値。宣言群のspec環境との一致・Surface合成は別の未完了の義務。
+    "NaruSem.Call.Sem_denote_all", "NaruSem.Call.Sem_denote", "NaruSem.Call.Sem_denoteP", "NaruSem.Call.Sem_denote_self", "NaruSem.Call.check_sound_prop",
+    "NaruSem.Call.PEnv.Agree.refl", "NaruSem.Call.PEnv.Agree.defined", "NaruSem.Call.PEnv.Defined.mono", "NaruSem.Call.SigEnv.SubP.refl" ]
 
-/-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 16、spec 宣言 9。欠けていれば FAIL。 -/
+/-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 15、spec 宣言 9。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
   [ ("Sem.Call.seed", .input), ("Sem.Call.bias", .input), ("Sem.Call.flag", .input),
     ("Sem.Call.base", .fn), ("Sem.Call.zero", .fn), ("Sem.Call.addTo", .fn), ("Sem.Call.callBase", .fn), ("Sem.Call.callNamed", .fn),
@@ -1268,6 +1271,55 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
   "".intercalate (fns.map (callValOf ib ia)) ++
   s!"#audit_axioms {" ".intercalate names}\n"
 
+/-- 呼出しを含む実生成 Statements の読みへの接続。宣言群の spec 環境との一致の合成は別の義務で、ここでは仮定して済ませない。 -/
+def callSpecConnStmt (ib ia thm lean : String) (f : CallFn) : String :=
+  let bs := f.params.filterMap specBinderOf
+  let quant (s : String) := if bs.isEmpty then s else s!"∀ {" ".intercalate (bs.map (·.1))}, {s}"
+  let env := "[" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
+  let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+  let hdr := if ib.isEmpty then s!"theorem {thm}" else s!"theorem {thm} {ib}"
+  s!"{hdr} : {quant s!"{call} ↔ NaruSem.Call.denoteP Δread_call (Φgen_call {ia}) (Ψgen_call {ia}) (NaruSem.SEnv.ofList {env}) ccore_{shortName f.key}"} := " ++
+  (if bs.isEmpty then "Iff.rfl" else s!"fun {" ".intercalate (bs.map (·.2.2))} => Iff.rfl")
+
+def callStatementsProgram (specs : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) : String :=
+  let (ib, ia) := inputBinders inputs
+  let hdr (kw name : String) := if ib.isEmpty then s!"{kw} {name}" else s!"{kw} {name} {ib}"
+  let pg (f : CallFn) :=
+    let ps := f.params.filterMap fun p => (NaruSem.Call.Quote.paramOf? p).map (·.2)
+    let applied := " ".intercalate ([Naru.Backend.Statements.stmtName f.key] ++ f.inputs.map Naru.Backend.Model.inputBinder)
+    s!"({f.key.quote}, wrapP {NaruSem.Call.Quote.list (ps.map tyTerm)} ({applied}))"
+  "-- Current generated Statements versus the reading of the current quoted Core, for arbitrary inputs and parameters.\n" ++
+  "-- This is an expression connection check; spec declaration-group composition and Surface preservation are still separate obligations.\n" ++
+  "import CallModelCheck\nimport Statements.Sem.Call\n\n" ++
+  "-- General equivalence: any well-formed expression and matching environment, with value equality and proposition equivalence on callee signatures.\n" ++
+  "example {Δ Δ' : NaruSem.Call.SigEnv} {Φ Φ' : NaruSem.Call.FEnv} {Ψ Ψ' : NaruSem.Call.PEnv}\n" ++
+  "    (hΔ : NaruSem.Call.SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hA : NaruSem.Call.FEnv.Agree Φ Φ' Δ) (hPA : NaruSem.Call.PEnv.Agree Ψ Ψ' Δ)\n" ++
+  "    {Γ : NaruSem.SCtx} {e : Naru.Core.Expr} {τ : NaruSem.STy} (hw : NaruSem.Call.wtS Δ Γ e = some τ)\n" ++
+  "    (ρ : NaruSem.SEnv) (hρ : Γ = ρ.ctx) {P : Prop} (h : NaruSem.Call.Sem Δ Φ Ψ ρ e P) : P ↔ NaruSem.Call.denoteP Δ Φ' Ψ' ρ e :=\n" ++
+  "  NaruSem.Call.Sem_denote hΔ hΦ' hA hPA hw ρ hρ h\n\n" ++
+  "def PFn : List NaruSem.Ty → Type\n  | [] => Prop\n  | t :: ps => t.carrier → PFn ps\n" ++
+  "def wrapP : (ps : List NaruSem.Ty) → PFn ps → List NaruSem.Val → Prop\n" ++
+  "  | [], g, [] => g\n  | .nat :: ps, g, .nat n :: vs => wrapP ps (g n) vs\n" ++
+  "  | .bool :: ps, g, .bool b :: vs => wrapP ps (g b) vs\n  | _, _, _ => False\n" ++
+  "def Δread_call : NaruSem.Call.SigEnv := fun k => (cprog_call.find? fun d => d.key == k).map NaruSem.Call.Decl.sig\n" ++
+  s!"{hdr "def" "props_call"} : List (String × (List NaruSem.Val → Prop)) :=\n  [{",\n   ".intercalate (specs.map pg)}]\n" ++
+  s!"{hdr "def" "Ψgen_call"} : NaruSem.Call.PEnv := fun k => (props_call {ia}).lookup k\n\n" ++
+  "\n".intercalate (specs.map fun f => callSpecConnStmt ib ia s!"read_{shortName f.key}" (Naru.Backend.Statements.stmtName f.key) f) ++ "\n" ++
+  s!"#audit_axioms {" ".intercalate (specs.map fun f => s!"read_{shortName f.key}")}\n"
+
+/-- 同じ current Core に対する、型は合うが前提を弱めた隔離 spec 出力。 -/
+def callSpecMistranslations : List Mistranslation :=
+  [ { key := "Sem.Call.specCallSpec", wrong := "Wrong.specCallSpec",
+      good := "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))",
+      bad := "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
+      transform := fun s => s.replace "(Statements.Sem.Call.posBase «x») ∧ («x» < (10 : Nat))"
+        "(Statements.Sem.Call.posBase «x») ∨ («x» < (10 : Nat))",
+      note := "the conjunction in specCallSpec replaced by disjunction (well-typed but a weaker proposition)" } ]
+
+def callSpecWrongProgram (ib ia : String) (specs : List CallFn) (wrongs : List (Mistranslation × String)) : String × List Nat :=
+  wrongProgramWith "Statements (calls and inputs)" ["CallStatementsReadCheck"] wrongs fun thm lean key =>
+    (specs.find? fun f => f.key == key).map fun f => callSpecConnStmt ib ia thm (if lean.isEmpty then Naru.Backend.Statements.stmtName f.key else lean) f
+
 /-- 負の検体(C58): 実生成 Model(呼出しと input)の文字列から作る、型は合うが意味の異なる誤出力。同じ署名の別の呼出し先への置換、同型の名前付き実引数の
 取り違え、UFCS の受け手の誤対応、複数段の input の誤配線。 -/
 def callMistranslations : List Mistranslation :=
@@ -1706,6 +1758,35 @@ def checks : M Unit := do
         if mc.exitCode == 0 && missingCall.isEmpty && fns.length == fnCount && !(contains mc.stdout "forbidden") && !(contains mc.stderr "forbidden") then
           ok s!"C55 / C56 / C57: the connection evidence of {fns.length} generated fn declarations with calls and inputs ({expectedCall.length} theorems: per-fn `conn_` / `evid_` / `cval_`, the group's `cevid_call` / `cgen_call`; any input interpretation agreeing with the inputs) is audited with 0 forbidden dependencies"
         else fail s!"C55 / C56 / C57: connection evidence (calls): exit {mc.exitCode}, not audited: {missingCall} ({fns.length} of {fnCount} fn)\n{tail mc.stdout 1500}\n{tail mc.stderr 1500}"
+        -- C55(spec): 現在の実生成 Statements と現在の引用 Core の読みを任意の input / 仮引数で接続する。
+        let callStmtFile := callGenDir / "Statements" / "Sem" / "Call.lean"
+        let _ ← step "C55: compile the generated Statements as the Lean module `Statements.Sem.Call`" "lean"
+          #[s!"--root={callGenDir}", "-o", (callGenDir / "Statements" / "Sem" / "Call.olean").toString, callStmtFile.toString] (env := #[("LEAN_PATH", some lpCall)])
+        let mut specs : List CallFn := []
+        for d in cprog do
+          match d with
+          | .spec k _ b =>
+            match NaruSem.Quote.fnOf? k cchecked.core with
+            | some (cparams, _) => specs := specs ++ [{ key := k, params := cparams, ret := .bool, body := b, inputs := (inputsTable.lookup k).getD [], index := 0 }]
+            | none => fail s!"C55: the spec Core of `{k}` was not found in the current compiled unit"
+          | _ => pure ()
+        let callStmtCheck := outDir / "CallStatementsReadCheck.lean"
+        IO.FS.writeFile callStmtCheck (callStatementsProgram specs inputs)
+        let sc ← step s!"C55: lean {callStmtCheck} (connection of {specs.length} current generated spec declarations to the reading of their current Core; arbitrary input interpretations and parameters)"
+          "lean" #[s!"--root={outDir}", "-o", (outDir / "CallStatementsReadCheck.olean").toString, callStmtCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
+        let stmtAudited := auditedNames sc.stdout
+        let stmtRequired := specs.map fun f => s!"read_{shortName f.key}"
+        let stmtMissing := stmtRequired.filter fun n => !stmtAudited.contains n
+        let stmtCount := (c54Decls.filter fun (_, k) => k != .fn && k != .input).length
+        if sc.exitCode == 0 && stmtMissing.isEmpty && specs.length == stmtCount && stmtCount > 0 &&
+            !(contains sc.stdout "forbidden") && !(contains sc.stderr "forbidden") then
+          ok s!"C55: all {specs.length} generated spec reading connections are audited with 0 forbidden dependencies (declaration-group spec composition and Surface preservation are still separate obligations)"
+        else fail s!"C55: spec reading connections: exit {sc.exitCode}, missing audits {stmtMissing}, {specs.length} of {stmtCount} declarations\n{tail sc.stdout 1500}\n{tail sc.stderr 1500}"
+        let specText ← IO.FS.readFile callStmtFile
+        let specReadWrongs ← deriveWrongs "Statements (calls)" specText Naru.Backend.Statements.stmtName callSpecMistranslations
+        let (sib, sia) := inputBinders inputs
+        checkWrong "Statements (calls)" (outDir / "CallStatementsReadWrong.lean")
+          (callSpecWrongProgram sib sia specs specReadWrongs) specReadWrongs lpCall
         -- C58: 隔離した誤出力(同じ署名の別の呼出し先・名前付き実引数の取り違え・UFCS の受け手の誤対応・input の誤配線)は型検査を通るが接続検査に失敗する
         let (ib, ia) := inputBinders inputs
         let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations
