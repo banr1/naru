@@ -101,9 +101,10 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   呼出し側への合成)と系 `Call.fn_value`、署名の包含 `SubV_of_cover`、接続検査の形 `Curried` と `fnConn_of_curried`。
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/SurfaceCallLower.lean` — 呼出しを含む runtime の独立 lowering。現在の17 fnの AST / Core の構造的対応を検査する。
-  任意の式・環境の一般意味保存、spec の lowering、宣言群の意味の合成は未完了。
+  呼出し・ブロック・matchの局所合成を提供し、全式のruntime評価保存は次のモジュールで検査する。specと宣言群の意味合成は未完了。
 - `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
-  式・実引数・let列・腕列・腕を同時帰納し、実際の17 fnへの適用もkernelが検査する。評価の保存は別の義務。
+  式・実引数・let列・腕列・腕を同時帰納し、同じ任意の署名を守る関数/input環境と対応する局所環境の下で評価も保存する。
+  実際の17 fnへの型・評価保存の適用をkernelが検査する。specとSurface/Core宣言群の合成は未完了。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -117,6 +118,9 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 #audit_axioms NaruSem.Surf.Call.arrange_core_total
   NaruSem.Surf.Call.lower_typed_all NaruSem.Surf.Call.lower_typed
   NaruSem.Surf.Call.lower_total NaruSem.Surf.Call.lower_wt
+  NaruSem.Surf.Call.lower_eval_all NaruSem.Surf.Call.lower_eval
+  NaruSem.Surf.Call.lowerStmts_eval NaruSem.Surf.Call.lowerArgs_eval
+  NaruSem.Surf.Call.lowerArms_eval_wt NaruSem.Surf.Call.lowerArm_eval_wt
 
 #audit_axioms NaruSem.Surf.Call.lowerCall_eq
   NaruSem.Surf.Call.allSome_some NaruSem.Surf.Call.evalArgs_allSome

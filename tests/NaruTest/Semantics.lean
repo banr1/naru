@@ -97,6 +97,9 @@ def requiredTheorems : List String :=
   [ "NaruSem.Surf.Call.arrange_core_total",
     "NaruSem.Surf.Call.lower_typed_all", "NaruSem.Surf.Call.lower_typed",
     "NaruSem.Surf.Call.lower_total", "NaruSem.Surf.Call.lower_wt",
+    "NaruSem.Surf.Call.lower_eval_all", "NaruSem.Surf.Call.lower_eval",
+    "NaruSem.Surf.Call.lowerStmts_eval", "NaruSem.Surf.Call.lowerArgs_eval",
+    "NaruSem.Surf.Call.lowerArms_eval_wt", "NaruSem.Surf.Call.lowerArm_eval_wt",
     "NaruSem.Surf.Call.lowerCall_eq",
     "NaruSem.Surf.Call.allSome_some", "NaruSem.Surf.Call.evalArgs_allSome",
     "NaruSem.Surf.Call.arrange_eval", "NaruSem.Surf.Call.wtArgs_of_map", "NaruSem.Surf.Call.arrange_wt",
@@ -1171,9 +1174,10 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
   "".intercalate negs ++
   s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call [{callInputSource.quote}, {callCalleeSource.quote}]\n"
 
-/-- 現在の runtime AST と Core の構造的対応。宣言表は各宣言の prefix、
-文脈はその宣言の仮引数から取り、包装・本体・型と変換の一致を kernel 検査する。
-この段階では呼出しの一般意味保存・宣言群の意味の合成は主張しない。 -/
+/-- 現在の runtime AST と Core の対応。宣言表は各宣言の prefix、
+文脈はその宣言の仮引数から取り、包装・本体・型・変換の一致と、
+同じ任意の署名を守る関数/input環境での評価保存を kernel 検査する。
+Surface/Core の宣言群の意味の合成はこの本体の証拠とは区別する。 -/
 def callRuntimeLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
   let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLowerSound\n\n"
   for (i, d) in sprog.zipIdx |>.map (fun (d, i) => (i, d)) do
@@ -1195,7 +1199,8 @@ def callRuntimeLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run 
         s!"theorem stype_{n} : NaruSem.Surf.Call.wtR stable_{n} sctx_{n} sast_{n} = some {tyTerm t} := by decide\n" ++
         s!"theorem slow_{n} : NaruSem.Surf.Call.lower stable_{n} sctx_{n} sast_{n} = some ccore_{n} := rfl\n" ++
         s!"theorem sctyped_{n} : NaruSem.Call.wtR stable_{n}.Δ sctx_{n}.vals ccore_{n} = some {tyTerm t} := NaruSem.Surf.Call.lower_wt stype_{n} slow_{n}\n" ++
-        s!"#audit_axioms spack_{n} sparams_{n} sbody_{n} stype_{n} slow_{n} sctyped_{n}\n\n"
+        s!"theorem seval_{n} : ∀ (Φ : NaruSem.Call.FEnv) (ρ : NaruSem.SEnv), sctx_{n} = ρ.ctx → Φ.Respects stable_{n}.Δ → NaruSem.Surf.Call.eval stable_{n} Φ ρ sast_{n} = NaruSem.Call.eval Φ ρ.vals ccore_{n} := fun Φ ρ hΓ hΦ => NaruSem.Surf.Call.lower_eval stype_{n} slow_{n} hΓ hΦ\n" ++
+        s!"#audit_axioms spack_{n} sparams_{n} sbody_{n} stype_{n} slow_{n} sctyped_{n} seval_{n}\n\n"
     | _, _ => text := text ++ s!"#audit_axioms missing_runtime_body_{n}\n"
   return text
 
@@ -1215,7 +1220,7 @@ def callLowerWrongs : List CoreMistranslation :=
     { key := "Sem.Call.callInMatch", wrong := "WrongCore.callInMatch", transform := negateGuards, note := "match guard negated" } ]
 
 def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
-  heading "C55: runtime Surface AST to actual Core (structural connection; general semantic preservation remains unfinished)"
+  heading "C55: runtime Surface AST to actual Core (evaluation under the same typed environment; declaration-group composition remains unfinished)"
   let mut count := 0
   let mut wrongs : List (Mistranslation × String) := []
   for (d, i) in sprog.zipIdx do
@@ -1244,9 +1249,9 @@ def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call
   if count != expected.length then fail s!"C55: runtime lowering covers {count} of {expected.length} required declarations"
   let file := outDir / "SurfaceCallLowerCheck.lean"
   IO.FS.writeFile file (callRuntimeLowerProgram sprog)
-  let r ← step "C55: kernel-check current runtime AST / Core lowering and declaration packaging" "lean"
+  let r ← step "C55: kernel-check current runtime AST / Core lowering, evaluation and declaration packaging" "lean"
     #[s!"--root={outDir}", "-o", (outDir / "SurfaceCallLowerCheck.olean").toString, file.toString] (env := #[("LEAN_PATH", some lp)])
-  let required := expected.flatMap fun n => [s!"spack_{n}", s!"sparams_{n}", s!"sbody_{n}", s!"stype_{n}", s!"slow_{n}", s!"sctyped_{n}"]
+  let required := expected.flatMap fun n => [s!"spack_{n}", s!"sparams_{n}", s!"sbody_{n}", s!"stype_{n}", s!"slow_{n}", s!"sctyped_{n}", s!"seval_{n}"]
   let missing := required.filter fun n => !(auditedNames r.stdout).contains n
   if r.exitCode == 0 && missing.isEmpty then
     ok s!"C55: {required.length} runtime lowering / packaging certificates for all {expected.length} actual fn declarations audited"

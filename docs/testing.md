@@ -324,23 +324,23 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `CallStatementsReadWrong.lean` の6件は、`specCallSpec` の `∧`→`∨`、`specTwoStep` の spec 呼出し先の置換、`specNamed` の名前付き引数の交換、`specUfcs` の受け手の交換、`specBoolCall` の runtime 経由の input 解釈の変更、`specSharedInputs` の同型inputの交換。型検査・正しい対照・非同値反例 `different_*` の kernel 検査と公理監査は成功し、同じ正しい Core への接続定理の6行だけで失敗する。反例の引数は [architecture.md](architecture.md) に記載する。宣言数・6件の監査・期待するエラー行の欠落は失敗にする。
 `CallComposeProp.lean` の `interp_prop_agree` / `interpFrom_prop_agree` / `curried_wrapP` / `specConn_of_curried` も一般定理の必須監査対象。各 spec の前の署名 `Δprefix_*` で `read_*` を検査し、`spevid_*` と全宣言の `spevid_call`、任意の同じ input 解釈で独立宣言群と実生成命題環境が同値となる `cprops_call` を検査・監査する。10 spec の接続・合成証拠の欠落も失敗にする。呼出しを含む Surface 保存は未完了。input のみの別モジュールと、別モジュールのfn/spec呼出し先への実生成接続は検査する。
 
-`tests/units/accept/sem_calls/` は `src/Sem/Inputs.naru` に4 input、`src/Sem/Callees.naru` に基礎の3 fn(`base`・`zero`・`addTo`)と1 spec(`posBase`)、`src/Sem/Call.naru` に呼出し側を置く。runtime→runtime・spec→runtime・spec→spec の別モジュール呼出し、修飾参照・位置/名前付き引数・UFCS・ゼロ引数を実生成 `Model.Sem.Callees` / `Statements.Sem.Callees` と呼出し側へ接続する。単一ファイルの受理例 `tests/accept/sem_call.naru` も維持する。`Call.Quote.checkProg` / `Surf.Call.Quote.checkProg` は同じ3ファイルを再コンパイルし、引用の識別・署名・本体と全31宣言の網羅を照合する。検体の宣言一覧を安定した依存順へ並べ、適格性をkernel検査する。`checkOmission` はinput元のModel/Statements不在、生成宣言の網羅、集約importと全依存の解決を検査する。任意解釈の接続・同型input交換のruntime/spec負検体はこの複数ファイル単位でkernel検査・公理監査する。モジュール全体の保存や呼出しを含むSurface保存はこの接続では保証しない。
+`tests/units/accept/sem_calls/` は `src/Sem/Inputs.naru` に4 input、`src/Sem/Callees.naru` に基礎の3 fn(`base`・`zero`・`addTo`)と1 spec(`posBase`)、`src/Sem/Call.naru` に呼出し側を置く。runtime→runtime・spec→runtime・spec→spec の別モジュール呼出し、修飾参照・位置/名前付き引数・UFCS・ゼロ引数を実生成 `Model.Sem.Callees` / `Statements.Sem.Callees` と呼出し側へ接続する。単一ファイルの受理例 `tests/accept/sem_call.naru` も維持する。`Call.Quote.checkProg` / `Surf.Call.Quote.checkProg` は同じ3ファイルを再コンパイルし、引用の識別・署名・本体と全31宣言の網羅を照合する。検体の宣言一覧を安定した依存順へ並べ、適格性をkernel検査する。`checkOmission` はinput元のModel/Statements不在、生成宣言の網羅、集約importと全依存の解決を検査する。任意解釈の接続・同型input交換のruntime/spec負検体はこの複数ファイル単位でkernel検査・公理監査する。モジュール全体の保存やSurface/Core宣言群の意味合成はこの接続では保証しない。
 
-別モジュール呼出しの接続も同じ `semantics` / `regression` 入口で再検査する。実際のCoreの呼出し辺と生成Model/Statementsのimportを照合し、calleeの生成モジュールを先にLeanとしてビルドする。全17fn/10specの任意引数の接続・宣言群の合成証拠、公理監査、別宣言/古いCore/callee証拠欠落のruntime/spec各3件、Model5件/spec6件の型が合う誤出力検査は維持する。Surface呼出し保存は未完了である。
+別モジュール呼出しの接続も同じ `semantics` / `regression` 入口で再検査する。実際のCoreの呼出し辺と生成Model/Statementsのimportを照合し、calleeの生成モジュールを先にLeanとしてビルドする。全17fn/10specの任意引数の接続・宣言群の合成証拠、公理監査、別宣言/古いCore/callee証拠欠落のruntime/spec各3件、Model5件/spec6件の型が合う誤出力検査は維持する。Surface/Core宣言群の意味合成とspec側のSurface保存は未完了である。
 
 同じ `lake exe naru_test semantics` / `lake exe naru_test regression` は呼出しを含む runtime の AST → Core の構造的対応も検査する。
 `SurfaceCallLowerCheck.lean` は再構文解析・再コンパイルで一致を確認した31宣言から、全17 fnの実際の包装・仮引数・本体・prefix宣言表を取る。
-独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計102証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
+独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計119証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
 `SurfaceCallLowerWrong.lean` の5件は別callee・名前付き引数の交換・UFCS受け手の交換・同型inputの交換・matchガードの否定。
 現在のCoreから作った各検体は同じCore型を持ち、正しい対照が成功し、同じ正しいASTとの変換の一致の5行だけで失敗することを要求する。
-この検査は一般意味保存の代用ではなく、任意の環境での意味の対応とspec側のloweringは未完了である。
+この構造的一致は一般意味保存の代用ではない。runtimeの一般定理の適用も検査し、spec側のloweringと宣言群の合成は未完了である。
 
 呼出しの局所的な合成補題も同じ入口で検査する。`SurfaceCallLower.lean` の
 `allSome_some` / `evalArgs_allSome` / `arrange_eval` / `wtArgs_of_map` / `arrange_wt` /
 `lowerCall_wt` / `lowerCall_eval` / `lower_call_eval` / `lower_ufcs_eval` と、
 `SurfaceCallLowerExamples.lean` の5検体を `NaruSem.lean` で公理監査し、`requiredTheorems` が全14件の欠落を失敗にする。
 名前付き実引数の順序・UFCS受け手・ゼロ引数の引数評価・任意環境でのcallee不在や失敗を扱う。
-子式の評価・型の対応は明示した合成前提であり、全式の一般保存は未完了である。
+局所補題では子式の評価・型の対応を合成前提とする。全式のruntime評価保存は以下の一般定理で導く。
 
 
 ブロックの束縛列の合成も `lake exe naru_test semantics` (および `regression`) から検査する。
@@ -349,7 +349,7 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `binds_failed_call` / `binds_call_shadow` の全11件を公理監査と `requiredTheorems` の照合に追加している。
 NatからBoolへの同名束縛、注釈の型不一致、calleeの不在・失敗・任意の成功値の対照をkernelが検査する。
 任意の関数・input環境を保持し、列や末尾式の対応を前提としてブロックへ合成する段階である。
-全式の帰納保存、specのlowering、Surface/Core宣言群の合成は引き続き未完了である。
+全式のruntime評価保存は以下の一般定理で検査する。specのloweringとSurface/Core宣言群の合成は未完了である。
 
 matchの腕の局所合成も同じ `lake exe naru_test semantics` / `regression` から検査する。
 `Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` / `lowerArm_eval` /
@@ -363,11 +363,13 @@ matchの腕の局所合成も同じ `lake exe naru_test semantics` / `regression
 パターン不一致と外側の値/命題の隠蔽・復元を扱い、Bool/Natの網羅性の対照と型の合成も検査する。
 falseガードの後に束縛を漏らしてscrutineeを返す結果との不一致を証明する。具体的な誤変換Coreの型検査ではない。
 署名外の環境の対照は失敗の保持の検査であり、適格な宣言群の一般保証ではない。
-子式の対応を合成前提とする段階で、全式の帰納保存やspecのloweringの完成は含めない。
+局所補題で要求する子式の対応は以下のruntimeの帰納定理で導く。specのloweringの完成は含めない。
 
 runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` の一般定理を同じ入口で検査する。
 `Surf.Call.lower_typed` / `lower_total` / `lower_wt` と相互帰納の補題は公理監査と欠落検査の対象となる。
+評価の相互帰納定理 `lower_eval_all` と、その系 `lower_eval` / `lowerStmts_eval` / `lowerArgs_eval` /
+`lowerArms_eval_wt` / `lowerArm_eval_wt` も同じ監査と必須定理の欠落検査に含む。
 `SurfaceCallLowerCheck.lean` は現在の全17 fnについて、包装・仮引数・本体・ASTの適格性・実Coreとの一致に加え、
-一般定理 `lower_wt` から得た実Coreの型保存 `sctyped_*` を検査する(17 × 6 = 102証拠)。
+一般定理から得た実Coreの型保存 `sctyped_*` と評価保存 `seval_*` を検査する(17 × 7 = 119証拠)。
 型が合う別callee・引数交換・UFCS・input誤配線・ガード否定の5負検体は維持し、型保存だけでは意味の誤りを検出できないことを区別する。
-評価の帰納保存、specのloweringと同値、宣言群の意味合成はこの型保存の成功を代用証拠にせず、未完了として扱う。
+評価の保存は `Surf.Call.lower_eval` から独立に検査する。任意の `Φ` と `ρ` に対し、`sctx_* = ρ.ctx` と `Φ.Respects stable_*.Δ` を前提に、同じ `Φ` の下で実ASTと実Coreの評価が等しいことを示す。子式の対応を仮定せず、全式の帰納定理を適用する。一般定理と全17件の `seval_*` の監査欠落は失敗となる。specのloweringと同値、Surface/Core宣言群の意味合成、Surfaceから実生成Leanまでの合成は未完了として扱う。
