@@ -227,7 +227,9 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   (`Call.lean`: `Call.wtR` / `Call.wtS` / `Call.eval` / `Call.Sem`、宣言群 `Call.Prog` / `Call.wtProg` / `Call.interp`)、一般定理(`CallTotality.lean`: `Call.eval_total` /
   `Call.Eval_unique` / `Call.evalArgs_total` / `Call.Sem_exists` / `Call.Sem_unique`、宣言群の `Call.interp_respects` / `interp_defined` / `fn_total` / `spec_defined` /
   `spec_meaning`)、Surface AST の呼出しを含む意味論と適格性(`SurfaceCall.lean`: `Surf.Call.wtR` / `wtS` / `eval` / `Sem`、宣言表 `Table` と実引数の並べ替え `arrange`、
-  宣言群 `Surf.Call.wtProg` / `interp`)、検体(`CallExamples.lean`)を kernel に検査させ、公理監査に載せる(`requiredTheorems` に含む)。`naru_test semantics` は検体
+  宣言群 `Surf.Call.wtProg` / `interp`)とその一般定理(`SurfaceCallTotality.lean`: `Surf.Call.eval_total` / `Eval_unique` / `evalArgs_total` / `Sem_exists` /
+  `Sem_unique`、名前付き引数の並べ替えの可換性 `arrange_map`、評価の単調性 `eval_mono` と `Sem_not_nat`、宣言群の `Surf.Call.interp_respects` / `interp_defined` /
+  `fn_total` / `spec_defined` / `spec_meaning`)、検体(`CallExamples.lean`)を kernel に検査させ、公理監査に載せる(`requiredTheorems` に含む)。`naru_test semantics` は検体
   `tests/accept/sem_call.naru`(input 3・fn 16・spec 宣言 9。`NaruTest/Semantics.lean` の `c54Decls`)の fn / input / spec 宣言すべてを、実際の Core(`Call.Quote.declsOf`)と
   実際の構文解析の出力(`Surf.Call.Quote.declsOf`)の宣言群として依存順(呼出し先が前。ドライバが Core の呼出しの鍵から並べる `dependencyOrder`)に引用した
   `.lake/naru/test/semantics/CallScope.lean`(モジュール `CallScope`)/ `SurfaceCallScope.lean`(モジュール `SurfaceCallScope`)を `lean` で検査する: 宣言群の適格性
@@ -235,7 +237,9 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   `base` の代わりに `addTo`(違う呼出し先・引数の数)/ spec 宣言 `posBase`(phase)を呼ぶ、`base` が `callBase` を呼ぶ循環、`base` の重複、`seed()` に実引数(input の引数の数)、
   `base` に Bool(引数の型))が `wtProg = none`(`decide`)、input の解釈(`seed() = 41`、`bias(n) = n * 2`、`flag(b) = !b`)の下の宣言群の意味 `Call.interp` の fn の値 11 件
   (`expectedCallValues`: `twoStep(1) = 86` など。`decide`)と、署名に合わない解釈(`seed()` が Bool)では `useInput(1)` が行き詰まる(`none`)こと、引用した宣言群が実際の Core と
-  一致し宣言群全体を網羅すること(`run_cmd Call.Quote.checkProg`)。Surface 側は `swt_call : Surf.Call.wtProg sprog_call = true`(`decide`)、各宣言の署名が Core の署名と一致(ドライバ)、
+  一致し宣言群全体を網羅すること(`run_cmd Call.Quote.checkProg`)、一般定理が実際の宣言群に適用できること(`cΔ_call` / `cresp_call` / `cdef_call`: 署名を守る任意の
+  解釈の下で `Call.interp` が署名を守り spec 宣言の意味が定義される。`#audit_axioms` で監査)。Surface 側は `swt_call : Surf.Call.wtProg sprog_call = true`(`decide`)、
+  各宣言の署名が Core の署名と一致(ドライバ)、一般定理の適用 `sresp_call` / `sdef_call`(`Surf.Call.interp_respects` / `interp_defined` を `swt_call` に。`#audit_axioms` で監査)、
   実際の AST から作った負の検体(`surfWrongProgs`: 依存順の反転、`addTwo`(未解決の名前)、名前付き引数 `z = a`(無い名前)、名前付きの後の位置引数、`y` の二重指定、
   UFCS の `a.addTwo(b)`)が `wtProg = false`(`decide`)、引用した宣言群が構文解析の出力と一致し全体を網羅すること(`run_cmd Surf.Call.Quote.checkProg`)。
   検体を足したら `c54Decls` にも足す。実際の宣言群の AST → Core の変換と実生成 Lean への接続(C55〜C58)はまだ無い。

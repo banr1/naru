@@ -106,7 +106,13 @@ def requiredTheorems : List String :=
     "NaruSem.Surf.proppyS_lowerS", "NaruSem.Surf.proppyS_lower", "NaruSem.Surf.preserve_prop", "NaruSem.Surf.check_sound_prop",
     -- C54: 関数・input を含む Core の意味論の全域性・一意性・存在、宣言群の意味が署名を守ること(fn の全域性、spec 宣言の意味の存在と本体の意味)
     "NaruSem.Call.eval_total", "NaruSem.Call.Eval_unique", "NaruSem.Call.evalArgs_total", "NaruSem.Call.Sem_exists", "NaruSem.Call.Sem_unique",
-    "NaruSem.Call.interp_respects", "NaruSem.Call.interp_defined", "NaruSem.Call.fn_total", "NaruSem.Call.spec_defined", "NaruSem.Call.spec_meaning" ]
+    "NaruSem.Call.interp_respects", "NaruSem.Call.interp_defined", "NaruSem.Call.fn_total", "NaruSem.Call.spec_defined", "NaruSem.Call.spec_meaning",
+    -- C54: 関数・input を含む Surface AST の意味論の全域性・一意性・存在(名前付き引数の並べ替えと payload の写像の可換、評価の単調性、論理の位置の式が
+    -- Nat の値に評価されないこと)、宣言群の意味が宣言表の署名を守ること(fn の全域性、spec 宣言の意味の存在と本体の意味)
+    "NaruSem.Surf.Call.eval_total", "NaruSem.Surf.Call.Eval_unique", "NaruSem.Surf.Call.evalArgs_total", "NaruSem.Surf.Call.Sem_exists",
+    "NaruSem.Surf.Call.Sem_unique", "NaruSem.Surf.Call.eval_mono", "NaruSem.Surf.Call.Sem_not_nat", "NaruSem.Surf.Call.arrange_map",
+    "NaruSem.Surf.Call.interp_respects", "NaruSem.Surf.Call.interp_defined", "NaruSem.Surf.Call.fn_total", "NaruSem.Surf.Call.spec_defined",
+    "NaruSem.Surf.Call.spec_meaning" ]
 
 /-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 3、fn 16、spec 宣言 9。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
@@ -983,6 +989,16 @@ def callScopeProgram (prog : List NaruSem.Call.Decl) (Δ : NaruSem.Call.SigEnv) 
   "".intercalate vals ++
   s!"-- an interpretation not respecting the signature of `seed` (Bool instead of Nat): the call is stuck (`none`), not a default value\ndef I_call_wrong : NaruSem.Call.FEnv := {callInterpWrongTerm}\n" ++
   "theorem cstuck_useInput : ((NaruSem.Call.interp I_call_wrong cprog_call).Φ \"Sem.Call.useInput\").bind (fun f => f [NaruSem.Val.nat 1]) = none := by decide\n" ++
+  "\n-- the general theorems apply to the actual group: under any input interpretation respecting its signatures, the meaning of the group respects\n" ++
+  "-- the signatures (every fn is total on well-typed arguments) and every spec declaration has a meaning (C54)\n" ++
+  "theorem cΔ_call : ∃ Δ, NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ := Option.isSome_iff_exists.mp cwt_call\n" ++
+  "theorem cresp_call : ∀ I : NaruSem.Call.FEnv, I.RespectsInputs cprog_call →\n" ++
+  "    (NaruSem.Call.interp I cprog_call).Φ.Respects (Classical.choose cΔ_call) :=\n" ++
+  "  fun I hI => NaruSem.Call.interp_respects (Classical.choose_spec cΔ_call) hI\n" ++
+  "theorem cdef_call : ∀ I : NaruSem.Call.FEnv, I.RespectsInputs cprog_call →\n" ++
+  "    (NaruSem.Call.interp I cprog_call).Ψ.Defined (Classical.choose cΔ_call) :=\n" ++
+  "  fun I hI => NaruSem.Call.interp_defined (Classical.choose_spec cΔ_call) hI\n" ++
+  "#audit_axioms cwt_call cΔ_call cresp_call cdef_call cstuck_useInput\n" ++
   s!"\n-- the quoted declarations are the Core the compiler produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Call.Quote.checkProg {callSource.quote} cprog_call\n"
 
 /-- Surface AST の式の呼出し先・UFCS のメソッド名 `from` を `to` に(負の検体: 未解決の名前)。 -/
@@ -1049,6 +1065,15 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
   "-- the parsed declaration group is well-formed: names resolve to earlier declarations (or inputs), named arguments match the parameters, UFCS receivers\n" ++
   "-- become the first argument, every body is typed against the earlier signatures (C54)\n" ++
   "theorem swt_call : NaruSem.Surf.Call.wtProg sprog_call = true := by decide\n" ++
+  "\n-- the general theorems apply to the actual parsed group: under any input interpretation respecting its signatures, the meaning of the group\n" ++
+  "-- respects the signatures of the whole table (every fn is total on well-typed arguments) and every spec declaration has a meaning (C54)\n" ++
+  "theorem sresp_call : ∀ I : NaruSem.Call.FEnv, NaruSem.Surf.Call.RespectsInputs I sprog_call →\n" ++
+  "    (NaruSem.Surf.Call.interp I sprog_call).Φ.Respects (NaruSem.Surf.Call.tableOf sprog_call sprog_call).Δ :=\n" ++
+  "  fun I hI => NaruSem.Surf.Call.interp_respects swt_call hI\n" ++
+  "theorem sdef_call : ∀ I : NaruSem.Call.FEnv, NaruSem.Surf.Call.RespectsInputs I sprog_call →\n" ++
+  "    (NaruSem.Surf.Call.interp I sprog_call).Ψ.Defined (NaruSem.Surf.Call.tableOf sprog_call sprog_call).Δ :=\n" ++
+  "  fun I hI => NaruSem.Surf.Call.interp_defined swt_call hI\n" ++
+  "#audit_axioms swt_call sresp_call sdef_call\n" ++
   "\n-- negative specimens made from the actual AST: not well-formed\n" ++
   "".intercalate negs ++
   s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call\n"

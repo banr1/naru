@@ -20,6 +20,7 @@ import NaruSem.Call
 import NaruSem.CallTotality
 import NaruSem.CallExamples
 import NaruSem.SurfaceCall
+import NaruSem.SurfaceCallTotality
 import NaruSem.CallQuote
 import NaruSem.Audit
 
@@ -74,6 +75,17 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   AST の意味 = 実生成宣言の命題)、量化・腕・束縛の列の対応の補題。
 - `NaruSem/LowerSpecExamples.lean` — spec の変換の検体(C50 / C52): 量化・命題の `let`・注釈の無い `==`・命題のガード付き `match` の変換の形と一般定理の実例、
   対象外は変換されない、意味の異なる(適格な)Core(`forall` / `exists` の取り違え、命題の `let` の束縛の取り違え)は変換結果でない。
+- `NaruSem/Call.lean` / `CallTotality.lean` / `CallExamples.lean` — 関数・input の保存対象の Core の意味論と適格性(C54): 署名 `Call.Sig` / 環境
+  `Call.SigEnv` / `Call.FEnv` / `Call.PEnv`、呼出しを含む `Call.wtR` / `wtS` / `eval` / `Sem`、宣言群 `Call.Prog` / `wtProg` / `interp`、
+  全域性・一意性・存在 `Call.eval_total` / `Eval_unique` / `Sem_exists` / `Sem_unique`、宣言群の `Call.interp_respects` / `fn_total` / `spec_defined` /
+  `spec_meaning`、検体。
+- `NaruSem/SurfaceCall.lean` — 関数・input の保存対象の Surface AST の意味論と適格性(C54): 宣言表 `Surf.Call.Table`、実引数の並べ替え `arrange`、
+  呼出し(位置 / 名前付き引数・修飾名)と UFCS を含む `Surf.Call.Expr` / `wtR` / `wtS` / `eval` / `Sem`、宣言群 `Surf.Call.Prog` / `wtProg` / `interp`。
+- `NaruSem/SurfaceCallTotality.lean` — Surface AST の呼出しを含む式に意味が定まること(C54): runtime の全域性 `Surf.Call.eval_total`(+ `evalArgs_total`)
+  と一意性 `Surf.Call.Eval_unique`、spec の意味の存在 `Surf.Call.Sem_exists` と一意性 `Surf.Call.Sem_unique`(`Surf.Call.Sem_not_nat`、評価の単調性
+  `Surf.Call.eval_mono`)、名前付き引数の並べ替えの可換性 `Surf.Call.arrange_map`、宣言群の `Surf.Call.interp_respects` / `interp_defined` /
+  `fn_total` / `spec_defined` / `spec_meaning`。
+- `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)
@@ -226,3 +238,27 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Call.ex_I₄₁_respects NaruSem.Call.ex_fn_total NaruSem.Call.ex_wtProg_S NaruSem.Call.ex_wtProg_S_sig NaruSem.Call.ex_spec_defined
   NaruSem.Call.ex_Sem_callVal NaruSem.Call.ex_Sem_callSpec NaruSem.Call.neg_eval_call_unknown NaruSem.Call.neg_eval_call_arg_stuck
   NaruSem.Call.neg_Sem_call_unknown
+
+-- C54: 関数・input を含む Surface AST の意味論(`NaruSem.Surf.Call`)— runtime の全域性・一意性(実引数の列を含む)、spec の意味の存在・一意性、
+-- 名前付き引数の並べ替えと payload の写像の可換、評価の単調性、論理の位置の式が Nat の値に評価されないこと、宣言表の署名と Core 側の署名の対応、
+-- 局所名による隠蔽が文脈と環境で一致すること、展開の補題
+#audit_axioms NaruSem.Surf.Call.eval_total NaruSem.Surf.Call.Eval_unique NaruSem.Surf.Call.evalArgs_total NaruSem.Surf.Call.wtR_total_all
+  NaruSem.Surf.Call.Sem_exists NaruSem.Surf.Call.Sem_unique NaruSem.Surf.Call.Sem_exists_all NaruSem.Surf.Call.Sem_not_nat
+  NaruSem.Surf.Call.eval_mono NaruSem.Surf.Call.evalArgs_mono NaruSem.Surf.Call.eval_mono_all
+  NaruSem.Surf.Call.arrange_map NaruSem.Surf.Call.arrange_vals NaruSem.Surf.Call.assign_map NaruSem.Surf.Call.allSome_map
+  NaruSem.Surf.Call.headBound_ctx NaruSem.Surf.Call.ufcs_ctx NaruSem.Surf.Call.headBound_sub NaruSem.Surf.Call.ufcs_sub
+  NaruSem.Surf.Call.valueSig?_Δ NaruSem.Surf.Call.specSig?_Δ NaruSem.Surf.Call.eval_binop_not_nat
+  NaruSem.Surf.Call.Agree.refl NaruSem.Surf.Call.Agree.ext_val NaruSem.Surf.Call.Agree.ext_prop NaruSem.Surf.Call.Agree.extVals
+  NaruSem.Surf.Call.SEnv.Sub.ext NaruSem.Surf.Call.SEnv.Sub.extVals
+  NaruSem.Surf.Call.eval_block_cons NaruSem.Surf.Call.eval_block_nil NaruSem.Surf.Call.eval_match NaruSem.Surf.Call.evalArms_cons
+  NaruSem.Surf.Call.evalStmts_cons NaruSem.Surf.Call.evalArgs_pos NaruSem.Surf.Call.evalArgs_named NaruSem.Surf.Call.wtArgs_pos
+  NaruSem.Surf.Call.wtArgs_named NaruSem.Surf.Call.wtArmR_mk NaruSem.Surf.Call.wtArmS_mk
+
+-- C54: Surface AST の宣言群の意味が宣言表の署名を守ること(fn の全域性・spec 宣言の意味の存在と本体の意味との同値)、宣言群の適格性の補題
+-- (鍵の重複なし・署名の保持・表の署名が宣言ごとにその鍵だけで伸びること)
+#audit_axioms NaruSem.Surf.Call.interp_respects NaruSem.Surf.Call.interp_defined NaruSem.Surf.Call.fn_total NaruSem.Surf.Call.spec_defined
+  NaruSem.Surf.Call.spec_meaning NaruSem.Surf.Call.interpFrom_inv NaruSem.Surf.Call.interpFrom_spec_meaning NaruSem.Surf.Call.interpFrom_stable
+  NaruSem.Surf.Call.Interp.step_inv NaruSem.Surf.Call.Interp.step_Φ_fn NaruSem.Surf.Call.Interp.step_Ψ_spec NaruSem.Surf.Call.Interp.step_input
+  NaruSem.Surf.Call.wtProgFrom_cons NaruSem.Surf.Call.wtProgFrom_fresh NaruSem.Surf.Call.wtProgFrom_sig NaruSem.Surf.Call.wtProg_sig
+  NaruSem.Surf.Call.wtDecl_sig NaruSem.Surf.Call.sigsOf_append_self NaruSem.Surf.Call.sigsOf_append_ne NaruSem.Surf.Call.sigsOf_none_of_append
+  NaruSem.Surf.Call.Δ_append_self NaruSem.Surf.Call.Δ_append_ne NaruSem.Surf.Call.init_respects NaruSem.Surf.Call.init_defined

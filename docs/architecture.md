@@ -139,8 +139,9 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 Core IR の意味論(C39〜C47。下の各節)に加えて、構文解析の出力 Surface AST の独立した意味論と適格性(C48。「Surface AST の意味論と適格性」)と、
 runtime の Surface AST → Core の変換と値の対応、spec の Surface AST → Core の変換と命題の双方向の同値、それぞれの実際の frontend と生成 Lean への接続
 (C49 / C50 / C51。「Surface AST → Core の対応」)がある。関数・input の保存対象(非再帰の fn / spec 宣言の呼出しと input。C54〜C59)は
-「関数・input の保存対象の意味論」の段階まで(Core の意味論・適格性・意味が定まること、Surface AST の意味論・適格性、宣言群の引用)が揃っており、
-Surface 側の意味が定まることの証明と保存・接続(C55〜C58)はまだ無い。保証の境界と未対応は「信頼する部分・方式・未対応」。
+「関数・input の保存対象の意味論」の段階(C54: Core と Surface AST それぞれの独立した意味論・適格性と、適格な式・宣言群に意味が定まること、
+実際の宣言群の引用と適格性の検査)が揃っており、呼出しを含む AST → Core の保存と実生成 Lean への接続(C55〜C58)はまだ無い。
+保証の境界と未対応は「信頼する部分・方式・未対応」。
 
 ### 対象(用語「今回の保存対象」)と範囲の判定(`NaruSem/Scope.lean`)
 
@@ -205,6 +206,13 @@ Surface 側の意味が定まることの証明と保存・接続(C55〜C58)は�
 | `Call.interp_respects` / `Call.interp_defined` / `Call.fn_total` / `Call.spec_defined` | **宣言群の意味は署名を守る(C54)**: 適格な宣言群(`Call.wtProg SigEnv.empty P = some Δ`: 依存順・鍵の重複なし・各本体がそれより前の署名だけで適格)と input の署名を守る任意の解釈 `I`(`FEnv.RespectsInputs`)について、宣言群の意味 `Call.interp I P` の関数環境は `Δ` を守り(各 fn は型の合う任意の実引数に型の合う値を返す: `fn_total`)、各 spec 宣言の意味は定義されている(`spec_defined`)。宣言群の帰納法(`Call.Interp.step_inv` / `Call.interpFrom_inv`) | 宣言群の適格性 + input の解釈が署名を守る |
 | `Call.spec_meaning` | **spec 宣言の意味は本体の意味(C54)**: 適格な宣言群の spec 宣言 `k` の意味 `F` は、型の合う任意の実引数 `vs` について、実引数を束ねた環境での本体の(それより前の宣言の意味の下の)意味 `Q` と同値(`F vs ↔ Q`)。`Interp.step` の `∃ P, Sem … P ∧ P` は、本体の意味が存在して一意なので既定値や `False` ではなく本体の意味そのもの | 同上 |
 | `Call.wtProg_fresh` / `Call.wtProg_sig` / `Call.wtProg_mono` | 宣言群の適格性の補題: 各宣言の鍵は始めの文脈に無く(重複しない)、各宣言の署名は結果の文脈にあり、始めの署名は保たれる | — |
+| `Surf.Call.eval_total` / `Surf.Call.Eval_unique` / `Surf.Call.evalArgs_total` | **関数・input を含む Surface AST の runtime の全域性と一意性(C54)**: `Surf.Call.wtR T Γ e = some t`(宣言表 `T` と束縛文脈 `Γ : SCtx` で適格: 呼出し先の経路が局所名に隠されず表の fn / input に解決し、実引数(位置 / 名前付き)の型が `arrange` で仮引数の順に並べ替えられて一致する。UFCS は受け手を先頭の位置引数に)、`Γ = ρ.ctx`、`Φ.Respects T.Δ`(関数環境が表の署名を守る)なら `∃ v, Surf.Call.eval T Φ ρ e = some v ∧ v.ty = t`、値は一意。実引数の列(構文解析の順、名前付きは名前つき)も同じ(`evalArgs_total`)。`Surf.Call.wtR.mutual_induct` で式・`let` の列・腕の列・腕・実引数の列を同時に示す(`Surf.Call.wtR_total_all`)。局所名による隠蔽は文脈と環境で一致する(`headBound_ctx` / `ufcs_ctx`) | 適格性 + 署名を守る関数環境 |
+| `Surf.Call.arrange_map` / `Surf.Call.arrange_vals` | **名前付き引数の並べ替えは payload の写像と可換**: `arrange ps (args.map (mapArg f)) = (arrange ps args).map (List.map f)`(`assign` は名前だけを見る)。したがって実引数の値の列の型の列が仮引数の順に並べ替えられて仮引数の型に一致するなら、値の列も同じ順に並べ替えられて型が合う(`arrange_vals`: 型付けの並べ替えと評価の並べ替えが一致する) | — |
+| `Surf.Call.Sem_exists` / `Surf.Call.Sem_unique` | **関数・input を含む Surface AST の spec の意味の存在と一意性(C54)**: `Surf.Call.wtS T Γ e = some τ`、`τ` が論理の位置の型、`Γ = ρ.ctx`、`Φ.Respects T.Δ`、`Ψ.Defined T.Δ` なら `∃ P, Surf.Call.Sem T Φ Ψ ρ e P`、意味は一意(fn / input の呼出しの規則 `callVal` / `ufcsVal` と spec 宣言の呼出しの規則 `callSpec` / `ufcsSpec` は表の署名で排他、注釈の無い `==` の `eqNat` / `eqForm` は `Surf.Call.Sem_not_nat` で排他)。`Surf.Call.wtS.mutual_induct` で式・`let` の列・腕の列・腕を同時に示す(`Surf.Call.Sem_exists_all`) | 同上 + spec 宣言の環境 |
+| `Surf.Call.Sem_not_nat` / `Surf.Call.eval_mono` | 論理の位置の式(`Sem` の導出のある式)は対応する評価の環境(`Agree`: 値の束縛と束縛の有無を保ち、命題に束ねた名前に Nat の値を与えない)で Nat の値に評価されない。評価の単調性 `eval_mono`: 値の束縛と束縛の有無(局所名が大域名を隠すこと)を保つ環境の拡張 `SEnv.Sub` は定まっていた値を変えない(呼出しの評価は実引数の値と隠蔽だけに依る。`Surf.Call.eval.mutual_induct` の `eval_mono_all`) | — |
+| `Surf.Call.interp_respects` / `Surf.Call.interp_defined` / `Surf.Call.fn_total` / `Surf.Call.spec_defined` | **Surface AST の宣言群の意味は署名を守る(C54)**: 適格な宣言群(`Surf.Call.wtProg P = true`: 依存順・鍵と単純名の重複なし・各本体がそれより前の宣言の表 `tableOf P seen` で適格)と input の署名を守る任意の解釈 `I`(`Surf.Call.RespectsInputs I P`)について、宣言群の意味 `Surf.Call.interp I P` の関数環境は宣言群全体の表 `tableOf P P` の署名を守り(各 fn / input は型の合う任意の実引数に型の合う値を返す: `fn_total`)、各 spec 宣言の意味は定義されている(`spec_defined`)。宣言群の帰納法(`Surf.Call.Interp.step_inv` / `interpFrom_inv`)で、表の署名は宣言を 1 つ足すごとにその宣言の鍵だけで伸びる(`Δ_append_self` / `Δ_append_ne`: 鍵の重複なしと各宣言の署名が対象であることから) | 宣言群の適格性 + input の解釈が署名を守る |
+| `Surf.Call.spec_meaning` | **spec 宣言の意味は本体の意味(C54、Surface)**: 適格な宣言群の spec 宣言の意味 `F` は、型の合う任意の実引数 `vs` について、実引数を束ねた環境での本体の(それより前の宣言の表 `T'` と意味 `m'` の下の)意味 `Q` と同値(`F vs ↔ Q`)。`Core` 側の `Call.spec_meaning` と同じ構成 | 同上 |
+| `Surf.Call.wtProgFrom_fresh` / `Surf.Call.wtProgFrom_sig` / `Surf.Call.wtProg_sig` / `Surf.Call.sigsOf_append_self` / `Surf.Call.sigsOf_append_ne` | 宣言群の適格性の補題(Surface): 残りの各宣言の鍵はそれまでの表に無く(重複しない)、各宣言の署名は宣言群全体の表にあり、宣言を 1 つ足した表の署名はその鍵だけで変わる | — |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -398,7 +406,7 @@ runtime の変換 `Surf.lower` を値の文脈 `Γ.vals` で使う。
   `wtS` を通り、正しい Core の読みと意味の食い違う具体環境がある(`diff_*`: 読みの非同値 `¬ (denoteP ρ WrongCore.f ↔ denoteP ρ core_f)` を明示の命題と証明で
   kernel に検査させる。`Sem_denote` により読みは意味そのもの)が、正しい AST の変換との一致 `conn_wrong_*` だけが失敗する。
 
-### 関数・input の保存対象の意味論(`NaruSem/Call.lean`・`CallTotality.lean`・`CallExamples.lean`・`SurfaceCall.lean`・`CallQuote.lean`、C54)
+### 関数・input の保存対象の意味論(`NaruSem/Call.lean`・`CallTotality.lean`・`CallExamples.lean`・`SurfaceCall.lean`・`SurfaceCallTotality.lean`・`CallQuote.lean`、C54)
 
 用語「関数・input の保存対象」(C39〜C53 の Nat / Bool の式・演算・束縛・ガード付き `match`・spec の量化を土台に、有限で非循環の宣言群に対する大域名で静的に識別できる
 非再帰の fn / spec 宣言の呼出しと input の呼出しを加えたもの)の独立した意味論と適格性。既存の `Scope.lean` / `Eval.lean` / `Sem.lean` / `Surface*.lean` の定義は
@@ -419,12 +427,16 @@ backend の出力・frontend の変換結果を意味と定義しない。
 | Surface の適格性 | `Surf.Call.wtR T Γ e` / `Surf.Call.wtS T Γ e`: この層では runtime の式も束縛文脈 `SCtx` の上で読む(runtime の式は値の束縛だけを参照し、命題の束縛名も局所名として大域名を隠す。fn の本体の文脈は仮引数 = すべて値)。`.call sp (.var _ path) args`: 頭が局所名でなく、実引数の型(構文解析の順。`wtArgs`)を `arrange` で仮引数の順にできて一致すれば fn / input は値、spec 宣言は命題(`callTy` / `callTyS`)。`.method sp r m args`: `ufcs T Γ m`(`m` が局所名でなく宣言に解決)なら受け手を先頭の位置引数にした呼出し、そうでなければ Nat の `min` / `max`(位置引数 1 つ)。`Surf.Call.proppyS` も spec 宣言の呼出し(UFCS を含む)を数える |
 | Surface の意味 | `Surf.Call.eval T Φ ρ e`(`ρ : SEnv`。`.call` / UFCS は実引数を評価し `callVal` が `arrange` で並べて `Φ k` に渡す)、`Surf.Call.Sem T Φ Ψ ρ e P`(`callVal` / `callSpec` / `ufcsVal` / `ufcsSpec`: 呼出し先の署名・解決・局所名による隠蔽・並べ替えを前提に持つ)。`Φ` / `Ψ` は Core と共有(鍵 → 値の列 → 値 / 命題) |
 | 宣言群(Surface) | `Surf.Call.Prog`(`Decl` の列、依存順)。`Surf.Call.wtProg P`: 前から順に鍵も単純名も未使用で、各宣言が `wtDecl (tableOf P seen)` で適格。`Surf.Call.interp I P`: `Call.interp` と同じ構成(本体はそれより前の宣言の表と環境で読む)。`Surf.Call.RespectsInputs` |
+| 意味が定まる(Surface) | 上の表の `Surf.Call.eval_total` / `Eval_unique` / `evalArgs_total` / `Sem_exists` / `Sem_unique`(前提は `Γ = ρ.ctx`・`Φ.Respects T.Δ`・`Ψ.Defined T.Δ`。`T.Δ` は表の署名から仮引数の名前を落とした Core 側の署名の文脈)、名前付き引数の並べ替えの可換性 `arrange_map` / `arrange_vals`、評価の単調性 `eval_mono` と `Sem_not_nat`、宣言群の `Surf.Call.interp_respects` / `interp_defined` / `fn_total` / `spec_defined` / `spec_meaning`(`SurfaceCallTotality.lean`) |
 | 検体 | `NaruSem/CallExamples.lean`(Core。`decide` / 構成): 対象範囲は空でない(fn / input / spec 宣言の呼出し、値の位置の呼出し、命題の `let`)、不適格な Core(未解決・引数の数と型・phase・値の位置の spec 宣言・命題の実引数・関数の値としての参照)、宣言群(適格な 2 段の呼出しと input、自己再帰・相互再帰・依存順でない・重複・input の引数の不一致は `none`)、input の解釈による値(同じ宣言群を別の解釈で読めば別の値)、署名に合わない解釈は行き詰まり(`none`)で `RespectsInputs` を満たさない、`fn_total` / `spec_defined` の実例、`callVal` / `callSpec` の実例、行き詰まり。実際の compiler 経路の検体は `tests/accept/sem_call.naru`(下) |
 | 実際の宣言群の引用 | `NaruSem/CallQuote.lean`: `Call.Quote.declOf?`(Core の fn / input / spec 宣言 → `Call.Decl`)/ `declWith` / `checkProg`(同じソースを再びコンパイルし、引用した各宣言が実際の宣言(鍵・種別・仮引数の名前と型・戻り型・本体)と一致し、実際の fn / input / spec 宣言がすべて引用されている — 宣言群全体)、`Surf.Call.Quote.ofAst?` / `ofDeclAst?`(構文解析の宣言 → `Surf.Call.Decl`。モジュール名つき)/ `expr` / `declWith` / `checkProg`(再構文解析と `Decl.toAst` の `==`)。`lake exe naru_test semantics` が検体 `tests/accept/sem_call.naru`(input 3・fn 16・spec 宣言 9: 位置 / 名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・spec から runtime / spec の呼出し)の宣言群を依存順に引用した `CallScope.lean` / `SurfaceCallScope.lean` を書き、`Call.wtProg` / `Surf.Call.wtProg` と各宣言の署名を kernel の `decide` で、負の検体(実際の Core / AST から作る: 依存順の反転・違う呼出し先・phase・循環・重複・引数の数と型・未解決の名前・名前付き引数の名前 / 順序 / 二重指定)が不適格であること、input の解釈の下の fn の値と署名に合わない解釈の行き詰まりも kernel に検査させる([testing.md](testing.md)) |
 
 言語の意味(呼出しは実引数を仮引数に束ねて本体を読む、名前付き引数は仮引数の名前で、UFCS は受け手を先頭の引数に、input は環境からの入力。[language.md](language.md)「式」
-「scenario と observer」)はこの定義のために変えていない。この段階で保証するのは「意味が定まる」こと(Core)と適格性の明示までで、呼出しを含む AST → Core の変換と
-値 / 命題の対応、実生成 Lean(fn / spec 宣言の Lean の定義と input の引数 `name'`)への接続、Surface 側の意味が定まることの証明は未対応(C55〜C58)。
+「scenario と observer」)はこの定義のために変えていない。この段階で保証するのは「意味が定まる」こと(Core と Surface AST の両方: 適格な式・宣言群と対応する環境、
+署名を守る任意の input の解釈について、runtime の値が存在して一意で、spec の意味が存在して一意で、各 fn は全域で各 spec 宣言の意味は本体の意味)と適格性の明示までで、
+呼出しを含む AST → Core の変換と値 / 命題の対応、実生成 Lean(fn / spec 宣言の Lean の定義と input の引数 `name'`)への接続は未対応(C55〜C58)。
+`lake exe naru_test semantics` の `CallScope.lean` / `SurfaceCallScope.lean` は、実際の宣言群に一般定理が適用できること(前提 `wtProg` の成立から
+`cresp_call` / `cdef_call` / `sresp_call` / `sdef_call`: 署名を守る任意の解釈の下で宣言群の意味が署名を守り spec 宣言の意味が定義される)も kernel に検査させ、公理監査に載せる。
 
 ### 信頼する部分・方式・未対応
 
@@ -441,8 +453,8 @@ backend の出力・frontend の変換結果を意味と定義しない。
   場合分け + `rfl`)。Surface AST → Core(C49 / C50)は汎用翻訳方式(runtime は `Surf.lower` + `Surf.lower_sound`、spec は `Surf.lowerS` + `Surf.lowerS_sound` /
   `Surf.Sem_lowerS_iff`)で、実際の AST と Core への接続は `rfl`(`low_<f>` / `lows_<f>`)、実生成宣言への合成は `apres_<f>`。
 - 公理監査: `NaruSem/Audit.lean` の `#audit_axioms`。許容は `propext` / `Classical.choice` / `Quot.sound`(理由は同ファイル)。
-- 未対応: 関数呼出しと input の **保存**(呼出しを含む Surface AST → Core の変換と値 / 命題の対応、実生成 Lean への接続と呼出し先の証拠の合成、Surface 側の
-  意味が定まることの証明。C55〜C58。独立意味論・適格性・宣言群の引用は上の「関数・input の保存対象の意味論」)、lambda・高階値、再帰、record / enum、
+- 未対応: 関数呼出しと input の **保存**(呼出しを含む Surface AST → Core の変換と値 / 命題の対応、実生成 Lean への接続と呼出し先の証拠の合成。
+  C55〜C58。独立意味論・適格性・意味が定まること(Core と Surface AST)・宣言群の引用は上の「関数・input の保存対象の意味論」)、lambda・高階値、再帰、record / enum、
   Set / Table / List、モジュール全体・claim bundle 全体(IDEAL.md「延期」)。
   C49 / C50 の Surface AST → Core の対応は「Surface AST の保存対象」の式と最小の fn / spec 宣言の包装に限る(上の「Surface AST → Core の対応」)。ソース文字列からの保証
   (構文解析の正しさ)・型検査器全体の健全性・consensus 全体と基準実装の同値・プロトコルの Safety / Liveness・レビュー面は境界の外で、達成済みと呼ばない。
