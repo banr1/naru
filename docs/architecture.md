@@ -459,6 +459,10 @@ spec の式の一般同値は `CallDenoteProp.lean` の `Call.Sem_denote`。型�
 `CallStatementsReadWrong.lean` は `specCallSpec` の `∧` を `∨` にした型の合う隔離出力が、同じ正しい Core への接続だけに失敗することを確かめる。正しい対照は成功する。
 `CallComposeProp.lean` の `SpecEvidence` は宣言順に prefix 署名を更新して各 `SpecConn` を束ねる。検査は各 `read_*` を `spevid_*` に写し、全宣言の `spevid_call` と `cprops_call` を kernel 検査・公理監査する。`cprops_call` は任意の署名を守る input 解釈で、同じ input を渡す独立宣言群の命題環境と実生成 `Ψgen_call` の双方向同値を示す。全 fn の接続も必要で、証拠欠落を仮定で埋めない。呼出しを含む Surface AST → Core の値/命題対応と別モジュールの実生成接続は未完了。
 証拠は宣言と本体に結び付いている。`CallEvidenceCheck.lean` / `CallEvidenceWrong.lean` は、同じ署名の別宣言・変更前の Core の証拠と、呼出し先の証拠が欠けた束による runtime 合成を拒否する(C57)。
+spec の `CallSpecEvidenceCheck.lean` / `CallSpecEvidenceWrong.lean` も、別宣言・変更前の Core の証拠の流用と、呼出し先の証拠欠落による全体の命題同値の合成を拒否する。
+正しい対照では、同型で意味が異なる変更後 Core、全体の合成、呼出し先 `posBase` の証拠だけを含まない suffix の証拠を kernel 検査・公理監査する。
+suffix は元の prefix 署名を保持し `specCallSpec` の接続を証明できるが、署名に `posBase` があることはその接続証拠の代用にならず、全体の `SpecEvidence` としては使えない。
+失敗は3件の不正な証拠使用の行の型不一致に限定し、構文/import/未証明の穴による失敗を成功扱いしない。
 有限の負の検体は拒否理由を確かめるもので、一般保存定理の代わりにはしない。
 `lake exe naru_test semantics` の `CallScope.lean` / `SurfaceCallScope.lean` は、実際の宣言群に一般定理が適用できること(前提 `wtProg` の成立から
 `cresp_call` / `cdef_call` / `sresp_call` / `sdef_call`: 署名を守る任意の解釈の下で宣言群の意味が署名を守り spec 宣言の意味が定義される)も kernel に検査させ、公理監査に載せる。

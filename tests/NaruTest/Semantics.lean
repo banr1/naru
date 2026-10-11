@@ -77,6 +77,8 @@ import NaruSem.CallQuote
    input の鍵で同じなら `interp I cprog_call` の fn / input は `Φgen_call` と署名の鍵で一致)、各 fn の値 `cval_<f>`(`fn_value`)を kernel に検査させ、公理監査に載せる。
    負の検体 `CallModelWrong.lean`(同じ署名の別の呼出し先への置換、名前付き実引数の取り違え、UFCS の受け手の誤対応、input の誤配線)は型検査を通るが接続検査だけが失敗する。
    `CallEvidenceCheck.lean` / `CallEvidenceWrong.lean` は対照の成功と公理監査、別宣言・古い Core の証拠と呼出し先の証拠が欠けた束の合成の 3 件だけの失敗を検査する(C57)。
+   spec の `CallSpecEvidenceCheck.lean` / `CallSpecEvidenceWrong.lean` は元の prefix 署名と呼出し側を保持した部分証拠と、同型で非同値の古い Core の対照を検査し、
+   別宣言・古い本体の証拠・呼出し先の証拠欠落による全体の命題同値の合成の 3 件だけを拒否する。
 -/
 
 namespace NaruTest.Semantics
@@ -1420,6 +1422,75 @@ def checkCallEvidence (ib ia : String) (fns : List CallFn) (lp : String) : M Uni
     | _ => fail "C57: cannot derive a stale body from the current base declaration"
   | _, _ => fail "C57: required current base/callBase declarations are missing"
 
+/-- C57(spec): 現在の prefix 接続証拠の別宣言/古い本体への流用と、呼出し先を証明しない suffix の証拠による全体の合成を拒否する。
+suffix の署名は元の prefix を保持する。署名に呼出し先があるだけでは、その接続証拠を持つことにはならない。 -/
+def checkCallSpecEvidence (ib ia : String) (specs : List CallFn) (prog : NaruSem.Call.Prog) (lp : String) : M Unit := do
+  match specs.find? (fun f => f.key == "Sem.Call.posBase"), specs.find? (fun f => f.key == "Sem.Call.specCallSpec") with
+  | some base, some caller =>
+    match base.body with
+    | .binop op lhs (.lit (.nat n) ty) resultTy =>
+      let stale := Naru.Core.Expr.binop op lhs (.lit (.nat (n + 1)) ty) resultTy
+      let ps := NaruSem.Call.Quote.params (base.params.filterMap NaruSem.Call.Quote.paramOf?)
+      let callerPs := caller.params.filterMap NaruSem.Call.Quote.paramOf?
+      let suffix := prog.drop caller.index
+      let suffixKeys := suffix.filterMap fun d => match d with | .spec k .. => some k | _ => none
+      if callerPs.map (·.2) != (base.params.filterMap NaruSem.Call.Quote.paramOf?).map (·.2) ||
+          !(declCallKeys (.spec caller.key callerPs caller.body)).contains base.key ||
+          caller.index != base.index + 1 || suffixKeys != (specs.filter (·.key != base.key)).map (·.key) then
+        fail "C57(spec): the incomplete bundle must omit exactly the current spec callee, retain its real caller and preserve their signatures"
+        return
+      let conn (body : String) := s!"NaruSem.Call.SpecConn Δprefix_posBase (Φgen_call {ia}) (Ψgen_call {ia}) {base.key.quote} {ps} {body}"
+      let group (name evidence : String) :=
+        s!"theorem {name} {ib} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+        s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
+        s!"    NaruSem.Call.PEnv.Agree (NaruSem.Call.interp I cprog_call).Ψ (Ψgen_call {ia}) Δ :=\n" ++
+        s!"  NaruSem.Call.interp_prop_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) ({evidence} {ia})\n"
+      let audited := ["spec_callee_absent", "spec_caller_present", "spec_prefix_has_callee", "partial_spec_evidence", "stale_spec_wt", "stale_spec_diff", "current_spec_evidence", "complete_spec_group"]
+      let control := "-- C57: current spec evidence controls; original prefix signatures and arbitrary inputs are retained\nimport CallStatementsReadCheck\n\n" ++
+        s!"def partial_spec_prog : NaruSem.Call.Prog := cprog_call.drop {caller.index}\n" ++
+        s!"theorem spec_callee_absent : ¬ ∃ d ∈ partial_spec_prog, d.key = {base.key.quote} := by decide\n" ++
+        s!"theorem spec_caller_present : ∃ d ∈ partial_spec_prog, d.key = {caller.key.quote} := by decide\n" ++
+        s!"theorem spec_prefix_has_callee : NaruSem.Call.specSig? Δprefix_specCallSpec {base.key.quote} = some {(NaruSem.Call.Quote.list (callerPs.map (fun p => tyTerm p.2)))} := by decide\n" ++
+        s!"theorem partial_spec_evidence {ib} : NaruSem.Call.SpecEvidence (Φgen_call {ia}) (Ψgen_call {ia}) Δprefix_specCallSpec partial_spec_prog := by\n" ++
+        "".intercalate (suffix.map fun d => match d with
+          | .spec k .. => s!"  refine ⟨spevid_{shortName k} {ia}, ?_⟩\n"
+          | _ => "  refine ⟨True.intro, ?_⟩\n") ++ "  trivial\n" ++
+        s!"def stale_posBase : Naru.Core.Expr := {NaruSem.Quote.expr stale}\n" ++
+        s!"theorem stale_spec_wt : NaruSem.Call.wtS Δprefix_posBase (NaruSem.Call.paramSCtx {ps}) stale_posBase = some (NaruSem.STy.val .bool) := by decide\n" ++
+        s!"theorem stale_spec_diff {ib} : ¬ (NaruSem.Call.denoteP Δprefix_posBase (Φgen_call {ia}) (Ψgen_call {ia}) (NaruSem.SEnv.ofList [(\"x\", NaruSem.SVal.val (.nat 0))]) stale_posBase ↔ NaruSem.Call.denoteP Δprefix_posBase (Φgen_call {ia}) (Ψgen_call {ia}) (NaruSem.SEnv.ofList [(\"x\", NaruSem.SVal.val (.nat 0))]) ccore_posBase) := by change ¬ ((1 : Nat) > {n + 1} ↔ (1 : Nat) > {n}); decide\n" ++
+        s!"theorem current_spec_evidence {ib} : {conn "ccore_posBase"} := spevid_posBase {ia}\n" ++
+        group "complete_spec_group" "spevid_call" ++ s!"#audit_axioms {" ".intercalate audited}\n"
+      let controlFile := outDir / "CallSpecEvidenceCheck.lean"
+      IO.FS.writeFile controlFile control
+      let c ← step "C57(spec): complete evidence composes; the suffix retains the caller and original prefix; stale Core is well-typed and non-equivalent" "lean" #[controlFile.toString]
+        (env := #[("LEAN_PATH", some lp)])
+      let missing := audited.filter fun name => !(auditedNames c.stdout).contains name
+      if c.exitCode == 0 && missing.isEmpty && !(contains (c.stdout ++ c.stderr) "forbidden") then
+        ok s!"C57(spec): all {audited.length} evidence controls are kernel-checked and audited; exactly the real callee's spec evidence is omitted"
+      else fail s!"C57(spec): evidence controls failed or audit missing {missing}\n{tail (c.stdout ++ c.stderr) 2000}"
+      let negatives :=
+        [s!"theorem wrong_spec_declaration {ib} : {conn "ccore_posBase"} := spevid_specCallSpec {ia}\n",
+         s!"theorem stale_spec_evidence {ib} : {conn "stale_posBase"} := spevid_posBase {ia}\n",
+         group "missing_spec_callee" "partial_spec_evidence"]
+      let mut text := control
+      let mut failing : List Nat := []
+      for negative in negatives do
+        text := text ++ negative
+        failing := failing ++ [(text.splitOn "\n").length - 1]
+      let wrongFile := outDir / "CallSpecEvidenceWrong.lean"
+      IO.FS.writeFile wrongFile text
+      let w ← step "C57(spec): wrong declaration, stale Core evidence and missing spec callee evidence must fail" "lean" #[wrongFile.toString]
+        (expectExit := 1) (env := #[("LEAN_PATH", some lp)])
+      let output := w.stdout ++ "\n" ++ w.stderr
+      let errors := errorLines output
+      let syntaxError := ["unknown", "unexpected token", "import", "sorry"].any (contains output)
+      if w.exitCode == 1 && failing.length == 3 && errors.length == 3 && errors.all failing.contains && failing.all errors.contains &&
+          (output.splitOn "Type mismatch").length + (output.splitOn "Application type mismatch").length >= 5 && !syntaxError then
+        ok s!"C57(spec): exactly the 3 invalid spec evidence uses fail (lines {failing}); complete controls succeed, no syntax/import error or forbidden proof placeholder"
+      else fail s!"C57(spec): expected exactly 3 evidence type mismatches on lines {failing}, got {errors}\n{tail output 3000}"
+    | _ => fail "C57(spec): cannot derive a stale body from the current posBase declaration"
+  | _, _ => fail "C57(spec): required current posBase/specCallSpec declarations are missing"
+
 def checks : M Unit := do
   let t0 ← IO.monoMsNow
   IO.FS.createDirAll outDir
@@ -1807,6 +1878,7 @@ def checks : M Unit := do
         let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations
         checkWrong "Model (calls and inputs)" (outDir / "CallModelWrong.lean") (callWrongProgram ib ia fns callWrongs) callWrongs lpCall
         checkCallEvidence ib ia fns lpCall
+        checkCallSpecEvidence ib ia specs cprog lpCall
   heading "C45 the audit rejects forbidden dependencies"
   let negatives : List (String × String × String) :=
     [ ("sorry", "theorem bad : (1 : Nat) = 1 := sorry\n#audit_axioms bad\n", "sorryAx"),

@@ -84,3 +84,5 @@
 - `wrongProgramWith` の callback は正しい対照に空の Lean 名を渡すので、実生成名へ戻す必要がある。また失敗行は callback の定理文字列を1行として数えるので、callback は改行を含まない1行の定理を返す。今回の初回検査で両不備を検出し、一行化と fallback 後に対照成功・ちょうど接続1件だけの失敗を確認した。
 
 - Lean の命題を返す再帰関数 `wrapP` の展開は、`rw [wrapP.eq_def]` が symbolic な型列で whnf の上限に達することがある。`wrapP_nil` / `wrapP_nat` / `wrapP_bool` を `rfl` で証明して限定した展開に使えば、標準の heartbeat 上限でカリー化の接続補題を検査できる。
+
+- C57 の spec 証拠検査は `tests/NaruTest/Semantics.lean` の `checkCallSpecEvidence`。`CallSpecEvidenceCheck.lean` は現在の `posBase` / `specCallSpec` の実呼出し・同じ署名を照合し、呼出し側からの suffix に元の prefix 署名で `SpecEvidence` を構成する。署名に呼出し先があってもその接続証拠の代用にはならず、この部分証拠は全体の `interp_prop_agree` に使えない。対照8定理を公理監査し、`CallSpecEvidenceWrong.lean` の別宣言・変更前Core・呼出し先証拠欠落の3行だけの型不一致を要求する。`decide` は input を含む意味の差の命題で自由変数を拒否するので、現在の読みと定義的に同じ閉じた命題へ `change` してから使う。

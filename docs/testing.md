@@ -266,7 +266,14 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   `CallEvidenceWrong.lean` はその対照に、同じ署名の `callBase` の証拠を `base` に使う、本体変更前の証拠を変更後の Core に使う、
   呼出し先 `base` の証拠を抜いた束を `Call.interp_agree` に渡す、という 3 件だけを加える。その 3 行だけが型の不一致で失敗し、構文・import の誤りや
   未証明の穴による失敗が無いことを要求する。これらは隔離検体であり、現在のソース・生成物・正しい証拠を変更しない。
-  spec(Statements)の接続と Surface AST からの合成(C55〜C58 の残り)はまだ無い。
+  spec の `CallStatementsReadCheck.lean` は9宣言の prefix 接続 `read_*` / `spevid_*` と全体の `spevid_call` / `cprops_call` を kernel 検査・公理監査する。
+  C57 の spec 証拠の検査は `CallSpecEvidenceCheck.lean` / `CallSpecEvidenceWrong.lean`。正しい対照の8定理は、全 fn/spec の証拠による命題同値の合成、
+  同型で意味が異なる変更後の `posBase` の Core、および呼出し先 `posBase` の証拠だけを含まない部分証拠を検査する。
+  部分証拠は `specCallSpec` からの suffix に対し、元の prefix 署名を保持する。その署名に `posBase` があり、実際の呼出し側が残ることも検査する。
+  署名で呼出し先を知っていてもその接続は証明していないため、この suffix の証拠だけで全体の `Call.interp_prop_agree` は適用できない。
+  負のファイルは対照に、別宣言 `specCallSpec` の証拠の流用、変更前の証拠の変更後 Core への流用、部分証拠による全体の合成の3件だけを加える。
+  その3行だけの型不一致・構文/import/未証明の穴のエラーなしを要求する。現在の入力・実生成物・正しい証拠は保持する。
+  呼出しを含む Surface AST からの保存、別モジュールの接続、spec の呼出し先や input 誤配線の負検体(C55〜C58 の残り)は未完了。
 
 ## golden test(C10)
 
