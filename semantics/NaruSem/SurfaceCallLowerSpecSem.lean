@@ -2,10 +2,11 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallTotality
 
 /-!
-# spec ブロックの let 列の局所意味合成
+# spec の let 列・ガード付き match の局所意味合成
 
 値の子式には既存の runtime 評価保存を使う。命題の子式と末尾の
-双方向対応は明示的な前提であり、全 spec 式の帰納保存や宣言群の保存ではない。
+双方向対応、および match のガード・本体の対応は明示的な前提であり、
+全 spec 式の帰納保存や宣言群の保存ではない。
 存在する意味の証人を双方向に運び、意味の無い子式に True / False を補わない。
 意味の存在そのものはこの局所対応の主張ではない。
 -/
@@ -202,5 +203,127 @@ theorem lowerS_block_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.
     simpa only [lowerS, hw, h.lower, hc, Option.some.injEq] using hl.symm
   rw [hd]
   exact h.sem_iff hΦ hΓ sp Q
+
+/-! ## ガード付き match の腕列の局所意味合成 -/
+
+/-- 各腕の本体とガードの意味対応を明示する証明書。腕の順序とパターン、
+束縛の型、独立 lowering の出力を保持する。子式の対応は一般帰納の結論ではない。 -/
+inductive SpecArmsBridge (T : Table) (Φ : NaruSem.Call.FEnv) (Ψ : NaruSem.Call.PEnv)
+    (Γ : SCtx) (ts : NaruSem.Ty) : List Arm → List Core.Arm → Prop where
+  | nil : SpecArmsBridge T Φ Ψ Γ ts [] []
+  | hit {p b cb bts rest cas}
+      (pat : wtPat ts p = some bts)
+      (bodyLower : lowerS T (Γ.extVals bts) b = some cb)
+      (body : SpecSemEquiv T Φ Ψ (Γ.extVals bts) b cb)
+      (tail : SpecArmsBridge T Φ Ψ Γ ts rest cas) :
+      SpecArmsBridge T Φ Ψ Γ ts (.mk p none b :: rest)
+        (.mk (Surf.lowerPat p) none cb :: cas)
+  | guard {p g b cg cb bts rest cas}
+      (pat : wtPat ts p = some bts)
+      (guardLower : lowerS T (Γ.extVals bts) g = some cg)
+      (bodyLower : lowerS T (Γ.extVals bts) b = some cb)
+      (guardSem : SpecSemEquiv T Φ Ψ (Γ.extVals bts) g cg)
+      (body : SpecSemEquiv T Φ Ψ (Γ.extVals bts) b cb)
+      (tail : SpecArmsBridge T Φ Ψ Γ ts rest cas) :
+      SpecArmsBridge T Φ Ψ Γ ts (.mk p (some g) b :: rest)
+        (.mk (Surf.lowerPat p) (some cg) cb :: cas)
+
+/-- 証明書の腕列は独立 lowerArmsS が出した腕列と同じ。 -/
+theorem SpecArmsBridge.lower {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {ts : NaruSem.Ty} {arms : List Arm} {cas : List Core.Arm}
+    (h : SpecArmsBridge T Φ Ψ Γ ts arms cas) : lowerArmsS T Γ ts arms = some cas := by
+  induction h with
+  | nil => rfl
+  | hit hp hl _ _ ih => simp [lowerArmsS, lowerArmS, hp, hl, ih]
+  | guard hp hg hl _ _ _ ih => simp [lowerArmsS, lowerArmS, hp, hg, hl, ih]
+
+/-- 同じ scrutinee 値と子式の双方向対応から任意の腕列の意味を合成する。
+パターンの束縛はガード・本体だけへ渡し、後続腕には元の環境を使う。
+網羅性や意味の存在を主張せず、空の腕列では両側に意味の証人が無い。 -/
+theorem SpecArmsBridge.sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {ts : NaruSem.Ty} {arms : List Arm} {cas : List Core.Arm}
+    (h : SpecArmsBridge T Φ Ψ Γ ts arms cas)
+    {ρ : SEnv} (hΓ : Γ = ρ.ctx) {s : Expr} {cs : Core.Expr} {v : Val}
+    (hs : eval T Φ ρ s = some v) (hcs : NaruSem.Call.eval Φ ρ.vals cs = some v)
+    (hv : v.ty = ts) (sp : Span) (P : Prop) :
+    Sem T Φ Ψ ρ (.matchE sp s arms) P ↔
+      NaruSem.Call.Sem T.Δ Φ Ψ ρ (.match_ cs ts.toTyV cas) P := by
+  induction h generalizing P with
+  | nil => constructor <;> intro h <;> cases h
+  | @hit p b cb bts rest cas hp hl body tail ih =>
+    have hctx : ∀ bs, matchPat p v = some bs → Γ.extVals bts = (ρ.extVals bs).ctx := by
+      intro bs hm
+      rw [SEnv.ctx_extVals, matchPat_types hp hv hm, ← hΓ]
+    constructor
+    · intro h
+      cases h with
+      | matchSkip hs' hm hr =>
+        have he := hs'.symm.trans hs
+        cases he
+        exact .matchSkip hcs (by rw [Surf.matchPat_lower]; exact hm) (ih _ |>.mp hr)
+      | matchHit hs' hm hb =>
+        have he := hs'.symm.trans hs
+        cases he
+        exact .matchHit hcs (by rw [Surf.matchPat_lower]; exact hm)
+          ((body.iff (hctx _ hm) _).mp hb)
+    · intro h
+      cases h with
+      | matchSkip hcs' hm hr =>
+        have he := hcs'.symm.trans hcs
+        cases he
+        rw [Surf.matchPat_lower] at hm
+        exact .matchSkip hs hm (ih _ |>.mpr hr)
+      | matchHit hcs' hm hb =>
+        have he := hcs'.symm.trans hcs
+        cases he
+        rw [Surf.matchPat_lower] at hm
+        exact .matchHit hs hm ((body.iff (hctx _ hm) _).mpr hb)
+  | @guard p g b cg cb bts rest cas hp hg hl guardSem body tail ih =>
+    have hctx : ∀ bs, matchPat p v = some bs → Γ.extVals bts = (ρ.extVals bs).ctx := by
+      intro bs hm
+      rw [SEnv.ctx_extVals, matchPat_types hp hv hm, ← hΓ]
+    constructor
+    · intro h
+      cases h with
+      | matchSkip hs' hm hr =>
+        have he := hs'.symm.trans hs
+        cases he
+        exact .matchSkip hcs (by rw [Surf.matchPat_lower]; exact hm) (ih _ |>.mp hr)
+      | matchGuard hs' hm hguard hb hr =>
+        have he := hs'.symm.trans hs
+        cases he
+        exact .matchGuard hcs (by rw [Surf.matchPat_lower]; exact hm)
+          ((guardSem.iff (hctx _ hm) _).mp hguard)
+          ((body.iff (hctx _ hm) _).mp hb) (ih _ |>.mp hr)
+    · intro h
+      cases h with
+      | matchSkip hcs' hm hr =>
+        have he := hcs'.symm.trans hcs
+        cases he
+        rw [Surf.matchPat_lower] at hm
+        exact .matchSkip hs hm (ih _ |>.mpr hr)
+      | matchGuard hcs' hm hguard hb hr =>
+        have he := hcs'.symm.trans hcs
+        cases he
+        rw [Surf.matchPat_lower] at hm
+        exact .matchGuard hs hm ((guardSem.iff (hctx _ hm) _).mpr hguard)
+          ((body.iff (hctx _ hm) _).mpr hb) (ih _ |>.mpr hr)
+
+/-- runtime 保存を scrutinee に適用し、実際の lowerS の match へ局所合成する。
+本体とガードの意味対応は証明書の前提として残る。 -/
+theorem lowerS_match_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {ts : NaruSem.Ty} {s : Expr} {arms : List Arm}
+    {cs d : Core.Expr} {cas : List Core.Arm} {sp : Span}
+    (hw : wtR T Γ s = some ts) (hc : lower T Γ s = some cs)
+    (hl : lowerS T Γ (.matchE sp s arms) = some d)
+    (h : SpecArmsBridge T Φ Ψ Γ ts arms cas)
+    (hΦ : Φ.Respects T.Δ) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.matchE sp s arms) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have hd : d = .match_ cs ts.toTyV cas := by
+    simpa only [lowerS, hw, hc, h.lower, Option.some.injEq] using hl.symm
+  rw [hd]
+  obtain ⟨v, hs, hv⟩ := eval_total hw Φ ρ hΓ hΦ
+  have hcs : NaruSem.Call.eval Φ ρ.vals cs = some v := (lower_eval hw hc hΓ hΦ) ▸ hs
+  exact h.sem_iff hΓ hs hcs hv sp P
 
 end NaruSem.Surf.Call

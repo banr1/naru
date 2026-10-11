@@ -232,6 +232,7 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Call.SubV_of_cover` / `Call.fnConn_of_curried` | 検査プログラムの形との結び: 宣言群の各 fn / input の署名が表にあれば(`decide` で確かめる)`wtProg` の署名は表の署名に含まれる(`Call.wtProg_keys`: 署名の鍵は始めの文脈か宣言群の宣言のもの)。接続検査 `conn_<f>`(カリー化の形 `Call.Curried`: 仮引数ごとに量化し、実生成の関数に実引数を渡した値 = 実引数を束ねた環境での本体の読み)と、`Φ'` の鍵がその関数を包んだものであることから接続の証拠 `FnConn`(`Call.curried_wrap`) | — |
 | `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の双方向同値は未証明 |
 | `Surf.Call.SpecLetsBridge.sem_iff` / `Surf.Call.lowerStmtsS_sem_iff` | 子spec式と末尾の双方向意味対応から、任意の値・命題let列をCoreの入れ子のletへ合成する局所保存 | 明示的な `SpecLetsBridge`、同じ局所環境、署名を守る関数/input環境。公開入口はlet列の適格性と独立lowering出力も照合する。全spec式の一般帰納保存ではない |
+| `Surf.Call.SpecArmsBridge.lower` / `Surf.Call.SpecArmsBridge.sem_iff` / `Surf.Call.lowerS_match_sem_iff` | 各腕のガード・本体の双方向対応から、任意のガード付きmatchの腕列を実lowerS出力へ合成する局所保存 | 明示的な `SpecArmsBridge`、同じ局所環境・任意spec解釈。scrutineeは適格な値で、関数/inputは署名を守る。意味の存在・全spec帰納保存・宣言群保存は結論にしない |
 | `Surf.Call.lowerS_typed_all` / `Surf.Call.lowerS_typed` / `Surf.Call.lowerS_total` / `Surf.Call.lowerS_wt` | 呼出しを含むspecの独立loweringの全域性と型保存。式・let列・腕列・腕の相互帰納から変換先の存在とCoreの同じ型を導く。命題の同値・宣言群の意味合成は含めない | 任意の宣言表・文脈・適格なspec式と型。実Coreとの一致は別途kernel検査 |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
@@ -632,3 +633,9 @@ specのloweringの双方向同値、Surfaceから実生成Leanまでの宣言群
 `lowerS_block_sem_iff` は末尾の型と独立変換の一致も照合して、実際の `lowerS` が出力したブロック全体へこの局所合成を適用する。子式の双方向対応は引き続き証明書の前提である。
 
 `SurfaceCallLowerSpecSemExamples.lean` の11検体は、ゼロ引数のBool inputを値として `q` へ束縛し、spec呼出しを命題として同じ `q` へ再束縛する。任意解釈の双方向対応と、spec解釈の存在を明示した意味の証人を検査する。閉じたinput=false / spec=Trueの正対照に対し、命題の子式を否定したCoreは同じ `.prop` 型で適格だが意味が `¬ True` となることと、正しいSurfaceの意味を保存しないことをkernelが検査する。5一般補題・11検体の監査欠落は失敗になる。
+
+`SurfaceCallLowerSpecSem.lean` の `Surf.Call.SpecArmsBridge.sem_iff` は、各腕のガード・本体の `SpecSemEquiv` を前提に、任意の長さのガード付きmatchの腕列をCoreへ双方向に合成する局所証明である。
+`SpecArmsBridge.lower` はパターン・順序・束縛型と独立 `lowerArmsS` の出力を照合し、`lowerS_match_sem_iff` は適格な値のscrutineeにruntimeの一般保存を適用して実 `lowerS` 出力へ接続する。関数/inputは署名を守る任意の解釈、specは任意の解釈を扱う。
+パターン不一致は元の環境で後続へ進み、成功時の束縛はその腕のガード・本体だけに有効で、後続腕には漏れない。BoolガードとPropガードを命題として扱い、ガードの真偽に応じる前提・結論の両方向を保つ。意味の証人が無いガードや空の腕列にFalseや既定値を補わず、網羅性や意味の存在をこの局所定理の結論にしない。
+3一般定理と `SurfaceCallLowerSpecSemExamples.lean` の20検体をroot公理監査と `requiredTheorems` に追加し、`lake exe naru_test semantics` と回帰から欠落を拒否する。任意input/spec解釈のBool検体、任意Natの後続値、Prop/Boolガード、外側の命題qをBoolパターンが隠す検体、falseガード二つから外側の値に戻る検体、specガード不在の両側の意味不在を検査する。正しいSurfaceに対し、Propガードを否定した同じ型のCoreはFalseを意味し保存しないことをkernelが検査する。
+子spec式の対応は明示的な局所前提であり、全spec式の型付け帰納からそれを導く一般同値、Surface/Core宣言群からの環境対応、現在の実生成LeanまでのSurface合成は含めない。現在17fnの153証拠と10specの90証拠を維持する。
