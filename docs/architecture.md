@@ -449,6 +449,9 @@ backend の出力・frontend の変換結果を意味と定義しない。
 署名を守る任意の input の解釈について、runtime の値が存在して一意で、spec の意味が存在して一意で、各 fn は全域で各 spec 宣言の意味は本体の意味)と適格性の明示(C54)、
 そして runtime の Core → 実生成 Model の保存(C55〜C57 の runtime 側: 任意の適格な宣言群・同じ input 解釈・型の合う任意の実引数について、宣言群の意味の fn の値 =
 実生成定数の値。呼出し先の一般保存定理と kernel 検査済みの接続証拠を呼出し側へ合成する `Call.interp_agree`)までで、spec(Statements)の読みと双方向の同値、
+証拠は宣言と本体に結び付いている。`naru_test semantics` の `CallEvidenceCheck.lean` / `CallEvidenceWrong.lean` は、同じ署名の別宣言の証拠と、
+本体の変更前の証拠が現在の接続義務を満たさず、呼出し先 `base` を抜いた証拠束では宣言群全体に `Call.interp_agree` を適用できないことを検査する(C57)。
+正しい対照と、変更した Core の適格性・意味の差も kernel に検査させ、公理監査する。有限の差の検体は拒否理由を確かめるためであり、一般保存定理の代わりにはしない。
 呼出しを含む Surface AST → Core の変換と対応、実生成 Statements への接続は未対応(C55〜C58 の残り)。
 `lake exe naru_test semantics` の `CallScope.lean` / `SurfaceCallScope.lean` は、実際の宣言群に一般定理が適用できること(前提 `wtProg` の成立から
 `cresp_call` / `cdef_call` / `sresp_call` / `sdef_call`: 署名を守る任意の解釈の下で宣言群の意味が署名を守り spec 宣言の意味が定義される)も kernel に検査させ、公理監査に載せる。

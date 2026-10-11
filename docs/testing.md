@@ -261,6 +261,11 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   `c54Decls` の fn の数と一致することを要求する。負の検体 `CallModelWrong.lean`(`callMistranslations`: 実生成文字列から `twoStep` が同じ署名の `base` を `callBase` の
   代わりに呼ぶ `Wrong.twoStep`、`callNamed` の名前付き実引数を仮引数の順に渡す `Wrong.callNamed`、`ufcs` の UFCS の受け手を 2 番目に渡す `Wrong.ufcs`、`useInputArg` の
   `bias(seed())` が `x` を読む input の誤配線 `Wrong.useInputArg`)は型検査を通り、接続検査 `conn_wrong_*` の 4 行だけが失敗する(対照 `conn_*_ok` は成功)。
+  C57 の証拠の欠落・不一致も同じ入口で検査する。`CallEvidenceCheck.lean` は正しい `evid_base` と全宣言の証拠による保存の合成を成功させ、
+  `base` を抜いて呼出し側 `callBase` を残した証拠束、本体の定数を変えた同型の Core、その意味の差を kernel に検査させる。対照の 7 定理を公理監査する。
+  `CallEvidenceWrong.lean` はその対照に、同じ署名の `callBase` の証拠を `base` に使う、本体変更前の証拠を変更後の Core に使う、
+  呼出し先 `base` の証拠を抜いた束を `Call.interp_agree` に渡す、という 3 件だけを加える。その 3 行だけが型の不一致で失敗し、構文・import の誤りや
+  未証明の穴による失敗が無いことを要求する。これらは隔離検体であり、現在のソース・生成物・正しい証拠を変更しない。
   spec(Statements)の接続と Surface AST からの合成(C55〜C58 の残り)はまだ無い。
 
 ## golden test(C10)

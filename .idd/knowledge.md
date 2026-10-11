@@ -67,3 +67,11 @@
 - git フックは `GIT_CONFIG_*` の環境変数で全リポジトリに掛かる(`reference-transaction` が `refs/remotes/*` 以外の参照の作成・更新を拒否): `/tmp` への `git clone` / `git init` も HEAD を作れず失敗する。submodule の git リポジトリは周回の中では作れず、submodule の中で HEAD を動かす(基準コミットの更新の fetch / checkout)のも周回には無理 — 人間が周回の外で行う(周回 26 → 人間の commit 37d302d)。`.gitmodules` の Write はハーネスが拒否する。
 - 回帰で `.lake/naru/scratch/cNN/` を一時ファイルの置き場に使う(追跡対象外)。`generated/` に追跡対象外のファイルを残さない(C26)。
 - 台帳の `ideal_sha:` 行は文脈ヘッダの sha256 を全桁そのまま写す(手で打たない)。周回 48 が 1 文字誤記し(`…ac0ba6bf…`)、周回 49 の文脈に「台帳の不備」として載った(直さない限り realized は受理されない)。
+
+- C57 の証拠の欠落・不一致の検査は `tests/NaruTest/Semantics.lean` の `checkCallEvidence`。現在の `base` / `callBase` が同じ署名で実際に呼出し関係を持つことを確認し、`CallEvidenceCheck.lean` の対照 7 定理を kernel 検査・公理監査する。`CallEvidenceWrong.lean` は対照に 3 件(別宣言の証拠、同型で意味の異なる変更後 Core に変更前の証拠、呼出し先を抜いた部分的な証拠束による `Call.interp_agree` の適用)だけを加える。失敗行は生成文面から求め、ちょうど 3 件の型不一致、構文 / import / 未証明の穴のエラーなしを要求する。実生成物・引用・正しい接続証拠をそのまま import する隔離検体で、保存定理の代わりにはしない。
+
+- workspace-write の検証では tree-sitter 0.27.0 の `build` が `~/.cache/tree-sitter/lock/` への書込みを拒否される。`XDG_CACHE_HOME=/Users/banriyanahama/workspace/naru/.lake/naru/scratch/c56/tree-sitter-cache` を指定すればロックを許可領域内に置ける。同じ指定で `tree-sitter build` と `parse -q` の成功を確認。`TREE_SITTER_LIBDIR` だけではロックの所在は変わらない。`HOME` は変更しない。
+
+- Codex の workspace-write では `zed -n <repo>` が `Handshake before Zed spawn: Unknown Mach error: 44c` で失敗しても、起動済み Zed の AppleScript/System Events のメニュー操作は届くことがある。Window メニューに人間の窓が無いことを読取りで確認した上で、File メニューの `New Window` を操作すると `empty project` の検証用窓を開けた。`screencapture -x -D 1` も許可領域への保存に成功。Computer Use の Zed 選択は許可されていなかったため、この周回は IDEAL.md の AppleScript 経路を使う。初回の System Events の -10827 は再試行で解消した。
+
+- workspace-write では `pgrep -x zed` が `sysmond service not found` / `Cannot get process list` となり、既存 `naru_test zed-install` は起動済み Zed を検出できず操作前に失敗する。System Events の限定した読取り・メニュー操作は届く場合もあるが、既存 AppleScript の操作全体は -10827 で失敗した。検証準備が grammar wasm を削除した後に操作が失敗した場合、許可領域内の XDG_CACHE_HOME と `TREE_SITTER_WASI_SDK_PATH=/Users/banriyanahama/Library/Application Support/Zed/extensions/build/wasi-sdk` を指定した `tree-sitter build --wasm -o <repo>/editors/zed-naru/grammars/naru.wasm editors/tree-sitter-naru` で同じ追跡済み文法から復元できた(ビルド exit 0、WebAssembly binary version 1)。CLI は binaryen を許可領域内の一時キャッシュに取得した。この手動復元は C19 の Zed 再ビルド成功の証拠にしない。窓を閉じるときは Zed を前面にして File の Close Window を操作し、System Events の count of windows が 0 であることまで確認する。

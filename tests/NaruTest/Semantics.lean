@@ -76,6 +76,7 @@ import NaruSem.CallQuote
    `evid_<f>`、宣言群全体の証拠 `cevid_call` と宣言群の意味と実生成定数の一致 `cgen_call`(`NaruSem.Call.interp_agree`: 任意の input 解釈で、`I` と `Φgen_call` が
    input の鍵で同じなら `interp I cprog_call` の fn / input は `Φgen_call` と署名の鍵で一致)、各 fn の値 `cval_<f>`(`fn_value`)を kernel に検査させ、公理監査に載せる。
    負の検体 `CallModelWrong.lean`(同じ署名の別の呼出し先への置換、名前付き実引数の取り違え、UFCS の受け手の誤対応、input の誤配線)は型検査を通るが接続検査だけが失敗する。
+   `CallEvidenceCheck.lean` / `CallEvidenceWrong.lean` は対照の成功と公理監査、別宣言・古い Core の証拠と呼出し先の証拠が欠けた束の合成の 3 件だけの失敗を検査する(C57)。
 -/
 
 namespace NaruTest.Semantics
@@ -1290,6 +1291,70 @@ def callWrongProgram (ib ia : String) (fns : List CallFn) (wrongs : List (Mistra
       let name := if lean.isEmpty then Naru.Backend.Model.leanName key else lean
       callConnStmt ib ia thm name f s!"ccore_{shortName key}" (proofOf f.params f.body)
 
+/-- C57: 正しい接続証拠を違う宣言・古い本体に使う、または呼出し先の証拠を抜いた束で宣言群の保存を合成する検体。
+対照は別ファイルで exit 0 と公理監査を要求する。負のファイルはその対照に 3 つの不正な証拠の使用だけを加える。 -/
+def checkCallEvidence (ib ia : String) (fns : List CallFn) (lp : String) : M Unit := do
+  match fns.find? (fun f => f.key == "Sem.Call.base"), fns.find? (fun f => f.key == "Sem.Call.callBase") with
+  | some base, some caller =>
+    match base.body with
+    | .binop op lhs (.lit (.nat n) ty) resultTy =>
+      let stale := Naru.Core.Expr.binop op lhs (.lit (.nat (n + 1)) ty) resultTy
+      let ps := NaruSem.Call.Quote.params (base.params.filterMap NaruSem.Call.Quote.paramOf?)
+      let callerPs := caller.params.filterMap NaruSem.Call.Quote.paramOf?
+      if callerPs.map (·.2) != (base.params.filterMap NaruSem.Call.Quote.paramOf?).map (·.2) || caller.ret != base.ret ||
+          !(declCallKeys (.fn caller.key callerPs caller.ret caller.body)).contains base.key then
+        fail "C57: the missing/wrong evidence specimen must remove a real callee with the same signature as its caller"
+        return
+      let conn (body : String) := s!"NaruSem.Call.FnConn Δgen_call (Φgen_call {ia}) {base.key.quote} {ps} {tyTerm base.ret} {body}"
+      let group (name evidence : String) :=
+        s!"theorem {name} {ib} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+        s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
+        s!"    NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I cprog_call).Φ (Φgen_call {ia}) Δ :=\n" ++
+        s!"  NaruSem.Call.interp_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin ({evidence} {ia})\n"
+      let audited := ["callee_absent", "caller_present", "partial_evidence", "stale_wt", "stale_diff", "current_evidence", "complete_group"]
+      let control := "-- C57: isolated evidence controls, generated from the current compiler input and output\nimport CallModelCheck\n\n" ++
+        s!"def partial_prog : NaruSem.Call.Prog := cprog_call.filter (fun d => d.key != {base.key.quote})\n" ++
+        s!"theorem callee_absent : ¬ ∃ d ∈ partial_prog, d.key = {base.key.quote} := by decide\n" ++
+        s!"theorem caller_present : ∃ d ∈ partial_prog, d.key = {caller.key.quote} := by decide\n" ++
+        s!"theorem partial_evidence {ib} : NaruSem.Call.Evidence Δgen_call (Φgen_call {ia}) partial_prog :=\n" ++
+        s!"  fun d hd => cevid_call {ia} d (List.mem_filter.mp hd).1\n" ++
+        s!"def stale_base : Naru.Core.Expr := {NaruSem.Quote.expr stale}\n" ++
+        s!"theorem stale_wt : NaruSem.Call.wtR Δgen_call (NaruSem.Ctx.ofList {ps}) stale_base = some {tyTerm base.ret} := by decide\n" ++
+        s!"theorem stale_diff : NaruSem.Call.eval NaruSem.Call.FEnv.empty (NaruSem.Env.ofList [(\"x\", NaruSem.Val.nat 0)]) stale_base ≠ NaruSem.Call.eval NaruSem.Call.FEnv.empty (NaruSem.Env.ofList [(\"x\", NaruSem.Val.nat 0)]) ccore_base := by decide\n" ++
+        s!"theorem current_evidence {ib} : {conn "ccore_base"} := evid_base {ia}\n" ++
+        group "complete_group" "cevid_call" ++
+        s!"#audit_axioms {" ".intercalate audited}\n"
+      let controlFile := outDir / "CallEvidenceCheck.lean"
+      IO.FS.writeFile controlFile control
+      let c ← step "C57: complete evidence composes; the incomplete bundle and stale Core are well-typed; controls are audited" "lean" #[controlFile.toString]
+        (env := #[("LEAN_PATH", some lp)])
+      let missing := audited.filter fun name => !(auditedNames c.stdout).contains name
+      if c.exitCode == 0 && missing.isEmpty && !(contains (c.stdout ++ c.stderr) "forbidden") then
+        ok s!"C57: all {audited.length} evidence controls are kernel-checked and audited; the omitted declaration is a real callee, the stale Core has the same type but a different meaning"
+      else fail s!"C57: evidence controls failed or audit missing {missing}\n{tail (c.stdout ++ c.stderr) 2000}"
+      let negatives :=
+        [s!"theorem wrong_declaration {ib} : {conn "ccore_base"} := evid_callBase {ia}\n",
+         s!"theorem stale_evidence {ib} : {conn "stale_base"} := evid_base {ia}\n",
+         group "missing_callee" "partial_evidence"]
+      let mut text := control
+      let mut failing : List Nat := []
+      for negative in negatives do
+        text := text ++ negative
+        failing := failing ++ [(text.splitOn "\n").length - 1]
+      let wrongFile := outDir / "CallEvidenceWrong.lean"
+      IO.FS.writeFile wrongFile text
+      let w ← step "C57: wrong declaration, stale Core evidence and missing callee evidence must fail" "lean" #[wrongFile.toString]
+        (expectExit := 1) (env := #[("LEAN_PATH", some lp)])
+      let output := w.stdout ++ "\n" ++ w.stderr
+      let errors := errorLines output
+      let syntaxError := ["unknown", "unexpected token", "import", "sorry"].any (contains output)
+      if w.exitCode == 1 && failing.length == 3 && errors.length == 3 && errors.all failing.contains && failing.all errors.contains &&
+          (output.splitOn "Type mismatch").length + (output.splitOn "Application type mismatch").length >= 5 && !syntaxError then
+        ok s!"C57: exactly the 3 invalid evidence uses fail (lines {failing}); complete controls succeed, no syntax/import error or forbidden proof placeholder"
+      else fail s!"C57: expected exactly 3 evidence type mismatches on lines {failing}, got {errors}\n{tail output 3000}"
+    | _ => fail "C57: cannot derive a stale body from the current base declaration"
+  | _, _ => fail "C57: required current base/callBase declarations are missing"
+
 def checks : M Unit := do
   let t0 ← IO.monoMsNow
   IO.FS.createDirAll outDir
@@ -1645,6 +1710,7 @@ def checks : M Unit := do
         let (ib, ia) := inputBinders inputs
         let callWrongs ← deriveWrongs "Model (calls and inputs)" callModelText Naru.Backend.Model.leanName callMistranslations
         checkWrong "Model (calls and inputs)" (outDir / "CallModelWrong.lean") (callWrongProgram ib ia fns callWrongs) callWrongs lpCall
+        checkCallEvidence ib ia fns lpCall
   heading "C45 the audit rejects forbidden dependencies"
   let negatives : List (String × String × String) :=
     [ ("sorry", "theorem bad : (1 : Nat) = 1 := sorry\n#audit_axioms bad\n", "sorryAx"),
