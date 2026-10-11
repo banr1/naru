@@ -569,3 +569,15 @@ lowering の成功だけから型・スコープ・網羅性の成立は導か�
 実際の独立loweringのブロックへ合成する。Surfaceの局所環境は値・命題を区別するSEnvのままで、Coreへの対応は `.vals` で取る。
 子式・列・末尾式の対応は明示した合成前提であり、全式の一般帰納保存や宣言群の合成、specのloweringの完成を意味しない。
 新しい4補題と7検体は公理監査と必須定理の欠落検査の対象である。
+
+matchの局所合成は `Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` が
+loweringに成功した腕のパターン・ガードの有無から網羅性の走査の一致を示す。
+`lowerArm_eval` はパターン照合後の束縛環境での本体・ガードの対応と、元の環境での後続腕の対応を要求する。
+`ArmsEval` は各腕の継続の証拠を同じ長さ・順序で束ね、`lowerArms_eval` が任意の長さの列の評価を合成する。
+`lower_match_eval` はscrutineeと腕列の評価の対応を実際の独立loweringのmatchへ合成する。
+`lower_match_wt` はCore子式の型とASTの網羅性からCoreのmatchの型を導く。
+ガードfalseの後はパターン束縛を次の腕へ漏らさず、不在・失敗・Bool以外のガードは後続で成功にしない。
+修飾名のゼロ引数inputを使う任意の関数・局所環境の検体、Boolの二つのリテラル腕、
+ガードだけでは網羅しない対照、束縛漏れで生じる値と正しい結果の不一致をkernel検査する。
+全6補題と13検体を公理監査・欠落検査するが、照合後の子式の対応は合成前提である。
+全式の帰納保存、specのlowering、Surface/Core宣言群の合成は引き続き未完了である。

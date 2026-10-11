@@ -104,3 +104,6 @@
 
 - 呼出しのブロック合成は `Surf.Call.wtBinds` / `evalBinds` と `wtR_mkLets` / `eval_mkLets` / `lowerStmts_cons_eval` / `lower_block_eval`。同じ署名・関数/input環境でCoreの束縛列と入れ子のletを結び、子式・後続列・末尾式の対応を明示した前提から合成する。Nat→Boolの同名束縛、型注釈不一致、callee不在/失敗/任意成功値の7検体と4補題は公理監査・requiredTheorems対象。全式の帰納保存は含めない。`rw [eval.eq_def]` の後は `simp only` で外側のconstructorのmatchを簡約してから、内側の部分評価をcasesすると等式が両辺へ届く。`SEnv.vals_ext_val` は `DenoteProp.lean` にあるため、使う検体は同モジュールをimportする。
 - ZedのWindowメニューの窓名を比較するときは、AX窓数と実際の窓名の一覧を使う。Full Screen Tile / Move to iPad等の配置項目は実操作の前後でも変化するため、メニュー全体の文字列の一致を窓の保存条件にしない。長い検査の間に人間が窓を追加することがあるので、実操作の直前に既存窓を取り直す。
+
+- 呼出しruntimeのmatchの局所合成は `Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` と `lowerArm_eval` / `lowerArms_eval` / `lower_match_eval` / `lower_match_wt`。網羅性はloweringの成功だけから走査の一致を示せるが、型は子式・腕列の適格性を別に要求する。`ArmsEval` は各腕の継続の証拠を同じ長さと順序で束ねる。照合後の本体/ガードは `SEnv.extVals` と `Env.extList` で対応し、ガードfalseの後続は元の環境で読む。不在/失敗/非Boolのガードは `none`、パターン不一致はガードを読まず後続へ進む。6補題/13検体を監査・requiredTheoremsに含める。全式・spec・宣言群の一般保存は含めない。
+- `lowerArm` のガードに関する `cases` は定義を展開する前に行い、各分岐で `rw [lowerArm.eq_1, hp]` を使う。先に `simp only [lowerArm, hp]` で依存したmatchを変換してから `cases g` した初回証明はkernelのapplication type mismatchとなった。部分評価の `cases` の後も、外側matchを `simp only` で簡約してから内側評価へ `rw` する。

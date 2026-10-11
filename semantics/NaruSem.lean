@@ -129,6 +129,25 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.Call.binds_wrong_annotation
   NaruSem.Surf.Call.binds_failed_call
   NaruSem.Surf.Call.binds_call_shadow
+  NaruSem.Surf.Call.exhaustiveFrom_lowerArm
+  NaruSem.Surf.Call.exhaustiveFrom_lowerArms
+  NaruSem.Surf.Call.lowerArm_eval
+  NaruSem.Surf.Call.lowerArms_eval
+  NaruSem.Surf.Call.lower_match_eval
+  NaruSem.Surf.Call.lower_match_wt
+  NaruSem.Surf.Call.guard_call
+  NaruSem.Surf.Call.guard_arms_eval
+  NaruSem.Surf.Call.match_call_guard
+  NaruSem.Surf.Call.bool_arms_exhaustive
+  NaruSem.Surf.Call.guard_only_not_exhaustive
+  NaruSem.Surf.Call.match_call_guard_wt
+  NaruSem.Surf.Call.guard_false_restores_outer
+  NaruSem.Surf.Call.guard_true_shadows_outer
+  NaruSem.Surf.Call.guard_false_wrong_shadow
+  NaruSem.Surf.Call.guard_missing_stops
+  NaruSem.Surf.Call.guard_failure_stops
+  NaruSem.Surf.Call.guard_nonbool_stops
+  NaruSem.Surf.Call.guard_mismatch_skips
 
 #audit_axioms NaruSem.eval_total NaruSem.Eval_unique NaruSem.wtR_total_all
   NaruSem.Sem_exists NaruSem.Sem_unique NaruSem.Sem_exists_all

@@ -1,5 +1,6 @@
 import NaruSem.SurfaceCallTotality
 import NaruSem.Lower
+import NaruSem.DenoteProp
 
 /-!
 # 呼出しを含む runtime の Surface AST → Core の対応
@@ -358,5 +359,170 @@ theorem lower_block_eval {T : Table} {Γ Γ' : SCtx} {Φ : NaruSem.Call.FEnv}
     cases evalStmts T Φ ρ stmts with
     | none => rfl
     | some ρ' => exact he ρ'
+
+/-! ## match の腕の合成
+
+パターンとガードの有無を lowering が保つため、網羅性の走査も保つ。
+評価では照合で得た束縛の下の子式の対応を要求し、後続腕は元の環境で読む。
+この合成前提を全式の帰納法で満たす証明はまだ含めない。
+-/
+
+/-- 一つの腕の変換は、後続列の網羅性の対応を保つ。 -/
+theorem exhaustiveFrom_lowerArm {T : Table} {Γ : SCtx} {ts : NaruSem.Ty}
+    {arm : Arm} {ca : Core.Arm} (hl : lowerArm T Γ ts arm = some ca)
+    {rest : List Arm} {crest : List Core.Arm}
+    (hr : ∀ a b, exhaustiveFrom ts a b rest = NaruSem.exhaustiveFrom ts a b crest) :
+    ∀ a b, exhaustiveFrom ts a b (arm :: rest) =
+      NaruSem.exhaustiveFrom ts a b (ca :: crest) := by
+  obtain ⟨p, g, body⟩ := arm
+  cases hp : wtPat ts p with
+  | none => rw [lowerArm.eq_1, hp] at hl; cases hl
+  | some bts =>
+    cases g with
+    | none =>
+      rw [lowerArm.eq_1, hp] at hl
+      cases hb : lower T (Γ.extVals bts) body with
+      | none => simp [hb] at hl
+      | some cb =>
+        simp only [hb, Option.map_some, Option.some.injEq] at hl
+        subst ca
+        intro a b
+        cases p with
+        | wild => rfl
+        | bind => rfl
+        | lit _ l =>
+          cases l with
+          | bool v => cases v <;> simp [exhaustiveFrom, NaruSem.exhaustiveFrom, Surf.lowerPat, hr]
+          | nat => exact hr a b
+          | str => exact hr a b
+          | unit => exact hr a b
+    | some guard =>
+      rw [lowerArm.eq_1, hp] at hl
+      cases hg : lower T (Γ.extVals bts) guard <;>
+        cases hb : lower T (Γ.extVals bts) body <;> simp only [hg, hb] at hl
+      all_goals first
+        | (cases hl; done)
+        | (simp only [Option.some.injEq] at hl; subst ca; exact hr)
+
+/-- lowering の成功した任意の腕列で、Bool / Nat の網羅性の走査は同じ。 -/
+theorem exhaustiveFrom_lowerArms {T : Table} {Γ : SCtx} {ts : NaruSem.Ty}
+    {arms : List Arm} {cas : List Core.Arm} (hl : lowerArms T Γ ts arms = some cas) :
+    ∀ a b, exhaustiveFrom ts a b arms = NaruSem.exhaustiveFrom ts a b cas := by
+  induction arms generalizing cas with
+  | nil =>
+    simp only [lowerArms, Option.some.injEq] at hl
+    subst cas
+    intros; rfl
+  | cons arm rest ih =>
+    simp only [lowerArms] at hl
+    cases ha : lowerArm T Γ ts arm <;>
+      cases hr : lowerArms T Γ ts rest <;> simp only [ha, hr] at hl
+    all_goals first
+      | (cases hl; done)
+      | (simp only [Option.some.injEq] at hl; subst cas;
+          exact exhaustiveFrom_lowerArm ha (ih hr))
+
+/-- 照合後の子式の対応を、一つの腕と元の環境の後続腕へ合成する。
+ガードが値を返さない場合やBool以外の場合も失敗が一致する。 -/
+theorem lowerArm_eval {T : Table} {Γ : SCtx} {ts : NaruSem.Ty}
+    {Φ : NaruSem.Call.FEnv} {ρ : SEnv} {v : Val}
+    {p : Pat} {g : Option Expr} {body : Expr} {bts : List (String × NaruSem.Ty)}
+    {ca : Core.Arm} {rest : List Arm} {crest : List Core.Arm}
+    (hp : wtPat ts p = some bts) (hl : lowerArm T Γ ts (.mk p g body) = some ca)
+    (hb : ∀ bs cb, matchPat p v = some bs → lower T (Γ.extVals bts) body = some cb →
+      eval T Φ (ρ.extVals bs) body = NaruSem.Call.eval Φ (ρ.vals.extList bs) cb)
+    (hg : ∀ guard cg bs, g = some guard → matchPat p v = some bs →
+      lower T (Γ.extVals bts) guard = some cg →
+      eval T Φ (ρ.extVals bs) guard = NaruSem.Call.eval Φ (ρ.vals.extList bs) cg)
+    (hr : evalArms T Φ ρ v rest = NaruSem.Call.evalArms Φ ρ.vals v crest) :
+    evalArms T Φ ρ v (.mk p g body :: rest) =
+      NaruSem.Call.evalArms Φ ρ.vals v (ca :: crest) := by
+  cases g with
+  | none =>
+    rw [lowerArm.eq_1, hp] at hl
+    cases hbody : lower T (Γ.extVals bts) body with
+    | none => simp [hbody] at hl
+    | some cb =>
+      simp only [hbody, Option.map_some, Option.some.injEq] at hl
+      subst ca
+      rw [evalArms_cons, NaruSem.Call.evalArms_cons, Surf.matchPat_lower]
+      cases hm : matchPat p v with
+      | none => exact hr
+      | some bs => exact hb bs cb hm hbody
+  | some guard =>
+    rw [lowerArm.eq_1, hp] at hl
+    cases hguard : lower T (Γ.extVals bts) guard <;>
+      cases hbody : lower T (Γ.extVals bts) body <;> simp only [hguard, hbody] at hl
+    all_goals first
+      | (cases hl; done)
+      | skip
+    simp only [Option.some.injEq] at hl
+    subst ca
+    rw [evalArms_cons, NaruSem.Call.evalArms_cons, Surf.matchPat_lower]
+    cases hm : matchPat p v with
+    | none => exact hr
+    | some bs =>
+      simp only
+      rw [hg _ _ bs rfl hm hguard]
+      cases NaruSem.Call.eval Φ (ρ.vals.extList bs) _ with
+      | none => rfl
+      | some w =>
+        cases w with
+        | nat => rfl
+        | bool b =>
+          cases b with
+          | false => exact hr
+          | true => exact hb bs _ hm hbody
+
+/-- 各腕の継続の対応を保持した腕列の証拠。長さ・順序・対応先も保つ。 -/
+inductive ArmsEval (T : Table) (Φ : NaruSem.Call.FEnv) (ρ : SEnv) (v : Val) :
+    List Arm → List Core.Arm → Prop where
+  | nil : ArmsEval T Φ ρ v [] []
+  | cons {arm : Arm} {ca : Core.Arm} {rest : List Arm} {crest : List Core.Arm}
+      (head : ∀ rest' crest',
+        evalArms T Φ ρ v rest' = NaruSem.Call.evalArms Φ ρ.vals v crest' →
+        evalArms T Φ ρ v (arm :: rest') = NaruSem.Call.evalArms Φ ρ.vals v (ca :: crest'))
+      (tail : ArmsEval T Φ ρ v rest crest) : ArmsEval T Φ ρ v (arm :: rest) (ca :: crest)
+
+/-- 各腕の継続の対応証拠から、任意の長さの腕列の評価を合成する。 -/
+theorem lowerArms_eval {T : Table} {Φ : NaruSem.Call.FEnv} {ρ : SEnv} {v : Val}
+    {arms : List Arm} {cas : List Core.Arm}
+    (h : ArmsEval T Φ ρ v arms cas) :
+    evalArms T Φ ρ v arms = NaruSem.Call.evalArms Φ ρ.vals v cas := by
+  induction h with
+  | nil => rfl
+  | cons ha _ ih => exact ha _ _ ih
+
+/-- scrutinee と腕列の対応を、独立 lowering の match に合成する。 -/
+theorem lower_match_eval {T : Table} {Γ : SCtx} {Φ : NaruSem.Call.FEnv} {ρ : SEnv}
+    {sp : Span} {s : Expr} {arms : List Arm} {ts : NaruSem.Ty}
+    {cs : Core.Expr} {cas : List Core.Arm}
+    (ht : wtR T Γ s = some ts) (hs : lower T Γ s = some cs)
+    (ha : lowerArms T Γ ts arms = some cas)
+    (he : eval T Φ ρ s = NaruSem.Call.eval Φ ρ.vals cs)
+    (hb : ∀ v, evalArms T Φ ρ v arms = NaruSem.Call.evalArms Φ ρ.vals v cas) :
+    lower T Γ (.matchE sp s arms) = some (.match_ cs ts.toTyV cas) ∧
+      eval T Φ ρ (.matchE sp s arms) = NaruSem.Call.eval Φ ρ.vals (.match_ cs ts.toTyV cas) := by
+  constructor
+  · rw [lower.eq_def]
+    simp only [ht, hs, ha, Option.map_some]
+  · rw [eval.eq_def, NaruSem.Call.eval.eq_def]
+    simp only [he]
+    cases NaruSem.Call.eval Φ ρ.vals cs with
+    | none => rfl
+    | some v => exact hb v
+
+/-- Core子式の適格性とASTの網羅性から、変換したmatchの適格性を合成する。 -/
+theorem lower_match_wt {T : Table} {Γ : SCtx} {ts t : NaruSem.Ty}
+    {arms : List Arm} {cs : Core.Expr} {cas : List Core.Arm}
+    (ha : lowerArms T Γ ts arms = some cas) (hex : exhaustive ts arms = true)
+    (hs : NaruSem.Call.wtR T.Δ Γ.vals cs = some ts)
+    (hb : NaruSem.Call.wtArmsR T.Δ Γ.vals ts cas = some t) :
+    NaruSem.Call.wtR T.Δ Γ.vals (.match_ cs ts.toTyV cas) = some t := by
+  have hex' : NaruSem.exhaustive ts cas = true := by
+    rw [exhaustive, exhaustiveFrom_lowerArms ha] at hex
+    exact hex
+  simp only [NaruSem.Call.wtR, hs, TyV.toTy?_toTyV, hex', decide_true, Bool.and_true, ite_true]
+  exact hb
 
 end NaruSem.Surf.Call

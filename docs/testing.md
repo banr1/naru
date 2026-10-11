@@ -350,3 +350,17 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 NatからBoolへの同名束縛、注釈の型不一致、calleeの不在・失敗・任意の成功値の対照をkernelが検査する。
 任意の関数・input環境を保持し、列や末尾式の対応を前提としてブロックへ合成する段階である。
 全式の帰納保存、specのlowering、Surface/Core宣言群の合成は引き続き未完了である。
+
+matchの腕の局所合成も同じ `lake exe naru_test semantics` / `regression` から検査する。
+`Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` / `lowerArm_eval` /
+`lowerArms_eval` / `lower_match_eval` / `lower_match_wt` と、
+`guard_call` / `guard_arms_eval` / `match_call_guard` / `bool_arms_exhaustive` /
+`guard_only_not_exhaustive` / `match_call_guard_wt` / `guard_false_restores_outer` /
+`guard_true_shadows_outer` / `guard_false_wrong_shadow` / `guard_missing_stops` /
+`guard_failure_stops` / `guard_nonbool_stops` / `guard_mismatch_skips` の全19件を公理監査し、
+`requiredTheorems` が欠落を失敗にする。`ArmsEval` は腕の順序と対応先を保持した継続の証拠である。
+任意のinput解釈でガードのtrue/false、callee不在・失敗・署名外のNat値、
+パターン不一致と外側の値/命題の隠蔽・復元を扱い、Bool/Natの網羅性の対照と型の合成も検査する。
+falseガードの後に束縛を漏らしてscrutineeを返す結果との不一致を証明する。具体的な誤変換Coreの型検査ではない。
+署名外の環境の対照は失敗の保持の検査であり、適格な宣言群の一般保証ではない。
+子式の対応を合成前提とする段階で、全式の帰納保存やspecのloweringの完成は含めない。
