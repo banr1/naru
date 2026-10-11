@@ -31,6 +31,10 @@ import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
 
+-- C55: runtime の別々の型内対応環境への合成。対応自体の宣言群の証明は別の義務。
+#audit_axioms NaruSem.Call.eval_agree NaruSem.Surf.Call.lower_eval_agree NaruSem.Surf.Call.lower_denote_sound
+#audit_axioms NaruSem.Surf.Call.typed_env_agree NaruSem.Surf.Call.typed_env_preserve NaruSem.Surf.Call.typed_env_outside_diff
+
 /-!
 # `NaruSem` — naru の Core IR と Surface AST の独立した意味論とコンパイラ意味論保存の証明(IDEAL.md C39〜C47、C48〜C53、C54〜C59)
 

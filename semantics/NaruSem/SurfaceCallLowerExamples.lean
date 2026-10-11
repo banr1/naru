@@ -1,4 +1,6 @@
 import NaruSem.SurfaceCallLower
+import NaruSem.SurfaceCallLowerSound
+import NaruSem.CallInputs
 import NaruSem.DenoteProp
 
 /-! 呼出しの局所的な合成補題の非空な検体。引数・環境は任意であり、
@@ -303,5 +305,48 @@ theorem guard_mismatch_skips (T : Table) (Γ : SCtx) (Φ : NaruSem.Call.FEnv) (�
   · intros; contradiction
   · intros; contradiction
   · exact he
+
+/-! 別々の環境の合成の境界: 型外では異なるinput閉包を同じものと仮定しない。 -/
+private def typedΔ : NaruSem.Call.SigEnv :=
+  NaruSem.Call.SigEnv.empty.ext "typed" (.input [.nat] .nat)
+
+private def typedΦ : NaruSem.Call.FEnv := fun _ => some (fun _ => some (.nat 7))
+private def typedΦ' : NaruSem.Call.FEnv := fun _ =>
+  some (NaruSem.Call.wrap [.nat] .nat (fun (_ : Nat) => (7 : Nat)))
+
+theorem typed_env_agree : NaruSem.Call.FEnv.Agree typedΦ typedΦ' typedΔ := by
+  intro k ps t hk
+  simp only [NaruSem.Call.valueSig?, typedΔ, NaruSem.Call.SigEnv.ext,
+    NaruSem.Call.SigEnv.empty] at hk
+  split at hk
+  · simp only [Option.bind_some, NaruSem.Call.Sig.value?, Option.some.injEq,
+      Prod.mk.injEq] at hk
+    obtain ⟨rfl, rfl⟩ := hk
+    refine ⟨_, _, rfl, rfl, ?_⟩
+    intro vs hvs
+    have h := NaruSem.Call.typed_only_agree "typed" [("x", .nat)] .nat
+      (List.mem_singleton.mpr rfl) vs hvs
+    exact h
+  · cases hk
+
+theorem typed_env_preserve (n : Nat) :
+    NaruSem.Call.eval typedΦ Env.empty (.call "typed" [.lit (.nat n) .nat]) =
+      NaruSem.Call.eval typedΦ' Env.empty (.call "typed" [.lit (.nat n) .nat]) := by
+  have hΦ : typedΦ'.Respects typedΔ := by
+    intro k ps t hk
+    simp only [NaruSem.Call.valueSig?, typedΔ, NaruSem.Call.SigEnv.ext,
+      NaruSem.Call.SigEnv.empty] at hk
+    split at hk
+    · simp only [Option.bind_some, NaruSem.Call.Sig.value?, Option.some.injEq,
+        Prod.mk.injEq] at hk
+      obtain ⟨rfl, rfl⟩ := hk
+      exact ⟨_, rfl, NaruSem.Call.wrap_respects [.nat] .nat (fun (_ : Nat) => (7 : Nat))⟩
+    · cases hk
+  exact NaruSem.Call.eval_agree (t := .nat) hΦ typed_env_agree (by rfl) Env.empty rfl
+
+theorem typed_env_outside_diff :
+    NaruSem.Call.eval typedΦ Env.empty (.call "typed" [.lit (.bool true) .bool]) ≠
+      NaruSem.Call.eval typedΦ' Env.empty (.call "typed" [.lit (.bool true) .bool]) := by
+  decide
 
 end NaruSem.Surf.Call

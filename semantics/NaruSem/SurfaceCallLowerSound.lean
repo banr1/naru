@@ -1,4 +1,5 @@
 import NaruSem.SurfaceCallLower
+import NaruSem.CallDenote
 
 /-!
 # 呼出しを含む runtime lowering の全域性・適格性・評価保存
@@ -7,6 +8,7 @@ Surface の型付けの 5-way 相互帰納法により、適格な runtime 式�
 引数列、let 列、腕列、腕の独立 lowering が存在し、Core の型付けを保つ。
 後半では同じ帰納法から、整形環境の下の runtime 評価保存を証明する。
 関数環境は Surface と Core で共通であり、宣言表の署名を守ることを要求する。
+末尾の合成定理は、署名内の呼出し結果が一致する別々の環境とCoreの読みへ拡張する。
 -/
 
 namespace NaruSem.Surf.Call
@@ -765,5 +767,30 @@ theorem lowerArm_eval_wt {T : Table} {Γ : SCtx} {ts t : NaruSem.Ty}
     (hr : evalArms T Φ ρ v rest = NaruSem.Call.evalArms Φ ρ.vals v crest) :
     evalArms T Φ ρ v (arm :: rest) = NaruSem.Call.evalArms Φ ρ.vals v (ca :: crest) :=
   (lower_eval_all T).2.2.2.1 Γ ts arm Φ ρ hΓ hΦ t h ca hl v hv rest crest hr
+
+/-- 対応する別々の関数/input環境の下で、適格な AST と Core の評価が一致する。
+宣言群からこの対応を導く証明は別途必要であり、この定理は対応証拠を消去しない。 -/
+theorem lower_eval_agree {T : Table} {Γ : SCtx} {e : Expr} {t : NaruSem.Ty}
+    {c : Core.Expr} {Φ Φ' : NaruSem.Call.FEnv} {ρ : SEnv}
+    (h : wtR T Γ e = some t) (hl : lower T Γ e = some c)
+    (hΓ : Γ = ρ.ctx) (hΦ' : Φ'.Respects T.Δ)
+    (hA : NaruSem.Call.FEnv.Agree Φ Φ' T.Δ) :
+    eval T Φ ρ e = NaruSem.Call.eval Φ' ρ.vals c := by
+  have hΦ := hA.respects (NaruSem.Call.SigEnv.SubV.refl T.Δ) hΦ'
+  exact (lower_eval h hl hΓ hΦ).trans
+    (NaruSem.Call.eval_agree hΦ' hA (lower_wt h hl) ρ.vals
+      (by rw [hΓ]; exact SEnv.ctx_vals ρ))
+
+/-- 別の生成環境・拡張署名での Core の読みまで runtime AST の保存を合成する。
+実生成宣言の値との接続証拠は、この読みへの等式として別途検査する。 -/
+theorem lower_denote_sound {T : Table} {Γ : SCtx} {e : Expr} {t : NaruSem.Ty}
+    {c : Core.Expr} {Φ Φ' : NaruSem.Call.FEnv} {Δ' : NaruSem.Call.SigEnv} {ρ : SEnv}
+    (h : wtR T Γ e = some t) (hl : lower T Γ e = some c) (hΓ : Γ = ρ.ctx)
+    (hΔ : NaruSem.Call.SigEnv.SubV T.Δ Δ') (hΦ' : Φ'.Respects Δ')
+    (hA : NaruSem.Call.FEnv.Agree Φ Φ' T.Δ) :
+    eval T Φ ρ e = some (NaruSem.Call.denoteV Δ' Φ' ρ.vals t c) := by
+  exact (lower_eval h hl hΓ (hA.respects hΔ hΦ')).trans
+    (NaruSem.Call.denote_sound hΔ hΦ' hA (lower_wt h hl) ρ.vals
+      (by rw [hΓ]; exact SEnv.ctx_vals ρ))
 
 end NaruSem.Surf.Call

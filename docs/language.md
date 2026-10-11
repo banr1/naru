@@ -243,3 +243,7 @@ scenario basic {
   golden test は生成 Model の `Model.Scenarios.<Mod>.<fn>` から同じ Setup / run を取って手書き Model と突き合わせ、scenario の
   `observe` の行(`naru simulate` の出力)が同じ run の読みと一致することも照合する(`scenario:<name>/observe <label>` の case)。
   `input` 束縛は scenario に閉じているので、golden 側は同じ値を Lean で書き写す(`Golden.G.Inputs`)。走らせ方は [testing.md](testing.md)。
+
+呼出しruntime本体は、同じ環境のほか、署名に合う引数で呼出し結果が一致する別々の関数/input環境でもAST/Coreの評価を保つ。
+`Surf.Call.lower_eval_agree` / `lower_denote_sound` はその対応証拠を前提として評価とCoreの読みへ合成し、現在17 fnで検査する。
+型外の引数での閉包の等式は要求しない。Surface/Coreの宣言群から環境対応を導く証明、spec loweringの双方向同値、Surface宣言群から実生成Leanへの合成は未完了である。

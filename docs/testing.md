@@ -330,7 +330,7 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 
 同じ `lake exe naru_test semantics` / `lake exe naru_test regression` は呼出しを含む runtime の AST → Core の構造的対応も検査する。
 `SurfaceCallLowerCheck.lean` は再構文解析・再コンパイルで一致を確認した31宣言から、全17 fnの実際の包装・仮引数・本体・prefix宣言表を取る。
-独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計119証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
+独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計153証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
 `SurfaceCallLowerWrong.lean` の5件は別callee・名前付き引数の交換・UFCS受け手の交換・同型inputの交換・matchガードの否定。
 現在のCoreから作った各検体は同じCore型を持ち、正しい対照が成功し、同じ正しいASTとの変換の一致の5行だけで失敗することを要求する。
 この構造的一致は一般意味保存の代用ではない。runtimeの一般定理の適用も検査し、spec側のloweringと宣言群の合成は未完了である。
@@ -370,6 +370,14 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 評価の相互帰納定理 `lower_eval_all` と、その系 `lower_eval` / `lowerStmts_eval` / `lowerArgs_eval` /
 `lowerArms_eval_wt` / `lowerArm_eval_wt` も同じ監査と必須定理の欠落検査に含む。
 `SurfaceCallLowerCheck.lean` は現在の全17 fnについて、包装・仮引数・本体・ASTの適格性・実Coreとの一致に加え、
-一般定理から得た実Coreの型保存 `sctyped_*` と評価保存 `seval_*` を検査する(17 × 7 = 119証拠)。
+一般定理から得た実Coreの型保存 `sctyped_*` と評価保存 `seval_*` を検査する(17 × 9 = 153証拠)。
 型が合う別callee・引数交換・UFCS・input誤配線・ガード否定の5負検体は維持し、型保存だけでは意味の誤りを検出できないことを区別する。
 評価の保存は `Surf.Call.lower_eval` から独立に検査する。任意の `Φ` と `ρ` に対し、`sctx_* = ρ.ctx` と `Φ.Respects stable_*.Δ` を前提に、同じ `Φ` の下で実ASTと実Coreの評価が等しいことを示す。子式の対応を仮定せず、全式の帰納定理を適用する。一般定理と全17件の `seval_*` の監査欠落は失敗となる。specのloweringと同値、Surface/Core宣言群の意味合成、Surfaceから実生成Leanまでの合成は未完了として扱う。
+
+別々の関数/input環境へのruntime合成も同じ入口から検査する。`Call.eval_agree` と
+`Surf.Call.lower_eval_agree` / `lower_denote_sound` を公理監査と必須定理の欠落検査に含め、
+現在全17 fnの `seval_agree_*` / `sread_*` を生成して任意の対応環境と拡張署名についてkernel検査する。
+前提は `FEnv.Agree` による署名内の呼出し結果の一致であり、環境全体の等式ではない。
+`typed_env_agree` / `typed_env_preserve` / `typed_env_outside_diff` は型内だけで一致する二つのinput閉包の対照で、
+任意のNat引数の評価保存とBoolの型外引数での評価不一致を検査する。
+全6定理と各fnの2証拠の監査欠落を失敗にする。宣言群から環境対応を導く証明と実生成定数へのSurface宣言群合成は未完了である。

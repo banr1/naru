@@ -659,6 +659,15 @@ theorem denote_sound_self {Δ : SigEnv} {Φ : FEnv} (hΦ : Φ.Respects Δ) {Γ :
     (ρ : Env) (hρ : Γ = ρ.ty) : eval Φ ρ e = some (denoteV Δ Φ ρ t e) :=
   denote_sound (SigEnv.SubV.refl Δ) hΦ (FEnv.Agree.refl hΦ) h ρ hρ
 
+/-- 型の合う呼出しで一致する別々の環境は、任意の適格な runtime 式で同じ結果を返す。
+署名外の鍵や型外の引数での関数全体の等式は要求しない。 -/
+theorem eval_agree {Δ : SigEnv} {Φ Φ' : FEnv} (hΦ' : Φ'.Respects Δ)
+    (hA : FEnv.Agree Φ Φ' Δ) {Γ : Ctx} {e : Core.Expr} {t : Ty}
+    (h : wtR Δ Γ e = some t) (ρ : Env) (hρ : Γ = ρ.ty) :
+    eval Φ ρ e = eval Φ' ρ e :=
+  (denote_sound (SigEnv.SubV.refl Δ) hΦ' hA h ρ hρ).trans
+    (denote_sound_self hΦ' h ρ hρ).symm
+
 theorem preserve_nat {Δ Δ' : SigEnv} {Φ Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hA : FEnv.Agree Φ Φ' Δ)
     {Γ : Ctx} {e : Core.Expr} (h : wtR Δ Γ e = some .nat) (ρ : Env) (hρ : Γ = ρ.ty) :
     eval Φ ρ e = some (.nat (denoteN Δ' Φ' ρ e)) :=

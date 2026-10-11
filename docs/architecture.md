@@ -600,5 +600,11 @@ letのshadowingとガードfalse後の元の環境への継続を保つ。
 `lower_eval_all` は5つの構文群を同時に証明し、`lowerStmts_eval` / `lowerArgs_eval` /
 `lowerArms_eval_wt` / `lowerArm_eval_wt` は対応する列・腕への適用である。
 現在の全17 fnの適格性と実Core一致から、任意の対応環境での `seval_*` をkernel検査・公理監査する。
-この式の定理は同じ `Φ` を両側に使う。SurfaceとCoreの宣言群から構築した異なる環境の対応、
+`Surf.Call.lower_eval_agree` は、署名に合う引数で呼出し結果が一致する別々の環境 `Φ` / `Φ'` に拡張する。
+前提はASTの適格性・実Coreとの一致・対応文脈に加えて、`Φ'.Respects T.Δ` と `Call.FEnv.Agree Φ Φ' T.Δ`。
+`Call.eval_agree` は既存のCoreの一般保存定理から両評価を同じ読みへ結び、型外の入力での閉包の等式は要求しない。
+`Surf.Call.lower_denote_sound` は拡張署名 `Δ'` への `SigEnv.SubV` を使い、同じ対応証拠から `Call.denoteV Δ' Φ' ρ.vals t c` まで合成する。
+現在17 fnの `seval_agree_*` / `sread_*` も任意の対応環境について検査し、全153証拠の欠落を拒否する。
+型内でのみ一致するinput閉包は任意のNat引数で同じ結果を返し、Boolの型外引数では異なることをkernel検査する。
+これらの定理は環境対応の証拠を前提にする。SurfaceとCoreの宣言群からその対応を導くこと、
 specのloweringと双方向同値、Surfaceから実生成Leanまでの宣言群の合成は未完了であり、C55全体の完成とはしない。
