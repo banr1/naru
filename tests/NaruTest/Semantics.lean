@@ -6,6 +6,7 @@ import NaruSem.Lower
 import NaruSem.LowerSpec
 import NaruSem.CallQuote
 import NaruSem.SurfaceCallLower
+import NaruSem.SurfaceCallLowerSpec
 
 /-!
 # `naru_test semantics` — コンパイラ意味論保存の検査入口と、実際の AST・Core・実生成宣言の検査(IDEAL.md C39 / C40 / C41 / C42 / C43 / C44 / C45 / C46 / C47 / C48〜C52)
@@ -94,7 +95,10 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.arrange_core_total",
+  [ "NaruSem.Surf.Call.spec_lower_call", "NaruSem.Surf.Call.spec_lower_runtime_reject", "NaruSem.Surf.Call.spec_lower_missing", "NaruSem.Surf.Call.spec_lower_shadow", "NaruSem.Surf.Call.spec_lower_value_arg_reject", "NaruSem.Surf.Call.spec_lower_bool_value", "NaruSem.Surf.Call.spec_lower_bool_let", "NaruSem.Surf.Call.spec_lower_prop_let", "NaruSem.Surf.Call.spec_lower_prop_let_kind", "NaruSem.Surf.Call.spec_lower_match_guard", "NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject",
+    "NaruSem.Surf.Call.lowerCallS_eq", "NaruSem.Surf.Call.lowerCallS_spec_wt",
+    "NaruSem.Surf.Call.lowerCallS_spec_Sem", "NaruSem.Surf.Call.lowerCallS_value_Sem",
+    "NaruSem.Surf.Call.arrange_core_total",
     "NaruSem.Call.eval_agree", "NaruSem.Surf.Call.lower_eval_agree",
     "NaruSem.Surf.Call.lower_denote_sound",
     "NaruSem.Surf.Call.typed_env_agree", "NaruSem.Surf.Call.typed_env_preserve",
@@ -1222,7 +1226,7 @@ def callLowerWrongs : List CoreMistranslation :=
     { key := "Sem.Call.callNamed", wrong := "WrongCore.callNamed", transform := swapCallArgs, note := "named arguments exchanged" },
     { key := "Sem.Call.ufcs", wrong := "WrongCore.ufcs", transform := swapCallArgs, note := "UFCS receiver exchanged" },
     { key := "Sem.Call.inputPair", wrong := "WrongCore.inputPair",
-      transform := retargetCalls "Sem.Inputs.bias" "Sem.Inputs.otherBias", note := "same-signature input exchanged" },
+      transform := retargetCalls "Sem.Inputs.otherBias" "Sem.Inputs.bias", note := "same-signature input exchanged" },
     { key := "Sem.Call.callInMatch", wrong := "WrongCore.callInMatch", transform := negateGuards, note := "match guard negated" } ]
 
 def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
@@ -1268,6 +1272,111 @@ def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call
     let target := if lean.isEmpty then s!"ccore_{n}" else lean
     some s!"theorem {thm} : NaruSem.Surf.Call.lower stable_{n} sctx_{n} sast_{n} = some {target} := rfl"
   checkWrong "runtime AST / Core lowering" (outDir / "SurfaceCallLowerWrong.lean") wp wrongs lp
+
+/-- 現在の spec AST の包装・適格性と独立 lowering の実Core一致。
+一般の spec 保存定理の代用にはしない。 -/
+def callSpecLowerProgram (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
+  let mut text := "import SurfaceCallScope\nimport NaruSem.SurfaceCallLowerSpec\n\n"
+  for (d, i) in sprog.zipIdx do
+    if d.kind.phase != .spec then continue
+    let n := shortName d.key
+    let decl := NaruSem.Surf.Call.Quote.declWith d (match d.body with
+      | some b => s!"(some {NaruSem.Surf.Call.Quote.expr b})"
+      | none => "none")
+    match d.sig?, d.body with
+    | some (.spec ps), some b =>
+      let ctx := NaruSem.Surf.Quote.ctxTerm ps true
+      text := text ++ s!"def ssdecl_{n} : NaruSem.Surf.Call.Decl := {decl}\n" ++
+        s!"theorem sspack_{n} : sprog_call[{i}]? = some ssdecl_{n} := rfl\n" ++
+        s!"def sstable_{n} := NaruSem.Surf.Call.tableOf sprog_call (sprog_call.take {i})\n" ++
+        s!"def ssctx_{n} := {ctx}\ndef ssast_{n} : NaruSem.Surf.Call.Expr := {NaruSem.Surf.Call.Quote.expr b}\n" ++
+        s!"theorem ssparams_{n} : NaruSem.Surf.paramsCtx ssdecl_{n}.params = some {NaruSem.Call.Quote.params ps} := rfl\n" ++
+        s!"theorem ssbody_{n} : ssdecl_{n}.body = some ssast_{n} := rfl\n" ++
+        s!"def ssty_{n} := NaruSem.Surf.Call.wtS sstable_{n} ssctx_{n} ssast_{n}\n" ++
+        s!"theorem sstype_{n} : ssty_{n}.isSome = true := by decide\n" ++
+        s!"theorem ssform_{n} : (ssty_{n}.map NaruSem.STy.isForm) = some true := by decide\n" ++
+        s!"theorem sslower_{n} : NaruSem.Surf.Call.lowerS sstable_{n} ssctx_{n} ssast_{n} = some ccore_{n} := rfl\n" ++
+        s!"theorem ssctype_{n} : NaruSem.Call.wtS sstable_{n}.Δ ssctx_{n} ccore_{n} = ssty_{n} := by decide\n" ++
+        s!"#audit_axioms sspack_{n} ssparams_{n} ssbody_{n} sstype_{n} ssform_{n} sslower_{n} ssctype_{n}\n\n"
+    | _, _ => text := text ++ s!"#audit_axioms missing_spec_lower_body_{n}\n"
+  return text
+
+partial def swapArgsAt (target : String) : Naru.Core.Expr → Naru.Core.Expr
+  | .call k args => .call k (let xs := args.map (swapArgsAt target); if k == target then xs.reverse else xs)
+  | .let_ x ty v b => .let_ x ty (swapArgsAt target v) (swapArgsAt target b)
+  | .ite c t e => .ite (swapArgsAt target c) (swapArgsAt target t) (swapArgsAt target e)
+  | .binop op l r ty => .binop op (swapArgsAt target l) (swapArgsAt target r) ty
+  | .unop op a => .unop op (swapArgsAt target a)
+  | .method tn n r as rt => .method tn n (swapArgsAt target r) (as.map (swapArgsAt target)) rt
+  | .match_ s st arms => .match_ (swapArgsAt target s) st (arms.map fun | .mk p g b => .mk p (g.map (swapArgsAt target)) (swapArgsAt target b))
+  | .quant q bs b => .quant q bs (swapArgsAt target b)
+  | e => e
+
+
+/-- 命題letの束縛を保持して末尾の含意の結論を否定する。 -/
+partial def negateLetConclusion : Naru.Core.Expr → Naru.Core.Expr
+  | .let_ x t v b => .let_ x t v (negateLetConclusion b)
+  | .binop "implies" l r t => .binop "implies" l (.unop "!" r) t
+  | e => e
+
+/-- 型を保つ spec 呼出し・名前付き引数・UFCS・input・命題letの誤対応。 -/
+def callSpecLowerWrongs : List CoreMistranslation :=
+  [ { key := "Sem.Call.specTwoStep", wrong := "WrongCore.specTwoStep",
+      transform := retargetCalls "Sem.Call.specInput" "Sem.Call.specCallSpec", note := "same-signature spec callee exchanged" },
+    { key := "Sem.Call.specNamed", wrong := "WrongCore.specNamed",
+      transform := swapArgsAt "Sem.Callees.addTo", note := "named arguments exchanged" },
+    { key := "Sem.Call.specUfcs", wrong := "WrongCore.specUfcs",
+      transform := swapArgsAt "Sem.Callees.addTo", note := "UFCS receiver exchanged" },
+    { key := "Sem.Call.specSharedInputs", wrong := "WrongCore.specSharedInputs",
+      transform := retargetCalls "Sem.Inputs.otherBias" "Sem.Inputs.bias", note := "same-signature input exchanged" },
+    { key := "Sem.Call.specLetCall", wrong := "WrongCore.specLetCall",
+      transform := negateLetConclusion, note := "Prop let conclusion negated" } ]
+
+def checkCallSpecLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
+  heading "C55: spec Surface AST to actual Core (structural lowering; general equivalence remains unfinished)"
+  let mut count := 0
+  let mut wrongs : List (Mistranslation × String) := []
+  for (d, i) in sprog.zipIdx do
+    if d.kind.phase != .spec then continue
+    match d.sig?, d.body, cprog[i]? with
+    | some (.spec ps), some ast, some (.spec k cps body) =>
+      let T := NaruSem.Surf.Call.tableOf sprog (sprog.take i)
+      let Γ := NaruSem.SCtx.ofList (ps.map fun (x, ty) => (x, .val ty))
+      let ty := NaruSem.Surf.Call.wtS T Γ ast
+      if d.key == k && ps == cps && ty.isSome && (ty.map NaruSem.STy.isForm) == some true &&
+          NaruSem.Surf.Call.lowerS T Γ ast == some body && NaruSem.Call.wtS T.Δ Γ body == ty then
+        ok s!"C55: `{k}`: current spec AST lowers to its actual Core with matching packaging, logical type and prefix table"
+        count := count + 1
+      else fail s!"C55: `{d.key}`: spec AST / Core packaging, type or lowering mismatch"
+      for m in callSpecLowerWrongs.filter (fun m => m.key == k) do
+        let b := m.transform body
+        if b == body || NaruSem.Call.wtS T.Δ Γ b != ty then
+          fail s!"C55: `{k}`: negative spec lowering specimen must differ and have the same Core type"
+        else
+          let n := shortName k
+          let desc : Mistranslation := { key := k, wrong := m.wrong, good := "", bad := "", transform := id, note := m.note }
+          let text := s!"def {m.wrong} : Naru.Core.Expr := {NaruSem.Quote.expr b}\n" ++
+            s!"theorem wrong_wt_{n} : NaruSem.Call.wtS sstable_{n}.Δ ssctx_{n} {m.wrong} = ssty_{n} := by decide\n"
+          wrongs := wrongs ++ [(desc, text)]
+          ok s!"C55: `{k}`: {m.note} preserves the Core type but differs from the correct lowering"
+    | _, _, _ => fail s!"C55: `{d.key}`: missing or mismatched spec AST / Core declaration"
+  let expected := (c54Decls.filter fun (_, k) => k.phase == .spec).map (fun (k, _) => shortName k)
+  if count != expected.length then fail s!"C55: spec lowering covers {count} of {expected.length} required declarations"
+  let file := outDir / "SurfaceCallLowerSpecCheck.lean"
+  IO.FS.writeFile file (callSpecLowerProgram sprog)
+  let r ← step "C55: kernel-check current spec AST / Core lowering and packaging" "lean"
+    #[s!"--root={outDir}", "-o", (outDir / "SurfaceCallLowerSpecCheck.olean").toString, file.toString] (env := #[("LEAN_PATH", some lp)])
+  let required := expected.flatMap fun n => [s!"sspack_{n}", s!"ssparams_{n}", s!"ssbody_{n}", s!"sstype_{n}", s!"ssform_{n}", s!"sslower_{n}", s!"ssctype_{n}"]
+  let missing := required.filter fun n => !(auditedNames r.stdout).contains n
+  if r.exitCode == 0 && missing.isEmpty then
+    ok s!"C55: {required.length} spec lowering / packaging certificates for all {expected.length} actual spec declarations audited"
+  else fail s!"C55: spec lowering certificates missing: {missing}\n{tail r.stdout 1500}\n{tail r.stderr 1500}"
+  if wrongs.length != callSpecLowerWrongs.length then fail "C55: a required negative spec lowering specimen is missing"
+  let wp := wrongProgramWith "call spec Core" ["SurfaceCallLowerSpecCheck"] wrongs fun thm lean key =>
+    let n := shortName key
+    let target := if lean.isEmpty then s!"ccore_{n}" else lean
+    some s!"theorem {thm} : NaruSem.Surf.Call.lowerS sstable_{n} ssctx_{n} ssast_{n} = some {target} := rfl"
+  checkWrong "spec AST / Core lowering" (outDir / "SurfaceCallLowerSpecWrong.lean") wp wrongs lp
 
 /-! ### 実生成 Model への接続と宣言群の意味の合成(C55 / C56 / C57 / C58、runtime)
 
@@ -2077,6 +2186,7 @@ def checks : M Unit := do
         ok s!"C54 / C57: the {sprog.length} quoted Surface AST declarations embed to the declarations the parser produces for {callSource} and cover all its fn / input / spec declarations"
       else fail s!"C54 / C57: identity of the quoted Surface AST group: expected `{agreeS}` in the output of lean {surfaceCallScope}\n{tail rs.stdout 1500}\n{tail rs.stderr 1500}"
       checkCallRuntimeLower sprog cprog s!"{outDir}:{leanPath}"
+      checkCallSpecLower sprog cprog s!"{outDir}:{leanPath}"
       -- C55 / C56 / C57 / C58: 実生成 Model(呼出しと input)への接続と、宣言群の意味との合成
       heading "C55 / C56 / C57 connection of the generated Model with calls and inputs to the meaning of the declaration group"
       if ← callGenDir.pathExists then IO.FS.removeDirAll callGenDir

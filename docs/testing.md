@@ -333,7 +333,7 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 独立した `Surf.Call.lower` と実Coreの一致 `slow_* := rfl`、適格性・包装・一般定理からの型保存の計153証拠を kernel 検査・公理監査し、必要な宣言と監査の欠落を失敗にする。
 `SurfaceCallLowerWrong.lean` の5件は別callee・名前付き引数の交換・UFCS受け手の交換・同型inputの交換・matchガードの否定。
 現在のCoreから作った各検体は同じCore型を持ち、正しい対照が成功し、同じ正しいASTとの変換の一致の5行だけで失敗することを要求する。
-この構造的一致は一般意味保存の代用ではない。runtimeの一般定理の適用も検査し、spec側のloweringと宣言群の合成は未完了である。
+この構造的一致は一般意味保存の代用ではない。runtimeの一般定理の適用も検査し、spec側のloweringの一般保存と宣言群の合成は未完了である。
 
 呼出しの局所的な合成補題も同じ入口で検査する。`SurfaceCallLower.lean` の
 `allSome_some` / `evalArgs_allSome` / `arrange_eval` / `wtArgs_of_map` / `arrange_wt` /
@@ -349,7 +349,7 @@ lake exe naru_test golden --comparator            # 比較器の検体だけ。�
 `binds_failed_call` / `binds_call_shadow` の全11件を公理監査と `requiredTheorems` の照合に追加している。
 NatからBoolへの同名束縛、注釈の型不一致、calleeの不在・失敗・任意の成功値の対照をkernelが検査する。
 任意の関数・input環境を保持し、列や末尾式の対応を前提としてブロックへ合成する段階である。
-全式のruntime評価保存は以下の一般定理で検査する。specのloweringとSurface/Core宣言群の合成は未完了である。
+全式のruntime評価保存は以下の一般定理で検査する。specのloweringの一般保存とSurface/Core宣言群の合成は未完了である。
 
 matchの腕の局所合成も同じ `lake exe naru_test semantics` / `regression` から検査する。
 `Surf.Call.exhaustiveFrom_lowerArm` / `exhaustiveFrom_lowerArms` / `lowerArm_eval` /
@@ -372,7 +372,7 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 `SurfaceCallLowerCheck.lean` は現在の全17 fnについて、包装・仮引数・本体・ASTの適格性・実Coreとの一致に加え、
 一般定理から得た実Coreの型保存 `sctyped_*` と評価保存 `seval_*` を検査する(17 × 9 = 153証拠)。
 型が合う別callee・引数交換・UFCS・input誤配線・ガード否定の5負検体は維持し、型保存だけでは意味の誤りを検出できないことを区別する。
-評価の保存は `Surf.Call.lower_eval` から独立に検査する。任意の `Φ` と `ρ` に対し、`sctx_* = ρ.ctx` と `Φ.Respects stable_*.Δ` を前提に、同じ `Φ` の下で実ASTと実Coreの評価が等しいことを示す。子式の対応を仮定せず、全式の帰納定理を適用する。一般定理と全17件の `seval_*` の監査欠落は失敗となる。specのloweringと同値、Surface/Core宣言群の意味合成、Surfaceから実生成Leanまでの合成は未完了として扱う。
+評価の保存は `Surf.Call.lower_eval` から独立に検査する。任意の `Φ` と `ρ` に対し、`sctx_* = ρ.ctx` と `Φ.Respects stable_*.Δ` を前提に、同じ `Φ` の下で実ASTと実Coreの評価が等しいことを示す。子式の対応を仮定せず、全式の帰納定理を適用する。一般定理と全17件の `seval_*` の監査欠落は失敗となる。specのloweringの一般保存と双方向同値、Surface/Core宣言群の意味合成、Surfaceから実生成Leanまでの合成は未完了として扱う。
 
 別々の関数/input環境へのruntime合成も同じ入口から検査する。`Call.eval_agree` と
 `Surf.Call.lower_eval_agree` / `lower_denote_sound` を公理監査と必須定理の欠落検査に含め、
@@ -381,3 +381,10 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 `typed_env_agree` / `typed_env_preserve` / `typed_env_outside_diff` は型内だけで一致する二つのinput閉包の対照で、
 任意のNat引数の評価保存とBoolの型外引数での評価不一致を検査する。
 全6定理と各fnの2証拠の監査欠落を失敗にする。宣言群から環境対応を導く証明と実生成定数へのSurface宣言群合成は未完了である。
+
+呼出しを含む spec の独立変換 `Surf.Call.lowerS` は `SurfaceCallLowerSpec.lean` にある。
+現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の70証拠でkernel検査・公理監査する。
+論理の位置はspec変換、値の位置と実引数はruntime変換を使い、命題のlet・Bool値・量化・ガードを区別する。
+`lowerCallS_eq` / `lowerCallS_spec_wt` / `lowerCallS_spec_Sem` / `lowerCallS_value_Sem` は、解決・署名と引数の型または評価の対応から呼出しの形・命題型・意味を局所的に合成する。
+`SurfaceCallLowerSpecWrong.lean` の5件はspec呼出し先・名前付き引数・UFCS受け手・同型input・命題letの型が合う誤対応を作り、正しい対照を成功させ、一致の5行だけで失敗させる。
+一般のspec loweringの型保存と双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。

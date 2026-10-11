@@ -26,10 +26,16 @@ import NaruSem.CallExamples
 import NaruSem.SurfaceCall
 import NaruSem.SurfaceCallTotality
 import NaruSem.SurfaceCallLower
+import NaruSem.SurfaceCallLowerSpec
+import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
+
+#audit_axioms NaruSem.Surf.Call.spec_lower_call NaruSem.Surf.Call.spec_lower_runtime_reject NaruSem.Surf.Call.spec_lower_missing NaruSem.Surf.Call.spec_lower_shadow NaruSem.Surf.Call.spec_lower_value_arg_reject NaruSem.Surf.Call.spec_lower_bool_value NaruSem.Surf.Call.spec_lower_bool_let NaruSem.Surf.Call.spec_lower_prop_let NaruSem.Surf.Call.spec_lower_prop_let_kind NaruSem.Surf.Call.spec_lower_match_guard NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject
+#audit_axioms NaruSem.Surf.Call.lowerCallS_eq NaruSem.Surf.Call.lowerCallS_spec_wt
+#audit_axioms NaruSem.Surf.Call.lowerCallS_spec_Sem NaruSem.Surf.Call.lowerCallS_value_Sem
 
 -- C55: runtime の別々の型内対応環境への合成。対応自体の宣言群の証明は別の義務。
 #audit_axioms NaruSem.Call.eval_agree NaruSem.Surf.Call.lower_eval_agree NaruSem.Surf.Call.lower_denote_sound
@@ -109,6 +115,8 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 - `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
   式・実引数・let列・腕列・腕を同時帰納し、同じ任意の署名を守る関数/input環境と対応する局所環境の下で評価も保存する。
   実際の17 fnへの型・評価保存の適用をkernelが検査する。specとSurface/Core宣言群の合成は未完了。
+- `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型を70証拠で検査する。
+  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec型保存・双方向同値と宣言群の合成は未完了。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
 
 ## 公理監査(C45)

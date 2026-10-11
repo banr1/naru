@@ -247,3 +247,5 @@ scenario basic {
 呼出しruntime本体は、同じ環境のほか、署名に合う引数で呼出し結果が一致する別々の関数/input環境でもAST/Coreの評価を保つ。
 `Surf.Call.lower_eval_agree` / `lower_denote_sound` はその対応証拠を前提として評価とCoreの読みへ合成し、現在17 fnで検査する。
 型外の引数での閉包の等式は要求しない。Surface/Coreの宣言群から環境対応を導く証明、spec loweringの双方向同値、Surface宣言群から実生成Leanへの合成は未完了である。
+
+呼出しを含むspecの独立した `Surf.Call.lowerS` と現在10宣言の実Core一致はkernel検査する。命題のlet・Bool値・量化・ガードを保持し、型が合う誤callee・名前付き引数・UFCS・input・命題letの5検体を拒否する。一般の型保存・双方向同値とSurface/Core宣言群から実生成Leanまでの合成は未完了である。

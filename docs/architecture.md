@@ -230,6 +230,7 @@ runtime の Surface AST → Core の変換と値の対応、spec の Surface AST
 | `Call.interp_prop_agree`(`Call.interpFrom_prop_agree` / `Call.specConn_of_curried` / `Call.curried_wrapP`) | **spec 宣言群の合成(C55)**: 適格な宣言群、同じ任意 input 解釈、全 fn の `Evidence` と全 spec の `SpecEvidence` から `PEnv.Agree (interp I P).Ψ Ψ' Δ` を導く。`SpecConn` は任意の型の合う実引数で、その宣言より前の署名での本体の読みと実生成命題を接続する。依存 prefix の値一致と命題同値を帰納的に更新し、独立意味論の `∃ Q, Sem … Q ∧ Q` を読みと双方向同値にする。カリー化の接続を `specConn_of_curried` で証拠へ写す | 宣言群の適格性 + input 署名遵守 + 同じ input 解釈 + 全 fn/spec の kernel 検査済み接続。Surface 保存は未完了。input のみの別モジュールと、別モジュールのfn/spec呼出し先への実生成接続は検査する |
 | `Call.fn_value` | **fn の意味は実生成定数の値(系)**: 宣言群の各 fn `k` について、`Φ'` の関数 `f'` が型の合う実引数 `vs` に `v` を返すなら、`(Call.interp I P).Φ k = some f` で `f vs = some v` | 同上 |
 | `Call.SubV_of_cover` / `Call.fnConn_of_curried` | 検査プログラムの形との結び: 宣言群の各 fn / input の署名が表にあれば(`decide` で確かめる)`wtProg` の署名は表の署名に含まれる(`Call.wtProg_keys`: 署名の鍵は始めの文脈か宣言群の宣言のもの)。接続検査 `conn_<f>`(カリー化の形 `Call.Curried`: 仮引数ごとに量化し、実生成の関数に実引数を渡した値 = 実引数を束ねた環境での本体の読み)と、`Φ'` の鍵がその関数を包んだものであることから接続の証拠 `FnConn`(`Call.curried_wrap`) | — |
+| `Surf.Call.lowerCallS_eq` / `Surf.Call.lowerCallS_spec_wt` / `Surf.Call.lowerCallS_spec_Sem` / `Surf.Call.lowerCallS_value_Sem` | spec位置の呼出しの局所合成。名前解決・署名・実引数の並べ替えからCoreの形を決め、引数ごとの型/評価対応から命題型または同じ命題の意味を合成する。Bool結果はtrueである命題に写す | 引数の対応は明示的な前提。全spec式の一般型保存・双方向同値は未証明 |
 
 証明は型付けの関数帰納法(`wtR.mutual_induct` / `wtS.mutual_induct`。腕の列では網羅性の走査の状態を不変条件に持つ)と `Sem` の導出の帰納法。
 翻訳の正しさは仮定しない(backend の出力はこれらの定義・定理に現れない)。検体(`NaruSem/Examples.lean`): 対象範囲は空でない、境界の挙動、
@@ -550,7 +551,7 @@ UFCS は受け手を先頭の位置引数にし、局所の命題束縛も大域
 `SurfaceCallLowerCheck.lean` は現在の全17 fnの宣言包装・仮引数・本体・適格性・実Coreとの一致 `slow_*` を kernel 検査し、公理監査する。
 `lowerCall_eq` は呼出し先・署名・並べ替えの対応から Core の呼出しの形を導く補題であり、意味保存定理ではない。
 lowering の成功だけから型・スコープ・網羅性の成立は導かず、独立した適格性検査も要求する。
-runtime式の値対応は以下の一般定理で検査する。宣言群の Surface / Core の意味の合成、spec の lowering と双方向同値は未完了である。
+runtime式の値対応は以下の一般定理で検査する。宣言群の Surface / Core の意味の合成、spec の lowering の一般保存と双方向同値は未完了である。
 
 呼出しの局所的な合成は `Surf.Call.arrange_eval` / `arrange_wt` が担う。
 名前を保った子引数ごとの評価・型の対応から、仮引数順のCore引数の評価と型を導く。
@@ -580,7 +581,7 @@ loweringに成功した腕のパターン・ガードの有無から網羅性の
 修飾名のゼロ引数inputを使う任意の関数・局所環境の検体、Boolの二つのリテラル腕、
 ガードだけでは網羅しない対照、束縛漏れで生じる値と正しい結果の不一致をkernel検査する。
 全6補題と13検体を公理監査・欠落検査するが、照合後の子式の対応は合成前提である。
-全式のruntime評価保存は以下の帰納定理で検査する。specのloweringとSurface/Core宣言群の合成は未完了である。
+全式のruntime評価保存は以下の帰納定理で検査する。specのloweringの一般保存とSurface/Core宣言群の合成は未完了である。
 
 runtimeのloweringの全域性と型保存は `SurfaceCallLowerSound.lean` で独立に検査する。
 `Surf.Call.lower_typed` は任意の宣言表・束縛文脈・適格なruntime式に対し、変換先が存在し、
@@ -607,4 +608,11 @@ letのshadowingとガードfalse後の元の環境への継続を保つ。
 現在17 fnの `seval_agree_*` / `sread_*` も任意の対応環境について検査し、全153証拠の欠落を拒否する。
 型内でのみ一致するinput閉包は任意のNat引数で同じ結果を返し、Boolの型外引数では異なることをkernel検査する。
 これらの定理は環境対応の証拠を前提にする。SurfaceとCoreの宣言群からその対応を導くこと、
-specのloweringと双方向同値、Surfaceから実生成Leanまでの宣言群の合成は未完了であり、C55全体の完成とはしない。
+specのloweringの双方向同値、Surfaceから実生成Leanまでの宣言群の合成は未完了であり、C55全体の完成とはしない。
+
+呼出しを含む spec の独立変換 `Surf.Call.lowerS` は `SurfaceCallLowerSpec.lean` にある。
+現在の10 specのAST・prefix宣言表・包装・仮引数・本体と実Coreの一致を `SurfaceCallLowerSpecCheck.lean` の70証拠でkernel検査・公理監査する。
+論理の位置はspec変換、値の位置と実引数はruntime変換を使い、命題のlet・Bool値・量化・ガードを区別する。
+`lowerCallS_eq` / `lowerCallS_spec_wt` / `lowerCallS_spec_Sem` / `lowerCallS_value_Sem` は、解決・署名と引数の型または評価の対応から呼出しの形・命題型・意味を局所的に合成する。
+`SurfaceCallLowerSpecWrong.lean` の5件はspec呼出し先・名前付き引数・UFCS受け手・同型input・命題letの型が合う誤対応を作り、正しい対照を成功させ、一致の5行だけで失敗させる。
+一般のspec loweringの型保存と双方向同値、Surface/Core宣言群からの環境対応、Surface宣言群から実生成Leanまでの合成は未完了である。
