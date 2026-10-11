@@ -2,10 +2,10 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallTotality
 
 /-!
-# spec の let 列・ガード付き match・量化の局所意味合成
+# spec の let 列・match・量化・論理構文の局所意味合成
 
 値の子式には既存の runtime 評価保存を使う。命題の子式と末尾の
-双方向対応、match のガード・本体と量化の本体の対応は明示的な前提であり、
+双方向対応、match のガード・本体、量化の本体、論理構文の子式の対応は明示的な前提であり、
 全 spec 式の帰納保存や宣言群の保存ではない。
 存在する意味の証人を双方向に運び、意味の無い子式に True / False を補わない。
 意味の存在そのものはこの局所対応の主張ではない。
@@ -425,5 +425,121 @@ theorem lowerS_quant_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.
     simpa only [lowerS, hb, hcbs, hc, Option.some.injEq] using hl.symm
   rw [hd]
   exact lowerBinders_sem_iff bs hcbs hb hΓ child sp q P
+
+
+/-! ## 論理演算・否定・if の局所意味合成 -/
+
+/-- 同一命題についての双方向対応から、意味証人の局所対応を構成する。
+意味の存在を仮定せず、不在の意味を補わない。 -/
+theorem SpecSemEquiv.of_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {e : Expr} {c : Core.Expr}
+    (h : ∀ ρ : SEnv, Γ = ρ.ctx → ∀ P : Prop,
+      Sem T Φ Ψ ρ e P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ c P) :
+    SpecSemEquiv T Φ Ψ Γ e c := by
+  intro ρ hΓ P
+  exact ⟨fun hs => ⟨P, (h ρ hΓ P).mp hs, Iff.rfl⟩,
+    fun hc => ⟨P, (h ρ hΓ P).mpr hc, Iff.rfl⟩⟩
+
+/-- && / || / implies の左右の意味証人を、同じ演算と順序で合成する。 -/
+theorem lowerS_logic_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr : Core.Expr} {sp : Span} {op : String} {k : LogicOp}
+    (hk : BinOp.ofString? op = some (.logic k))
+    (left : SpecSemEquiv T Φ Ψ Γ l cl) (right : SpecSemEquiv T Φ Ψ Γ r cr) :
+    SpecSemEquiv T Φ Ψ Γ (.binop sp op l r) (.binop op cl cr .bool) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  constructor
+  · intro h
+    cases h with
+    | logic hk' hl hr =>
+      rw [hk] at hk'; cases hk'
+      exact .logic hk ((left.iff hΓ _).mp hl) ((right.iff hΓ _).mp hr)
+    | eqNat hk' => rw [hk] at hk'; cases hk'
+    | eqForm hk' => rw [hk] at hk'; cases hk'
+    | cmpNat hk' => rw [hk] at hk'; cases hk'
+    | cmpBool hk' => rw [hk] at hk'; cases hk'
+  · intro h
+    cases h with
+    | logic hk' hl hr =>
+      rw [hk] at hk'; cases hk'
+      exact .logic hk ((left.iff hΓ _).mpr hl) ((right.iff hΓ _).mpr hr)
+    | eqForm hk' => rw [hk] at hk'; cases hk'
+    | cmpBool hk' => rw [hk] at hk'; cases hk'
+
+/-- 否定は子式の同じ命題を両方向に運ぶ。 -/
+theorem lowerS_not_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {a : Expr} {ca : Core.Expr} {sp : Span}
+    (child : SpecSemEquiv T Φ Ψ Γ a ca) :
+    SpecSemEquiv T Φ Ψ Γ (.unop sp "!" a) (.unop "!" ca) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  constructor
+  · intro h
+    cases h with
+    | not ha => exact .not ((child.iff hΓ _).mp ha)
+  · intro h
+    cases h with
+    | not ha => exact .not ((child.iff hΓ _).mpr ha)
+
+/-- Bool / Prop 条件の if の三つの意味証人と前提・結論の向きを保つ。
+独立意味論は両分岐の意味を要求するため、未選択分岐の不在も保持する。 -/
+theorem lowerS_ite_equiv {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {a b e : Expr} {ca cb ce : Core.Expr} {sp : Span}
+    (cond : SpecSemEquiv T Φ Ψ Γ a ca) (thn : SpecSemEquiv T Φ Ψ Γ b cb)
+    (els : SpecSemEquiv T Φ Ψ Γ e ce) :
+    SpecSemEquiv T Φ Ψ Γ (.ite sp a b e) (.ite ca cb ce) := by
+  apply SpecSemEquiv.of_iff
+  intro ρ hΓ P
+  constructor
+  · intro h
+    cases h with
+    | ite hc ht he =>
+      exact .ite ((cond.iff hΓ _).mp hc) ((thn.iff hΓ _).mp ht) ((els.iff hΓ _).mp he)
+  · intro h
+    cases h with
+    | ite hc ht he =>
+      exact .ite ((cond.iff hΓ _).mpr hc) ((thn.iff hΓ _).mpr ht) ((els.iff hΓ _).mpr he)
+
+/-- 独立 lowering の実出力を照合して論理演算の局所対応を適用する。
+子式の意味対応は前提であり、全 spec 式の帰納保存ではない。 -/
+theorem lowerS_logic_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {l r : Expr} {cl cr d : Core.Expr} {sp : Span} {op : String} {k : LogicOp}
+    {τ : STy} (_hw : wtS T Γ (.binop sp op l r) = some τ)
+    (hk : BinOp.ofString? op = some (.logic k))
+    (hl : lowerS T Γ l = some cl) (hr : lowerS T Γ r = some cr)
+    (hd : lowerS T Γ (.binop sp op l r) = some d)
+    (left : SpecSemEquiv T Φ Ψ Γ l cl) (right : SpecSemEquiv T Φ Ψ Γ r cr)
+    {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.binop sp op l r) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have he : d = .binop op cl cr .bool := by
+    simpa only [lowerS, hk, hl, hr, Option.some.injEq] using hd.symm
+  rw [he]
+  exact (lowerS_logic_equiv hk left right).iff hΓ P
+
+/-- 否定の子式と実 lowering 出力を照合する公開入口。 -/
+theorem lowerS_not_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {a : Expr} {ca d : Core.Expr} {sp : Span} {τ : STy}
+    (_hw : wtS T Γ (.unop sp "!" a) = some τ)
+    (ha : lowerS T Γ a = some ca) (hd : lowerS T Γ (.unop sp "!" a) = some d)
+    (child : SpecSemEquiv T Φ Ψ Γ a ca) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.unop sp "!" a) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have he : d = .unop "!" ca := by
+    simpa only [lowerS, ite_true, ha, Option.some.injEq] using hd.symm
+  rw [he]
+  exact (lowerS_not_equiv child).iff hΓ P
+
+/-- if の三つの子式と実 lowering 出力を照合する公開入口。 -/
+theorem lowerS_ite_sem_iff {T : Table} {Φ : NaruSem.Call.FEnv} {Ψ : NaruSem.Call.PEnv}
+    {Γ : SCtx} {a b e : Expr} {ca cb ce d : Core.Expr} {sp : Span} {τ : STy}
+    (_hw : wtS T Γ (.ite sp a b e) = some τ)
+    (ha : lowerS T Γ a = some ca) (hb : lowerS T Γ b = some cb) (he : lowerS T Γ e = some ce)
+    (hd : lowerS T Γ (.ite sp a b e) = some d)
+    (cond : SpecSemEquiv T Φ Ψ Γ a ca) (thn : SpecSemEquiv T Φ Ψ Γ b cb)
+    (els : SpecSemEquiv T Φ Ψ Γ e ce) {ρ : SEnv} (hΓ : Γ = ρ.ctx) (P : Prop) :
+    Sem T Φ Ψ ρ (.ite sp a b e) P ↔ NaruSem.Call.Sem T.Δ Φ Ψ ρ d P := by
+  have h : d = .ite ca cb ce := by
+    simpa only [lowerS, ha, hb, he, Option.some.injEq] using hd.symm
+  rw [h]
+  exact (lowerS_ite_equiv cond thn els).iff hΓ P
 
 end NaruSem.Surf.Call

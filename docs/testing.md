@@ -410,3 +410,9 @@ runtime式のloweringの全域性と型保存は `SurfaceCallLowerSound.lean` �
 子spec式の対応は明示的な局所前提であり、全spec式の型付け帰納からそれを導く一般同値、Surface/Core宣言群からの環境対応、現在の実生成LeanまでのSurface合成は含めない。現在17fnの153証拠と10specの90証拠を維持する。
 
 呼出しspecの量化の局所意味合成は `SurfaceCallLowerSpecSem.lean` の `Surf.Call.lowerBinders_sem_iff` / `lowerS_quant_equiv` / `lowerS_quant_sem_iff`。本体の `SpecSemEquiv` を拡張後の任意環境で前提にし、任意長のNat/Bool束縛列の名前・順序・量化範囲・同名shadowingを保持する。公開入口は本体の適格性と独立loweringの実出力を照合する。`SurfaceCallQuantSemExamples.lean` の任意解釈・空束縛・同名束縛・forall/existsの正対照と、同型の誤量化の非保存・不正注釈の拒否を `lake build NaruSem` / `lake exe naru_test semantics` / `lake exe naru_test regression` からkernel検査・公理監査する。一般補題と全検体は `requiredTheorems` に含め欠落を拒否する。 `checkQuantifierConnection` の隔離 `CallQuantControl.lean` / `CallQuantWrong.lean` は正しい接続と両Coreの型/4監査が成功し、forall/existsを交換した接続の2行だけが型不一致で失敗することを照合する。全spec式の帰納同値・宣言群合成・Surfaceから実生成Leanへの合成は未完了である。
+
+呼出しspecの論理演算(`&&` / `||` / `implies`)・否定・ifには、子式の双方向対応から親式の意味証人を合成する局所保存がある。公開入口は適格性と独立loweringの実出力を照合する。ifは独立意味論に従い両分岐の意味を要求し、未選択分岐の意味が欠けても成功にしない。子式の対応を一般帰納から導く全spec同値・宣言群の環境対応・実生成LeanへのSurface合成は未完了である。
+
+`SurfaceCallLowerSpecSem.lean` の `SpecSemEquiv.of_iff`、`lowerS_logic_equiv` / `lowerS_not_equiv` / `lowerS_ite_equiv`、`lowerS_logic_sem_iff` / `lowerS_not_sem_iff` / `lowerS_ite_sem_iff` と `SurfaceCallLogicSemExamples.lean` の正負・意味不在の検体を、必須公理監査と `lake exe naru_test semantics` / `lake exe naru_test regression` から検査する。これらは全式の一般同値の代用にはしない。
+
+論理構文の7補題と23公開検体は必須監査に登録する。隔離した `CallLogicControl.lean` は正しい含意の接続と逆含意の命題型・2監査を通し、`CallLogicWrong.lean` は同じ入力への接続1行だけが型不一致になることを要求する。意味の異なる反例自体もkernelで証明し、構文・importの失敗で拒否を代用しない。

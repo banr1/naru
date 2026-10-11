@@ -96,7 +96,9 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.lowerBinders_sem_iff", "NaruSem.Surf.Call.lowerS_quant_equiv", "NaruSem.Surf.Call.lowerS_quant_sem_iff", "NaruSem.Surf.Call.quant_sem_ctx", "NaruSem.Surf.Call.quant_sem_binders_lower", "NaruSem.Surf.Call.quant_sem_binders_ctx", "NaruSem.Surf.Call.quant_sem_wt", "NaruSem.Surf.Call.quant_sem_lower", "NaruSem.Surf.Call.quant_sem_arbitrary", "NaruSem.Surf.Call.quant_sem_forall_equiv", "NaruSem.Surf.Call.quant_sem_exists_binders", "NaruSem.Surf.Call.quant_sem_empty", "NaruSem.Surf.Call.quant_sem_forall_false", "NaruSem.Surf.Call.quant_sem_exists_true", "NaruSem.Surf.Call.quant_sem_wrong_wt", "NaruSem.Surf.Call.quant_sem_wrong_not_lower", "NaruSem.Surf.Call.quant_sem_wrong_exists_not_preserved", "NaruSem.Surf.Call.quant_sem_wrong_forall_not_preserved", "NaruSem.Surf.Call.quant_sem_pred_arbitrary", "NaruSem.Surf.Call.quant_sem_pred_missing", "NaruSem.Surf.Call.quant_sem_unannotated_rejected", "NaruSem.Surf.Call.quant_sem_unsupported_rejected",
+  [ "NaruSem.Surf.Call.logic_sem_ctx", "NaruSem.Surf.Call.logic_sem_wt", "NaruSem.Surf.Call.logic_sem_lower", "NaruSem.Surf.Call.logic_sem_not_wt", "NaruSem.Surf.Call.logic_sem_not_lower", "NaruSem.Surf.Call.logic_sem_ite_wt", "NaruSem.Surf.Call.logic_sem_ite_lower", "NaruSem.Surf.Call.logic_sem_bridge", "NaruSem.Surf.Call.logic_sem_not_bridge", "NaruSem.Surf.Call.logic_sem_ite_bridge", "NaruSem.Surf.Call.logic_sem_arbitrary", "NaruSem.Surf.Call.logic_sem_not_arbitrary", "NaruSem.Surf.Call.logic_sem_ite_arbitrary", "NaruSem.Surf.Call.logic_sem_meaning", "NaruSem.Surf.Call.logic_sem_not_meaning", "NaruSem.Surf.Call.logic_sem_ite_meaning", "NaruSem.Surf.Call.logic_sem_missing", "NaruSem.Surf.Call.logic_sem_not_missing", "NaruSem.Surf.Call.logic_sem_ite_missing", "NaruSem.Surf.Call.logic_sem_ite_unselected_missing", "NaruSem.Surf.Call.logic_sem_wrong_wt", "NaruSem.Surf.Call.logic_sem_wrong_not_lower", "NaruSem.Surf.Call.logic_sem_wrong_not_preserved",
+    "NaruSem.Surf.Call.SpecSemEquiv.of_iff", "NaruSem.Surf.Call.lowerS_logic_equiv", "NaruSem.Surf.Call.lowerS_not_equiv", "NaruSem.Surf.Call.lowerS_ite_equiv", "NaruSem.Surf.Call.lowerS_logic_sem_iff", "NaruSem.Surf.Call.lowerS_not_sem_iff", "NaruSem.Surf.Call.lowerS_ite_sem_iff",
+    "NaruSem.Surf.Call.lowerBinders_sem_iff", "NaruSem.Surf.Call.lowerS_quant_equiv", "NaruSem.Surf.Call.lowerS_quant_sem_iff", "NaruSem.Surf.Call.quant_sem_ctx", "NaruSem.Surf.Call.quant_sem_binders_lower", "NaruSem.Surf.Call.quant_sem_binders_ctx", "NaruSem.Surf.Call.quant_sem_wt", "NaruSem.Surf.Call.quant_sem_lower", "NaruSem.Surf.Call.quant_sem_arbitrary", "NaruSem.Surf.Call.quant_sem_forall_equiv", "NaruSem.Surf.Call.quant_sem_exists_binders", "NaruSem.Surf.Call.quant_sem_empty", "NaruSem.Surf.Call.quant_sem_forall_false", "NaruSem.Surf.Call.quant_sem_exists_true", "NaruSem.Surf.Call.quant_sem_wrong_wt", "NaruSem.Surf.Call.quant_sem_wrong_not_lower", "NaruSem.Surf.Call.quant_sem_wrong_exists_not_preserved", "NaruSem.Surf.Call.quant_sem_wrong_forall_not_preserved", "NaruSem.Surf.Call.quant_sem_pred_arbitrary", "NaruSem.Surf.Call.quant_sem_pred_missing", "NaruSem.Surf.Call.quant_sem_unannotated_rejected", "NaruSem.Surf.Call.quant_sem_unsupported_rejected",
     "NaruSem.Surf.Call.SpecArmsBridge.lower", "NaruSem.Surf.Call.SpecArmsBridge.sem_iff", "NaruSem.Surf.Call.lowerS_match_sem_iff", "NaruSem.Surf.Call.match_sem_wt", "NaruSem.Surf.Call.match_sem_lower", "NaruSem.Surf.Call.match_sem_bridge", "NaruSem.Surf.Call.match_sem_arbitrary", "NaruSem.Surf.Call.match_sem_ctx", "NaruSem.Surf.Call.match_sem_respects", "NaruSem.Surf.Call.match_sem_first_hit", "NaruSem.Surf.Call.match_sem_guards", "NaruSem.Surf.Call.match_sem_guard_false_restores_outer", "NaruSem.Surf.Call.match_sem_guard_true_shadows_outer", "NaruSem.Surf.Call.match_sem_missing_guard", "NaruSem.Surf.Call.match_sem_wrong_wt", "NaruSem.Surf.Call.match_sem_wrong_meaning", "NaruSem.Surf.Call.match_sem_wrong_not_preserved", "NaruSem.Surf.Call.match_sem_missing_guard_core", "NaruSem.Surf.Call.match_sem_nat_wt", "NaruSem.Surf.Call.match_sem_nat_bridge", "NaruSem.Surf.Call.match_sem_nat_arbitrary", "NaruSem.Surf.Call.match_sem_nat_successor", "NaruSem.Surf.Call.match_sem_empty",
     "NaruSem.Surf.Call.SpecSemEquiv.iff", "NaruSem.Surf.Call.SpecLetsBridge.lower", "NaruSem.Surf.Call.SpecLetsBridge.sem_iff", "NaruSem.Surf.Call.lowerStmtsS_sem_iff", "NaruSem.Surf.Call.lowerS_block_sem_iff",
     "NaruSem.Surf.Call.lets_sem_wt", "NaruSem.Surf.Call.lets_sem_lower", "NaruSem.Surf.Call.lets_sem_bridge", "NaruSem.Surf.Call.lets_sem_arbitrary", "NaruSem.Surf.Call.lets_sem_meaning", "NaruSem.Surf.Call.lets_sem_closed_respects", "NaruSem.Surf.Call.lets_sem_closed_positive", "NaruSem.Surf.Call.lets_sem_wrong_wt", "NaruSem.Surf.Call.lets_sem_wrong_meaning", "NaruSem.Surf.Call.lets_sem_wrong_not_true", "NaruSem.Surf.Call.lets_sem_wrong_not_preserved",
@@ -1902,6 +1904,30 @@ def checkQuantifierConnection (lp : String) : M Unit := do
     ok s!"C55: exactly the 2 swapped-quantifier connections fail (lines {failing}); typed controls succeed without syntax/import failure"
   else fail s!"C55: expected exactly 2 quantifier evidence mismatches on lines {failing}, got {errors}\n{tail output 2500}"
 
+/-- 同型の逆含意を、正しい論理式への局所接続証拠の流用で拒否する。 -/
+def checkLogicConnection (lp : String) : M Unit := do
+  let control := "import NaruSem.SurfaceCallLogicSemExamples\nimport NaruSem.Audit\nopen NaruSem NaruSem.Surf NaruSem.Surf.Call\ntheorem logic_control : lowerS logicSemTable logicSemCtx (logicSemSurface .implies) = some (logicSemCore .implies) := logic_sem_lower .implies\ntheorem logic_wrong_type : NaruSem.Call.wtS logicSemTable.Δ logicSemCtx logicSemWrongCore = some .prop := logic_sem_wrong_wt\n#audit_axioms logic_control logic_wrong_type\n"
+  let goodFile := outDir / "CallLogicControl.lean"
+  IO.FS.writeFile goodFile control
+  let good ← step "C55: logic connection and same-typed reversed implication must succeed" "lean" #[goodFile.toString]
+    (env := #[("LEAN_PATH", some lp)])
+  if good.exitCode == 0 && (auditedNames good.stdout).length == 2 then
+    ok "C55: real logic connection and reversed-implication type control are kernel-checked and audited"
+  else fail s!"C55: logic controls or audit failed\n{tail (good.stdout ++ good.stderr) 1500}"
+  let wrong := control ++ "theorem logic_wrong : lowerS logicSemTable logicSemCtx (logicSemSurface .implies) = some logicSemWrongCore := logic_sem_lower .implies\n"
+  let failing := [(control.splitOn "\n").length]
+  let wrongFile := outDir / "CallLogicWrong.lean"
+  IO.FS.writeFile wrongFile wrong
+  let bad ← step "C55: reversing implication must fail only the real-output connection" "lean" #[wrongFile.toString]
+    (expectExit := 1) (env := #[("LEAN_PATH", some lp)])
+  let output := bad.stdout ++ "\n" ++ bad.stderr
+  let errors := errorLines output
+  if bad.exitCode == 1 && errors.length == 1 && errors.all failing.contains && failing.all errors.contains &&
+      (auditedNames bad.stdout).length == 2 && (output.splitOn "Type mismatch").length == 2 &&
+      !(["unknown", "unexpected token", "import", "sorry"].any (contains output)) then
+    ok s!"C55: exactly the reversed-implication connection fails (line {failing}); typed controls succeed without syntax/import failure"
+  else fail s!"C55: expected exactly 1 logic evidence mismatch on line {failing}, got {errors}\n{tail output 2500}"
+
 def checks : M Unit := do
   let t0 ← IO.monoMsNow
   IO.FS.createDirAll outDir
@@ -1931,6 +1957,7 @@ def checks : M Unit := do
   if e.exitCode == 0 && !leanPath.isEmpty then ok "lake env printenv LEAN_PATH" else fail s!"lake env printenv LEAN_PATH: exit {e.exitCode}"
   heading "C55 local quantifier connections"
   checkQuantifierConnection leanPath
+  checkLogicConnection leanPath
   heading "C39 scope of the Core produced by the compiler"
   let (diags, checked) ← Naru.compileFiles [source]
   if diags.isEmpty then ok s!"C39: {source} compiles without diagnostics ({checked.core.size} module(s))"
