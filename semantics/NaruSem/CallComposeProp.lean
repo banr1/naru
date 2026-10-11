@@ -28,10 +28,10 @@ def SpecEvidence (Φ' : FEnv) (Ψ' : PEnv) : SigEnv → Prog → Prop
       SpecEvidence Φ' Ψ' (Δ.ext d.key d.sig) rest
 
 /-- 各宣言の step で値の一致を既存の fn 合成から、命題同値を spec 接続から導く。 -/
-theorem interpFrom_prop_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : Φ'.Respects Δ') :
+theorem interpFrom_prop_inputs_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : Φ'.Respects Δ') :
     ∀ (P : Prog) (m : Interp) {Δ : SigEnv}, wtProg m.Δ P = some Δ →
       m.Φ.Respects m.Δ → m.Φ.RespectsInputs P → m.Ψ.Defined m.Δ →
-      SigEnv.SubV Δ Δ' → SameInputs m.Φ Φ' P → Evidence Δ' Φ' P → SpecEvidence Φ' Ψ' m.Δ P →
+      SigEnv.SubV Δ Δ' → InputsAgree m.Φ Φ' P → Evidence Δ' Φ' P → SpecEvidence Φ' Ψ' m.Δ P →
       FEnv.Agree m.Φ Φ' m.Δ → PEnv.Agree m.Ψ Ψ' m.Δ → PEnv.Agree (interpFrom m P).Ψ Ψ' Δ
   | [], m, Δ, h, _, _, _, _, _, _, _, _, hp => by
     simp only [wtProg, Option.some.injEq] at h
@@ -48,7 +48,7 @@ theorem interpFrom_prop_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : �
       rw [Interp.step_Δ]
       simp [wtProg, hfresh, hwt]
     have hags : FEnv.Agree (m.step d).Φ Φ' (m.step d).Δ := by
-      have := interpFrom_agree Δ' Φ' hΦ' [d] m hone hΦ
+      have := interpFrom_inputs_agree Δ' Φ' hΦ' [d] m hone hΦ
         (fun k ps t hk => hI k ps t (List.mem_cons.mpr (Or.inl (List.mem_singleton.mp hk)))) hΨ hsubs
         (fun k ps t hk => hin k ps t (List.mem_cons.mpr (Or.inl (List.mem_singleton.mp hk))))
         (fun d' hd => hev d' (List.mem_cons.mpr (Or.inl (List.mem_singleton.mp hd)))) hag
@@ -87,8 +87,8 @@ theorem interpFrom_prop_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : �
       · rw [specSig?, SigEnv.ext_ne _ _ _ hk] at hy
         obtain ⟨F, F', hF, hF', hiff⟩ := hp y ps hy
         exact ⟨F, F', by rw [Interp.step_Ψ_ne _ _ hk]; exact hF, hF', hiff⟩
-    have hin' : SameInputs (m.step d).Φ Φ' rest := by
-      intro k ps t hk
+    have hin' : InputsAgree (m.step d).Φ Φ' rest := by
+      intro k ps t hk vs hvs
       have hne : k ≠ d.key := by
         intro he
         have hf := wtProg_fresh rest hrest _ hk
@@ -96,25 +96,41 @@ theorem interpFrom_prop_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : �
         rw [he, SigEnv.ext_self] at hf
         cases hf
       rw [Interp.step_Φ_ne _ _ hne]
-      exact hin k ps t (List.mem_cons_of_mem _ hk)
+      exact hin k ps t (List.mem_cons_of_mem _ hk) vs hvs
     have hevs : Evidence Δ' Φ' rest := fun d' hd => hev d' (List.mem_cons_of_mem _ hd)
     have hspecs : SpecEvidence Φ' Ψ' (m.step d).Δ rest := by
       rw [Interp.step_Δ]
       exact hspec.2
     simp only [interpFrom]
-    exact interpFrom_prop_agree Δ' Φ' Ψ' hΦ' rest (m.step d)
+    exact interpFrom_prop_inputs_agree Δ' Φ' Ψ' hΦ' rest (m.step d)
       (by rw [Interp.step_Δ]; exact hrest) hΦs hIs hΨs hsub hin' hevs hspecs hags hps
 
-/-- 適格な宣言群と同じ任意 input 解釈で、全 fn/spec 接続証拠から spec の双方向同値を合成する。 -/
+/-- 適格な宣言群と型内で一致する任意 input 解釈で、全 fn/spec 接続証拠から spec の双方向同値を合成する。 -/
+theorem interp_prop_inputs_agree {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ)
+    {I : FEnv} (hI : I.RespectsInputs P) {Δ' : SigEnv} {Φ' : FEnv} {Ψ' : PEnv}
+    (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : InputsAgree I Φ' P)
+    (hev : Evidence Δ' Φ' P) (hsp : SpecEvidence Φ' Ψ' SigEnv.empty P) :
+    PEnv.Agree (interp I P).Ψ Ψ' Δ :=
+  interpFrom_prop_inputs_agree Δ' Φ' Ψ' hΦ' P (Interp.init I) hP (Interp.init_respects I) hI
+    (Interp.init_defined I) hΔ hin hev hsp
+    (fun k ps t h => by simp [Interp.init, valueSig?, SigEnv.empty] at h)
+    (fun k ps h => by simp [Interp.init, specSig?, SigEnv.empty] at h)
+
+/-- 従来の関数全体の input 等式を使う命題合成 API。 -/
+theorem interpFrom_prop_agree (Δ' : SigEnv) (Φ' : FEnv) (Ψ' : PEnv) (hΦ' : Φ'.Respects Δ')
+    (P : Prog) (m : Interp) {Δ : SigEnv} (hP : wtProg m.Δ P = some Δ)
+    (hΦ : m.Φ.Respects m.Δ) (hI : m.Φ.RespectsInputs P) (hΨ : m.Ψ.Defined m.Δ)
+    (hΔ : SigEnv.SubV Δ Δ') (hin : SameInputs m.Φ Φ' P) (hev : Evidence Δ' Φ' P)
+    (hsp : SpecEvidence Φ' Ψ' m.Δ P) (hag : FEnv.Agree m.Φ Φ' m.Δ)
+    (hp : PEnv.Agree m.Ψ Ψ' m.Δ) : PEnv.Agree (interpFrom m P).Ψ Ψ' Δ :=
+  interpFrom_prop_inputs_agree Δ' Φ' Ψ' hΦ' P m hP hΦ hI hΨ hΔ hin.agree hev hsp hag hp
+
 theorem interp_prop_agree {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ)
     {I : FEnv} (hI : I.RespectsInputs P) {Δ' : SigEnv} {Φ' : FEnv} {Ψ' : PEnv}
     (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : SameInputs I Φ' P)
     (hev : Evidence Δ' Φ' P) (hsp : SpecEvidence Φ' Ψ' SigEnv.empty P) :
     PEnv.Agree (interp I P).Ψ Ψ' Δ :=
-  interpFrom_prop_agree Δ' Φ' Ψ' hΦ' P (Interp.init I) hP (Interp.init_respects I) hI
-    (Interp.init_defined I) hΔ hin hev hsp
-    (fun k ps t h => by simp [Interp.init, valueSig?, SigEnv.empty] at h)
-    (fun k ps h => by simp [Interp.init, specSig?, SigEnv.empty] at h)
+  interp_prop_inputs_agree hP hI hΔ hΦ' hin.agree hev hsp
 
 /-! ## カリー化された実生成 spec の接続 -/
 

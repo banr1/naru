@@ -84,6 +84,46 @@ theorem inputs_representable {P : Prog} {I : FEnv} (hI : I.RespectsInputs P) :
   exact ⟨fun k ps t hd => Classical.choose (input_representable hI hd),
     fun k ps t hd => Classical.choose_spec (input_representable hI hd)⟩
 
+/-- 表現した全 input を同じ鍵・署名で受け取る生成環境への型内の一致。
+生成側の fn の接続証拠と合成すれば推移的な呼出しにも届く。 -/
+theorem inputs_generated_agree {P : Prog} {I : FEnv} (hI : I.RespectsInputs P)
+    (G : InputValues P → FEnv)
+    (hG : ∀ (gs : InputValues P) k ps t (hd : Decl.input k ps t ∈ P),
+      G gs k = some (wrap (ps.map (·.2)) t (gs k ps t hd))) :
+    ∃ gs : InputValues P, InputsAgree I (G gs) P := by
+  obtain ⟨gs, hgs⟩ := inputs_representable hI
+  refine ⟨gs, ?_⟩
+  intro k ps t hd vs hvs
+  obtain ⟨f, hf, hv⟩ := hgs k ps t hd
+  simp only [hf, hG gs k ps t hd, Option.bind_some]
+  exact (hv vs hvs).symm
+
+/-- 型外で値を返す元解釈と wrap は型内で一致する。 -/
+theorem typed_only_agree :
+    InputsAgree (fun _ => some (fun _ => some (.nat 7)))
+      (fun _ => some (wrap [.nat] .nat (fun (_ : Nat) => (7 : Nat)))) [.input "typed" [("x", .nat)] .nat] := by
+  intro k ps t hd vs hvs
+  simp only [List.mem_singleton] at hd
+  cases hd
+  cases vs with
+  | nil => simp at hvs
+  | cons v vs =>
+    cases v with
+    | bool => simp [Val.ty] at hvs
+    | nat n =>
+      cases vs with
+      | nil => rfl
+      | cons => simp [Val.ty] at hvs
+
+/-- 型内で一致しても input の関数全体の等式は要求できない。 -/
+theorem typed_only_not_same :
+    ¬ SameInputs (fun _ => some (fun _ => some (.nat 7)))
+      (fun _ => some (wrap [.nat] .nat (fun (_ : Nat) => (7 : Nat)))) [.input "typed" [("x", .nat)] .nat] := by
+  intro h
+  have hf := h "typed" [("x", .nat)] .nat (List.mem_singleton.mpr rfl)
+  have hv := congrArg (fun f => f.bind (fun g => g [.bool true])) hf
+  simp [wrap] at hv
+
 /-- 型外の引数で値を返す解釈も、型内での全域性の前提を満たす。 -/
 theorem illtyped_total : ∀ vs : List Val, vs.map Val.ty = [.nat] →
     ∃ v, (some (Val.nat 7) : Option Val) = some v ∧ v.ty = .nat := by

@@ -295,3 +295,6 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 #audit_axioms NaruSem.Call.interpFrom_prop_agree NaruSem.Call.interp_prop_agree NaruSem.Call.curried_wrapP NaruSem.Call.specConn_of_curried
   NaruSem.Call.PEnv.Agree.refl NaruSem.Call.PEnv.Agree.defined NaruSem.Call.PEnv.Defined.mono NaruSem.Call.SigEnv.SubP.refl
   NaruSem.Call.wtS_noExh NaruSem.Call.wtArmsS_head NaruSem.Call.wtArmsS_tail
+
+-- C56: 型内の input 一致から runtime/spec の呼出しを合成し、任意解釈の Lean 表現へ接続する。
+#audit_axioms NaruSem.Call.SameInputs.agree NaruSem.Call.interpFrom_inputs_agree NaruSem.Call.interp_inputs_agree NaruSem.Call.fn_value_inputs NaruSem.Call.interpFrom_prop_inputs_agree NaruSem.Call.interp_prop_inputs_agree NaruSem.Call.inputs_generated_agree NaruSem.Call.typed_only_agree NaruSem.Call.typed_only_not_same

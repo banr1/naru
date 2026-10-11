@@ -130,6 +130,15 @@ def requiredTheorems : List String :=
     "NaruSem.Call.check_sound_nat", "NaruSem.Call.check_sound_bool", "NaruSem.Call.wrap_respects", "NaruSem.Call.ofGens_respects",
     "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried",
     -- C56: 任意の署名を守る解釈をLeanの値/関数へ写す。型外の挙動の等式は要求しない。
+    "NaruSem.Call.SameInputs.agree",
+    "NaruSem.Call.interpFrom_inputs_agree",
+    "NaruSem.Call.interp_inputs_agree",
+    "NaruSem.Call.fn_value_inputs",
+    "NaruSem.Call.interpFrom_prop_inputs_agree",
+    "NaruSem.Call.interp_prop_inputs_agree",
+    "NaruSem.Call.inputs_generated_agree",
+    "NaruSem.Call.typed_only_agree",
+    "NaruSem.Call.typed_only_not_same",
     "NaruSem.Call.exists_fn", "NaruSem.Call.input_representable", "NaruSem.Call.inputs_representable",
     "NaruSem.Call.illtyped_total", "NaruSem.Call.illtyped_not_equal",
     -- C55(spec): 式の一般同値。宣言群のspec環境の一致はprefix証拠から合成。Surface合成は未完了。
@@ -1232,6 +1241,29 @@ def inputReprOf (k : String) (ps : List (String × NaruSem.Ty)) (t : NaruSem.Ty)
   s!"      ∀ vs, vs.map NaruSem.Val.ty = {pts} → NaruSem.Call.wrap {pts} {tyTerm t} g vs = f vs :=\n" ++
   s!"  NaruSem.Call.input_representable hI {memTerm i}\n\n"
 
+/-- 任意の署名を守る解釈から選んだ値を、現在の実生成 input 引数へ渡す。 -/
+def callInputGenerated (prog : NaruSem.Call.Prog) : String :=
+  let actual := prog.zipIdx |>.filterMap fun (d, i) => match d with
+    | .input k ps t => some (k, ps, t, i)
+    | _ => none
+  let sorted := actual.mergeSort fun a b => a.1 ≤ b.1
+  let inputs := sorted.map fun (k, ps, t, _) => (k, ps.map (·.2), t)
+  let (ib, ia) := inputBinders inputs
+  let selected := sorted.map fun (k, ps, t, i) =>
+    s!"(gs {k.quote} {NaruSem.Call.Quote.params ps} {tyTerm t} {memTerm i})"
+  let ga := " ".intercalate selected
+  let rcasesPat := " | ".intercalate (prog.map fun _ => "hd")
+  "-- Arbitrary signature-respecting input interpretation, including arbitrary behavior outside its typed domain.\n" ++
+  "theorem cinputs_generated (I : NaruSem.Call.FEnv) (hI : I.RespectsInputs cprog_call) :\n" ++
+  s!"    ∃ {ib}, NaruSem.Call.InputsAgree I (Φgen_call {ia}) cprog_call := by\n" ++
+  s!"  obtain ⟨gs, hg⟩ := NaruSem.Call.inputs_generated_agree hI (fun gs => Φgen_call {ga}) (by\n" ++
+  "    intro gs k ps t hd\n" ++
+  "    simp only [cprog_call, List.mem_cons, List.mem_nil_iff, or_false] at hd\n" ++
+  s!"    rcases hd with {rcasesPat}\n" ++
+  "    all_goals cases hd\n" ++
+  "    all_goals rfl)\n" ++
+  s!"  exact ⟨{", ".intercalate selected}, hg⟩\n\n"
+
 /-- 検査プログラム `CallModelCheck.lean`。 -/
 def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) (prog : List NaruSem.Call.Decl) : String :=
   let (ib, ia) := inputBinders inputs
@@ -1252,7 +1284,7 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
     | .input k ps t => some (s!"irepr_{shortName k}", inputReprOf k ps t i)
     | _ => none
   let names := ["Φgen_call_respects", "cover_call"] ++ fns.flatMap (fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}"]) ++
-    ["cevid_call", "cgen_call", "ireprs_call"] ++ reprs.map (·.1) ++ fns.map (fun f => s!"cval_{shortName f.key}")
+    ["cevid_call", "cgen_call", "cgen_inputs_call", "ireprs_call", "cinputs_generated"] ++ reprs.map (·.1) ++ fns.map (fun f => s!"cval_{shortName f.key}")
   s!"-- naru_test semantics (C55 / C56 / C57 / C58): generated from NaruTest/Semantics.lean. Connection of the generated Model of {callSource} (calls and inputs) to the Core semantics and to the meaning of the declaration group.\n" ++
   "import CallScope\nimport Model.Sem.Call\n\n" ++
   "-- the general theorem quantifies over any signatures, well-formed expression, matching environment and function environments agreeing on the signatures (C55)\n" ++
@@ -1284,6 +1316,7 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
   "    ∃ gs : NaruSem.Call.InputValues cprog_call, ∀ k ps t (hd : NaruSem.Call.Decl.input k ps t ∈ cprog_call),\n" ++
   "      ∃ f, I k = some f ∧ ∀ vs, vs.map NaruSem.Val.ty = ps.map (·.2) →\n" ++
   "        NaruSem.Call.wrap (ps.map (·.2)) t (gs k ps t hd) vs = f vs := NaruSem.Call.inputs_representable hI\n\n" ++
+  callInputGenerated prog ++
   "".intercalate (fns.map (callConnOf ib ia)) ++
   "-- every fn of the group has its connection evidence (C57)\n" ++
   s!"{hdr "theorem" "cevid_call"} : NaruSem.Call.Evidence Δgen_call (Φgen_call {ia}) cprog_call := by\n" ++
@@ -1294,6 +1327,10 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
   s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
   s!"    NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I cprog_call).Φ (Φgen_call {ia}) Δ :=\n" ++
   s!"  NaruSem.Call.interp_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia})\n\n" ++
+  s!"{hdr "theorem" "cgen_inputs_call"} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.InputsAgree I (Φgen_call {ia}) cprog_call) :\n" ++
+  s!"    NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I cprog_call).Φ (Φgen_call {ia}) Δ :=\n" ++
+  s!"  NaruSem.Call.interp_inputs_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia})\n\n" ++
   "".intercalate (fns.map (callValOf ib ia)) ++
   s!"#audit_axioms {" ".intercalate names}\n"
 
@@ -1343,7 +1380,18 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
   s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) :\n" ++
   s!"    NaruSem.Call.PEnv.Agree (NaruSem.Call.interp I cprog_call).Ψ (Ψgen_call {ia}) Δ :=\n" ++
   s!"  NaruSem.Call.interp_prop_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) (spevid_call {ia})\n\n" ++
-  s!"#audit_axioms spevid_call cprops_call {" ".intercalate (specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"])}\n"
+  s!"{hdr "theorem" "cprops_inputs_call"} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  s!"    (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.InputsAgree I (Φgen_call {ia}) cprog_call) :\n" ++
+  s!"    NaruSem.Call.PEnv.Agree (NaruSem.Call.interp I cprog_call).Ψ (Ψgen_call {ia}) Δ :=\n" ++
+  s!"  NaruSem.Call.interp_prop_inputs_agree hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) (spevid_call {ia})\n\n" ++
+  "theorem cinputs_connect (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ)\n" ++
+  "    (hI : I.RespectsInputs cprog_call) :\n" ++
+  s!"    ∃ {ib}, NaruSem.Call.InputsAgree I (Φgen_call {ia}) cprog_call ∧\n" ++
+  s!"      NaruSem.Call.FEnv.Agree (NaruSem.Call.interp I cprog_call).Φ (Φgen_call {ia}) Δ ∧\n" ++
+  s!"      NaruSem.Call.PEnv.Agree (NaruSem.Call.interp I cprog_call).Ψ (Ψgen_call {ia}) Δ := by\n" ++
+  s!"  obtain ⟨{", ".intercalate (inputs.mergeSort (fun a b => a.1 ≤ b.1) |>.map fun (k, _, _) => Naru.Backend.Model.inputBinder k)}, hin⟩ := cinputs_generated I hI\n" ++
+  s!"  exact ⟨{", ".intercalate (inputs.mergeSort (fun a b => a.1 ≤ b.1) |>.map fun (k, _, _) => Naru.Backend.Model.inputBinder k)}, hin, cgen_inputs_call {ia} I Δ hP hI hin, cprops_inputs_call {ia} I Δ hP hI hin⟩\n\n" ++
+  s!"#audit_axioms spevid_call cprops_call cprops_inputs_call cinputs_connect {" ".intercalate (specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"])}\n"
 
 /-- C58: 実生成 spec 出力の論理・呼出し先・名前付き引数・UFCS・推移的 input の誤配線。 -/
 def callSpecMistranslations : List Mistranslation :=
@@ -1888,7 +1936,7 @@ def checks : M Unit := do
         let mc ← step s!"C55 / C56 / C57: lean {callCheck} as module `CallModelCheck` (shape of the general theorems; the table of {inputs.length} inputs and {fns.length} generated fn declarations respects the signatures; connection `conn_*` of the {fns.length} generated declarations with calls and inputs; evidence `evid_*` composed into the meaning of the group `cevid_call` / `cgen_call`; values `cval_*`)"
           "lean" #[s!"--root={outDir}", "-o", (outDir / "CallModelCheck.olean").toString, callCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
         let callAudited := auditedNames mc.stdout
-        let expectedCall := ["Φgen_call_respects", "cover_call", "cevid_call", "cgen_call", "ireprs_call"] ++
+        let expectedCall := ["Φgen_call_respects", "cover_call", "cevid_call", "cgen_call", "cgen_inputs_call", "ireprs_call", "cinputs_generated"] ++
           inputs.map (fun (k, _, _) => s!"irepr_{shortName k}") ++
           fns.flatMap fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}", s!"cval_{shortName f.key}"]
         let missingCall := expectedCall.filter fun n => !callAudited.contains n
@@ -1915,7 +1963,7 @@ def checks : M Unit := do
         let sc ← step s!"C55: lean {callStmtCheck} (connection of {specs.length} current generated spec declarations to the reading of their current Core; arbitrary input interpretations and parameters)"
           "lean" #[s!"--root={outDir}", "-o", (outDir / "CallStatementsReadCheck.olean").toString, callStmtCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
         let stmtAudited := auditedNames sc.stdout
-        let stmtRequired := ["spevid_call", "cprops_call"] ++ specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"]
+        let stmtRequired := ["spevid_call", "cprops_call", "cprops_inputs_call", "cinputs_connect"] ++ specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"]
         let stmtMissing := stmtRequired.filter fun n => !stmtAudited.contains n
         let stmtCount := (c54Decls.filter fun (_, k) => k != .fn && k != .input).length
         if sc.exitCode == 0 && stmtMissing.isEmpty && specs.length == stmtCount && stmtCount > 0 &&

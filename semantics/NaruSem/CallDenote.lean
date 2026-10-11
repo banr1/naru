@@ -807,6 +807,17 @@ def Evidence (Δ' : SigEnv) (Φ' : FEnv) (P : Prog) : Prop := ∀ d ∈ P, DeclC
 /-- 同じ input 解釈: 宣言群の各 input の鍵で 2 つの関数環境が同じ。 -/
 def SameInputs (I Φ' : FEnv) (P : Prog) : Prop := ∀ k ps t, Decl.input k ps t ∈ P → I k = Φ' k
 
+/-- input の型の合う全引数での一致。型外での挙動の一致は要求しない。 -/
+def InputsAgree (I Φ' : FEnv) (P : Prog) : Prop :=
+  ∀ k ps t, Decl.input k ps t ∈ P → ∀ vs, vs.map Val.ty = ps.map (·.2) →
+    (I k).bind (fun f => f vs) = (Φ' k).bind (fun f => f vs)
+
+/-- 関数全体の等式を持つ従来の前提は型内の一致を含む。逆は要求しない。 -/
+theorem SameInputs.agree {I Φ' : FEnv} {P : Prog} (h : SameInputs I Φ' P) :
+    InputsAgree I Φ' P := by
+  intro k ps t hd vs hvs
+  rw [h k ps t hd]
+
 theorem Interp.step_Φ_input (m : Interp) (k : String) (ps : List (String × Ty)) (t : Ty) : (m.step (.input k ps t)).Φ = m.Φ := rfl
 
 theorem FEnv.ext_self (Φ : FEnv) (k : String) (f : List Val → Option Val) : (Φ.ext k f) k = some f := by
@@ -829,9 +840,9 @@ theorem SubV_of_wtProg {Δ₀ Δ : SigEnv} (P : Prog) (h : wtProg Δ₀ P = some
 
 /-- 宣言群の意味は実生成定数の環境と署名の鍵で一致する(宣言群の帰納法。各 fn の本体の評価を、それより前の宣言についての一致と `denote_sound` で
 実生成定数の値に結ぶ)。 -/
-theorem interpFrom_agree (Δ' : SigEnv) (Φ' : FEnv) (hΦ' : Φ'.Respects Δ') :
+theorem interpFrom_inputs_agree (Δ' : SigEnv) (Φ' : FEnv) (hΦ' : Φ'.Respects Δ') :
     ∀ (P : Prog) (m : Interp) {Δ : SigEnv}, wtProg m.Δ P = some Δ → m.Φ.Respects m.Δ → m.Φ.RespectsInputs P → m.Ψ.Defined m.Δ →
-      SigEnv.SubV Δ Δ' → SameInputs m.Φ Φ' P → Evidence Δ' Φ' P → FEnv.Agree m.Φ Φ' m.Δ → FEnv.Agree (interpFrom m P).Φ Φ' Δ
+      SigEnv.SubV Δ Δ' → InputsAgree m.Φ Φ' P → Evidence Δ' Φ' P → FEnv.Agree m.Φ Φ' m.Δ → FEnv.Agree (interpFrom m P).Φ Φ' Δ
   | [], m, Δ, h, _, _, _, _, _, _, hag => by
     simp only [wtProg, Option.some.injEq] at h
     subst h
@@ -877,47 +888,67 @@ theorem interpFrom_agree (Δ' : SigEnv) (Φ' : FEnv) (hΦ' : Φ'.Respects Δ') :
           simp only [Decl.sig, Sig.value?, Option.bind_some, Option.some.injEq, Prod.mk.injEq] at hy
           obtain ⟨hps, ht⟩ := hy
           subst hps ht
-          have hsame : m.Φ k = Φ' k := hin k ps' t' (List.mem_cons_self ..)
           have hΔk : valueSig? Δ' k = some (ps'.map (·.2), t') :=
             hsub k _ t' (valueSig?_input (by simpa [Decl.key, Decl.sig] using hsigd))
           obtain ⟨f', hf', _⟩ := hΦ' k _ t' hΔk
-          refine ⟨f', f', ?_, hf', fun _ _ => rfl⟩
-          show m.Φ k = some f'
-          rw [hsame]
-          exact hf'
+          obtain ⟨f, hf, _⟩ := hI k ps' t' (List.mem_cons_self ..)
+          refine ⟨f, f', hf, hf', ?_⟩
+          intro vs hvs
+          simpa only [hf, hf', Option.bind_some] using
+            hin k ps' t' (List.mem_cons_self ..) vs hvs
       · rw [valueSig?, SigEnv.ext_ne _ _ _ hk] at hy
         obtain ⟨f, f', hf, hf', hagree⟩ := hag y ps t hy
         exact ⟨f, f', by rw [Interp.step_Φ_ne _ _ hk]; exact hf, hf', hagree⟩
-    have hin' : SameInputs (m.step d).Φ Φ' rest := by
-      intro k ps t hk
+    have hin' : InputsAgree (m.step d).Φ Φ' rest := by
+      intro k ps t hk vs hvs
       rw [Interp.step_Φ_ne _ _ (hrestFresh k ps t hk)]
-      exact hin k ps t (List.mem_cons_of_mem _ hk)
+      exact hin k ps t (List.mem_cons_of_mem _ hk) vs hvs
     have hev' : Evidence Δ' Φ' rest := fun d' hd' => hev d' (List.mem_cons_of_mem _ hd')
     simp only [interpFrom]
-    exact interpFrom_agree Δ' Φ' hΦ' rest (m.step d) (by rw [Interp.step_Δ]; exact hrest) hΦs hIs hΨs hsub hin' hev' hag'
+    exact interpFrom_inputs_agree Δ' Φ' hΦ' rest (m.step d) (by rw [Interp.step_Δ]; exact hrest) hΦs hIs hΨs hsub hin' hev' hag'
 
 /-- **宣言群の意味と実生成定数の一致(C55 / C56 / C57)**: 適格な宣言群 `P` と input の署名を守る任意の解釈 `I`、署名 `Δ'`(宣言群の署名を含む)を守る
-実生成定数の環境 `Φ'` について、input の鍵で `I` と `Φ'` が同じ(同じ input 解釈)で、各 fn に接続の証拠(型の合う任意の実引数で実生成定数の値 = 本体の読み)
+実生成定数の環境 `Φ'` について、input が型の合う全引数で一致し、各 fn に接続の証拠(型の合う任意の実引数で実生成定数の値 = 本体の読み)
 があれば、宣言群の意味 `(interp I P).Φ` は `Φ'` と署名の鍵で一致する — 各 fn / input の意味は型の合う任意の実引数で実生成定数の値。 -/
-theorem interp_agree {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
-    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : SameInputs I Φ' P) (hev : Evidence Δ' Φ' P) :
+theorem interp_inputs_agree {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
+    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : InputsAgree I Φ' P) (hev : Evidence Δ' Φ' P) :
     FEnv.Agree (interp I P).Φ Φ' Δ :=
-  interpFrom_agree Δ' Φ' hΦ' P (Interp.init I) hP (Interp.init_respects I) hI (Interp.init_defined I) hΔ hin hev
+  interpFrom_inputs_agree Δ' Φ' hΦ' P (Interp.init I) hP (Interp.init_respects I) hI (Interp.init_defined I) hΔ hin hev
     (fun k ps t h => by simp [Interp.init, valueSig?, SigEnv.empty] at h)
 
 /-- **fn の意味は実生成定数の値**(系): 宣言群の各 fn `k` について、実生成定数の環境の関数 `f'` が型の合う実引数 `vs` に `v` を返すなら、
 宣言群の意味の関数も `vs` に `v` を返す。 -/
-theorem fn_value {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
-    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : SameInputs I Φ' P) (hev : Evidence Δ' Φ' P)
+theorem fn_value_inputs {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
+    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : InputsAgree I Φ' P) (hev : Evidence Δ' Φ' P)
     {k : String} {ps : List (String × Ty)} {t : Ty} {body : Core.Expr} (hd : Decl.fn k ps t body ∈ P)
     {f' : List Val → Option Val} (hf' : Φ' k = some f') {vs : List Val} (hvs : vs.map Val.ty = ps.map (·.2)) {v : Val} (hv : f' vs = some v) :
     ∃ f, (interp I P).Φ k = some f ∧ f vs = some v := by
   have hsig := wtProg_sig P hP _ hd
   simp only [Decl.key, Decl.sig] at hsig
-  obtain ⟨f, f'', hf, hf'', hag⟩ := interp_agree hP hI hΔ hΦ' hin hev k _ t (valueSig?_fn hsig)
+  obtain ⟨f, f'', hf, hf'', hag⟩ := interp_inputs_agree hP hI hΔ hΦ' hin hev k _ t (valueSig?_fn hsig)
   rw [hf'] at hf''
   cases hf''
   exact ⟨f, hf, by rw [hag vs hvs]; exact hv⟩
+
+/-- 従来の関数全体の input 等式を使う合成 API。 -/
+theorem interpFrom_agree (Δ' : SigEnv) (Φ' : FEnv) (hΦ' : Φ'.Respects Δ')
+    (P : Prog) (m : Interp) {Δ : SigEnv} (hP : wtProg m.Δ P = some Δ)
+    (hΦ : m.Φ.Respects m.Δ) (hI : m.Φ.RespectsInputs P) (hΨ : m.Ψ.Defined m.Δ)
+    (hΔ : SigEnv.SubV Δ Δ') (hin : SameInputs m.Φ Φ' P) (hev : Evidence Δ' Φ' P)
+    (hag : FEnv.Agree m.Φ Φ' m.Δ) : FEnv.Agree (interpFrom m P).Φ Φ' Δ :=
+  interpFrom_inputs_agree Δ' Φ' hΦ' P m hP hΦ hI hΨ hΔ hin.agree hev hag
+
+theorem interp_agree {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
+    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : SameInputs I Φ' P) (hev : Evidence Δ' Φ' P) :
+    FEnv.Agree (interp I P).Φ Φ' Δ :=
+  interp_inputs_agree hP hI hΔ hΦ' hin.agree hev
+
+theorem fn_value {P : Prog} {Δ : SigEnv} (hP : wtProg SigEnv.empty P = some Δ) {I : FEnv} (hI : I.RespectsInputs P)
+    {Δ' : SigEnv} {Φ' : FEnv} (hΔ : SigEnv.SubV Δ Δ') (hΦ' : Φ'.Respects Δ') (hin : SameInputs I Φ' P) (hev : Evidence Δ' Φ' P)
+    {k : String} {ps : List (String × Ty)} {t : Ty} {body : Core.Expr} (hd : Decl.fn k ps t body ∈ P)
+    {f' : List Val → Option Val} (hf' : Φ' k = some f') {vs : List Val} (hvs : vs.map Val.ty = ps.map (·.2)) {v : Val} (hv : f' vs = some v) :
+    ∃ f, (interp I P).Φ k = some f ∧ f vs = some v :=
+  fn_value_inputs hP hI hΔ hΦ' hin.agree hev hd hf' hvs hv
 
 /-! ## 署名の包含と接続の証拠の形 -/
 
