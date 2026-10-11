@@ -114,3 +114,5 @@ naru は [CC0 1.0 Universal](LICENSE)(パブリックドメイン相当)です�
 
 同梱する verified-consensus も CC0 1.0 で、出典は次のとおりです(`third_party/verified-consensus/CITATION.cff`):
 D'Amato, Francesco. *verified-consensus: a Lean 4 formalization of the decoupled consensus protocol*. https://github.com/fradamt/verified-consensus (2026)。
+
+呼出し葉は通常・UFCSの双方向保存を一般runtime評価保存から合成し、名前付き引数・Bool値境界・spec解釈不在を検査する。全spec式の帰納同値、Surface/Core宣言群と実生成LeanへのSurface合成は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。

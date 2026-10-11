@@ -29,6 +29,8 @@ import NaruSem.SurfaceCallLower
 import NaruSem.SurfaceCallLowerSpec
 import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallLowerSpecSem
+import NaruSem.SurfaceCallCallSem
+import NaruSem.SurfaceCallCallSemExamples
 import NaruSem.SurfaceCallLowerSpecSemExamples
 import NaruSem.SurfaceCallLogicSemExamples
 import NaruSem.SurfaceCallCompareSemExamples
@@ -39,6 +41,7 @@ import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
 
+#audit_axioms NaruSem.Surf.Call.lowerArgs_arrange_eval NaruSem.Surf.Call.lowerS_call_sem_iff NaruSem.Surf.Call.lowerS_ufcs_sem_iff NaruSem.Surf.Call.lowerS_call_equiv NaruSem.Surf.Call.lowerS_ufcs_equiv NaruSem.Surf.Call.call_sem_named_wt NaruSem.Surf.Call.call_sem_named_lower NaruSem.Surf.Call.call_sem_mixed_wt NaruSem.Surf.Call.call_sem_mixed_lower NaruSem.Surf.Call.call_sem_ufcs_wt NaruSem.Surf.Call.call_sem_ufcs_lower NaruSem.Surf.Call.call_sem_named_arbitrary NaruSem.Surf.Call.call_sem_mixed_arbitrary NaruSem.Surf.Call.call_sem_ufcs_arbitrary NaruSem.Surf.Call.call_sem_input_wt NaruSem.Surf.Call.call_sem_input_lower NaruSem.Surf.Call.call_sem_fn_wt NaruSem.Surf.Call.call_sem_fn_lower NaruSem.Surf.Call.call_sem_input_arbitrary NaruSem.Surf.Call.call_sem_fn_arbitrary NaruSem.Surf.Call.call_sem_bool_ufcs_wt NaruSem.Surf.Call.call_sem_bool_ufcs_lower NaruSem.Surf.Call.call_sem_bool_ufcs_arbitrary NaruSem.Surf.Call.call_sem_zero_wt NaruSem.Surf.Call.call_sem_zero_lower NaruSem.Surf.Call.call_sem_zero_arbitrary NaruSem.Surf.Call.call_sem_missing NaruSem.Surf.Call.call_sem_missing_core NaruSem.Surf.Call.call_sem_named_meaning NaruSem.Surf.Call.call_sem_bool_meaning NaruSem.Surf.Call.call_sem_zero_meaning NaruSem.Surf.Call.call_sem_shadow_reject NaruSem.Surf.Call.call_sem_ufcs_shadow_reject NaruSem.Surf.Call.call_sem_bad_named_reject NaruSem.Surf.Call.call_sem_bad_type_reject NaruSem.Surf.Call.call_sem_wrong_wt NaruSem.Surf.Call.call_sem_wrong_not_lower NaruSem.Surf.Call.call_sem_wrong_not_preserved NaruSem.Surf.Call.call_sem_closed_respects NaruSem.Surf.Call.call_sem_closed_positive
 #audit_axioms NaruSem.Surf.Call.spec_lower_call NaruSem.Surf.Call.spec_lower_runtime_reject NaruSem.Surf.Call.spec_lower_missing NaruSem.Surf.Call.spec_lower_shadow NaruSem.Surf.Call.spec_lower_value_arg_reject NaruSem.Surf.Call.spec_lower_bool_value NaruSem.Surf.Call.spec_lower_bool_let NaruSem.Surf.Call.spec_lower_prop_let NaruSem.Surf.Call.spec_lower_prop_let_kind NaruSem.Surf.Call.spec_lower_match_guard NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject
 #audit_axioms NaruSem.Call.ValueScope.ext NaruSem.Call.ValueScope.pat NaruSem.Call.wtArgs_members NaruSem.Call.wtArmsR_members NaruSem.Call.proppyS_false_of_wtR_all NaruSem.Call.proppyS_false_of_wtR NaruSem.Surf.Call.RuntimeScope.ext NaruSem.Surf.Call.RuntimeScope.pat NaruSem.Surf.Call.RuntimeScope.ufcs NaruSem.Surf.Call.callTy_not_spec NaruSem.Surf.Call.wtArgs_members NaruSem.Surf.Call.wtArmsR_members NaruSem.Surf.Call.proppyS_false_of_wtR_all NaruSem.Surf.Call.proppyS_false_of_wtR NaruSem.Surf.Call.ScopeView.refl
 #audit_axioms NaruSem.Surf.Call.proppyS_lowerS NaruSem.Surf.Call.proppyS_lowerS_view
@@ -389,3 +392,5 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 
 -- C56: 型内の input 一致から runtime/spec の呼出しを合成し、任意解釈の Lean 表現へ接続する。
 #audit_axioms NaruSem.Call.SameInputs.agree NaruSem.Call.interpFrom_inputs_agree NaruSem.Call.interp_inputs_agree NaruSem.Call.fn_value_inputs NaruSem.Call.interpFrom_prop_inputs_agree NaruSem.Call.interp_prop_inputs_agree NaruSem.Call.inputs_generated_agree NaruSem.Call.typed_only_agree NaruSem.Call.typed_only_not_same
+
+-- SurfaceCallCallSem / Examples: 通常・UFCS呼出し葉の双方向保存。全spec帰納・宣言群合成は未完了。
