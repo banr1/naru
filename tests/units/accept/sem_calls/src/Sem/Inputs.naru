@@ -1,0 +1,9 @@
+// C56: inputのみの別モジュール。生成Modelは存在しない。
+module Sem.Inputs
+
+// input: ゼロ引数(値)と引数あり(署名に従う任意の全域関数の解釈を環境から受け取る)
+input seed() -> Nat
+input bias(n: Nat) -> Nat
+input otherBias(n: Nat) -> Nat
+input flag(b: Bool) -> Bool
+

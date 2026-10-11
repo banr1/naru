@@ -1,0 +1,2 @@
+# C54〜C58: inputのみ別モジュールからruntime/specへ任意解釈を接続する。
+sources = ["src"]

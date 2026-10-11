@@ -62,7 +62,7 @@ import NaruSem.CallQuote
    `WrongCore.specExists`、命題の `let` の束縛を取り違えた `WrongCore.specLetProp`、ガードを否定した `WrongCore.specMatch` を作る。どれも `wtS` を通り、正しい Core の読みと意味の
    食い違う具体環境を `diff_<f>_wrong : ¬ (denoteP ρ WrongCore.<f> ↔ denoteP ρ core_<f>)` で kernel にも検査させる)は、同じ正しい AST の変換との一致 `conn_wrong_*`
    (`Surf.lowerS actx_<f> ast_<f> = some WrongCore.<f>`、`rfl`)だけが失敗する(対照 `conn_*_ok` は成功)。
-10. C54(関数・input の宣言群): 検体 `tests/accept/sem_call.naru`(input・位置 / 名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・
+10. C54(関数・input の宣言群): 検体 `tests/units/accept/sem_calls/src/Sem/Call.naru`(input・位置 / 名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・
    spec から runtime / spec の呼出し)の fn / input / spec 宣言すべてを、実際の Core(`NaruSem.Call.Decl`)と実際の構文解析の出力(`NaruSem.Surf.Call.Decl`)の宣言群として
    依存順(呼出し先が前。ドライバが Core の呼出しの鍵から並べる)に引用した検査プログラム `CallScope.lean` / `SurfaceCallScope.lean` を書き、宣言群の適格性
    (`NaruSem.Call.wtProg` / `NaruSem.Surf.Call.wtProg`)と各宣言の署名を kernel の `decide` で、引用の一致と宣言群全体の網羅を `checkProg` の再コンパイル / 再構文解析で
@@ -146,9 +146,9 @@ def requiredTheorems : List String :=
     "NaruSem.Call.interpFrom_prop_agree", "NaruSem.Call.interp_prop_agree", "NaruSem.Call.curried_wrapP", "NaruSem.Call.specConn_of_curried",
     "NaruSem.Call.PEnv.Agree.refl", "NaruSem.Call.PEnv.Agree.defined", "NaruSem.Call.PEnv.Defined.mono", "NaruSem.Call.SigEnv.SubP.refl" ]
 
-/-- C54 の検体 `tests/accept/sem_call.naru` の宣言群(修飾名, 種別): input 4、fn 17、spec 宣言 10。欠けていれば FAIL。 -/
+/-- C54 の検体 `tests/units/accept/sem_calls/src/Sem/Call.naru` の宣言群(修飾名, 種別): input 4、fn 17、spec 宣言 10。欠けていれば FAIL。 -/
 def c54Decls : List (String × Naru.DeclKind) :=
-  [ ("Sem.Call.seed", .input), ("Sem.Call.bias", .input), ("Sem.Call.otherBias", .input), ("Sem.Call.flag", .input),
+  [ ("Sem.Inputs.seed", .input), ("Sem.Inputs.bias", .input), ("Sem.Inputs.otherBias", .input), ("Sem.Inputs.flag", .input),
     ("Sem.Call.base", .fn), ("Sem.Call.zero", .fn), ("Sem.Call.addTo", .fn), ("Sem.Call.callBase", .fn), ("Sem.Call.callNamed", .fn),
     ("Sem.Call.callMixed", .fn), ("Sem.Call.ufcs", .fn), ("Sem.Call.ufcsNamed", .fn), ("Sem.Call.useInput", .fn), ("Sem.Call.useInputArg", .fn),
     ("Sem.Call.twoStep", .fn), ("Sem.Call.boolCall", .fn), ("Sem.Call.zeroCall", .fn), ("Sem.Call.callInLet", .fn), ("Sem.Call.callInMatch", .fn),
@@ -868,11 +868,13 @@ def checkWrong (what : String) (file : System.FilePath) (program : String × Lis
 
 /-! ### 宣言群の引用と適格性(C54)
 
-検体 `tests/accept/sem_call.naru`(関数・input の保存対象)の fn / input / spec 宣言すべてを、Core(`NaruSem.Call.Decl`)と Surface AST(`NaruSem.Surf.Call.Decl`)の
+検体 `tests/units/accept/sem_calls/src/Sem/Call.naru`(関数・input の保存対象)の fn / input / spec 宣言すべてを、Core(`NaruSem.Call.Decl`)と Surface AST(`NaruSem.Surf.Call.Decl`)の
 宣言群として依存順(呼出し先が前)に引用し、宣言群の適格性 `wtProg` と各宣言の署名を kernel の `decide` で、引用の一致と宣言群全体の網羅を `checkProg` の
 再コンパイル / 再構文解析で検査する。負の検体は実際の Core / AST の値から作る(文字列の置換ではない)。 -/
 
-def callSource : String := "tests/accept/sem_call.naru"
+def callSource : String := "tests/units/accept/sem_calls/src/Sem/Call.naru"
+def callInputSource : String := "tests/units/accept/sem_calls/src/Sem/Inputs.naru"
+def callSources : List String := [callSource, callInputSource]
 
 /-- Core の式の中の呼出し先の鍵(出現順、重複あり)。 -/
 partial def callKeysOf : Naru.Core.Expr → List String
@@ -951,7 +953,7 @@ def coreWrongProgs (prog : List NaruSem.Call.Decl) : List (String × String × L
       mapDecl "Sem.Call.base" (fun _ => .call "Sem.Call.callBase" [.var "x"]) prog),
     ("duplicate", "`base` declared twice", prog ++ (prog.filter fun d => d.key == "Sem.Call.base")),
     ("arity", "`useInput` calling the input `seed` with an argument (its signature has none)",
-      mapDecl "Sem.Call.useInput" (addArgTo "Sem.Call.seed" (.var "x")) prog),
+      mapDecl "Sem.Call.useInput" (addArgTo "Sem.Inputs.seed" (.var "x")) prog),
     ("argtype", "`callBase` passing a Bool to `base` (whose parameter is Nat)",
       mapDecl "Sem.Call.callBase" (fun _ => .binop "*" (.call "Sem.Call.base" [.lit (.bool true) .bool]) (.lit (.nat 2) .nat) .nat) prog) ]
 
@@ -978,21 +980,21 @@ def valsTerm (vs : List NaruSem.Val) : String := "[" ++ ", ".intercalate (vs.map
 
 /-- 検査に使う input の解釈: `seed() = 41`、`bias(n) = n * 2`、`otherBias(n) = n + 3`、`flag(b) = !b`(署名を守る解釈の一例)。 -/
 def callInterp : NaruSem.Call.FEnv :=
-  (((NaruSem.Call.FEnv.empty.ext "Sem.Call.seed" fun _ => some (.nat 41)).ext "Sem.Call.bias"
-    fun vs => match vs with | [.nat n] => some (.nat (n * 2)) | _ => none).ext "Sem.Call.flag"
-    fun vs => match vs with | [.bool b] => some (.bool (!b)) | _ => none).ext "Sem.Call.otherBias"
+  (((NaruSem.Call.FEnv.empty.ext "Sem.Inputs.seed" fun _ => some (.nat 41)).ext "Sem.Inputs.bias"
+    fun vs => match vs with | [.nat n] => some (.nat (n * 2)) | _ => none).ext "Sem.Inputs.flag"
+    fun vs => match vs with | [.bool b] => some (.bool (!b)) | _ => none).ext "Sem.Inputs.otherBias"
     fun vs => match vs with | [.nat n] => some (.nat (n + 3)) | _ => none
 
 def callInterpTerm : String :=
-  "(((NaruSem.Call.FEnv.empty.ext \"Sem.Call.seed\" fun _ => some (NaruSem.Val.nat 41)).ext \"Sem.Call.bias\"\n" ++
-  "    fun vs => match vs with | [NaruSem.Val.nat n] => some (NaruSem.Val.nat (n * 2)) | _ => none).ext \"Sem.Call.flag\"\n" ++
-  "    fun vs => match vs with | [NaruSem.Val.bool b] => some (NaruSem.Val.bool (!b)) | _ => none).ext \"Sem.Call.otherBias\"\n" ++
+  "(((NaruSem.Call.FEnv.empty.ext \"Sem.Inputs.seed\" fun _ => some (NaruSem.Val.nat 41)).ext \"Sem.Inputs.bias\"\n" ++
+  "    fun vs => match vs with | [NaruSem.Val.nat n] => some (NaruSem.Val.nat (n * 2)) | _ => none).ext \"Sem.Inputs.flag\"\n" ++
+  "    fun vs => match vs with | [NaruSem.Val.bool b] => some (NaruSem.Val.bool (!b)) | _ => none).ext \"Sem.Inputs.otherBias\"\n" ++
   "    fun vs => match vs with | [NaruSem.Val.nat n] => some (NaruSem.Val.nat (n + 3)) | _ => none"
 
 /-- 署名に合わない解釈: `seed()` が Bool を返す。 -/
-def callInterpWrong : NaruSem.Call.FEnv := NaruSem.Call.FEnv.empty.ext "Sem.Call.seed" fun _ => some (.bool true)
+def callInterpWrong : NaruSem.Call.FEnv := NaruSem.Call.FEnv.empty.ext "Sem.Inputs.seed" fun _ => some (.bool true)
 
-def callInterpWrongTerm : String := "(NaruSem.Call.FEnv.empty.ext \"Sem.Call.seed\" fun _ => some (NaruSem.Val.bool true))"
+def callInterpWrongTerm : String := "(NaruSem.Call.FEnv.empty.ext \"Sem.Inputs.seed\" fun _ => some (NaruSem.Val.bool true))"
 
 /-- 宣言群の意味で fn を呼ぶ(ドライバの実行)。 -/
 def callValue (I : NaruSem.Call.FEnv) (prog : List NaruSem.Call.Decl) (k : String) (args : List NaruSem.Val) : Option NaruSem.Val :=
@@ -1048,7 +1050,7 @@ def callScopeProgram (prog : List NaruSem.Call.Decl) (Δ : NaruSem.Call.SigEnv) 
   "    (NaruSem.Call.interp I cprog_call).Ψ.Defined (Classical.choose cΔ_call) :=\n" ++
   "  fun I hI => NaruSem.Call.interp_defined (Classical.choose_spec cΔ_call) hI\n" ++
   "#audit_axioms cwt_call cΔ_call cresp_call cdef_call cstuck_useInput\n" ++
-  s!"\n-- the quoted declarations are the Core the compiler produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Call.Quote.checkProg {callSource.quote} cprog_call\n"
+  s!"\n-- the quoted declarations are the Core the compiler produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Call.Quote.checkProg {callSource.quote} cprog_call [{callInputSource.quote}]\n"
 
 /-- Surface AST の式の呼出し先・UFCS のメソッド名 `from` を `to` に(負の検体: 未解決の名前)。 -/
 partial def renameCallee (src dst : String) : NaruSem.Surf.Call.Expr → NaruSem.Surf.Call.Expr
@@ -1125,11 +1127,11 @@ def surfaceCallScopeProgram (prog : List NaruSem.Surf.Call.Decl) (wrongs : List 
   "#audit_axioms swt_call sresp_call sdef_call\n" ++
   "\n-- negative specimens made from the actual AST: not well-formed\n" ++
   "".intercalate negs ++
-  s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call\n"
+  s!"\n-- the quoted declarations embed to the declarations the parser produces for the same source, and cover all its fn / input / spec declarations (C54 / C57)\nrun_cmd NaruSem.Surf.Call.Quote.checkProg {callSource.quote} sprog_call [{callInputSource.quote}]\n"
 
 /-! ### 実生成 Model への接続と宣言群の意味の合成(C55 / C56 / C57 / C58、runtime)
 
-検体 `tests/accept/sem_call.naru` を実際の CLI で生成した Model(`Model.Sem.Call`: fn は input の引数 `name'` を名前順に先頭に取る Lean の定義、ゼロ引数の fn は定数、
+検体 `tests/units/accept/sem_calls/src/Sem/Call.naru` を実際の CLI で生成した Model(`Model.Sem.Call`: fn は input の引数 `name'` を名前順に先頭に取る Lean の定義、ゼロ引数の fn は定数、
 呼出しは呼出し先の定数への適用)をそのまま Lean のモジュールにし、検査プログラム `CallModelCheck.lean`(モジュール `CallModelCheck`。`CallScope` を import)が:
 - 実生成宣言の表 `shapes_call` / `gens_call <inputs>`(`NaruSem.Call.Shape` / `Gen`: 鍵・input か・仮引数の型・戻り型・実生成の関数。input は解釈の Lean の値、
   fn は生成定数に(推移的に)使う input の引数を適用したもの)から署名 `Δgen_call` と関数環境 `Φgen_call <inputs>` を作り、`Φgen_call_respects`(表の環境は表の署名を守る:
@@ -1835,7 +1837,7 @@ def checks : M Unit := do
   let specCoreWrongs ← deriveSpecCoreWrongs specConnected parsedSpecAsts specCoreMistranslations
   checkWrong "spec Core" (outDir / "SurfaceSpecWrong.lean") (surfaceSpecWrongProgram specConnected specCoreWrongs) specCoreWrongs lp
   heading "C54 declaration groups with calls and inputs (Core and Surface AST)"
-  let (cdiags, cchecked) ← Naru.compileFiles [callSource]
+  let (cdiags, cchecked) ← Naru.compileFiles callSources
   if cdiags.isEmpty then ok s!"C54: {callSource} compiles without diagnostics"
   else
     fail s!"C54: {callSource}: {cdiags.size} diagnostic(s): {cdiags.toList.map (·.msg)}"
@@ -1923,7 +1925,8 @@ def checks : M Unit := do
       -- C55 / C56 / C57 / C58: 実生成 Model(呼出しと input)への接続と、宣言群の意味との合成
       heading "C55 / C56 / C57 connection of the generated Model with calls and inputs to the meaning of the declaration group"
       if ← callGenDir.pathExists then IO.FS.removeDirAll callGenDir
-      let _ ← step "C57: generate the Model of the call specimen with the real CLI" "lake" #["exe", "naru", "compile", "--out", callGenDir.toString, callSource]
+      let _ ← step "C57: generate the Model of the call specimen with the real CLI" "lake" #["exe", "naru", "compile", "--out", callGenDir.toString, callSource, callInputSource]
+      let _ ← checkOmission "C56: input-only module with arbitrary interpretations" callGenDir cchecked.core
       let callModelFile := callGenDir / "Model" / "Sem" / "Call.lean"
       let callModelText ← if ← callModelFile.pathExists then IO.FS.readFile callModelFile else pure ""
       if callModelText.isEmpty then
@@ -1935,7 +1938,7 @@ def checks : M Unit := do
           #[s!"--root={callGenDir}", "-o", (callGenDir / "Model" / "Sem" / "Call.olean").toString, callModelFile.toString] (env := #[("LEAN_PATH", some lpCall)])
         let inputsTable := inputsOf cprog
         for key in ["Sem.Call.inputPair", "Sem.Call.sharedInputs", "Sem.Call.specSharedInputs"] do
-          let expected := ["Sem.Call.bias", "Sem.Call.otherBias", "Sem.Call.seed"]
+          let expected := ["Sem.Inputs.bias", "Sem.Inputs.otherBias", "Sem.Inputs.seed"]
           if inputsTable.lookup key == some expected then
             ok s!"C56: `{shortName key}` carries the two same-signature inputs distinctly and shares bias/seed exactly once, in name order"
           else fail s!"C56: `{key}`: expected distinct and deduplicated transitive inputs {expected}, got {inputsTable.lookup key}"

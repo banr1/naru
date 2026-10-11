@@ -93,9 +93,10 @@ def fnLikeKeys (core : Array Core.Module) : List String :=
 
 open Lean Elab Command in
 /-- `run_cmd NaruSem.Call.Quote.checkProg "<path>" prog`: ソースをコンパイルし、引用した宣言群の各宣言が実際の Core の宣言(鍵・種別・仮引数・戻り型・本体)と
-一致し、実際の fn / input / spec 宣言がすべて引用されていることを確かめる(診断があれば・不一致・欠落・余分があれば失敗)。 -/
-def checkProg (path : String) (prog : Prog) : CommandElabM Unit := do
-  let (diags, checked) ← Naru.compileFiles [path]
+一致し、実際の fn / input / spec 宣言がすべて引用されていることを確かめる(診断があれば・不一致・欠落・余分があれば失敗)。
+`otherPaths` は同じコンパイル単位の他ファイル。空なら従来の単一ファイル検査。 -/
+def checkProg (path : String) (prog : Prog) (otherPaths : List String := []) : CommandElabM Unit := do
+  let (diags, checked) ← Naru.compileFiles (path :: otherPaths)
   unless diags.isEmpty do
     throwError "checkProg: {path} has {diags.size} diagnostic(s): {diags.toList.map (·.msg)}"
   let actual := declsOf checked.core
@@ -233,9 +234,10 @@ def fnLikeKeys (mods : Array Naru.Module) : List String :=
 
 open Lean Elab Command in
 /-- `run_cmd NaruSem.Surf.Call.Quote.checkProg "<path>" prog`: ソースを構文解析し、引用した宣言群の各宣言の埋め込み(`Decl.toAst`、モジュール名)が実際に構文解析された
-宣言(種別・名前・位置・仮引数・戻り型・本体)と `==` で一致し、実際の fn / input / spec 宣言がすべて引用されていることを確かめる。 -/
-def checkProg (path : String) (prog : Prog) : CommandElabM Unit := do
-  let (diags, checked) ← Naru.compileFiles [path]
+宣言(種別・名前・位置・仮引数・戻り型・本体)と `==` で一致し、実際の fn / input / spec 宣言がすべて引用されていることを確かめる。
+`otherPaths` も同じ単位として再構文解析する。 -/
+def checkProg (path : String) (prog : Prog) (otherPaths : List String := []) : CommandElabM Unit := do
+  let (diags, checked) ← Naru.compileFiles (path :: otherPaths)
   unless diags.isEmpty do
     throwError "checkProg: {path} has {diags.size} diagnostic(s): {diags.toList.map (·.msg)}"
   for q in prog do
