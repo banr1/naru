@@ -16,6 +16,11 @@ import NaruSem.Lower
 import NaruSem.LowerExamples
 import NaruSem.LowerSpec
 import NaruSem.LowerSpecExamples
+import NaruSem.Call
+import NaruSem.CallTotality
+import NaruSem.CallExamples
+import NaruSem.SurfaceCall
+import NaruSem.CallQuote
 import NaruSem.Audit
 
 /-!
@@ -198,3 +203,26 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Surf.neg_lowerS_quant_untyped NaruSem.Surf.neg_lowerS_prop_scrutinee NaruSem.Surf.neg_lowerS_prop_in_value
   NaruSem.Surf.neg_lowerS_block_no_tail NaruSem.Surf.neg_lowerS_path
   NaruSem.Surf.ex_wtS_forall_wrong NaruSem.Surf.neg_lowerS_swapped_quant NaruSem.Surf.ex_wtS_let_prop_wrong NaruSem.Surf.neg_lowerS_let_prop_wrong
+
+-- C54: 関数・input を含む Core の意味論(`NaruSem.Call`)— runtime の全域性・一意性(実引数の列を含む)、spec の意味の存在・一意性、署名の phase の排他、
+-- 宣言群の適格性の補題(鍵の重複なし・署名の保持)、宣言群の意味が署名を守ること(fn の全域性・spec 宣言の意味の存在と本体の意味との同値)
+#audit_axioms NaruSem.Call.eval_total NaruSem.Call.Eval_unique NaruSem.Call.evalArgs_total NaruSem.Call.wtR_total_all
+  NaruSem.Call.Sem_exists NaruSem.Call.Sem_unique NaruSem.Call.Sem_exists_all NaruSem.Call.evalS_total NaruSem.Call.evalArgsS_total
+  NaruSem.Call.not_value_and_spec NaruSem.Call.wtProg_fresh NaruSem.Call.wtProg_mono NaruSem.Call.wtProg_sig NaruSem.Call.wtProg_cons
+  NaruSem.Call.interp_Δ NaruSem.Call.interp_respects NaruSem.Call.interp_defined NaruSem.Call.fn_total NaruSem.Call.spec_defined NaruSem.Call.spec_meaning
+  NaruSem.Call.interpFrom_inv NaruSem.Call.interpFrom_spec_meaning NaruSem.Call.interpFrom_stable NaruSem.Call.interpFrom_Δ NaruSem.Call.Interp.step_inv
+  NaruSem.Call.bindParams_ty NaruSem.Call.bindParams_some NaruSem.Call.paramSCtx_eq NaruSem.Call.Env.toSEnv_ctx NaruSem.Call.Env.toSEnv_vals
+
+-- C54: Core の呼出しの検体 — 対象範囲(fn / input / spec 宣言の呼出し、値の位置の呼出し、命題の let)、不適格な Core(未解決・引数の数と型・phase・
+-- 値の位置の spec 宣言・命題の実引数・関数の値としての参照)、宣言群(適格な 2 段の呼出しと input、自己再帰・相互再帰・依存順でない・重複・input の
+-- 引数の不一致は不適格、input の解釈による値、署名に合わない解釈は行き詰まりで前提を満たさない、fn の全域性と spec 宣言の意味の存在の実例、
+-- 呼出しの規則の実例、行き詰まり)
+#audit_axioms NaruSem.Call.ex_wtR_call_in_arith NaruSem.Call.ex_wtS_call_spec NaruSem.Call.ex_wtS_call_fn_bool NaruSem.Call.ex_proppyS_call_spec
+  NaruSem.Call.ex_wtS_let_call_spec NaruSem.Call.neg_wtR_call_unknown NaruSem.Call.neg_wtR_call_arity NaruSem.Call.neg_wtR_call_arity2
+  NaruSem.Call.neg_wtR_call_type NaruSem.Call.neg_wtR_call_spec_phase NaruSem.Call.neg_wtS_call_spec_in_value NaruSem.Call.neg_wtS_call_prop_arg
+  NaruSem.Call.neg_wtR_global NaruSem.Call.ex_wtProg_A NaruSem.Call.ex_wtProg_A_sig NaruSem.Call.neg_wtProg_self_recursion
+  NaruSem.Call.neg_wtProg_mutual_recursion NaruSem.Call.neg_wtProg_not_ordered NaruSem.Call.neg_wtProg_duplicate NaruSem.Call.neg_wtProg_input_arity
+  NaruSem.Call.ex_interp_A NaruSem.Call.ex_interp_A_other NaruSem.Call.neg_interp_input_type NaruSem.Call.neg_Iwrong_not_respects
+  NaruSem.Call.ex_I₄₁_respects NaruSem.Call.ex_fn_total NaruSem.Call.ex_wtProg_S NaruSem.Call.ex_wtProg_S_sig NaruSem.Call.ex_spec_defined
+  NaruSem.Call.ex_Sem_callVal NaruSem.Call.ex_Sem_callSpec NaruSem.Call.neg_eval_call_unknown NaruSem.Call.neg_eval_call_arg_stuck
+  NaruSem.Call.neg_Sem_call_unknown

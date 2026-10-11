@@ -1,0 +1,45 @@
+// 受理例(C54〜C58): コンパイラ意味論保存の「関数・input の保存対象」の検体。非再帰の fn / spec 宣言の呼出しと input の呼出しを、
+// 位置引数・名前付き引数・UFCS・ゼロ引数・2 段の呼出し・input の推移的な依存と共有・spec から runtime / spec の呼出しについて 1 宣言ずつ使う。
+// `lake exe naru_test semantics` がこのファイルを実際の compiler 経路でコンパイルし、宣言群の Core(依存順)と構文解析の出力(Surface AST)を
+// Lean の項として引用して、`semantics/NaruSem/Call.lean` / `SurfaceCall.lean` の宣言群の適格性(`wtProg`)を Lean で検査する。
+// 呼出し先はすべてこのファイルの中で先に宣言する(依存順の検体。コンパイラ自体は宣言の順序を要求しない)。
+module Sem.Call
+
+// input: ゼロ引数(値)と引数あり(署名に従う任意の全域関数の解釈を環境から受け取る)
+input seed() -> Nat
+input bias(n: Nat) -> Nat
+input flag(b: Bool) -> Bool
+
+// runtime(Model)
+fn base(x: Nat) -> Nat { x + 1 }
+fn zero() -> Nat { 0 }
+fn addTo(x: Nat, y: Nat) -> Nat { x + y * 2 }
+fn callBase(x: Nat) -> Nat { base(x) * 2 }
+fn callNamed(a: Nat, b: Nat) -> Nat { addTo(y = a, x = b) }
+fn callMixed(a: Nat, b: Nat) -> Nat { addTo(a, y = b) }
+fn ufcs(a: Nat, b: Nat) -> Nat { a.addTo(b) }
+fn ufcsNamed(a: Nat, b: Nat) -> Nat { a.addTo(y = b) }
+fn useInput(x: Nat) -> Nat { x + seed() }
+fn useInputArg(x: Nat) -> Nat { bias(x) + bias(seed()) }
+fn twoStep(x: Nat) -> Nat { callBase(useInput(x)) }
+fn boolCall(b: Bool) -> Bool { flag(b) && !flag(!b) }
+fn zeroCall() -> Nat { zero() + zero() }
+fn callInLet(x: Nat) -> Nat { let y = base(x); let z = base(y); z }
+fn callInMatch(x: Nat) -> Nat {
+  match base(x) {
+    1 => zero(),
+    n if callBase(n) > 4 => n,
+    _ => x,
+  }
+}
+
+// spec(Statements)
+predicate posBase(x: Nat) { base(x) > 0 }
+predicate specCallSpec(x: Nat) { posBase(x) && x < 10 }
+predicate specInput(x: Nat) { useInput(x) >= x && seed() >= 0 }
+predicate specNamed(a: Nat, b: Nat) { addTo(y = a, x = b) == callNamed(a, b) }
+predicate specUfcs(a: Nat, b: Nat) { a.addTo(b) == ufcs(a, b) }
+predicate specBoolCall(b: Bool) { boolCall(b) implies flag(b) }
+predicate specLetCall(x: Nat) { let p = posBase(x); let v = base(x); p implies v > 0 }
+predicate specQuantCall(x: Nat) { forall n: Nat { base(n) >= n } }
+predicate specTwoStep(x: Nat) { specCallSpec(x) || specInput(x) }
