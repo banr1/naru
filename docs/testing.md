@@ -277,6 +277,8 @@ lake exe naru_test semantics              # 上の 2 つ + 実際の compiler �
   型が合う5件の隔離宣言と任意 input/仮引数の正しい対照は通り、接続定理の5行だけが失敗する。各 `different_*` の閉じた非同値反例も kernel 検査・公理監査し、5件の監査の欠落は失敗にする。
   呼出しを含む Surface AST からの保存とその負検体、別モジュールの接続、同じ署名の複数 input 等(C55〜C58 の残り)は未完了。
 
+C56 の任意解釈から Lean への写しは `CallInputs.lean` の `exists_fn` / `input_representable` / `inputs_representable`。`lake build NaruSem` と同じ semantics / regression 入口で公理監査し、必須監査一覧からの欠落を失敗にする。型外で値を返す解釈の対照 `illtyped_total` / `illtyped_not_equal` も kernel 検査する。`CallModelCheck.lean` の `irepr_seed` / `irepr_bias` / `irepr_flag` と `ireprs_call` は現在の引用 Core の input の鍵・署名と、任意の `RespectsInputs` 解釈に対する全引数の対応を検査する。これら4証拠の監査欠落も失敗とする。型内の一致から既存の `SameInputs` は導かないため、元解釈と実生成宣言への呼出しの合成までを検証済みとはしない。
+
 ## golden test(C10)
 
 手書き Model(`third_party/verified-consensus/DecoupledConsensusModel`)と生成 Model(`generated/Model` + `NaruStd`)を 1 つの Lean プログラム(`tests/golden/Golden.lean`)から

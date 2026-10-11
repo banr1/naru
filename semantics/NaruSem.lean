@@ -19,6 +19,7 @@ import NaruSem.LowerSpecExamples
 import NaruSem.Call
 import NaruSem.CallTotality
 import NaruSem.CallDenote
+import NaruSem.CallInputs
 import NaruSem.CallDenoteProp
 import NaruSem.CallComposeProp
 import NaruSem.CallExamples
@@ -287,6 +288,9 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   NaruSem.Call.denoteArgs_nil NaruSem.Call.denoteArgs_cons NaruSem.Call.denoteArmsN_cons NaruSem.Call.denoteArmsB_cons
 
 -- C55(spec): 呼出しを含む式の一般同値と、対応環境・値引数・命題環境の双方向の同値。宣言群のspec合成とは区別する。
+#audit_axioms NaruSem.Call.exists_fn NaruSem.Call.input_representable NaruSem.Call.inputs_representable
+  NaruSem.Call.illtyped_total NaruSem.Call.illtyped_not_equal
+
 #audit_axioms NaruSem.Call.Sem_denote_all NaruSem.Call.Sem_denote NaruSem.Call.Sem_denoteP NaruSem.Call.Sem_denote_self NaruSem.Call.check_sound_prop
 #audit_axioms NaruSem.Call.interpFrom_prop_agree NaruSem.Call.interp_prop_agree NaruSem.Call.curried_wrapP NaruSem.Call.specConn_of_curried
   NaruSem.Call.PEnv.Agree.refl NaruSem.Call.PEnv.Agree.defined NaruSem.Call.PEnv.Defined.mono NaruSem.Call.SigEnv.SubP.refl

@@ -129,6 +129,9 @@ def requiredTheorems : List String :=
     "NaruSem.Call.denote_sound", "NaruSem.Call.denote_sound_self", "NaruSem.Call.preserve_nat", "NaruSem.Call.preserve_bool", "NaruSem.Call.denoteArms_sound",
     "NaruSem.Call.check_sound_nat", "NaruSem.Call.check_sound_bool", "NaruSem.Call.wrap_respects", "NaruSem.Call.ofGens_respects",
     "NaruSem.Call.interp_agree", "NaruSem.Call.fn_value", "NaruSem.Call.SubV_of_cover", "NaruSem.Call.fnConn_of_curried",
+    -- C56: 任意の署名を守る解釈をLeanの値/関数へ写す。型外の挙動の等式は要求しない。
+    "NaruSem.Call.exists_fn", "NaruSem.Call.input_representable", "NaruSem.Call.inputs_representable",
+    "NaruSem.Call.illtyped_total", "NaruSem.Call.illtyped_not_equal",
     -- C55(spec): 式の一般同値。宣言群のspec環境の一致はprefix証拠から合成。Surface合成は未完了。
     "NaruSem.Call.Sem_denote_all", "NaruSem.Call.Sem_denote", "NaruSem.Call.Sem_denoteP", "NaruSem.Call.Sem_denote_self", "NaruSem.Call.check_sound_prop",
     "NaruSem.Call.interpFrom_prop_agree", "NaruSem.Call.interp_prop_agree", "NaruSem.Call.curried_wrapP", "NaruSem.Call.specConn_of_curried",
@@ -1221,6 +1224,14 @@ def callValOf (ib ia : String) (f : CallFn) : String :=
   s!"    {quant s!"∃ f, (NaruSem.Call.interp I cprog_call).Φ {f.key.quote} = some f ∧ f {vals} = some ({val} ({call}))"} :=\n" ++
   s!"  {lam s!"NaruSem.Call.fn_value hP hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) hin (cevid_call {ia}) {memTerm f.index} rfl rfl rfl"}\n\n"
 
+/-- 現在のCoreから得た一つのinputの鍵・署名で、任意の解釈のLean表現を検査する。 -/
+def inputReprOf (k : String) (ps : List (String × NaruSem.Ty)) (t : NaruSem.Ty) (i : Nat) : String :=
+  let pts := NaruSem.Call.Quote.list (ps.map fun p => tyTerm p.2)
+  s!"theorem irepr_{shortName k} (I : NaruSem.Call.FEnv) (hI : I.RespectsInputs cprog_call) :\n" ++
+  s!"    ∃ g : NaruSem.Call.Fn {pts} {tyTerm t}, ∃ f, I {k.quote} = some f ∧\n" ++
+  s!"      ∀ vs, vs.map NaruSem.Val.ty = {pts} → NaruSem.Call.wrap {pts} {tyTerm t} g vs = f vs :=\n" ++
+  s!"  NaruSem.Call.input_representable hI {memTerm i}\n\n"
+
 /-- 検査プログラム `CallModelCheck.lean`。 -/
 def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty)) (prog : List NaruSem.Call.Decl) : String :=
   let (ib, ia) := inputBinders inputs
@@ -1237,8 +1248,11 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
     | .fn k .. => s!"  · exact evid_{shortName k} {ia}"
     | _ => "  · trivial"
   let rcasesPat := " | ".intercalate (prog.map fun _ => "rfl")
+  let reprs := prog.zipIdx |>.filterMap fun (d, i) => match d with
+    | .input k ps t => some (s!"irepr_{shortName k}", inputReprOf k ps t i)
+    | _ => none
   let names := ["Φgen_call_respects", "cover_call"] ++ fns.flatMap (fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}"]) ++
-    ["cevid_call", "cgen_call"] ++ fns.map (fun f => s!"cval_{shortName f.key}")
+    ["cevid_call", "cgen_call", "ireprs_call"] ++ reprs.map (·.1) ++ fns.map (fun f => s!"cval_{shortName f.key}")
   s!"-- naru_test semantics (C55 / C56 / C57 / C58): generated from NaruTest/Semantics.lean. Connection of the generated Model of {callSource} (calls and inputs) to the Core semantics and to the meaning of the declaration group.\n" ++
   "import CallScope\nimport Model.Sem.Call\n\n" ++
   "-- the general theorem quantifies over any signatures, well-formed expression, matching environment and function environments agreeing on the signatures (C55)\n" ++
@@ -1264,6 +1278,12 @@ def callModelProgram (fns : List CallFn) (inputs : List (String × List NaruSem.
   s!"{hdr "theorem" "Φgen_call_respects"} : (Φgen_call {ia}).Respects Δgen_call := NaruSem.Call.ofGens_respects (gens_call {ia})\n" ++
   "-- every fn / input of the group has its signature in the table, so the group's signatures are included in the table's (`SubV_of_cover`)\n" ++
   "theorem cover_call : ∀ d ∈ cprog_call, d.sig.value?.isSome = true → Δgen_call d.key = some d.sig := by decide\n\n" ++
+  "-- representations of all actual inputs, under any signature-respecting interpretation (C56)\n" ++
+  "".intercalate (reprs.map (·.2)) ++
+  "theorem ireprs_call (I : NaruSem.Call.FEnv) (hI : I.RespectsInputs cprog_call) :\n" ++
+  "    ∃ gs : NaruSem.Call.InputValues cprog_call, ∀ k ps t (hd : NaruSem.Call.Decl.input k ps t ∈ cprog_call),\n" ++
+  "      ∃ f, I k = some f ∧ ∀ vs, vs.map NaruSem.Val.ty = ps.map (·.2) →\n" ++
+  "        NaruSem.Call.wrap (ps.map (·.2)) t (gs k ps t hd) vs = f vs := NaruSem.Call.inputs_representable hI\n\n" ++
   "".intercalate (fns.map (callConnOf ib ia)) ++
   "-- every fn of the group has its connection evidence (C57)\n" ++
   s!"{hdr "theorem" "cevid_call"} : NaruSem.Call.Evidence Δgen_call (Φgen_call {ia}) cprog_call := by\n" ++
@@ -1868,12 +1888,13 @@ def checks : M Unit := do
         let mc ← step s!"C55 / C56 / C57: lean {callCheck} as module `CallModelCheck` (shape of the general theorems; the table of {inputs.length} inputs and {fns.length} generated fn declarations respects the signatures; connection `conn_*` of the {fns.length} generated declarations with calls and inputs; evidence `evid_*` composed into the meaning of the group `cevid_call` / `cgen_call`; values `cval_*`)"
           "lean" #[s!"--root={outDir}", "-o", (outDir / "CallModelCheck.olean").toString, callCheck.toString] (env := #[("LEAN_PATH", some lpCall)])
         let callAudited := auditedNames mc.stdout
-        let expectedCall := ["Φgen_call_respects", "cover_call", "cevid_call", "cgen_call"] ++
+        let expectedCall := ["Φgen_call_respects", "cover_call", "cevid_call", "cgen_call", "ireprs_call"] ++
+          inputs.map (fun (k, _, _) => s!"irepr_{shortName k}") ++
           fns.flatMap fun f => [s!"conn_{shortName f.key}", s!"evid_{shortName f.key}", s!"cval_{shortName f.key}"]
         let missingCall := expectedCall.filter fun n => !callAudited.contains n
         let fnCount := (c54Decls.filter fun (_, k) => k == .fn).length
         if mc.exitCode == 0 && missingCall.isEmpty && fns.length == fnCount && !(contains mc.stdout "forbidden") && !(contains mc.stderr "forbidden") then
-          ok s!"C55 / C56 / C57: the connection evidence of {fns.length} generated fn declarations with calls and inputs ({expectedCall.length} theorems: per-fn `conn_` / `evid_` / `cval_`, the group's `cevid_call` / `cgen_call`; any input interpretation agreeing with the inputs) is audited with 0 forbidden dependencies"
+          ok s!"C55 / C56 / C57: the connection evidence of {fns.length} generated fn declarations with calls and inputs ({expectedCall.length} theorems: per-fn `conn_` / `evid_` / `cval_`, the group's `cevid_call` / `cgen_call`; {inputs.length} input representations `irepr_*` / `ireprs_call` for any signature-respecting interpretation) is audited with 0 forbidden dependencies"
         else fail s!"C55 / C56 / C57: connection evidence (calls): exit {mc.exitCode}, not audited: {missingCall} ({fns.length} of {fnCount} fn)\n{tail mc.stdout 1500}\n{tail mc.stderr 1500}"
         -- C55(spec): 現在の実生成 Statements と現在の引用 Core の読みを任意の input / 仮引数で接続する。
         let callStmtFile := callGenDir / "Statements" / "Sem" / "Call.lean"
