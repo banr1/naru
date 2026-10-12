@@ -40,8 +40,21 @@ import NaruSem.SurfaceCallQuantSemExamples
 import NaruSem.SurfaceCallLowerSpecExamples
 import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
+import NaruSem.SurfaceCallProg
 import NaruSem.CallQuote
 import NaruSem.Audit
+
+-- C55 / C57: Surface / Core の宣言群の意味の対応(宣言ごとの対応 `ProgLower` から callee 環境 `Φ` / `Ψ` の一致を宣言群の帰納法で導く)、
+-- prefix の表の署名と Core の署名の一致・包含、input の解釈の対応、Surface の宣言群の意味の下での spec 本体と実生成環境での読みの同値、
+-- 署名の鍵での一致の推移・単調と Core の spec 宣言の意味の形
+#audit_axioms NaruSem.Surf.Call.interpFrom_lower_agree NaruSem.Surf.Call.interp_lower_agree NaruSem.Surf.Call.spec_sem_denote
+  NaruSem.Surf.Call.Δ_step_of_lower NaruSem.Surf.Call.Δ_take_of_lower NaruSem.Surf.Call.Δ_take_eq NaruSem.Surf.Call.Δ_take_sub
+  NaruSem.Surf.Call.tableOf_nil_Δ NaruSem.Surf.Call.sigsOf_append_of_some NaruSem.Surf.Call.respectsInputs_of_lower
+  NaruSem.Surf.Call.DeclLower.key NaruSem.Surf.Call.DeclLower.sig NaruSem.Surf.Call.DeclLower.sig_isSome
+  NaruSem.Surf.Call.ProgLowerFrom.length NaruSem.Surf.Call.Δ_full_eq NaruSem.Surf.Call.Δ_take_subV
+  NaruSem.Call.SigEnv.SubV.trans NaruSem.Call.SigEnv.SubP.trans NaruSem.Call.FEnv.Agree.trans NaruSem.Call.FEnv.Agree.mono
+  NaruSem.Call.PEnv.Agree.trans NaruSem.Call.PEnv.Agree.mono NaruSem.Call.Interp.step_Ψ_spec NaruSem.Call.wtProg_foldl
+  NaruSem.SEnv.vals_ofList
 
 -- C55: 呼出しを含む全 spec 式の一般双方向同値(`wtS.mutual_induct` で局所合成を子式の帰納結果で結ぶ)、
 -- 論理の位置の式が Nat に評価されないこと、Core → 実生成 Lean の読みへの合成と、合成式の検体(任意解釈・意味証人・誤 Core の非保存)
@@ -76,7 +89,7 @@ import NaruSem.Audit
 #audit_axioms NaruSem.Surf.Call.lowerCallS_eq NaruSem.Surf.Call.lowerCallS_spec_wt
 #audit_axioms NaruSem.Surf.Call.lowerCallS_spec_Sem NaruSem.Surf.Call.lowerCallS_value_Sem
 
--- C55: runtime の別々の型内対応環境への合成。対応自体の宣言群の証明は別の義務。
+-- C55: runtime の別々の型内対応環境への合成。対応自体の宣言群の証明は `SurfaceCallProg.lean`(`interp_lower_agree`)。
 #audit_axioms NaruSem.Call.eval_agree NaruSem.Surf.Call.lower_eval_agree NaruSem.Surf.Call.lower_denote_sound
 #audit_axioms NaruSem.Surf.Call.typed_env_agree NaruSem.Surf.Call.typed_env_preserve NaruSem.Surf.Call.typed_env_outside_diff
 
@@ -150,21 +163,29 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   呼出し側への合成)と系 `Call.fn_value`、署名の包含 `SubV_of_cover`、接続検査の形 `Curried` と `fnConn_of_curried`。
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/SurfaceCallLower.lean` — 呼出しを含む runtime の独立 lowering。現在の17 fnの AST / Core の構造的対応を検査する。
-  呼出し・ブロック・matchの局所合成を提供し、全式のruntime評価保存は次のモジュールで検査する。spec の双方向同値は `SurfaceCallLowerSpecSemAll.lean`、宣言群の意味合成は未完了。
+  呼出し・ブロック・matchの局所合成を提供し、全式のruntime評価保存は次のモジュールで検査する。spec の双方向同値は `SurfaceCallLowerSpecSemAll.lean`、宣言群の意味合成は `SurfaceCallProg.lean`。
 - `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
   式・実引数・let列・腕列・腕を同時帰納し、同じ任意の署名を守る関数/input環境と対応する局所環境の下で評価も保存する。
-  実際の17 fnへの型・評価保存の適用をkernelが検査する。Surface/Core宣言群の合成は未完了(spec は `SurfaceCallLowerSpecSemAll.lean`)。
+  実際の17 fnへの型・評価保存の適用をkernelが検査する。Surface/Core宣言群の合成は `SurfaceCallProg.lean`(spec は `SurfaceCallLowerSpecSemAll.lean`)。
 - `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型・一般双方向同値の適用を100証拠で検査する。
   `SurfaceCallLowerSpecSound.lean` は一般の全域性・型保存・命題区分保存を証明する。
-  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec双方向同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群の合成は未完了。
+  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec双方向同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群の合成は `SurfaceCallProg.lean` が与える。
 - `NaruSem/SurfaceCallLowerSpecSem.lean` — 子spec式と末尾の双方向の意味対応を `SpecLetsBridge` に明示し、値・命題let列をCoreへ局所合成する。
-  `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群保存は未完了。
+  `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群保存は `SurfaceCallProg.lean` が与える。
 - `NaruSem/SurfaceCallLowerSpecSemAll.lean` — 呼出しを含む全 spec 式の一般双方向同値(C55): `Surf.Call.wtS.mutual_induct` の `lowerS_sem_all` が
   let 列 / 腕列 / 量化 / 論理 / 比較 / 等値 / 呼出し葉の局所合成を子式の帰納結果で結び、`lowerS_sem_iff`(任意の宣言表・適格な式・独立 lowering の実出力・
   署名を守る任意の関数 / input 解釈・任意の spec 解釈(不在を含む)・型付け文脈と一致する任意の環境で Surface の意味 ↔ Core の意味)、`lowerS_sem_exists_iff`、
   `eval_not_nat_of_wtS`(論理の位置の式は Nat に評価されない。命題等値の前提を導く)、`lowerS_denote` / `lowerS_denoteP`(C44 / C55 の Core → 実生成 Lean の読みへの合成)。
   `SurfaceCallLowerSpecSemAllExamples.lean` は命題の let・量化・呼出しの scrutinee・ガード付き match・名前付き spec 呼出し・UFCS・否定・命題等値を重ねた合成式の検体。
-  Surface / Core 宣言群からの callee 環境の対応と現在の実生成 Statements 宣言への接続は別の義務。
+  Surface / Core 宣言群からの callee 環境の対応と現在の実生成 Model / Statements 宣言への接続は `SurfaceCallProg.lean`(`interp_lower_agree` / `spec_sem_denote`)と検査プログラム `SurfaceCallStatementsCheck.lean`。
+- `NaruSem/SurfaceCallProg.lean` — Surface / Core の宣言群の意味の対応と実生成 Model / Statements への合成(C55 / C57): 宣言ごとの対応 `Surf.Call.DeclLower`
+  (鍵・署名が同じで、fn / spec 宣言の本体はその宣言より前の宣言の表での独立 lowering `lower` / `lowerS` の実出力、input は本体なし)の列 `ProgLower` から、
+  宣言群の帰納法 `interpFrom_lower_agree` で同じ input 解釈の下の `Surf.Call.interp I P` と `Call.interp I C` の callee 環境の一致(`FEnv.Agree` / `PEnv.Agree`)を導く
+  `interp_lower_agree`(fn の段は `lower_eval_agree`、spec 宣言の段は `lowerS_denote` / `lowerS_denoteP` と `Call.Sem_denote_self` / `Sem_denoteP` を読み経由で合成、
+  input の段は同じ解釈を運ぶ)、prefix の表の署名と Core の署名の一致・包含(`Δ_take_eq` / `Δ_full_eq` / `Δ_take_subV`)、既存の Core → 実生成環境の対応と推移で結ぶ
+  `spec_sem_denote`(Surface の宣言群の意味の下での spec 本体の意味 ↔ 実生成環境での読み)。検査プログラム `SurfaceCallStatementsCheck.lean` が現在 31 宣言の
+  対応 `splower_call`、`sagree_call` / `sgen_call` / `sinputs_connect`、17 fn の `sfn_*`(実生成 Model の値)、10 spec の `ssΔ_*` / `ssurf_*` / `ssiff_*` / `sstmt_*` / `sstmt_iff_*`
+  (実生成 Statements の命題)を書き、負の検体 `SurfaceCallStatementsWrong.lean` が違う宣言の実生成 Statements と別の呼出し先へ置換した Core を拒否する。
 - `NaruSem/SurfaceCallLogicSemExamples.lean` — 論理演算・否定・Bool/Prop条件ifの局所合成、任意解釈、意味不在、同型の逆含意の非保存を検査する。
 - `NaruSem/SurfaceCallCompareSemExamples.lean` — Nat/Bool比較・値/命題等値の局所合成、任意input解釈、混合型拒否、意味不在、同型演算交換の非保存を検査する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
@@ -414,4 +435,4 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -- C56: 型内の input 一致から runtime/spec の呼出しを合成し、任意解釈の Lean 表現へ接続する。
 #audit_axioms NaruSem.Call.SameInputs.agree NaruSem.Call.interpFrom_inputs_agree NaruSem.Call.interp_inputs_agree NaruSem.Call.fn_value_inputs NaruSem.Call.interpFrom_prop_inputs_agree NaruSem.Call.interp_prop_inputs_agree NaruSem.Call.inputs_generated_agree NaruSem.Call.typed_only_agree NaruSem.Call.typed_only_not_same
 
--- SurfaceCallCallSem / Examples: 通常・UFCS呼出し葉の双方向保存。全spec帰納は `SurfaceCallLowerSpecSemAll.lean`、宣言群合成は未完了。
+-- SurfaceCallCallSem / Examples: 通常・UFCS呼出し葉の双方向保存。全spec帰納は `SurfaceCallLowerSpecSemAll.lean`、宣言群合成は `SurfaceCallProg.lean`。

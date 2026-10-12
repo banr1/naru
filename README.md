@@ -13,15 +13,15 @@ Lean 4 を知らない設計者が、Rust / TypeScript / Python / Go を知っ�
 claim surface の基準になっています。設計の正本は [IDEAL.md](IDEAL.md)(人間が宣言する「実現する状態」)です。
 
 
-呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群からのcallee環境の対応と実生成StatementsへのSurfaceからの接続は未完了である。
+呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群からのcallee環境の対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。
 
-呼出しspecのガード付きmatchにも、各腕のガード・本体の双方向意味対応を明示した `SpecArmsBridge` から腕列の意味を合成する局所証明がある。Bool/Propガード、Nat/Boolパターン、同名束縛と後続腕への復帰を保ち、意味のないガードや空の腕列に意味を補わない。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
+呼出しspecのガード付きmatchにも、各腕のガード・本体の双方向意味対応を明示した `SpecArmsBridge` から腕列の意味を合成する局所証明がある。Bool/Propガード、Nat/Boolパターン、同名束縛と後続腕への復帰を保ち、意味のないガードや空の腕列に意味を補わない。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群の環境対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。
 
-呼出しspecの量化には、本体の双方向対応を拡張後の任意環境で要求し、任意長のNat/Bool束縛列を同じ全量化範囲で運ぶ局所保存がある。`Surf.Call.lowerS_quant_sem_iff` は束縛の名前・順序・同名shadowingと実lowering出力を照合する。本体の対応と意味の存在をこの局所定理だけから導くものではない(全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた)。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
+呼出しspecの量化には、本体の双方向対応を拡張後の任意環境で要求し、任意長のNat/Bool束縛列を同じ全量化範囲で運ぶ局所保存がある。`Surf.Call.lowerS_quant_sem_iff` は束縛の名前・順序・同名shadowingと実lowering出力を照合する。本体の対応と意味の存在をこの局所定理だけから導くものではない(全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた)。宣言群の環境対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。
 
-呼出しspecの論理演算(`&&` / `||` / `implies`)・否定・ifには、子式の双方向対応から親式の意味証人を合成する局所保存がある。公開入口は適格性と独立loweringの実出力を照合する。ifは独立意味論に従い両分岐の意味を要求し、未選択分岐の意味が欠けても成功にしない。子式の対応を一般帰納から導く全spec同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
+呼出しspecの論理演算(`&&` / `||` / `implies`)・否定・ifには、子式の双方向対応から親式の意味証人を合成する局所保存がある。公開入口は適格性と独立loweringの実出力を照合する。ifは独立意味論に従い両分岐の意味を要求し、未選択分岐の意味が欠けても成功にしない。子式の対応を一般帰納から導く全spec同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。宣言群の環境対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。
 
-呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
+呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群の環境対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。
 
 ## 前提の道具
 
@@ -59,7 +59,7 @@ scenario basic
 |---|---|
 | `compiler/` | naru コンパイラ(Lean)。字句・構文解析、名前解決、型・capability・phase・停止性の検査、Core IR、Model / Statements backend、言語サーバー、CLI |
 | `stdlib/` | Model 用 stdlib(`stdlib/Model`、Lean の `NaruStd`)。生成 Model が import する |
-| `semantics/` | コンパイラ意味論保存(Lean の `NaruSem`): naru の Core IR と Surface AST の独立した意味論と適格性、一般定理、検体、公理監査(関数・input の呼出しを含む宣言群の意味論は `Call.lean` / `SurfaceCall.lean`、呼出しを含む Model の保存と宣言群の意味と実生成定数の一致は `CallDenote.lean`、呼出しを含む spec 式の一般同値は `CallDenoteProp.lean`)。`lake build NaruSem` が検査入口(`docs/architecture.md`「コンパイラ意味論保存」) |
+| `semantics/` | コンパイラ意味論保存(Lean の `NaruSem`): naru の Core IR と Surface AST の独立した意味論と適格性、一般定理、検体、公理監査(関数・input の呼出しを含む宣言群の意味論は `Call.lean` / `SurfaceCall.lean`、呼出しを含む Model の保存と宣言群の意味と実生成定数の一致は `CallDenote.lean`、呼出しを含む spec 式の一般同値は `CallDenoteProp.lean`、Surface / Core の宣言群の意味の対応と実生成 Model / Statements への合成は `SurfaceCallProg.lean`)。`lake build NaruSem` が検査入口(`docs/architecture.md`「コンパイラ意味論保存」) |
 | `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
 | `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`。Model は runtime 宣言を出力するモジュールにつき 1 ファイル、Statements は spec 宣言のあるモジュールにつき 1 ファイル)。機械生成専用で手では編集しない |
 | `tests/` | 受理例 `accept/`、反例 `reject/`、複数ファイルのコンパイル単位の検体 `units/`、設定変更プロジェクト `config_change/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
@@ -91,7 +91,7 @@ lake exe naru_test zed          # Zed 拡張(C17)
 lake exe naru_test lsp          # 言語サーバー(C18)
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
-lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface 保存は未完了)。約 1 分
+lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface の宣言群の意味の対応から実生成 Model / Statements への合成 `sfn_*` / `sstmt_*`(C55 / C57)も検査)。約 1 分
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
 lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 12 分
 ```
@@ -115,7 +115,7 @@ naru は [CC0 1.0 Universal](LICENSE)(パブリックドメイン相当)です�
 同梱する verified-consensus も CC0 1.0 で、出典は次のとおりです(`third_party/verified-consensus/CITATION.cff`):
 D'Amato, Francesco. *verified-consensus: a Lean 4 formalization of the decoupled consensus protocol*. https://github.com/fradamt/verified-consensus (2026)。
 
-呼出し葉は通常・UFCSの双方向保存を一般runtime評価保存から合成し、名前付き引数・Bool値境界・spec解釈不在を検査する。全spec式の帰納同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群からのcallee環境の対応と実生成StatementsへのSurfaceからの接続は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
+呼出し葉は通常・UFCSの双方向保存を一般runtime評価保存から合成し、名前付き引数・Bool値境界・spec解釈不在を検査する。全spec式の帰納同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群からのcallee環境の対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
 
 
-呼出しを含む全spec式の一般双方向同値(`lowerS_sem_iff`)を `wtS` の相互帰納で証明し、現在10specの実AST/実Coreへ適用した(`sssem_*`、計100証拠)。Surface/Core宣言群からのcallee環境の対応と、実生成StatementsへのSurfaceからの接続証拠は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
+呼出しを含む全spec式の一般双方向同値(`lowerS_sem_iff`)を `wtS` の相互帰納で証明し、現在10specの実AST/実Coreへ適用した(`sssem_*`、計100証拠)。Surface/Core宣言群からのcallee環境の対応と、実生成Model/StatementsへのSurfaceからの接続証拠も `SurfaceCallProg.lean` / `SurfaceCallStatementsCheck.lean` が与えた(周回 111)。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。

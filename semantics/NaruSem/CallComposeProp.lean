@@ -7,7 +7,7 @@ import NaruSem.CallDenoteProp
 全宣言を含んでよいが、型付けと値/命題の分類には依存 prefix を使う。
 `SpecEvidence` は署名を宣言順に更新するため、別の prefix の証拠を流用できない。
 `interp_prop_agree` は fn の証拠と同じ input 解釈、各 spec の証拠から、独立した
-宣言群の意味と実生成命題環境の双方向の同値を合成する。Surface の保存は別の義務。
+宣言群の意味と実生成命題環境の双方向の同値を合成する。Surface の保存は `SurfaceCallProg.lean` が合成する。
 -/
 
 namespace NaruSem.Call

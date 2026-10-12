@@ -96,7 +96,14 @@ def rootFile : String := "semantics/NaruSem.lean"
 C42 / C43 / C44: Statements の同値定理(一般形と基礎段階の系)、値 / 命題の境界(一般形と基礎段階の系)、`proppyS` の文脈の合同、網羅性を要求しない
 型付けへの写し、接続検査の健全性、値の等値と命題の同値の区別、腕の選択と束縛・量化・局所束縛の読みの形)。 -/
 def requiredTheorems : List String :=
-  [ "NaruSem.Surf.Call.eval_not_nat_of_wtS", "NaruSem.Surf.Call.lowerS_sem_all", "NaruSem.Surf.Call.lowerS_equiv", "NaruSem.Surf.Call.lowerStmtsS_bridge", "NaruSem.Surf.Call.lowerArmsS_bridge", "NaruSem.Surf.Call.lowerS_sem_iff", "NaruSem.Surf.Call.lowerS_Sem", "NaruSem.Surf.Call.Sem_lowerS", "NaruSem.Surf.Call.lowerS_sem_exists_iff", "NaruSem.Surf.Call.lowerS_denote", "NaruSem.Surf.Call.lowerS_denoteP",
+  [ -- C55 / C57: Surface / Core の宣言群の意味の対応と、Surface の宣言群の意味から実生成環境での読みへの合成
+    "NaruSem.Surf.Call.interpFrom_lower_agree", "NaruSem.Surf.Call.interp_lower_agree", "NaruSem.Surf.Call.spec_sem_denote",
+    "NaruSem.Surf.Call.Δ_step_of_lower", "NaruSem.Surf.Call.Δ_take_of_lower", "NaruSem.Surf.Call.Δ_take_eq", "NaruSem.Surf.Call.Δ_take_sub",
+    "NaruSem.Surf.Call.respectsInputs_of_lower", "NaruSem.Surf.Call.DeclLower.key", "NaruSem.Surf.Call.DeclLower.sig",
+    "NaruSem.Surf.Call.ProgLowerFrom.length", "NaruSem.Surf.Call.Δ_full_eq", "NaruSem.Surf.Call.Δ_take_subV",
+    "NaruSem.Call.FEnv.Agree.trans", "NaruSem.Call.FEnv.Agree.mono", "NaruSem.Call.PEnv.Agree.trans", "NaruSem.Call.PEnv.Agree.mono",
+    "NaruSem.Call.Interp.step_Ψ_spec", "NaruSem.Call.wtProg_foldl", "NaruSem.SEnv.vals_ofList",
+    "NaruSem.Surf.Call.eval_not_nat_of_wtS", "NaruSem.Surf.Call.lowerS_sem_all", "NaruSem.Surf.Call.lowerS_equiv", "NaruSem.Surf.Call.lowerStmtsS_bridge", "NaruSem.Surf.Call.lowerArmsS_bridge", "NaruSem.Surf.Call.lowerS_sem_iff", "NaruSem.Surf.Call.lowerS_Sem", "NaruSem.Surf.Call.Sem_lowerS", "NaruSem.Surf.Call.lowerS_sem_exists_iff", "NaruSem.Surf.Call.lowerS_denote", "NaruSem.Surf.Call.lowerS_denoteP",
     "NaruSem.Surf.Call.all_sem_wt", "NaruSem.Surf.Call.all_sem_lower", "NaruSem.Surf.Call.all_sem_ctyped", "NaruSem.Surf.Call.all_sem_arbitrary", "NaruSem.Surf.Call.all_sem_iff", "NaruSem.Surf.Call.all_sem_exists_iff", "NaruSem.Surf.Call.all_sem_not_nat", "NaruSem.Surf.Call.callSem_const_respects", "NaruSem.Surf.Call.all_sem_meaning", "NaruSem.Surf.Call.all_sem_meaning_core", "NaruSem.Surf.Call.all_sem_meaning_true", "NaruSem.Surf.Call.all_sem_meaning_true_core", "NaruSem.Surf.Call.all_sem_predicate_defined", "NaruSem.Surf.Call.all_sem_denote", "NaruSem.Surf.Call.all_sem_meaning_denote", "NaruSem.Surf.Call.all_sem_wrong_wt", "NaruSem.Surf.Call.all_sem_wrong_not_lower", "NaruSem.Surf.Call.all_sem_wrong_not_preserved",
     "NaruSem.Surf.Call.lowerArgs_arrange_eval", "NaruSem.Surf.Call.lowerS_call_sem_iff", "NaruSem.Surf.Call.lowerS_ufcs_sem_iff", "NaruSem.Surf.Call.lowerS_call_equiv", "NaruSem.Surf.Call.lowerS_ufcs_equiv", "NaruSem.Surf.Call.call_sem_named_wt", "NaruSem.Surf.Call.call_sem_named_lower", "NaruSem.Surf.Call.call_sem_mixed_wt", "NaruSem.Surf.Call.call_sem_mixed_lower", "NaruSem.Surf.Call.call_sem_ufcs_wt", "NaruSem.Surf.Call.call_sem_ufcs_lower", "NaruSem.Surf.Call.call_sem_named_arbitrary", "NaruSem.Surf.Call.call_sem_mixed_arbitrary", "NaruSem.Surf.Call.call_sem_ufcs_arbitrary", "NaruSem.Surf.Call.call_sem_input_wt", "NaruSem.Surf.Call.call_sem_input_lower", "NaruSem.Surf.Call.call_sem_fn_wt", "NaruSem.Surf.Call.call_sem_fn_lower", "NaruSem.Surf.Call.call_sem_input_arbitrary", "NaruSem.Surf.Call.call_sem_fn_arbitrary", "NaruSem.Surf.Call.call_sem_bool_ufcs_wt", "NaruSem.Surf.Call.call_sem_bool_ufcs_lower", "NaruSem.Surf.Call.call_sem_bool_ufcs_arbitrary", "NaruSem.Surf.Call.call_sem_zero_wt", "NaruSem.Surf.Call.call_sem_zero_lower", "NaruSem.Surf.Call.call_sem_zero_arbitrary", "NaruSem.Surf.Call.call_sem_missing", "NaruSem.Surf.Call.call_sem_missing_core", "NaruSem.Surf.Call.call_sem_named_meaning", "NaruSem.Surf.Call.call_sem_bool_meaning", "NaruSem.Surf.Call.call_sem_zero_meaning", "NaruSem.Surf.Call.call_sem_shadow_reject", "NaruSem.Surf.Call.call_sem_ufcs_shadow_reject", "NaruSem.Surf.Call.call_sem_bad_named_reject", "NaruSem.Surf.Call.call_sem_bad_type_reject", "NaruSem.Surf.Call.call_sem_wrong_wt", "NaruSem.Surf.Call.call_sem_wrong_not_lower", "NaruSem.Surf.Call.call_sem_wrong_not_preserved", "NaruSem.Surf.Call.call_sem_closed_respects", "NaruSem.Surf.Call.call_sem_closed_positive",
     "NaruSem.Surf.Call.compare_sem_nat_wt", "NaruSem.Surf.Call.compare_sem_nat_lower", "NaruSem.Surf.Call.compare_sem_bool_wt", "NaruSem.Surf.Call.compare_sem_bool_lower", "NaruSem.Surf.Call.compare_sem_eq_nat_wt", "NaruSem.Surf.Call.compare_sem_eq_nat_lower", "NaruSem.Surf.Call.compare_sem_eq_bool_wt", "NaruSem.Surf.Call.compare_sem_eq_bool_lower", "NaruSem.Surf.Call.compare_sem_nat_arbitrary", "NaruSem.Surf.Call.compare_sem_bool_arbitrary", "NaruSem.Surf.Call.compare_sem_eq_nat_arbitrary", "NaruSem.Surf.Call.compare_sem_eq_bool_arbitrary", "NaruSem.Surf.Call.compare_sem_nat_meaning", "NaruSem.Surf.Call.compare_sem_bool_meaning", "NaruSem.Surf.Call.compare_sem_eq_nat_meaning", "NaruSem.Surf.Call.compare_sem_eq_bool_meaning", "NaruSem.Surf.Call.compare_sem_ctx", "NaruSem.Surf.Call.compare_sem_form_wt", "NaruSem.Surf.Call.compare_sem_form_lower", "NaruSem.Surf.Call.compare_sem_form_bridge", "NaruSem.Surf.Call.compare_sem_form_arbitrary", "NaruSem.Surf.Call.compare_sem_form_meaning", "NaruSem.Surf.Call.compare_sem_form_missing", "NaruSem.Surf.Call.compare_sem_interpretation_respects", "NaruSem.Surf.Call.compare_sem_input_cmp_wt", "NaruSem.Surf.Call.compare_sem_input_cmp_lower", "NaruSem.Surf.Call.compare_sem_input_eq_wt", "NaruSem.Surf.Call.compare_sem_input_eq_lower", "NaruSem.Surf.Call.compare_sem_input_cmp_arbitrary", "NaruSem.Surf.Call.compare_sem_input_eq_arbitrary", "NaruSem.Surf.Call.compare_sem_input_cmp_meaning", "NaruSem.Surf.Call.compare_sem_input_eq_meaning", "NaruSem.Surf.Call.compare_sem_nat_boundary", "NaruSem.Surf.Call.compare_sem_nat_inclusive_boundary", "NaruSem.Surf.Call.compare_sem_bool_boundary", "NaruSem.Surf.Call.compare_sem_bool_eq_boundary", "NaruSem.Surf.Call.compare_sem_mixed_cmp_rejected", "NaruSem.Surf.Call.compare_sem_mixed_eq_rejected", "NaruSem.Surf.Call.compare_sem_wrong_eq_wt", "NaruSem.Surf.Call.compare_sem_wrong_cmp_wt", "NaruSem.Surf.Call.compare_sem_wrong_eq_not_lower", "NaruSem.Surf.Call.compare_sem_wrong_cmp_not_lower", "NaruSem.Surf.Call.compare_sem_wrong_eq_not_preserved", "NaruSem.Surf.Call.compare_sem_wrong_cmp_not_preserved",
@@ -209,7 +216,7 @@ def requiredTheorems : List String :=
     "NaruSem.Call.typed_only_not_same",
     "NaruSem.Call.exists_fn", "NaruSem.Call.input_representable", "NaruSem.Call.inputs_representable",
     "NaruSem.Call.illtyped_total", "NaruSem.Call.illtyped_not_equal",
-    -- C55(spec): 式の一般同値。宣言群のspec環境の一致はprefix証拠から合成。Surface合成は未完了。
+    -- C55(spec): 式の一般同値。宣言群のspec環境の一致はprefix証拠から合成。Surface合成は `SurfaceCallProg.lean`(上の C55 / C57)。
     "NaruSem.Call.Sem_denote_all", "NaruSem.Call.Sem_denote", "NaruSem.Call.Sem_denoteP", "NaruSem.Call.Sem_denote_self", "NaruSem.Call.check_sound_prop",
     "NaruSem.Call.interpFrom_prop_agree", "NaruSem.Call.interp_prop_agree", "NaruSem.Call.curried_wrapP", "NaruSem.Call.specConn_of_curried",
     "NaruSem.Call.PEnv.Agree.refl", "NaruSem.Call.PEnv.Agree.defined", "NaruSem.Call.PEnv.Defined.mono", "NaruSem.Call.SigEnv.SubP.refl" ]
@@ -1246,7 +1253,7 @@ def callLowerWrongs : List CoreMistranslation :=
     { key := "Sem.Call.callInMatch", wrong := "WrongCore.callInMatch", transform := negateGuards, note := "match guard negated" } ]
 
 def checkCallRuntimeLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
-  heading "C55: runtime Surface AST to actual Core (evaluation under agreeing typed environments and Core reading; declaration-group composition remains unfinished)"
+  heading "C55: runtime Surface AST to actual Core (evaluation under agreeing typed environments and Core reading; declaration-group composition: SurfaceCallStatementsCheck below)"
   let mut count := 0
   let mut wrongs : List (Mistranslation × String) := []
   for (d, i) in sprog.zipIdx do
@@ -1359,7 +1366,7 @@ def callSpecLowerWrongs : List CoreMistranslation :=
       transform := negateLetConclusion, note := "Prop let conclusion negated" } ]
 
 def checkCallSpecLower (sprog : NaruSem.Surf.Call.Prog) (cprog : NaruSem.Call.Prog) (lp : String) : M Unit := do
-  heading "C55: spec Surface AST to actual Core (general type preservation and general bidirectional equivalence; declaration-level callee environments remain unfinished)"
+  heading "C55: spec Surface AST to actual Core (general type preservation and general bidirectional equivalence; declaration-level callee environments: SurfaceCallStatementsCheck below)"
   let mut count := 0
   let mut wrongs : List (Mistranslation × String) := []
   for (d, i) in sprog.zipIdx do
@@ -1673,6 +1680,180 @@ def callStatementsProgram (specs : List CallFn) (inputs : List (String × List N
   s!"  obtain ⟨{", ".intercalate (inputs.mergeSort (fun a b => a.1 ≤ b.1) |>.map fun (k, _, _) => Naru.Backend.Model.inputBinder k)}, hin⟩ := cinputs_generated I hI\n" ++
   s!"  exact ⟨{", ".intercalate (inputs.mergeSort (fun a b => a.1 ≤ b.1) |>.map fun (k, _, _) => Naru.Backend.Model.inputBinder k)}, hin, cgen_inputs_call {ia} I Δ hP hI hin, cprops_inputs_call {ia} I Δ hP hI hin⟩\n\n" ++
   s!"#audit_axioms spevid_call cprops_call cprops_inputs_call cinputs_connect {" ".intercalate (specs.flatMap fun f => [s!"read_{shortName f.key}", s!"spevid_{shortName f.key}"])}\n"
+
+/-! ### Surface AST → 実生成 Statements(C55 / C57、宣言群の意味の合成)
+
+現在の Surface AST の宣言群 `sprog_call` と Core の宣言群 `cprog_call` の対応 `splower_call`(`Surf.Call.ProgLower`: 各宣言の鍵と署名を `decide`、
+fn / spec 宣言の本体はその宣言より前の宣言の表での独立 lowering の実出力 `slow_*` / `sslower_*`、input は本体なし)を kernel に検査させ、一般定理
+`Surf.Call.interp_lower_agree` で Surface / Core の宣言群の意味(同じ任意の input 解釈)の callee 環境の対応 `sagree_call`(`FEnv.Agree` / `PEnv.Agree`)を導き、
+既存の Core → 実生成環境の対応(`cgen_call` / `cprops_call` / `cinputs_connect`)と推移で結ぶ(`sgen_call` / `sinputs_connect`)。各 spec 宣言には、Surface の
+宣言群の意味の下での本体の意味と実生成環境での読みの同値(`ssurf_*`: 読み自体が意味、`ssiff_*`: 任意の意味は読みと同値)、prefix の表の署名と Core の prefix 署名
+の一致(`ssΔ_*`)、実生成 Statements 宣言と読みの接続 `read_*` との合成(`sstmt_*`: 実生成 Statements の命題が Surface AST の意味、`sstmt_iff_*`: 任意の意味は
+実生成 Statements の命題と同値)を書く。負の検体は、違う宣言の実生成 Statements を組み合わせた接続と、同じ署名の別の呼出し先へ置換した Core を宣言群の対応に
+使う検体で、型検査は通るが接続だけが失敗する。 -/
+
+/-- 宣言群の対応 `splower_call` の各宣言の証明(1 行): input は鍵・署名・本体なし、fn / spec 宣言は鍵・署名と本体の独立 lowering の実出力。 -/
+def declLowerBullet (d : NaruSem.Surf.Call.Decl) : String :=
+  let n := shortName d.key
+  match d.kind, d.kind.phase with
+  | .input, _ => "  · exact ⟨by decide, by decide, rfl⟩"
+  | .fn, _ => s!"  · exact ⟨by decide, by decide, sast_{n}, sbody_{n}, slow_{n}⟩"
+  | _, .spec => s!"  · exact ⟨by decide, by decide, ssast_{n}, ssbody_{n}, sslower_{n}⟩"
+  | _, _ => s!"  · exact missing_decl_lower_{n}"
+
+/-- 実生成 Statements との接続の定理 1 つ分(1 行): `∀ args Q, Sem sstable_n ΦS ΨS (SEnv.ofList …) ssast_n Q → (Q ↔ <Lean 名> <inputs> args)`。
+`ssiff_n`(Surface の意味 ↔ 読み)と `read_n`(実生成 Statements ↔ 読み)を prefix 署名の一致 `ssΔ_n` で結ぶ。 -/
+def surfaceStmtIffStmt (ib ia thm lean : String) (f : CallFn) : String :=
+  let n := shortName f.key
+  let bs := f.params.filterMap specBinderOf
+  let env := "NaruSem.SEnv.ofList [" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
+  let args := " ".intercalate (bs.map (·.2.2))
+  let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+  let hdr := if ib.isEmpty then s!"theorem {thm}" else s!"theorem {thm} {ib}"
+  let binders := if bs.isEmpty then "" else " ".intercalate (bs.map (·.1)) ++ " "
+  s!"{hdr} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ) (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) : ∀ {binders}(Q : Prop), NaruSem.Surf.Call.Sem sstable_{n} (NaruSem.Surf.Call.interp I sprog_call).Φ (NaruSem.Surf.Call.interp I sprog_call).Ψ ({env}) ssast_{n} Q → (Q ↔ {call}) := fun {binders}Q hQ => (ssiff_{n} {ia} I Δ hP hI hin ({env}) (by rw [NaruSem.SEnv.ctx_ofList]; rfl) Q hQ).trans (by rw [ssΔ_{n}]; exact (read_{n} {ia} {args}).symm)"
+
+/-- 実生成 Model との接続の定理 1 つ分(runtime の fn): `∀ args, Surf.Call.eval stable_n ΦS (SEnv.ofList …) sast_n = some (<値> (<Lean 名> <inputs> args))`。
+`sread_n`(Surface の評価 = 一致する環境での Core の読み)に宣言群の対応から得た実生成環境との一致 `sgen_call` を与え、`conn_n`(実生成 Model の値 = 読み)と結ぶ。 -/
+def surfaceFnStmt (ib ia thm lean : String) (f : CallFn) : String :=
+  let n := shortName f.key
+  let bs := f.params.filterMap specBinderOf
+  let vbs := f.params.filterMap binderOf
+  let env := "NaruSem.SEnv.ofList [" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
+  let venv := "[" ++ ", ".intercalate (vbs.map (·.2.1)) ++ "]"
+  let args := " ".intercalate (bs.map (·.2.2))
+  let binders := " ".intercalate (bs.map (·.1))
+  let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
+  let call := " ".intercalate ([lean] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+  let val := match f.ret with | .nat => "NaruSem.Val.nat" | .bool => "NaruSem.Val.bool"
+  let hdr := if ib.isEmpty then s!"theorem {thm}" else s!"theorem {thm} {ib}"
+  let sub := s!"(NaruSem.Surf.Call.Δ_take_subV swt_call hP splower_call {f.index}).1"
+  s!"{hdr} (I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ) (hI : I.RespectsInputs cprog_call) (hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call) : {quant s!"NaruSem.Surf.Call.eval stable_{n} (NaruSem.Surf.Call.interp I sprog_call).Φ ({env}) sast_{n} = some ({val} ({call}))"} := by\n" ++
+  (if bs.isEmpty then "" else s!"  intro {args}\n") ++
+  s!"  have hv : ({env}).vals = NaruSem.Env.ofList {venv} := NaruSem.SEnv.vals_ofList {venv}\n" ++
+  s!"  have h := sread_{n} Δgen_call (NaruSem.Surf.Call.interp I sprog_call).Φ (Φgen_call {ia}) ({env}) (by rw [NaruSem.SEnv.ctx_ofList]; rfl) ({sub}.trans (NaruSem.Call.SubV_of_cover hP cover_call)) (Φgen_call_respects {ia}) ((sgen_call {ia} I Δ hP hI hin).1.mono {sub})\n" ++
+  s!"  rw [hv] at h\n  rw [conn_{n} {ia}{if bs.isEmpty then "" else " " ++ args}]\n  exact h"
+
+/-- 検査プログラム `SurfaceCallStatementsCheck.lean`(モジュール `SurfaceCallStatementsCheck`)。 -/
+def surfaceCallStatementsProgram (fns specs : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty))
+    (sprog : NaruSem.Surf.Call.Prog) : String := Id.run do
+  let (ib, ia) := inputBinders inputs
+  let hdr (kw name : String) := if ib.isEmpty then s!"{kw} {name}" else s!"{kw} {name} {ib}"
+  let n := sprog.length
+  let chain := String.join (List.replicate n ".cons ?_ (") ++ ".nil _" ++ String.join (List.replicate n ")")
+  let sorted := inputs.mergeSort (fun a b => a.1 ≤ b.1) |>.map fun (k, _, _) => Naru.Backend.Model.inputBinder k
+  let hyps := "(I : NaruSem.Call.FEnv) (Δ : NaruSem.Call.SigEnv) (hP : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty cprog_call = some Δ) (hI : I.RespectsInputs cprog_call)"
+  let hin := s!"(hin : NaruSem.Call.SameInputs I (Φgen_call {ia}) cprog_call)"
+  let surfΦ := "(NaruSem.Surf.Call.interp I sprog_call).Φ"
+  let surfΨ := "(NaruSem.Surf.Call.interp I sprog_call).Ψ"
+  let mut text :=
+    "-- naru_test semantics (C55 / C57): generated from NaruTest/Semantics.lean. Surface AST -> actual generated Statements, composed from the correspondence of the current declaration groups.\n" ++
+    "import SurfaceCallLowerCheck\nimport SurfaceCallLowerSpecCheck\nimport CallStatementsReadCheck\nimport NaruSem.SurfaceCallProg\n\n" ++
+    "-- general theorem: corresponding well-formed declaration groups under the same input interpretation have agreeing callee environments\n" ++
+    "example {P : NaruSem.Surf.Call.Prog} {C : NaruSem.Call.Prog} {Δ : NaruSem.Call.SigEnv}\n" ++
+    "    (hP : NaruSem.Surf.Call.wtProg P = true) (hC : NaruSem.Call.wtProg NaruSem.Call.SigEnv.empty C = some Δ)\n" ++
+    "    (hl : NaruSem.Surf.Call.ProgLower P C) {I : NaruSem.Call.FEnv} (hI : I.RespectsInputs C) :\n" ++
+    "    NaruSem.Call.FEnv.Agree (NaruSem.Surf.Call.interp I P).Φ (NaruSem.Call.interp I C).Φ Δ ∧\n" ++
+    "      NaruSem.Call.PEnv.Agree (NaruSem.Surf.Call.interp I P).Ψ (NaruSem.Call.interp I C).Ψ Δ ∧ (NaruSem.Surf.Call.tableOf P P).Δ = Δ :=\n" ++
+    "  NaruSem.Surf.Call.interp_lower_agree hP hC hl hI\n\n" ++
+    "-- the current Surface AST declaration group corresponds declaration by declaration to the current Core declaration group:\n" ++
+    "-- same keys and signatures (decide), each fn / spec body is the independent lowering of the AST with the actual prefix table (slow_* / sslower_*), inputs have no body\n" ++
+    s!"theorem splower_call : NaruSem.Surf.Call.ProgLower sprog_call cprog_call := by\n  refine {chain}\n" ++
+    "\n".intercalate (sprog.map declLowerBullet) ++ "\n\n" ++
+    "-- the meanings of the two groups under any signature-respecting input interpretation agree on every signature (C55 / C57)\n" ++
+    s!"theorem sagree_call {hyps} :\n    NaruSem.Call.FEnv.Agree {surfΦ} (NaruSem.Call.interp I cprog_call).Φ Δ ∧\n      NaruSem.Call.PEnv.Agree {surfΨ} (NaruSem.Call.interp I cprog_call).Ψ Δ :=\n" ++
+    "  ⟨(NaruSem.Surf.Call.interp_lower_agree swt_call hP splower_call hI).1, (NaruSem.Surf.Call.interp_lower_agree swt_call hP splower_call hI).2.1⟩\n\n" ++
+    "-- composed with the Core -> generated correspondence: the Surface group's meaning agrees with the generated constants and propositions\n" ++
+    s!"{hdr "theorem" "sgen_call"} {hyps} {hin} :\n    NaruSem.Call.FEnv.Agree {surfΦ} (Φgen_call {ia}) Δ ∧ NaruSem.Call.PEnv.Agree {surfΨ} (Ψgen_call {ia}) Δ :=\n" ++
+    s!"  ⟨(sagree_call I Δ hP hI).1.trans (cgen_call {ia} I Δ hP hI hin), (sagree_call I Δ hP hI).2.trans (cprops_call {ia} I Δ hP hI hin)⟩\n\n" ++
+    s!"theorem sinputs_connect {hyps} :\n    ∃ {ib}, NaruSem.Call.InputsAgree I (Φgen_call {ia}) cprog_call ∧\n      NaruSem.Call.FEnv.Agree {surfΦ} (Φgen_call {ia}) Δ ∧ NaruSem.Call.PEnv.Agree {surfΨ} (Ψgen_call {ia}) Δ := by\n" ++
+    s!"  obtain ⟨{", ".intercalate sorted}, hin, hA, hPA⟩ := cinputs_connect I Δ hP hI\n" ++
+    s!"  exact ⟨{", ".intercalate sorted}, hin, (sagree_call I Δ hP hI).1.trans hA, (sagree_call I Δ hP hI).2.trans hPA⟩\n\n" ++
+    "#audit_axioms splower_call sagree_call sgen_call sinputs_connect\n\n" ++
+    "-- runtime: the Surface evaluation of each fn body under the Surface group's meaning is the value of the generated Model declaration (C55 / C57)\n"
+  for f in fns do
+    let n := shortName f.key
+    text := text ++ surfaceFnStmt ib ia s!"sfn_{n}" (Naru.Backend.Model.leanName f.key) f ++ "\n" ++ s!"#audit_axioms sfn_{n}\n\n"
+  text := text ++ "-- spec: prefix signatures, Surface meaning vs reading, and the generated Statements declarations (C55 / C57)\n"
+  for f in specs do
+    let n := shortName f.key
+    let i := f.index
+    let bs := f.params.filterMap specBinderOf
+    let env := "NaruSem.SEnv.ofList [" ++ ", ".intercalate (bs.map (·.2.1)) ++ "]"
+    let args := " ".intercalate (bs.map (·.2.2))
+    let binders := if bs.isEmpty then "" else " ".intercalate (bs.map (·.1)) ++ " "
+    let quant (body : String) : String := if bs.isEmpty then body else s!"∀ {binders}, {body}"
+    let call := " ".intercalate ([Naru.Backend.Statements.stmtName f.key] ++ f.inputs.map Naru.Backend.Model.inputBinder ++ bs.map (·.2.2))
+    let compose := s!"NaruSem.Surf.Call.spec_sem_denote swt_call hP splower_call hI (NaruSem.Call.SubV_of_cover hP cover_call) (Φgen_call_respects {ia}) (cgen_call {ia} I Δ hP hI hin) (cprops_call {ia} I Δ hP hI hin) {i} sswtype_{n} (by decide) sslower_{n} hρ"
+    let reading := s!"NaruSem.Call.denoteP sstable_{n}.Δ (Φgen_call {ia}) (Ψgen_call {ia}) ρ ccore_{n}"
+    text := text ++ s!"-- `{f.key}`: prefix signatures, Surface meaning vs reading, and the generated Statements declaration\n" ++
+      s!"theorem ssΔ_{n} : sstable_{n}.Δ = Δprefix_{n} := NaruSem.Surf.Call.Δ_take_eq swt_call splower_call {i}\n" ++
+      s!"{hdr "theorem" s!"ssurf_{n}"} {hyps} {hin} (ρ : NaruSem.SEnv) (hρ : ssctx_{n} = ρ.ctx) : NaruSem.Surf.Call.Sem sstable_{n} {surfΦ} {surfΨ} ρ ssast_{n} ({reading}) := ({compose}).1\n" ++
+      s!"{hdr "theorem" s!"ssiff_{n}"} {hyps} {hin} (ρ : NaruSem.SEnv) (hρ : ssctx_{n} = ρ.ctx) (Q : Prop) (hQ : NaruSem.Surf.Call.Sem sstable_{n} {surfΦ} {surfΨ} ρ ssast_{n} Q) : Q ↔ {reading} := ({compose}).2 Q hQ\n" ++
+      s!"{hdr "theorem" s!"sstmt_{n}"} {hyps} {hin} : {quant s!"NaruSem.Surf.Call.Sem sstable_{n} {surfΦ} {surfΨ} ({env}) ssast_{n} ({call})"} := by\n" ++
+      (if bs.isEmpty then "" else s!"  intro {args}\n") ++
+      s!"  have h := ssurf_{n} {ia} I Δ hP hI hin ({env}) (by rw [NaruSem.SEnv.ctx_ofList]; rfl)\n" ++
+      s!"  rw [ssΔ_{n}] at h\n  rw [propext (read_{n} {ia} {args})]\n  exact h\n" ++
+      surfaceStmtIffStmt ib ia s!"sstmt_iff_{n}" (Naru.Backend.Statements.stmtName f.key) f ++ "\n" ++
+      s!"#audit_axioms ssΔ_{n} ssurf_{n} ssiff_{n} sstmt_{n} sstmt_iff_{n}\n\n"
+  return text
+
+/-- Surface AST → 実生成 Statements の負の検体: 違う宣言の実生成 Statements との接続(`WrongStmt.specNamed` = `specUfcs` の実生成宣言)と、
+同じ署名の別の呼出し先へ置換した Core(`WrongCoreS.specTwoStep`)を宣言群の対応に使う検体。型検査は通るが接続(`conn_wrong_*`)だけが失敗する。 -/
+def surfaceCallStatementsWrongProgram (ib ia : String) (specs : List CallFn) (wrongs : List (Mistranslation × String)) : String × List Nat :=
+  wrongProgramWith "Surface AST (calls) to generated Statements" ["SurfaceCallStatementsCheck"] wrongs fun thm lean key =>
+    (specs.find? fun f => f.key == key).map fun f =>
+      let n := shortName f.key
+      if key == "Sem.Call.specTwoStep" then
+        let ps := NaruSem.Call.Quote.params (f.params.filterMap NaruSem.Call.Quote.paramOf?)
+        let target := if lean.isEmpty then s!"ccore_{n}" else lean
+        s!"theorem {thm} : NaruSem.Surf.Call.DeclLower sstable_{n} ssdecl_{n} (NaruSem.Call.Decl.spec {f.key.quote} {ps} {target}) := ⟨by decide, by decide, ssast_{n}, ssbody_{n}, rfl⟩"
+      else surfaceStmtIffStmt ib ia thm (if lean.isEmpty then Naru.Backend.Statements.stmtName f.key else lean) f
+
+def checkSurfaceCallStatements (fns specs : List CallFn) (inputs : List (String × List NaruSem.Ty × NaruSem.Ty))
+    (sprog : NaruSem.Surf.Call.Prog) (lp : String) : M Unit := do
+  heading "C55 / C57: Surface AST to the actual generated Model / Statements (correspondence of the declaration groups, agreeing callee environments, composition with the generated declarations)"
+  let file := outDir / "SurfaceCallStatementsCheck.lean"
+  IO.FS.writeFile file (surfaceCallStatementsProgram fns specs inputs sprog)
+  let r ← step s!"C55 / C57: lean {file} as module `SurfaceCallStatementsCheck` (declaration-group correspondence `splower_call` of {sprog.length} declarations, callee-environment agreement `sagree_call` / `sgen_call` / `sinputs_connect`, {fns.length} fn declarations: `sfn_*`, {specs.length} spec declarations: `ssΔ_*` / `ssurf_*` / `ssiff_*` / `sstmt_*` / `sstmt_iff_*`)"
+    "lean" #[s!"--root={outDir}", "-o", (outDir / "SurfaceCallStatementsCheck.olean").toString, file.toString] (env := #[("LEAN_PATH", some lp)])
+  let required := ["splower_call", "sagree_call", "sgen_call", "sinputs_connect"] ++
+    fns.map (fun f => s!"sfn_{shortName f.key}") ++
+    specs.flatMap fun f => let n := shortName f.key; [s!"ssΔ_{n}", s!"ssurf_{n}", s!"ssiff_{n}", s!"sstmt_{n}", s!"sstmt_iff_{n}"]
+  let missing := required.filter fun n => !(auditedNames r.stdout).contains n
+  let fnCount := (c54Decls.filter fun (_, k) => k == .fn).length
+  let stmtCount := (c54Decls.filter fun (_, k) => k != .fn && k != .input).length
+  if r.exitCode == 0 && missing.isEmpty && fns.length == fnCount && specs.length == stmtCount && stmtCount > 0 &&
+      !(contains r.stdout "forbidden") && !(contains r.stderr "forbidden") then
+    ok s!"C55 / C57: the correspondence of the {sprog.length} current declarations, the agreement of the Surface and Core group meanings with the generated environments, and {required.length} certificates connecting all {fns.length} actual fn declarations to the generated Model and all {specs.length} actual spec declarations to the generated Statements from the Surface AST (any signature-respecting input interpretation agreeing with the generated inputs, any parameters) are audited with 0 forbidden dependencies"
+  else fail s!"C55 / C57: Surface AST to generated Model / Statements: exit {r.exitCode}, missing audits {missing}, {fns.length} of {fnCount} fn, {specs.length} of {stmtCount} spec declarations\n{tail r.stdout 2500}\n{tail r.stderr 2500}"
+  -- 負の検体: 違う宣言の実生成 Statements、同じ署名の別の呼出し先へ置換した Core
+  let mut wrongs : List (Mistranslation × String) := []
+  match specs.find? (fun f => f.key == "Sem.Call.specNamed"), specs.find? (fun f => f.key == "Sem.Call.specUfcs") with
+  | some fNamed, some fUfcs =>
+    if fNamed.params.map (·.ty) == fUfcs.params.map (·.ty) && fNamed.inputs == fUfcs.inputs then
+      let note := "the generated Statements declaration of a different spec (`specUfcs`, same parameters) combined with the AST of `specNamed`"
+      let desc : Mistranslation := { key := fNamed.key, wrong := "WrongStmt.specNamed", good := "", bad := "", transform := id, note := note }
+      wrongs := wrongs ++ [(desc, s!"def WrongStmt.specNamed := {Naru.Backend.Statements.stmtName fUfcs.key}")]
+    else fail "C57: `specNamed` and `specUfcs` must have the same parameter types and inputs for the different-declaration specimen"
+  | _, _ => fail "C57: the specimens `specNamed` / `specUfcs` are missing"
+  match specs.find? (fun f => f.key == "Sem.Call.specTwoStep"), callSpecLowerWrongs.find? (fun m => m.key == "Sem.Call.specTwoStep") with
+  | some f, some m =>
+    let b := m.transform f.body
+    let T := NaruSem.Surf.Call.tableOf sprog (sprog.take f.index)
+    let Γ := NaruSem.SCtx.ofList ((f.params.filterMap NaruSem.Call.Quote.paramOf?).map fun (x, ty) => (x, .val ty))
+    if b != f.body && NaruSem.Call.wtS T.Δ Γ b == NaruSem.Call.wtS T.Δ Γ f.body then
+      let note := s!"the Core of `specTwoStep` with {m.note} (well-typed) used as the Core of the declaration in the group correspondence"
+      let desc : Mistranslation := { key := f.key, wrong := "WrongCoreS.specTwoStep", good := "", bad := "", transform := id, note := note }
+      wrongs := wrongs ++ [(desc, s!"def WrongCoreS.specTwoStep : Naru.Core.Expr := {NaruSem.Quote.expr b}\ntheorem wrongS_wt_specTwoStep : NaruSem.Call.wtS sstable_specTwoStep.Δ ssctx_specTwoStep WrongCoreS.specTwoStep = ssty_specTwoStep := by decide")]
+    else fail "C57: the exchanged-callee Core of `specTwoStep` must differ and keep its Core type"
+  | _, _ => fail "C57: the specimen `specTwoStep` or its exchanged-callee transformation is missing"
+  if wrongs.length == 2 then
+    checkWrong "Surface AST (calls) to generated Statements" (outDir / "SurfaceCallStatementsWrong.lean")
+      (surfaceCallStatementsWrongProgram ib ia specs wrongs) wrongs lp
+  where
+    ib := (inputBinders inputs).1
+    ia := (inputBinders inputs).2
 
 /-- C58: 実生成 spec 出力の論理・呼出し先・名前付き引数・UFCS・推移的 input の誤配線。 -/
 def callSpecMistranslations : List Mistranslation :=
@@ -2393,8 +2574,10 @@ def checks : M Unit := do
         let stmtCount := (c54Decls.filter fun (_, k) => k != .fn && k != .input).length
         if sc.exitCode == 0 && stmtMissing.isEmpty && specs.length == stmtCount && stmtCount > 0 &&
             !(contains sc.stdout "forbidden") && !(contains sc.stderr "forbidden") then
-          ok s!"C55: all {specs.length} generated spec prefix connections and declaration-group proposition equivalence are audited with 0 forbidden dependencies (Surface preservation remains a separate obligation)"
+          ok s!"C55: all {specs.length} generated spec prefix connections and declaration-group proposition equivalence are audited with 0 forbidden dependencies (Surface preservation: SurfaceCallStatementsCheck below)"
         else fail s!"C55: spec reading connections: exit {sc.exitCode}, missing audits {stmtMissing}, {specs.length} of {stmtCount} declarations\n{tail sc.stdout 1500}\n{tail sc.stderr 1500}"
+        -- C55 / C57: Surface AST → 実生成 Statements(宣言群の対応と callee 環境の一致から合成)
+        checkSurfaceCallStatements fns specs inputs sprog lpCall
         let specText ← IO.FS.readFile callStmtFile
         let specReadWrongs ← deriveWrongs "Statements (calls)" specText Naru.Backend.Statements.stmtName callSpecMistranslations
         let (sib, sia) := inputBinders inputs

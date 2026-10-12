@@ -18,7 +18,7 @@ Core の意味であることは同値。意味の存在や `Ψ.Defined` は仮�
 `lowerS_denote` は C44 / C55 の Core → 実生成 Lean の読み(`Call.denoteP`)まで合成する。
 
 Surface / Core の宣言群からの callee 環境の対応(`Φ` / `Ψ` が宣言群の意味であること)と、
-現在の実生成 Statements 宣言への接続は別の義務で、この定理はそれらを前提にも結論にもしない。
+現在の実生成 Statements 宣言への接続は `SurfaceCallProg.lean` の義務で、この定理はそれらを前提にも結論にもしない。
 -/
 namespace NaruSem.Surf.Call
 open Naru
