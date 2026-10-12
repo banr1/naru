@@ -122,3 +122,4 @@
 {"at":"2026-10-12T00:01:25Z","kind":"cycle","cycle":107,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"codex","files_changed":0}
 {"at":"2026-10-12T00:02:04Z","kind":"cycle","cycle":108,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"codex","files_changed":0}
 {"at":"2026-10-12T00:02:05Z","kind":"loop","stop":"failed","cycle":108,"limit":2}
+{"at":"2026-10-12T07:50:13Z","kind":"human","action":"resume","note":"Codexのlimitなので、Claudeに替える","released":"failed","ideal_sha":"c1fc06d6ec976e2bf645db80a8282ac2ab4bdbdb898420aa0a2676630d41ce17"}
