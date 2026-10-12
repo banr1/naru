@@ -31,6 +31,8 @@ import NaruSem.SurfaceCallLowerSpecSound
 import NaruSem.SurfaceCallLowerSpecSem
 import NaruSem.SurfaceCallCallSem
 import NaruSem.SurfaceCallCallSemExamples
+import NaruSem.SurfaceCallLowerSpecSemAll
+import NaruSem.SurfaceCallLowerSpecSemAllExamples
 import NaruSem.SurfaceCallLowerSpecSemExamples
 import NaruSem.SurfaceCallLogicSemExamples
 import NaruSem.SurfaceCallCompareSemExamples
@@ -40,6 +42,19 @@ import NaruSem.SurfaceCallLowerSound
 import NaruSem.SurfaceCallLowerExamples
 import NaruSem.CallQuote
 import NaruSem.Audit
+
+-- C55: 呼出しを含む全 spec 式の一般双方向同値(`wtS.mutual_induct` で局所合成を子式の帰納結果で結ぶ)、
+-- 論理の位置の式が Nat に評価されないこと、Core → 実生成 Lean の読みへの合成と、合成式の検体(任意解釈・意味証人・誤 Core の非保存)
+#audit_axioms NaruSem.Surf.Call.eval_not_nat_of_wtS NaruSem.Surf.Call.lowerS_sem_all NaruSem.Surf.Call.lowerS_equiv
+  NaruSem.Surf.Call.lowerStmtsS_bridge NaruSem.Surf.Call.lowerArmsS_bridge NaruSem.Surf.Call.lowerS_sem_iff
+  NaruSem.Surf.Call.lowerS_Sem NaruSem.Surf.Call.Sem_lowerS NaruSem.Surf.Call.lowerS_sem_exists_iff
+  NaruSem.Surf.Call.lowerS_denote NaruSem.Surf.Call.lowerS_denoteP
+  NaruSem.Surf.Call.all_sem_wt NaruSem.Surf.Call.all_sem_lower NaruSem.Surf.Call.all_sem_ctyped NaruSem.Surf.Call.all_sem_arbitrary
+  NaruSem.Surf.Call.all_sem_iff NaruSem.Surf.Call.all_sem_exists_iff NaruSem.Surf.Call.all_sem_not_nat NaruSem.Surf.Call.callSem_const_respects
+  NaruSem.Surf.Call.all_sem_meaning NaruSem.Surf.Call.all_sem_meaning_core NaruSem.Surf.Call.all_sem_meaning_true
+  NaruSem.Surf.Call.all_sem_meaning_true_core NaruSem.Surf.Call.all_sem_predicate_defined
+  NaruSem.Surf.Call.all_sem_denote NaruSem.Surf.Call.all_sem_meaning_denote NaruSem.Surf.Call.all_sem_wrong_wt
+  NaruSem.Surf.Call.all_sem_wrong_not_lower NaruSem.Surf.Call.all_sem_wrong_not_preserved
 
 #audit_axioms NaruSem.Surf.Call.lowerArgs_arrange_eval NaruSem.Surf.Call.lowerS_call_sem_iff NaruSem.Surf.Call.lowerS_ufcs_sem_iff NaruSem.Surf.Call.lowerS_call_equiv NaruSem.Surf.Call.lowerS_ufcs_equiv NaruSem.Surf.Call.call_sem_named_wt NaruSem.Surf.Call.call_sem_named_lower NaruSem.Surf.Call.call_sem_mixed_wt NaruSem.Surf.Call.call_sem_mixed_lower NaruSem.Surf.Call.call_sem_ufcs_wt NaruSem.Surf.Call.call_sem_ufcs_lower NaruSem.Surf.Call.call_sem_named_arbitrary NaruSem.Surf.Call.call_sem_mixed_arbitrary NaruSem.Surf.Call.call_sem_ufcs_arbitrary NaruSem.Surf.Call.call_sem_input_wt NaruSem.Surf.Call.call_sem_input_lower NaruSem.Surf.Call.call_sem_fn_wt NaruSem.Surf.Call.call_sem_fn_lower NaruSem.Surf.Call.call_sem_input_arbitrary NaruSem.Surf.Call.call_sem_fn_arbitrary NaruSem.Surf.Call.call_sem_bool_ufcs_wt NaruSem.Surf.Call.call_sem_bool_ufcs_lower NaruSem.Surf.Call.call_sem_bool_ufcs_arbitrary NaruSem.Surf.Call.call_sem_zero_wt NaruSem.Surf.Call.call_sem_zero_lower NaruSem.Surf.Call.call_sem_zero_arbitrary NaruSem.Surf.Call.call_sem_missing NaruSem.Surf.Call.call_sem_missing_core NaruSem.Surf.Call.call_sem_named_meaning NaruSem.Surf.Call.call_sem_bool_meaning NaruSem.Surf.Call.call_sem_zero_meaning NaruSem.Surf.Call.call_sem_shadow_reject NaruSem.Surf.Call.call_sem_ufcs_shadow_reject NaruSem.Surf.Call.call_sem_bad_named_reject NaruSem.Surf.Call.call_sem_bad_type_reject NaruSem.Surf.Call.call_sem_wrong_wt NaruSem.Surf.Call.call_sem_wrong_not_lower NaruSem.Surf.Call.call_sem_wrong_not_preserved NaruSem.Surf.Call.call_sem_closed_respects NaruSem.Surf.Call.call_sem_closed_positive
 #audit_axioms NaruSem.Surf.Call.spec_lower_call NaruSem.Surf.Call.spec_lower_runtime_reject NaruSem.Surf.Call.spec_lower_missing NaruSem.Surf.Call.spec_lower_shadow NaruSem.Surf.Call.spec_lower_value_arg_reject NaruSem.Surf.Call.spec_lower_bool_value NaruSem.Surf.Call.spec_lower_bool_let NaruSem.Surf.Call.spec_lower_prop_let NaruSem.Surf.Call.spec_lower_prop_let_kind NaruSem.Surf.Call.spec_lower_match_guard NaruSem.Surf.Call.spec_lower_prop_scrutinee_reject
@@ -135,15 +150,21 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
   呼出し側への合成)と系 `Call.fn_value`、署名の包含 `SubV_of_cover`、接続検査の形 `Curried` と `fnConn_of_curried`。
 - `NaruSem/CallQuote.lean` — 実際の compiler 経路の Core の宣言群と実際の構文解析の出力の宣言群を引用し、一致と網羅を照合する。
 - `NaruSem/SurfaceCallLower.lean` — 呼出しを含む runtime の独立 lowering。現在の17 fnの AST / Core の構造的対応を検査する。
-  呼出し・ブロック・matchの局所合成を提供し、全式のruntime評価保存は次のモジュールで検査する。specと宣言群の意味合成は未完了。
+  呼出し・ブロック・matchの局所合成を提供し、全式のruntime評価保存は次のモジュールで検査する。spec の双方向同値は `SurfaceCallLowerSpecSemAll.lean`、宣言群の意味合成は未完了。
 - `NaruSem/SurfaceCallLowerSound.lean` — 適格な runtime AST の lowering の全域性と Core の型保存。
   式・実引数・let列・腕列・腕を同時帰納し、同じ任意の署名を守る関数/input環境と対応する局所環境の下で評価も保存する。
-  実際の17 fnへの型・評価保存の適用をkernelが検査する。specとSurface/Core宣言群の合成は未完了。
-- `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型を90証拠で検査する。
+  実際の17 fnへの型・評価保存の適用をkernelが検査する。Surface/Core宣言群の合成は未完了(spec は `SurfaceCallLowerSpecSemAll.lean`)。
+- `NaruSem/SurfaceCallLowerSpec.lean` — 呼出しを含む spec の独立 loweringと呼出しの局所合成。現在10 specの実AST/実Core一致・包装・型・一般双方向同値の適用を100証拠で検査する。
   `SurfaceCallLowerSpecSound.lean` は一般の全域性・型保存・命題区分保存を証明する。
-  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec双方向同値と宣言群の合成は未完了。
+  `SurfaceCallLowerSpecExamples.lean` は値/命題のlet・隠蔽・量化を値引数へ渡せないこと・ガード等の11境界検体。一般のspec双方向同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群の合成は未完了。
 - `NaruSem/SurfaceCallLowerSpecSem.lean` — 子spec式と末尾の双方向の意味対応を `SpecLetsBridge` に明示し、値・命題let列をCoreへ局所合成する。
-  `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値と宣言群保存は未完了。
+  `SurfaceCallLowerSpecSemExamples.lean` は任意解釈と同名再束縛の検体。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与え、宣言群保存は未完了。
+- `NaruSem/SurfaceCallLowerSpecSemAll.lean` — 呼出しを含む全 spec 式の一般双方向同値(C55): `Surf.Call.wtS.mutual_induct` の `lowerS_sem_all` が
+  let 列 / 腕列 / 量化 / 論理 / 比較 / 等値 / 呼出し葉の局所合成を子式の帰納結果で結び、`lowerS_sem_iff`(任意の宣言表・適格な式・独立 lowering の実出力・
+  署名を守る任意の関数 / input 解釈・任意の spec 解釈(不在を含む)・型付け文脈と一致する任意の環境で Surface の意味 ↔ Core の意味)、`lowerS_sem_exists_iff`、
+  `eval_not_nat_of_wtS`(論理の位置の式は Nat に評価されない。命題等値の前提を導く)、`lowerS_denote` / `lowerS_denoteP`(C44 / C55 の Core → 実生成 Lean の読みへの合成)。
+  `SurfaceCallLowerSpecSemAllExamples.lean` は命題の let・量化・呼出しの scrutinee・ガード付き match・名前付き spec 呼出し・UFCS・否定・命題等値を重ねた合成式の検体。
+  Surface / Core 宣言群からの callee 環境の対応と現在の実生成 Statements 宣言への接続は別の義務。
 - `NaruSem/SurfaceCallLogicSemExamples.lean` — 論理演算・否定・Bool/Prop条件ifの局所合成、任意解釈、意味不在、同型の逆含意の非保存を検査する。
 - `NaruSem/SurfaceCallCompareSemExamples.lean` — Nat/Bool比較・値/命題等値の局所合成、任意input解釈、混合型拒否、意味不在、同型演算交換の非保存を検査する。
 - `NaruSem/Audit.lean` — 公理監査 `#audit_axioms`(許容する標準公理と理由はそこに)。
@@ -393,4 +414,4 @@ backend の出力を意味と定義せず、翻訳の正しさを仮定しない
 -- C56: 型内の input 一致から runtime/spec の呼出しを合成し、任意解釈の Lean 表現へ接続する。
 #audit_axioms NaruSem.Call.SameInputs.agree NaruSem.Call.interpFrom_inputs_agree NaruSem.Call.interp_inputs_agree NaruSem.Call.fn_value_inputs NaruSem.Call.interpFrom_prop_inputs_agree NaruSem.Call.interp_prop_inputs_agree NaruSem.Call.inputs_generated_agree NaruSem.Call.typed_only_agree NaruSem.Call.typed_only_not_same
 
--- SurfaceCallCallSem / Examples: 通常・UFCS呼出し葉の双方向保存。全spec帰納・宣言群合成は未完了。
+-- SurfaceCallCallSem / Examples: 通常・UFCS呼出し葉の双方向保存。全spec帰納は `SurfaceCallLowerSpecSemAll.lean`、宣言群合成は未完了。

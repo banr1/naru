@@ -13,15 +13,15 @@ Lean 4 を知らない設計者が、Rust / TypeScript / Python / Go を知っ�
 claim surface の基準になっています。設計の正本は [IDEAL.md](IDEAL.md)(人間が宣言する「実現する状態」)です。
 
 
-呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値と宣言群から実生成LeanまでのSurface合成は未完了である。
+呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群からのcallee環境の対応と実生成StatementsへのSurfaceからの接続は未完了である。
 
-呼出しspecのガード付きmatchにも、各腕のガード・本体の双方向意味対応を明示した `SpecArmsBridge` から腕列の意味を合成する局所証明がある。Bool/Propガード、Nat/Boolパターン、同名束縛と後続腕への復帰を保ち、意味のないガードや空の腕列に意味を補わない。全spec式の一般同値、宣言群の環境対応、Surfaceから実生成Leanへの合成は未完了である。
+呼出しspecのガード付きmatchにも、各腕のガード・本体の双方向意味対応を明示した `SpecArmsBridge` から腕列の意味を合成する局所証明がある。Bool/Propガード、Nat/Boolパターン、同名束縛と後続腕への復帰を保ち、意味のないガードや空の腕列に意味を補わない。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
 
-呼出しspecの量化には、本体の双方向対応を拡張後の任意環境で要求し、任意長のNat/Bool束縛列を同じ全量化範囲で運ぶ局所保存がある。`Surf.Call.lowerS_quant_sem_iff` は束縛の名前・順序・同名shadowingと実lowering出力を照合する。本体の対応と意味の存在をこの局所定理だけから導くものではなく、全spec式の一般同値・宣言群の環境対応・Surfaceから実生成Leanへの合成は未完了である。
+呼出しspecの量化には、本体の双方向対応を拡張後の任意環境で要求し、任意長のNat/Bool束縛列を同じ全量化範囲で運ぶ局所保存がある。`Surf.Call.lowerS_quant_sem_iff` は束縛の名前・順序・同名shadowingと実lowering出力を照合する。本体の対応と意味の存在をこの局所定理だけから導くものではない(全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた)。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
 
-呼出しspecの論理演算(`&&` / `||` / `implies`)・否定・ifには、子式の双方向対応から親式の意味証人を合成する局所保存がある。公開入口は適格性と独立loweringの実出力を照合する。ifは独立意味論に従い両分岐の意味を要求し、未選択分岐の意味が欠けても成功にしない。子式の対応を一般帰納から導く全spec同値・宣言群の環境対応・実生成LeanへのSurface合成は未完了である。
+呼出しspecの論理演算(`&&` / `||` / `implies`)・否定・ifには、子式の双方向対応から親式の意味証人を合成する局所保存がある。公開入口は適格性と独立loweringの実出力を照合する。ifは独立意味論に従い両分岐の意味を要求し、未選択分岐の意味が欠けても成功にしない。子式の対応を一般帰納から導く全spec同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
 
-呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値、Surface/Core宣言群の環境対応、実生成LeanへのSurface合成は未完了である。
+呼出しspecのNat/Bool値の比較とNat値の等値には、runtimeの一般評価保存を使う局所双方向対応がある。Bool値と命題を含む等値は、子式の `SpecSemEquiv` と左辺がNatを評価しない局所前提を使い、値の等値と命題の同値を区別する。公開入口は適格性・変換の分岐・独立loweringの実出力を照合する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群の環境対応と実生成StatementsへのSurfaceからの接続は未完了である。
 
 ## 前提の道具
 
@@ -115,4 +115,7 @@ naru は [CC0 1.0 Universal](LICENSE)(パブリックドメイン相当)です�
 同梱する verified-consensus も CC0 1.0 で、出典は次のとおりです(`third_party/verified-consensus/CITATION.cff`):
 D'Amato, Francesco. *verified-consensus: a Lean 4 formalization of the decoupled consensus protocol*. https://github.com/fradamt/verified-consensus (2026)。
 
-呼出し葉は通常・UFCSの双方向保存を一般runtime評価保存から合成し、名前付き引数・Bool値境界・spec解釈不在を検査する。全spec式の帰納同値、Surface/Core宣言群と実生成LeanへのSurface合成は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
+呼出し葉は通常・UFCSの双方向保存を一般runtime評価保存から合成し、名前付き引数・Bool値境界・spec解釈不在を検査する。全spec式の帰納同値は `SurfaceCallLowerSpecSemAll.lean` が与えた。Surface/Core宣言群からのcallee環境の対応と実生成StatementsへのSurfaceからの接続は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
+
+
+呼出しを含む全spec式の一般双方向同値(`lowerS_sem_iff`)を `wtS` の相互帰納で証明し、現在10specの実AST/実Coreへ適用した(`sssem_*`、計100証拠)。Surface/Core宣言群からのcallee環境の対応と、実生成StatementsへのSurfaceからの接続証拠は未完了である。詳しくは[アーキテクチャ](docs/architecture.md)と[検査手順](docs/testing.md)を参照。
