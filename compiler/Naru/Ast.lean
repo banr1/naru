@@ -69,8 +69,8 @@ inductive Expr where
   | ite (span : Span) (cond thn els : Expr)
   | matchE (span : Span) (scrut : Expr) (arms : Array Arm)
   | block (span : Span) (stmts : Array Stmt) (tail : Option Expr)
-  /-- `Name { f: e, ..base }`。 -/
-  | recordLit (span : Span) (name : List String) (fields : Array (String × Expr)) (base : Option Expr)
+  /-- `Name { f: e, ..base }`。欄は(名前, 名前のトークンの位置, 値)。位置は言語サーバーの欄名のリネーム(C32)が使う。 -/
+  | recordLit (span : Span) (name : List String) (fields : Array (String × Span × Expr)) (base : Option Expr)
   | listLit (span : Span) (elems : Array Expr)
   | tupleLit (span : Span) (elems : Array Expr)
   /-- `|x, y| body`。 -/
@@ -90,7 +90,7 @@ inductive Stmt where
   | letS (span : Span) (name : String) (ty : Option Ty) (val : Expr)
   | exprS (e : Expr)
   /-- `input f(x, y) = e;`(scenario の先頭にだけ書ける): 環境の入力 `f` にこの fixture での値を与える。
-  仮引数は名前だけ(型は `input` 宣言から取る)。 -/
+  仮引数は名前だけ(型は `input` 宣言から取る)。`span` は名前 `f` のトークンの位置(束縛する input への参照の位置でもある)。 -/
   | inputS (span : Span) (name : String) (params : Array (String × Span)) (val : Expr)
   /-- `observe e;`(scenario にだけ書ける): observer の呼出し `e` の値を simulation の出力にする。 -/
   | observeS (span : Span) (e : Expr)
@@ -129,7 +129,7 @@ partial def renderExpr : Expr → String
   | .binop _ op l r => renderExpr l ++ " " ++ op ++ " " ++ renderExpr r
   | .unop _ op a => op ++ renderExpr a
   | .recordLit _ name fields base =>
-    let fs := fields.toList.map fun (f, e) => f ++ ": " ++ renderExpr e
+    let fs := fields.toList.map fun (f, _, e) => f ++ ": " ++ renderExpr e
     let bs := match base with
       | some b => [".." ++ renderExpr b]
       | none => []

@@ -385,8 +385,8 @@ partial def parseIdentExpr : P Expr := do
       e := .field segSp e seg
     return e
 
-/-- `{` の直後から `}` まで。`f: e` / `f`(短縮)/ 末尾の `..base`。 -/
-partial def parseRecordFields : P (Array (String × Expr) × Option Expr) := do
+/-- `{` の直後から `}` まで。`f: e` / `f`(短縮)/ 末尾の `..base`。欄は(名前, 名前の位置, 値)。 -/
+partial def parseRecordFields : P (Array (String × Span × Expr) × Option Expr) := do
   let mut fields := #[]
   let mut base : Option Expr := none
   repeat
@@ -398,7 +398,7 @@ partial def parseRecordFields : P (Array (String × Expr) × Option Expr) := do
       break
     let (n, nsp) ← expectIdent
     let v ← if (← acceptSym ":") then parseExpr else pure (Expr.var nsp [n])
-    fields := fields.push (n, v)
+    fields := fields.push (n, nsp, v)
     if (← acceptSym ",") then continue
     let _ ← expectSym "}"
     break
@@ -541,13 +541,14 @@ def parseScenarioBody (scenarioName : String) : P Expr := do
         if afterHead then
           failAt t.span s!"input bindings come first in scenario `{scenarioName}` (before any `let` / `observe`)"
         advance
-        let (name, _) ← expectIdent
+        -- 文の位置は input の名前のトークン(名前解決の参照の索引はこの位置に `[name]` を記録し、言語サーバーの定義ジャンプ・リネームが使う)
+        let (name, nsp) ← expectIdent
         let _ ← expectSym "("
         let params ← parseCommaList ")" expectLocalIdent
         let _ ← expectSym "="
         let val ← parseExpr
         let _ ← expectSym ";"
-        stmts := stmts.push (.inputS t.span name params val)
+        stmts := stmts.push (.inputS nsp name params val)
       | .kw "let" =>
         afterHead := true
         advance

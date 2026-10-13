@@ -268,7 +268,7 @@ partial def walk (env : Env) : Expr → W Unit
       | .observeS _ x => walk e x
     if let some t := tail then walk e t
   | .recordLit _ _ fields base => do
-    for (_, x) in fields do walk env x
+    for (_, _, x) in fields do walk env x
     if let some b := base then walk env b
   | .listLit _ es | .tupleLit _ es => do
     for x in es do walk env x

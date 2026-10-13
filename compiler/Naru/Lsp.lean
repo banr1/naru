@@ -4,15 +4,22 @@ import Naru.Describe
 import Naru.Config
 
 /-!
-# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30 / C31)
+# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30 / C31 / C32)
 
 標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、コンパイラの索引から取る
-ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)・補完(`textDocument/completion`)を返す。エディタ(Zed 拡張
-`editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
+ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)・補完(`textDocument/completion`)・リネーム
+(`textDocument/prepareRename` / `rename`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
-  `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)。それ以外の
-  リクエスト(リネーム・整形の C32 / C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+  `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)、
+  `textDocument/prepareRename` / `textDocument/rename`(C32)。それ以外のリクエスト(整形の C33 は未対応)には `MethodNotFound`(-32601)を
+  返し、それ以外の通知は無視する。
+- リネーム(C32): 位置にあるもの(`locate`)が宣言名(宣言そのもの、または参照の経路の宣言名の区切り)か欄名(record / state の宣言の中・
+  式の中の読み `r.f`・record literal の初期化 `R { f: … }`)なら、`prepareRename` はその名前のトークンの範囲と現在の名前を返し、`rename` は
+  同じコンパイル単位の全ファイル(開いていないファイルも)のその名前の箇所 — 宣言なら名前解決の索引 `Checked.refs` の全参照の宣言名の区切り、
+  欄なら型検査の索引 `Checked.members` の全参照 — を `newName` に置き換える `WorkspaceEdit`(`changes`)を返す。コメントの中は変えない。
+  variant・stdlib のメソッド・局所名・モジュール名の区切りの上では null。新しい名前は識別子で、予約語・組み込みの名前でなく、元の名前と
+  同じ大文字 / 小文字の区分で、宣言なら同じ単位の他の宣言名と、欄なら同じ record の他の欄名と重ならないこと(違えば `RequestFailed` -32803)。
 - 補完(C31): `.` の直後(途中まで書いた名前の中を含む)なら受け手の型から — record / state の欄、stdlib の型のメソッド(受け手の型で
   実体化した署名)、その型を最初の仮引数に取る fn 等(UFCS)。受け手の型は型検査の索引 `Checked.accesses`(欄 / メソッドのアクセスの
   受け手の型。名前が解決できなくても残る)から取り、索引に無ければ(文書が構文エラーの途中、`x.` まで書いた)位置の名前を仮の識別子に
@@ -207,6 +214,8 @@ structure UnitIndex where
   key : String
   sources : List (String × String)
   checked : Checked
+  /-- その検査の診断(空なら単位は健全で索引は完全。リネーム(C32)は空のときだけ応じる)。 -/
+  diags : Array Diagnostic := #[]
 
 structure State where
   out : IO.FS.Stream
@@ -268,7 +277,7 @@ def check (doc : Doc) (closed : Option String := none) : M Unit := do
   let key := unitKey doc
   -- 索引(C30): 全ファイルが構文解析できた検査の結果を単位ごとに持つ(構文エラーの途中は前の索引のまま)
   if checked.mods.size == sources.length then
-    modify fun s => { s with index := (s.index.filter (·.key != key)).push { key, sources, checked } }
+    modify fun s => { s with index := (s.index.filter (·.key != key)).push { key, sources, checked, diags } }
   let mut groups : Array (String × Array Json) := #[]
   for d in diags do
     let lines := ((sources.lookup d.file).getD "").splitOn "\n"
@@ -665,7 +674,7 @@ partial def exprBinders : Expr → List (String × Span × Option Ty)
   | .matchE _ s arms => exprBinders s ++ arms.toList.flatMap fun arm => match arm with
       | .mk p g b => (patBinders p).map (fun (n, sp) => (n, sp, none)) ++ g.toList.flatMap exprBinders ++ exprBinders b
   | .block _ stmts tail => stmts.toList.flatMap stmtBinders ++ tail.toList.flatMap exprBinders
-  | .recordLit _ _ fields base => fields.toList.flatMap (fun (_, e) => exprBinders e) ++ base.toList.flatMap exprBinders
+  | .recordLit _ _ fields base => fields.toList.flatMap (fun (_, _, e) => exprBinders e) ++ base.toList.flatMap exprBinders
   | .listLit _ es | .tupleLit _ es => es.toList.flatMap exprBinders
   | .lambda _ ps body | .quant _ _ ps body => ps.toList.map (fun b => (b.name, b.span, b.ty)) ++ exprBinders body
 where
@@ -813,6 +822,206 @@ def completion (uri : String) (line0 ch : Nat) : M Json := do
       | none => #[]
     return completionList (locals ++ declItems st idx ++ keywordItems ++ builtinItems)
 
+/-! ## リネーム(`textDocument/prepareRename` / `textDocument/rename`、C32) -/
+
+/-- リネームの対象: 宣言(大域名)か record / state の欄。 -/
+inductive RenameTarget where
+  /-- 宣言。`file` / `span` はその名前のトークン、`qualified` は修飾名(参照の `target.qualified` と照合する)。 -/
+  | decl (file : String) (span : Span) (name qualified : String)
+  /-- record / state `key`(修飾名)の欄 `f`(宣言はモジュール `m` の `d`)。 -/
+  | field (key : String) (m : Module) (d : Decl) (f : Field)
+
+def RenameTarget.name : RenameTarget → String
+  | .decl _ _ n _ => n
+  | .field _ _ _ f => f.name
+
+def RenameTarget.describe : RenameTarget → String
+  | .decl _ _ n _ => s!"declaration `{n}`"
+  | .field _ _ d f => s!"field `{f.name}` of {d.kind.describe} `{d.name}`"
+
+/-- 行 `chars` の `start` から書かれた経路 `path` の各区切りの範囲(文字の添字、終わりは排他的)。区切りの間の `.` の前後の空白は許す。
+そこにその経路が書かれていなければ none。 -/
+def segmentRanges (chars : Array Char) (start : Nat) (path : List String) : Option (List (Nat × Nat)) := Id.run do
+  let mut pos := start
+  let mut out : List (Nat × Nat) := []
+  let mut first := true
+  for seg in path do
+    if !first then
+      while (chars[pos]?.map Char.isWhitespace).getD false do pos := pos + 1
+      if chars[pos]? != some '.' then return none
+      pos := pos + 1
+      while (chars[pos]?.map Char.isWhitespace).getD false do pos := pos + 1
+    first := false
+    let cs := seg.toList
+    if cs.isEmpty || (chars.toList.drop pos).take cs.length != cs then return none
+    out := out ++ [(pos, pos + cs.length)]
+    pos := pos + cs.length
+  return some out
+
+/-- 位置にあるもの(`locate`)のうちリネームできるものと、その名前のトークンの範囲(文字の添字)。参照は、書かれた経路のうち宣言名の区切り
+(解決した接頭辞の最後)の上だけ(モジュール名の区切り・enum の variant の区切りは対象外。カーソルの区切り `i` は `segmentRanges` の範囲から
+求める: `.` の前後に空白のある経路でも正しい区切りを見る)。宣言名・欄名(宣言の中・式の中・record literal の初期化)はそのトークン。
+variant・stdlib のメソッド・局所名は none。 -/
+def renameTargetAt (idx : UnitIndex) (chars : Array Char) (i : Nat) (found : Found) : Option (RenameTarget × Nat × Nat) :=
+  match found.what with
+  | .ref r _ prefixLen =>
+    (segmentRanges chars found.startIdx r.path).bind fun rs =>
+      match rs.findIdx? (fun (s, e) => s ≤ i && i ≤ e) with
+      | none => none
+      | some segIdx =>
+        if prefixLen == 0 || segIdx + 1 != prefixLen then none
+        else (rs[segIdx]?).map fun (s, e) => (.decl r.target.file r.target.span r.target.name r.target.qualified, s, e)
+  | .decl file d =>
+    (idx.checked.mods.find? (·.file == file)).map fun m =>
+      (.decl file d.span d.name (renderPath (m.name ++ [d.name])), found.startIdx, found.endIdx)
+  | .field m d f => some (.field (renderPath (m.name ++ [d.name])) m d f, found.startIdx, found.endIdx)
+  | .variant .. => none
+  | .member mr =>
+    match mr.kind with
+    | .field => (declByKey idx mr.owner).bind fun (m, d) => (d.fields.find? (·.name == mr.name)).map fun f =>
+        (.field mr.owner m d f, found.startIdx, found.endIdx)
+    | .method => none
+
+/-- 書き換える箇所 1 つ: ファイル、1 始まりの行、文字の添字の範囲(終わりは排他的)、置き換える文字列(略記の展開なら `old: new` / `new: old`)。 -/
+structure RenameEdit where
+  file : String
+  line : Nat
+  startIdx : Nat
+  endIdx : Nat
+  newText : String
+deriving BEq, Inhabited
+
+/-- 行 `chars` の `[s, e)` がちょうど `name` か。 -/
+def tokenIs (chars : Array Char) (s e : Nat) (name : String) : Bool :=
+  e - s == name.length && (chars.toList.drop s).take (e - s) == name.toList
+
+/-- `s` の前(空白を飛ばして)が `:` か(明示の `name: value` の値の位置)。 -/
+def precededByColon (chars : Array Char) (s : Nat) : Bool := Id.run do
+  let mut j := s
+  while j > 0 && chars[j - 1]!.isWhitespace do j := j - 1
+  return j > 0 && chars[j - 1]! == ':'
+
+/-- 対象の名前が書かれたすべての箇所(同じコンパイル単位の全ファイル)と、各箇所の置き換え。宣言なら、その名前のトークンと、名前解決の索引
+`Checked.refs` のその宣言への参照(値の位置・型の位置・record literal の型名・パターンの構築子・UFCS のメソッド名・scenario の input の束縛)の
+宣言名の区切り。欄なら、record / state の宣言の中の欄名と、型検査の索引 `Checked.members` のその欄の参照(式の中の読み `r.f` と record literal の
+初期化 `R { f: … }`)。略記(欄名 / claim bundle の項目名と値が同じトークン: `R { f }`、`bundle { c }`)は名前と値を分けて、宣言の改名なら
+`old: new`(欄名 / 項目名を保つ。claim surface を変えない)、欄の改名なら `new: old`(値の局所名を保つ)に展開する。各箇所の本文が元の名前で
+なければ(索引と本文の不一致)失敗にする(不完全・不正確な編集を返さない)。 -/
+def renameEdits (st : State) (idx : UnitIndex) (target : RenameTarget) (newName : String) : Except String (List RenameEdit) := do
+  let lineOf (file : String) (line : Nat) : Array Char := (((textOf st idx file).splitOn "\n").getD (line - 1) "").toList.toArray
+  let edit (file : String) (line s e : Nat) (old newText : String) : Except String RenameEdit := do
+    if !tokenIs (lineOf file line) s e old then
+      throw s!"the text at {file}:{line}:{s + 1} is not `{old}` (the index does not match the current text)"
+    return { file, line, startIdx := s, endIdx := e, newText }
+  match target with
+  | .decl file span name qualified => do
+    let mut out : List RenameEdit := [← edit file span.line (span.col - 1) (span.col - 1 + name.length) name newName]
+    for r in idx.checked.refs do
+      if r.target.file == file && r.target.qualified == qualified then
+        let chars := lineOf r.file r.span.line
+        let k := prefixLen r
+        match (segmentRanges chars (r.span.col - 1) r.path).bind (·[k - 1]?) with
+        | none => throw s!"cannot locate the reference `{renderPath r.path}` at {r.file}:{r.span.line}:{r.span.col} in the current text"
+        | some (s, e) =>
+          let fieldShorthand := idx.checked.members.any fun mr =>
+            mr.init && mr.shorthand && mr.file == r.file && mr.span.line == r.span.line && mr.span.col - 1 == s
+          let itemShorthand := r.declKind == .claimBundle && r.path.length == 1 && !precededByColon chars s &&
+            (((idx.checked.mods.find? (·.file == r.file)).bind fun m => m.decls.find? fun d => d.kind == .claimBundle && d.name == r.declName).any
+              fun d => d.items.any fun (item, e) => item == name && e.span == r.span)
+          let newText := if fieldShorthand || itemShorthand then s!"{name}: {newName}" else newName
+          out := out ++ [← edit r.file r.span.line s e name newText]
+    return out.eraseDups
+  | .field key m _ f => do
+    let mut out : List RenameEdit := [← edit m.file f.span.line (f.span.col - 1) (f.span.col - 1 + f.name.length) f.name newName]
+    for mr in idx.checked.members do
+      if mr.kind == .field && mr.owner == key && mr.name == f.name then
+        let newText := if mr.init && mr.shorthand then s!"{newName}: {f.name}" else newName
+        out := out ++ [← edit mr.file mr.span.line (mr.span.col - 1) (mr.span.col - 1 + f.name.length) f.name newText]
+    return out.eraseDups
+
+/-- 新しい名前の検査: 識別子(`[A-Za-z_][A-Za-z0-9_]*` + 末尾の `?`)で、予約語・組み込みの名前でなく、元の名前と同じ大文字 / 小文字の区分
+(大文字始まりは型・モジュール・enum・構築子の経路として読まれるので、区分を変えると参照の読みが変わる)。宣言なら同じ単位の他の宣言名と
+重ならず(E012)、その宣言を参照する宣言の局所名(仮引数・let・lambda・量化・パターン・scenario の input の仮引数)に捕まらない。欄なら同じ
+record / state の他の欄名と重ならず、Lean が生成する予約名(`mk` / `rec` …)でない。問題があればその説明。 -/
+def renameNameError (idx : UnitIndex) (target : RenameTarget) (newName : String) : Option String := Id.run do
+  let old := target.name
+  let body := if newName.endsWith "?" then (newName.dropEnd 1).toString else newName
+  let cs := body.toList
+  let identOk := match cs with
+    | [] => false
+    | c :: rest => isIdentStart c && rest.all isIdentChar
+  if !identOk then return some s!"`{newName}` is not an identifier (`[A-Za-z_][A-Za-z0-9_]*`, optionally ending in `?`)"
+  if keywords.contains newName then return some s!"`{newName}` is a keyword"
+  if Resolve.isBuiltinHead newName then return some s!"`{newName}` is a built-in name"
+  if old.front.isUpper != newName.front.isUpper then
+    return some s!"`{newName}` must start with {if old.front.isUpper then "an uppercase" else "a lowercase"} letter like `{old}` (uppercase names are read as type / module / enum / constructor paths)"
+  if newName == old then return some s!"`{newName}` is the current name"
+  match target with
+  | .decl file _ _ qualified =>
+    for m in idx.checked.mods do
+      if let some d := m.decls.find? (·.name == newName) then
+        return some s!"`{newName}` is already declared ({d.kind.describe} at {m.file}:{d.span.line}:{d.span.col})"
+    for r in idx.checked.refs do
+      if r.target.file == file && r.target.qualified == qualified then
+        if let some d := (idx.checked.mods.find? (·.file == r.file)).bind fun m => m.decls.find? fun d => d.name == r.declName && d.kind == r.declKind then
+          if d.params.any (·.name == newName) || (d.body.toList.flatMap exprBinders).any (·.1 == newName) then
+            return some s!"`{newName}` would be captured by a local name of {d.kind.describe} `{d.name}` ({r.file}:{d.span.line}), which refers to `{old}`"
+    return none
+  | .field _ _ d _ =>
+    if d.fields.any (·.name == newName) then return some s!"{d.kind.describe} `{d.name}` already has a field `{newName}`"
+    if Typecheck.leanGenerated.contains newName then
+      return some s!"`{newName}` is reserved (Lean generates a declaration of that name for every record / enum)"
+    return none
+
+/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)でリネームできるものと、その名前のトークンの範囲。無ければ none。 -/
+def renameAt (uri : String) (line0 ch : Nat) : M (Option (UnitIndex × RenameTarget × Nat × Nat × Array Char)) := do
+  let st ← get
+  let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return none
+  let some idx := st.index.find? (·.key == unitKey doc) | return none
+  let chars := ((doc.text.splitOn "\n").getD line0 "").toList.toArray
+  let i := charIndex chars ch
+  let some found := locate doc idx chars line0 i | return none
+  return (renameTargetAt idx chars i found).map fun (t, s, e) => (idx, t, s, e, chars)
+
+/-- `textDocument/prepareRename`: リネームできる位置ならその名前の範囲と `placeholder`(現在の名前)、できなければ null。 -/
+def prepareRename (uri : String) (line0 ch : Nat) : M Json := do
+  let some (_, target, s, e, chars) ← renameAt uri line0 ch | return Json.null
+  return Json.mkObj [("range", rangeJson line0 (utf16Col chars s) (utf16Col chars e)), ("placeholder", Json.str target.name)]
+
+/-- `TextEdit`(1 行の中の範囲を `newText` に置き換える)。 -/
+def textEditJson (lines : List String) (ed : RenameEdit) : Json :=
+  let chars := (lines.getD (ed.line - 1) "").toList.toArray
+  Json.mkObj [("range", rangeJson (ed.line - 1) (utf16Col chars ed.startIdx) (utf16Col chars ed.endIdx)), ("newText", Json.str ed.newText)]
+
+/-- `textDocument/rename`: 位置の宣言名 / 欄名を `newName` に変える `WorkspaceEdit`(`changes`: URI → `TextEdit` の列。同じコンパイル単位の
+全ファイル、開いていないファイルも URI で)。リネームできない位置なら null。単位に診断がある(索引が不完全)、開いている文書が直前の検査の
+本文と違う(索引が古い)、開いていないファイルがディスクで変わった、新しい名前が不適切(`renameNameError`)、参照の位置が本文と合わない
+(`renameEdits`)なら `.error`(不完全・不正確な編集を返さない)。 -/
+def rename (uri : String) (line0 ch : Nat) (newName : String) : M (Except String Json) := do
+  let some (idx, target, _, _, _) ← renameAt uri line0 ch | return .ok Json.null
+  let st ← get
+  if let some d := idx.diags[0]? then
+    return .error s!"cannot rename {target.describe}: the unit has diagnostics ({d.code} at {d.file}:{d.span.line}:{d.span.col}); fix them first"
+  for d in st.docs do
+    if unitKey d == idx.key && idx.sources.lookup d.path != some d.text then
+      return .error s!"cannot rename {target.describe}: {d.path} changed since the last successful check (fix the syntax error first)"
+  -- 開いていないファイルがディスクで変わっていれば(索引の本文と違う)断る: 編集の位置は索引の本文のもの
+  for (f, t) in idx.sources do
+    if (st.docs.find? fun (d : Doc) => d.path == f).isNone then
+      let onDisk ← try IO.FS.readFile f catch _ => pure ""
+      if onDisk != t then
+        return .error s!"cannot rename {target.describe}: {f} changed on disk since the last successful check (edit or save a document of the unit to re-check)"
+  if let some why := renameNameError idx target newName then return .error s!"cannot rename {target.describe} to `{newName}`: {why}"
+  match renameEdits st idx target newName with
+  | .error e => return .error s!"cannot rename {target.describe}: {e}"
+  | .ok edits =>
+    let files := (edits.map (·.file)).eraseDups
+    let changes := files.map fun f =>
+      let lines := (textOf st idx f).splitOn "\n"
+      let here := (edits.filter (·.file == f)).mergeSort fun a b => a.line < b.line || (a.line == b.line && a.startIdx ≤ b.startIdx)
+      (uriOfFile st f, Json.arr (here.map fun ed => textEditJson lines ed).toArray)
+    return .ok (Json.mkObj [("changes", Json.mkObj changes)])
+
 /-! ## メッセージの処理 -/
 
 def initializeResult (version : String) : Json :=
@@ -821,7 +1030,8 @@ def initializeResult (version : String) : Json :=
       ("textDocumentSync", Json.mkObj [("openClose", true), ("change", 1), ("save", true)]),
       ("hoverProvider", true),
       ("definitionProvider", true),
-      ("completionProvider", Json.mkObj [("triggerCharacters", Json.arr #[Json.str "."]), ("resolveProvider", false)])]),
+      ("completionProvider", Json.mkObj [("triggerCharacters", Json.arr #[Json.str "."]), ("resolveProvider", false)]),
+      ("renameProvider", Json.mkObj [("prepareProvider", true)])]),
     ("serverInfo", Json.mkObj [("name", "naru"), ("version", version)])]
 
 /-- `params.position` の (0 始まりの行, UTF-16 の列)。 -/
@@ -884,6 +1094,17 @@ def handle (msg : Json) : M Unit := do
     match docUri params, positionOf params with
     | some uri, some (line, ch) => respond id (← completion uri line ch)
     | _, _ => respondError id (-32602) "completion: textDocument.uri / position missing"
+  | "textDocument/prepareRename", some id =>
+    match docUri params, positionOf params with
+    | some uri, some (line, ch) => respond id (← prepareRename uri line ch)
+    | _, _ => respondError id (-32602) "prepareRename: textDocument.uri / position missing"
+  | "textDocument/rename", some id =>
+    match docUri params, positionOf params, getStr params "newName" with
+    | some uri, some (line, ch), some newName =>
+      match ← rename uri line ch newName with
+      | .ok result => respond id result
+      | .error e => respondError id (-32803) e   -- RequestFailed: 新しい名前が不適切、または参照の位置が本文に見つからない
+    | _, _, _ => respondError id (-32602) "rename: textDocument.uri / position / newName missing"
   | _, some id => respondError id (-32601) s!"method not found: {method}"
   | _, none => pure ()
 

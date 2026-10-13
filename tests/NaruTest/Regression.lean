@@ -440,8 +440,8 @@ def checkModuleUnits (leanPath : String) : M Unit := do
       if r.exitCode == 0 then nLean := nLean + 1
     if nLean == rels.length && nLean ≥ 4 then ok s!"{label}: all {nLean} generated Lean files type-check in import order (the imports between the generated modules resolve)"
     else fail s!"{label}: only {nLean} of {rels.length} generated Lean files type-checked"
-  for name in ["dependency_ok", "cross_phase_ok", c38Unit] do
-    if !(accepts.any (·.name == name)) then fail s!"C18 / C38: {unitsDir}/accept/{name} is missing"
+  for name in ["dependency_ok", "cross_phase_ok", c38Unit, "rename_cases"] do
+    if !(accepts.any (·.name == name)) then fail s!"C18 / C38 / C32: {unitsDir}/accept/{name} is missing"
 
 /-! ## C38 の検体: Model の生成省略(`tests/units/accept/omit_model`、反例 `tests/units/reject/omitted_duplicate`) -/
 

@@ -1,0 +1,21 @@
+// 受理例(C32): リネームの検体の runtime 側。欄 `x` は宣言・literal の初期化・略記・読みのすべてに現れる。
+module Rename.Shapes
+
+record Point { x: Nat, y: Nat } derive eq
+
+enum Color { Red, Blue } derive eq
+
+fn origin() -> Point { Point { x: 0, y: 0 } }
+
+// 略記の欄 `x`(局所名 `x` を欄 `x` に入れる)と `..base`。欄 `x` の改名は `xRenamed: x` に展開する
+fn withX(p: Point, x: Nat) -> Point { Point { x, ..p } }
+
+fn total(p: Point) -> Nat { p.x + p.y }
+
+fn twice(n: Nat) -> Nat { n + n }
+
+// `twice` を局所名 `v` に改名すると `twice(v)` が局所名に捕まる(リネームは断る)
+fn scale(v: Nat) -> Nat { twice(v) }
+
+// `.` の前後に空白を置いた経路。`Red` の上では variant なので null、`Color` の上では enum の改名
+fn isRed(c: Color) -> Bool { c == Color . Red }

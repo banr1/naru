@@ -2,13 +2,26 @@ import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30 / C31)
+# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30 / C31 / C32)
 
 リポジトリのルートで実行する。`lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と標準入出力で LSP を話し、
 次を確かめる(`ok:` / `FAIL:`)。期待値はコンパイラ(`Naru.compileSources`、CLI の `compile` と同じ検査)から取る。
 
 1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `hoverProvider = true`(C29)・`definitionProvider = true`(C30)・
-   `completionProvider`(`triggerCharacters` に `.`。C31)がある。`initialized` を送る。
+   `completionProvider`(`triggerCharacters` に `.`。C31)・`renameProvider`(`prepareProvider = true`。C32)がある。`initialized` を送る。
+   リネーム(C32、`textDocument/prepareRename` / `rename`): 単独の受理例の参照の先頭で `prepareRename` が名前の範囲と placeholder を返し、`rename` の
+   WorkspaceEdit がその文書の全出現を書き換える(3d)。移植ソース(5e): 別ファイルの fn 8 の参照の先頭で `prepareRename` が経路の宣言名の区切りの範囲と
+   placeholder を返し、`rename` の WorkspaceEdit(`changes`: URI → `TextEdit`)が単位の全ファイルのその名前 — 編集の総数がコメントを除いた `grep -w` の
+   出現数と一致し、宣言の名前のトークンと参照を含む — を一時名に書き換え、編集を適用した複製が `compileSources` で診断 0、ディスクに書いた複製
+   (`.lake/naru/test/lsp/rename/<名前>/`)への CLI の `naru compile <files>` が exit 0。宣言名の上からも同じ編集。予約語・大文字始まり・既存の宣言名・
+   識別子でない新しい名前は -32803 で拒否。欄名(5e'): 他の宣言・仮引数・他の record の欄と名前が重ならない欄の読みと record の宣言の欄名から、
+   宣言の欄名・式の中の全読み・record literal の全初期化を書き換える(同じ検査)。コメント行・予約語・仮引数(局所名)・enum の宣言の中の variant 名・
+   stdlib のメソッド名では `prepareRename` / `rename` とも null(5e'')。検体 `tests/units/accept/rename_cases/`(5e'''): 編集の位置と文面がちょうど期待と
+   一致する — 欄 `x`(宣言・`x: 0`・略記 `{ x, ..p }` → `xRenamed: x`・読み `p.x`。仮引数 `x` は触らない)、claim `nonNegative`(宣言と略記の bundle の項目
+   → `nonNegative: nonNegativeRenamed`。項目名が保たれる)、claim `doubled`(明示の項目 `second: doubled` は値だけ)、fn `twice`(宣言と runtime / spec の
+   呼出し)、`Color . Red` の空白入りの経路(`Red` は null、`Color` は宣言・仮引数の型・経路) —、`twice` → `v`(呼出し側の局所名に捕まる)・欄 → `mk`
+   (予約名)・欄 → `y`(既存の欄)は -32803、E011 のある単位と構文エラーで索引が古い文書では -32803 で、戻すと通る。検体の複製
+   (`.lake/naru/test/lsp/stale/`)で閉じているファイルをディスクで書き換えると -32803 で、開いている文書を送り直す(検査し直す)と通る。
    補完(C31、`textDocument/completion`): 単独の受理例の参照の途中で参照先の宣言が候補にある(3d)。移植ソース(5b''): 別ファイルの fn の参照の
    途中(先頭の 2 文字目)で、単位の全 fn 名(参照先は kind Function と `Decl.signature` の detail)・全予約語(kind Keyword)・位置を含む宣言の
    仮引数(kind Variable、`名前: 型`)が候補にある。コメント行では候補なし(5c)。`Enum.Variant` の `.` の直後では、その enum の全 variant
@@ -461,6 +474,266 @@ def kindOfDecl : Naru.DeclKind → Nat
   | .protocol => 9
   | .scenario => 23
 
+/-! ## リネーム(C32) -/
+
+/-- `TextEdit` の要約: (0 始まりの行, 開始の UTF-16 の列, 終わりの列, newText)。 -/
+abbrev TextEdit := Nat × Nat × Nat × String
+
+/-- `textDocument/prepareRename` を送り、`result` を読む: null → none、`{ range, placeholder }` → その範囲と名前。 -/
+def prepareRenameAt (env : Env) (uri : String) (line ch : Nat) : IO (Except String (Option ((Nat × Nat × Nat) × String))) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/prepareRename"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("position", Json.mkObj [("line", line), ("character", ch)])])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/prepareRename"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then return .error s!"textDocument/prepareRename → error {e.compress}"
+    match getField resp "result" with
+    | none => return .error s!"textDocument/prepareRename: response without result: {resp.compress}"
+    | some Json.null => return .ok none
+    | some r =>
+      let some range := getField r "range" | return .error s!"textDocument/prepareRename: result without range: {r.compress}"
+      let some placeholder := getStr r "placeholder" | return .error s!"textDocument/prepareRename: result without placeholder: {r.compress}"
+      match parseRange range with
+      | .error e => return .error s!"textDocument/prepareRename: {e}"
+      | .ok rg => return .ok (some (rg, placeholder))
+
+/-- `textDocument/rename` の結果: null(リネームできない位置)/ 拒否(新しい名前が不適切: エラーの `code` と `message`)/
+`WorkspaceEdit` の `changes`(URI → 編集の列)。 -/
+inductive RenameResult where
+  | null
+  | refused (code : Int) (message : String)
+  | edits (changes : List (String × List TextEdit))
+
+def parseTextEdit (j : Json) : Except String TextEdit := do
+  let some newText := getStr j "newText" | throw s!"TextEdit without newText: {j.compress}"
+  let range ← j.getObjVal? "range"
+  let (l, sc, ec) ← parseRange range
+  return (l, sc, ec, newText)
+
+def renameAt (env : Env) (uri : String) (line ch : Nat) (newName : String) : IO (Except String RenameResult) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/rename"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("position", Json.mkObj [("line", line), ("character", ch)]),
+      ("newName", newName)])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/rename"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then
+      let code := ((e.getObjVal? "code" >>= Json.getInt?).toOption).getD 0
+      return .ok (.refused code ((getStr e "message").getD ""))
+    match getField resp "result" with
+    | none => return .error s!"textDocument/rename: response without result: {resp.compress}"
+    | some Json.null => return .ok .null
+    | some r =>
+      let some changes := getField r "changes" | return .error s!"textDocument/rename: WorkspaceEdit without changes: {r.compress.take 200}"
+      let some obj := changes.getObj?.toOption | return .error "textDocument/rename: changes is not an object"
+      let mut out : List (String × List TextEdit) := []
+      for (u, arr) in obj.toList do
+        let some items := arr.getArr?.toOption | return .error s!"textDocument/rename: changes[{u}] is not an array"
+        let mut eds : List TextEdit := []
+        for it in items do
+          match parseTextEdit it with
+          | .ok e => eds := eds ++ [e]
+          | .error e => return .error s!"textDocument/rename: {e}"
+        out := out ++ [(u, eds)]
+      return .ok (.edits out)
+
+def identChar (c : Char) : Bool := c.isAlphanum || c == '_'
+
+/-- コメント(`//` から行末まで、`/* … */` の入れ子)を空白に置き換える(改行と文字列リテラルの中は保つ)。「コメントを除いた `grep -w`」の数え方。 -/
+def stripComments (text : String) : String := Id.run do
+  let cs := text.toList.toArray
+  let mut out : Array Char := #[]
+  let mut i := 0
+  let mut depth := 0
+  let mut inStr := false
+  while i < cs.size do
+    let c := cs[i]!
+    let next := cs[i + 1]?
+    if depth > 0 then
+      if c == '/' && next == some '*' then
+        depth := depth + 1
+        i := i + 2
+      else if c == '*' && next == some '/' then
+        depth := depth - 1
+        i := i + 2
+      else
+        out := out.push (if c == '\n' then '\n' else ' ')
+        i := i + 1
+    else if inStr then
+      out := out.push c
+      if c == '\\' then
+        if let some d := next then out := out.push d
+        i := i + 2
+      else
+        if c == '"' then inStr := false
+        i := i + 1
+    else if c == '"' then
+      inStr := true
+      out := out.push c
+      i := i + 1
+    else if c == '/' && next == some '/' then
+      while i < cs.size && cs[i]! != '\n' do i := i + 1
+    else if c == '/' && next == some '*' then
+      depth := 1
+      i := i + 2
+    else
+      out := out.push c
+      i := i + 1
+  return String.ofList out.toList
+
+/-- `name` が識別子として現れる回数(`grep -w` 相当: 前後が識別子の文字でなく、直後が末尾の `?` でもない)。 -/
+def countWord (text name : String) : Nat := Id.run do
+  let cs := text.toList.toArray
+  let n := name.toList.toArray
+  let mut k := 0
+  let mut i := 0
+  while i + n.size ≤ cs.size do
+    let before := i == 0 || !(identChar cs[i - 1]!)
+    let after := !(((cs[i + n.size]?).map fun c => identChar c || c == '?').getD false)
+    if cs.extract i (i + n.size) == n && before && after then
+      k := k + 1
+      i := i + n.size
+    else i := i + 1
+  return k
+
+/-- UTF-16 の列 → 文字の添字(`utf16Of` の逆)。 -/
+def charIdxOf (chars : List Char) (u : Nat) : Nat := Id.run do
+  let mut n := 0
+  let mut i := 0
+  for c in chars do
+    if n ≥ u then break
+    n := n + (if c.toNat ≥ 0x10000 then 2 else 1)
+    i := i + 1
+  return i
+
+/-- 編集を本文に適用する(各編集は 1 行の中の範囲。同じ行は後ろから)。 -/
+def applyEdits (text : String) (edits : List TextEdit) : String := Id.run do
+  let mut lines := (text.splitOn "\n").toArray
+  let sorted := edits.mergeSort fun (l1, s1, _, _) (l2, s2, _, _) => l1 > l2 || (l1 == l2 && s1 ≥ s2)
+  for (l, s, e, newText) in sorted do
+    let chars := (lines.getD l "").toList
+    lines := lines.set! l (String.ofList (chars.take (charIdxOf chars s) ++ newText.toList ++ chars.drop (charIdxOf chars e)))
+  return "\n".intercalate lines.toList
+
+/-- リネームの `WorkspaceEdit` の検査: 編集はすべて `newName` への置き換えで幅が元の名前の長さ、URI は単位のファイル、`mustInclude` の位置
+(URI, 0 始まりの行, UTF-16 の列)を含み、編集の総数が単位の全ソースのコメントを除いた `name` の `grep -w` の出現数と一致し、
+編集を適用した複製(メモリ上)を `compileSources` が診断 0 で通し、同じ複製を `dir/<name>/` に書いて CLI の `naru compile <files>` が exit 0。
+通れば ok を書いて true。 -/
+def checkRenameEdits (env : Env) (sources : List (String × String)) (dir : System.FilePath) (what name newName : String)
+    (changes : List (String × List TextEdit)) (mustInclude : List (String × Nat × Nat)) : M Bool := do
+  let total := (changes.map fun (_, eds) => eds.length).foldl (· + ·) 0
+  let wordCount := (sources.map fun (_, t) => countWord (stripComments t) name).foldl (· + ·) 0
+  let fileOf (u : String) : Option String := (sources.find? fun (f, _) => System.Uri.pathToUri f == u).map (·.1)
+  for (u, eds) in changes do
+    if (fileOf u).isNone then
+      fail s!"{what}: rename edits a file outside the unit: {u}"
+      return false
+    for (l, sc, ec, newText) in eds do
+      if newText != newName || ec - sc != name.length then
+        fail s!"{what}: edit at {relOfUri env u}:{l + 1}:{sc + 1}-{ec + 1} replaces with `{newText}` (expected `{newName}` over the {name.length} chars of `{name}`)"
+        return false
+  for (u, l, ch) in mustInclude do
+    let found := (changes.lookup u).getD [] |>.any fun (l', sc, _, _) => l' == l && sc == ch
+    if !found then
+      fail s!"{what}: the edits lack the position {relOfUri env u}:{l + 1}:{ch + 1}"
+      return false
+  if total != wordCount then
+    fail s!"{what}: {total} edit(s), but `{name}` occurs {wordCount} time(s) as a word outside comments in the unit's sources"
+    return false
+  -- 複製に適用して検査(メモリ上: CLI と同じ `compileSources`)
+  let renamedSources := sources.map fun (f, t) => match changes.lookup (System.Uri.pathToUri f) with
+    | some eds => (f, applyEdits t eds)
+    | none => (f, t)
+  let (diags, _) := Naru.compileSources renamedSources
+  if !diags.isEmpty then
+    fail s!"{what}: after applying the edits, compileSources reports {diags.size} diagnostic(s): {(diags.toList.take 3).map fun d => s!"{d.code}@{rel env d.file}:{d.span.line}:{d.span.col} {d.msg.take 80}"}"
+    return false
+  -- 複製をディスクに書いて CLI の `naru compile <files>`(検査だけ)
+  let copy := dir / name
+  if ← copy.pathExists then IO.FS.removeDirAll copy
+  let root := env.root.toString ++ "/"
+  let mut paths : Array String := #[]
+  for (f, t) in renamedSources do
+    let relPath := if f.startsWith root then (f.drop root.length).toString else f
+    let dst := copy / relPath
+    if let some parent := dst.parent then IO.FS.createDirAll parent
+    IO.FS.writeFile dst t
+    paths := paths.push dst.toString
+  let bin := env.root / ".lake" / "build" / "bin" / "naru"
+  let out ← runProc bin.toString (#["compile"] ++ paths) (cwd := some copy)
+  if out.exitCode != 0 || (out.stderr.splitOn "error[").length > 1 then
+    fail s!"{what}: naru compile on the renamed copy {copy} → exit {out.exitCode}: {tail out.stderr 300}"
+    return false
+  ok s!"{what}: textDocument/rename `{name}` → `{newName}` → WorkspaceEdit with {total} edit(s) in {changes.length} file(s) (= the {wordCount} word occurrence(s) outside comments, incl. the declaration and the reference), applied to a copy: compileSources 0 diagnostics and naru compile exit 0 ({copy})"
+  return true
+
+/-- 同じ編集の集合か(URI ごとの編集を位置で並べて比べる)。 -/
+def sameEdits (a b : List (String × List TextEdit)) : Bool :=
+  let norm (xs : List (String × List TextEdit)) : List (String × List TextEdit) :=
+    (xs.map fun (u, eds) => (u, eds.mergeSort fun (l1, s1, _, _) (l2, s2, _, _) => l1 < l2 || (l1 == l2 && s1 ≤ s2))).mergeSort fun x y => x.1 ≤ y.1
+  norm a == norm b
+
+/-- 本文の中で `needle` が `occurrence` 回目(0 始まり)に現れる位置 (0 始まりの行, 文字の列)。ASCII の検体で使う(列 = UTF-16 の列)。 -/
+def findIn (text needle : String) (occurrence : Nat := 0) : Option (Nat × Nat) := Id.run do
+  let mut seen := 0
+  let mut line0 := 0
+  for l in text.splitOn "\n" do
+    let parts := l.splitOn needle
+    let mut col := 0
+    for k in [0:parts.length - 1] do
+      col := col + (parts[k]!).length
+      if seen == occurrence then return some (line0, col)
+      seen := seen + 1
+      col := col + needle.length
+    line0 := line0 + 1
+  return none
+
+/-- 期待の編集 (URI, 0 始まりの行, 開始の列, 終わりの列, newText) の集合とちょうど一致し、適用した複製を `compileSources` が診断 0 で通すこと。 -/
+def checkExactEdits (env : Env) (sources : List (String × String)) (what : String) (changes : List (String × List TextEdit))
+    (expected : List (String × TextEdit)) : M Bool := do
+  let got := changes.flatMap fun (u, eds) => eds.map fun e => (u, e)
+  let show_ (x : String × TextEdit) : String := s!"{relOfUri env x.1}:{x.2.1 + 1}:{x.2.2.1 + 1}-{x.2.2.2.1 + 1} `{x.2.2.2.2}`"
+  let missing := expected.filter fun e => !got.contains e
+  let extra := got.filter fun e => !expected.contains e
+  if !missing.isEmpty || !extra.isEmpty then
+    fail s!"{what}: edits differ from the expectation; missing {missing.map show_}, unexpected {extra.map show_}"
+    return false
+  let renamed := sources.map fun (f, t) => match changes.lookup (System.Uri.pathToUri f) with
+    | some eds => (f, applyEdits t eds)
+    | none => (f, t)
+  let (diags, _) := Naru.compileSources renamed
+  if !diags.isEmpty then
+    fail s!"{what}: after applying the edits, compileSources reports {diags.size} diagnostic(s): {(diags.toList.take 3).map fun d => s!"{d.code}@{rel env d.file}:{d.span.line}:{d.span.col} {d.msg.take 80}"}"
+    return false
+  ok s!"{what}: textDocument/rename → exactly the {expected.length} expected edit(s) ({expected.map show_}), compile clean after applying"
+  return true
+
+/-- `rename` が -32803 で拒まれ、メッセージに `needle` を含むこと。 -/
+def checkRenameRefused (env : Env) (uri : String) (line0 ch : Nat) (newName needle what : String) : M Unit := do
+  match ← renameAt env uri line0 ch newName with
+  | .ok (.refused code msg) =>
+    if code == -32803 && (msg.splitOn needle).length > 1 then ok s!"{what}: textDocument/rename → `{newName}` refused (-32803: {msg.take 160})"
+    else fail s!"{what}: rename → `{newName}` refused with code {code} / message `{msg.take 160}`, expected -32803 mentioning `{needle}`"
+  | .ok .null => fail s!"{what}: rename → `{newName}` → null, expected an error"
+  | .ok (.edits _) => fail s!"{what}: rename → `{newName}` → edits, expected an error"
+  | .error e => fail s!"{what}: {e}"
+
+/-- 位置へのリネームが null であること(`prepareRename` と `rename` の両方)。 -/
+def checkRenameNull (env : Env) (file : String) (line0 ch : Nat) (what : String) : M Unit := do
+  let at_ := s!"{rel env file}:{line0 + 1}:{ch + 1} ({what})"
+  let uri := System.Uri.pathToUri file
+  match ← prepareRenameAt env uri line0 ch with
+  | .error e => fail s!"{at_}: {e}"
+  | .ok (some (_, placeholder)) => fail s!"{at_}: prepareRename → `{placeholder}`, expected null"
+  | .ok none =>
+    match ← renameAt env uri line0 ch "lspRenameProbe" with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok .null => ok s!"{at_}: textDocument/prepareRename and textDocument/rename → null (nothing to rename there)"
+    | .ok (.refused code msg) => fail s!"{at_}: rename → error {code} {msg}, expected null"
+    | .ok (.edits changes) => fail s!"{at_}: rename → {changes.length} file(s) of edits, expected null"
+
 def checks (env : Env) : M Unit := do
   let c := env.client
   -- 1. initialize / initialized
@@ -476,10 +749,11 @@ def checks (env : Env) : M Unit := do
   let hoverProvider := caps >>= fun s => (s.getObjVal? "hoverProvider" >>= Json.getBool?).toOption
   let triggers := caps >>= (getField · "completionProvider") >>= (getField · "triggerCharacters") >>= fun j => j.getArr?.toOption
   let dotTrigger := (triggers.map fun a => a.any fun j => j.getStr?.toOption == some ".").getD false
-  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true && dotTrigger then
-    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true, completionProvider.triggerCharacters has \".\""
+  let prepareProvider := caps >>= (getField · "renameProvider") >>= fun r => (r.getObjVal? "prepareProvider" >>= Json.getBool?).toOption
+  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true && dotTrigger && prepareProvider == some true then
+    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true, completionProvider.triggerCharacters has \".\", renameProvider.prepareProvider = true"
   else
-    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true, definitionProvider = true and completionProvider with trigger \".\", got {resp.compress}"
+    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true, definitionProvider = true, completionProvider with trigger \".\" and renameProvider.prepareProvider = true, got {resp.compress}"
   notify c "initialized" (Json.mkObj [])
   -- 2. 未対応のリクエスト
   let some _ ← barrier env | return
@@ -554,6 +828,24 @@ def checks (env : Env) : M Unit := do
       if hasItem items r.target.name (kindOfDecl r.target.kind) then
         ok s!"{p}: textDocument/completion inside `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → {items.size} item(s) incl. {r.target.kind.describe} `{r.target.name}` (kind {kindOfDecl r.target.kind})"
       else fail s!"{p}:{r.span.line}:{r.span.col + 1}: completion lacks {r.target.kind.describe} `{r.target.name}` (kind {kindOfDecl r.target.kind}); got {(labelsOf items).take 10}"
+    -- リネーム(C32)、単独の文書: 参照の先頭で `prepareRename` が名前の範囲と placeholder、`rename` がこの文書の全出現を書き換える
+    let ch := utf16Of text r.span.line r.span.col
+    let at_ := s!"{p}:{r.span.line}:{r.span.col}"
+    match ← prepareRenameAt env uri (r.span.line - 1) ch with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok none => fail s!"{at_}: prepareRename → null on the reference `{Naru.renderPath r.path}`"
+    | .ok (some ((l, sc, ec), placeholder)) =>
+      if r.path.length == 1 && placeholder == r.target.name && l == r.span.line - 1 && sc == ch && ec == ch + r.target.name.length then
+        ok s!"{at_}: textDocument/prepareRename on `{Naru.renderPath r.path}` in a single-document unit → range {l + 1}:{sc + 1}-{ec + 1}, placeholder `{placeholder}`"
+      else fail s!"{at_}: prepareRename → range {l + 1}:{sc + 1}-{ec + 1} placeholder `{placeholder}`, expected the simple name `{r.target.name}` at {r.span.line}:{ch + 1}"
+    match ← renameAt env uri (r.span.line - 1) ch (r.target.name ++ "Renamed") with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok .null => fail s!"{at_}: rename → null on the reference `{Naru.renderPath r.path}`"
+    | .ok (.refused code msg) => fail s!"{at_}: rename refused ({code}: {msg})"
+    | .ok (.edits changes) =>
+      let _ ← checkRenameEdits env [(abs, text)] (env.root / ".lake" / "naru" / "test" / "lsp" / "rename-single") s!"{p} (single-document unit)"
+        r.target.name (r.target.name ++ "Renamed") changes
+        [(uri, r.span.line - 1, ch), (uri, r.target.span.line - 1, utf16Of text r.target.span.line r.target.span.col)]
     didClose env uri
     let some got ← barrier env | return
     let _ ← agrees s!"{p}: didClose" got #[] [uri]
@@ -877,7 +1169,7 @@ def checks (env : Env) : M Unit := do
         else ok s!"{at_}: textDocument/completion after `{head}.` → the {ed.variants.size} variant(s) of enum `{ed.name}` (kind EnumMember, detail `{ed.name}.<Variant>(…)`), nothing else"
   -- 5d. 欄名と stdlib のメソッド名(型検査の索引 `Checked.members`): 欄名へのホバーは `Record.欄: 型` と record の宣言コメント、定義ジャンプは
   -- record の欄の名前のトークン。Set のメソッド名へのホバーは受け手の型で実体化した署名
-  match unitChecked.members.find? (·.kind == .field) with
+  match unitChecked.members.find? fun m => m.kind == .field && !m.init with
   | none => fail s!"{unitRoot}/: no resolved field reference to probe"
   | some fm =>
     let text := (unitSrc.lookup fm.file).getD ""
@@ -977,6 +1269,303 @@ def checks (env : Env) : M Unit := do
     let some got ← barrier env | return
     if ← agrees s!"{rel env mm.file}: didChange (restore `{mm.name}`)" got #[] [mmUri] then
       ok s!"{rel env mm.file}: didChange back to the original → 0 diagnostics"
+  -- 5e. リネーム(C32)、宣言名: 別ファイルの fn 8 の参照の先頭で `prepareRename` が名前の範囲(経路の宣言名の区切り)と placeholder を返し、
+  -- `rename` の WorkspaceEdit が単位の全ファイルのその名前(コメントを除いた `grep -w` の出現数と同数。宣言のトークンと参照を含む)を
+  -- 一時名に書き換え、作業ツリーの複製に適用して `compileSources` / CLI の `naru compile` が診断 0。宣言名の上からも同じ編集
+  let renameDir := env.root / ".lake" / "naru" / "test" / "lsp" / "rename"
+  -- 数え方(コメントを除いた `grep -w`)が成り立つ fn: 名前が欄名・variant 名・仮引数名・局所名と重ならないもの(`gfVotes` は fn と欄の両方にある)
+  let allMemberNames := unitChecked.mods.toList.flatMap fun m => m.decls.toList.flatMap fun d => d.fields.toList.map (·.name) ++ d.variants.toList.map (·.name)
+  let allLocalNames := unitChecked.mods.toList.flatMap fun m => m.decls.toList.flatMap fun d =>
+    d.params.toList.map (·.name) ++ (d.body.toList.flatMap Naru.Lsp.exprBinders).map (·.1)
+  let distinctName (n : String) : Bool := !allMemberNames.contains n && !allLocalNames.contains n
+  let renameFnRefs := distinctTargets (cross.filter fun r => r.target.kind == .fn && distinctName r.target.name) 8
+  if renameFnRefs.isEmpty then
+    fail s!"{unitRoot}/: no cross-file fn reference whose name is distinct from all fields, variants, parameters and local names (needed for the rename count check)"
+  let mut nRename := 0
+  let mut firstFnEdits : Option (Naru.Resolve.Ref × List (String × List TextEdit)) := none
+  for r in renameFnRefs do
+    let text := (unitSrc.lookup r.file).getD ""
+    let name := r.target.name
+    let newName := name ++ "Renamed"
+    let at_ := s!"{rel env r.file}:{r.span.line}:{r.span.col}"
+    let ch := utf16Of text r.span.line r.span.col
+    let uri := System.Uri.pathToUri r.file
+    -- 宣言名の区切りの期待: 単純名なら先頭、修飾名なら最後の区切り(経路は空白なしで書かれている前提: 5c'' と同じ)
+    let nameStart := if r.path.length == 1 then ch else ch + (Naru.renderPath r.path.dropLast).length + 1
+    let mut prepared := false
+    match ← prepareRenameAt env uri (r.span.line - 1) ch with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok none => fail s!"{at_}: prepareRename → null on the reference `{Naru.renderPath r.path}` to fn `{name}`"
+    | .ok (some ((l, sc, ec), placeholder)) =>
+      if placeholder == name && l == r.span.line - 1 && sc == nameStart && ec == nameStart + name.length then prepared := true
+      else fail s!"{at_}: prepareRename → range {l + 1}:{sc + 1}-{ec + 1} placeholder `{placeholder}`, expected `{name}` at {r.span.line}:{nameStart + 1}-{nameStart + name.length + 1}"
+    if !prepared then continue
+    match ← renameAt env uri (r.span.line - 1) ch newName with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok .null => fail s!"{at_}: rename → null on fn `{name}`"
+    | .ok (.refused code msg) => fail s!"{at_}: rename `{name}` → `{newName}` refused ({code}: {msg})"
+    | .ok (.edits changes) =>
+      let targetText := (unitSrc.lookup r.target.file).getD ""
+      let declPos := (System.Uri.pathToUri r.target.file, r.target.span.line - 1, utf16Of targetText r.target.span.line r.target.span.col)
+      if ← checkRenameEdits env unitSrc renameDir s!"{at_} (`{Naru.renderPath r.path}` → fn `{name}` in {rel env r.target.file})" name newName changes
+          [(uri, r.span.line - 1, nameStart), declPos] then
+        nRename := nRename + 1
+        if firstFnEdits.isNone then firstFnEdits := some (r, changes)
+  if nRename == renameFnRefs.length && nRename > 0 then
+    ok s!"{unitRoot}/: textDocument/prepareRename + rename on {renameFnRefs.length} cross-file fn reference(s) ({", ".intercalate (renameFnRefs.map (·.target.name))}) → the name's range, and a WorkspaceEdit over the unit whose edits equal the word occurrences outside comments, compile clean after applying ({renameDir})"
+  -- 宣言名の上からのリネームは参照からと同じ編集
+  match firstFnEdits with
+  | none => pure ()
+  | some (r, fromRef) =>
+    let targetText := (unitSrc.lookup r.target.file).getD ""
+    let at_ := s!"{rel env r.target.file}:{r.target.span.line}:{r.target.span.col}"
+    match ← renameAt env (System.Uri.pathToUri r.target.file) (r.target.span.line - 1) (utf16Of targetText r.target.span.line r.target.span.col) (r.target.name ++ "Renamed") with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok (.edits fromDecl) =>
+      if sameEdits fromDecl fromRef then ok s!"{at_}: textDocument/rename on the declaration name `{r.target.name}` → the same edits as from its reference"
+      else fail s!"{at_}: rename on the declaration name `{r.target.name}` → different edits than from its reference"
+    | .ok .null => fail s!"{at_}: rename on the declaration name `{r.target.name}` → null"
+    | .ok (.refused code msg) => fail s!"{at_}: rename on the declaration name `{r.target.name}` refused ({code}: {msg})"
+    -- 不適切な新しい名前は拒否(-32803): 予約語、大文字始まり(大文字 / 小文字の区分を変える)、既存の宣言名、識別子でない
+    let uri := System.Uri.pathToUri r.file
+    let text := (unitSrc.lookup r.file).getD ""
+    let ch := utf16Of text r.span.line r.span.col
+    let other := ((renameFnRefs.find? fun r' => r'.target.name != r.target.name).map (·.target.name)).getD "slotStart"
+    let mut nRefused := 0
+    let bad : List (String × String) := [("match", "a keyword"), (r.target.name.capitalize, "an uppercase name"), (other, "an existing declaration"), ("1abc", "not an identifier")]
+    for (newName, why) in bad do
+      match ← renameAt env uri (r.span.line - 1) ch newName with
+      | .ok (.refused code _) =>
+        if code == -32803 then nRefused := nRefused + 1
+        else fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: rename `{r.target.name}` → `{newName}` ({why}) refused with code {code}, expected -32803 (RequestFailed)"
+      | .ok .null => fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: rename `{r.target.name}` → `{newName}` ({why}) → null, expected an error"
+      | .ok (.edits _) => fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: rename `{r.target.name}` → `{newName}` ({why}) → edits, expected an error"
+      | .error e => fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: {e}"
+    if nRefused == bad.length then
+      ok s!"{rel env r.file}:{r.span.line}:{r.span.col}: rename `{r.target.name}` to {bad.map (·.1)} (a keyword / an uppercase name / an existing declaration / not an identifier) → error -32803 for each"
+  -- 5e'. リネーム(C32)、欄名: 単位の中で名前が他の宣言・他の record の欄・仮引数と重ならない欄(型検査の索引 `Checked.members` の最初のそのような読み)で、
+  -- 読みの位置と record の宣言の欄名の位置からの `rename` が、宣言の欄名・式の中の全読み・record literal の全初期化(コメントを除いた `grep -w` と同数)を書き換える
+  let allDeclNames := unitChecked.mods.toList.flatMap fun m => m.decls.toList.map (·.name)
+  let allParamNames := unitChecked.mods.toList.flatMap fun m => m.decls.toList.flatMap fun d => d.params.toList.map (·.name)
+  let fieldOwners (name : String) : List String := unitChecked.mods.toList.flatMap fun m => (m.decls.toList.filter fun d => d.fields.any (·.name == name)).map fun d => Naru.renderPath (m.name ++ [d.name])
+  let distinctField := unitChecked.members.find? fun m => m.kind == .field && !m.init && !allDeclNames.contains m.name && !allParamNames.contains m.name && fieldOwners m.name == [m.owner]
+  match distinctField with
+  | none => fail s!"{unitRoot}/: no field read whose name is distinct from all declarations, parameters and other records' fields (needed for the field rename check)"
+  | some fm =>
+    let text := (unitSrc.lookup fm.file).getD ""
+    let at_ := s!"{rel env fm.file}:{fm.span.line}:{fm.span.col}"
+    let ch := utf16Of text fm.span.line fm.span.col
+    let uri := System.Uri.pathToUri fm.file
+    let newName := fm.name ++ "Renamed"
+    match (unitChecked.mods.toList.findSome? fun m => (m.decls.find? fun d => Naru.renderPath (m.name ++ [d.name]) == fm.owner).map fun d => (m, d)) with
+    | none => fail s!"{at_}: the record `{fm.owner}` of field `{fm.name}` is not in the unit"
+    | some (rm, rd) =>
+      match rd.fields.find? (·.name == fm.name) with
+      | none => fail s!"{at_}: record `{rd.name}` has no field `{fm.name}`"
+      | some f =>
+        let rmText := (unitSrc.lookup rm.file).getD ""
+        let declPos := (System.Uri.pathToUri rm.file, f.span.line - 1, utf16Of rmText f.span.line f.span.col)
+        let inits := unitChecked.members.toList.filter fun m => m.kind == .field && m.init && m.owner == fm.owner && m.name == fm.name
+        let initPos := inits.map fun m => (System.Uri.pathToUri m.file, m.span.line - 1, utf16Of ((unitSrc.lookup m.file).getD "") m.span.line m.span.col)
+        match ← prepareRenameAt env uri (fm.span.line - 1) ch with
+        | .error e => fail s!"{at_}: {e}"
+        | .ok none => fail s!"{at_}: prepareRename → null on field `{fm.name}`"
+        | .ok (some ((l, sc, ec), placeholder)) =>
+          if placeholder == fm.name && l == fm.span.line - 1 && sc == ch && ec == ch + fm.name.length then
+            ok s!"{at_}: textDocument/prepareRename on field `{fm.name}` of {rd.kind.describe} `{rd.name}` → its range, placeholder `{fm.name}`"
+          else fail s!"{at_}: prepareRename → range {l + 1}:{sc + 1}-{ec + 1} placeholder `{placeholder}`, expected `{fm.name}` at {fm.span.line}:{ch + 1}"
+        match ← renameAt env uri (fm.span.line - 1) ch newName with
+        | .error e => fail s!"{at_}: {e}"
+        | .ok .null => fail s!"{at_}: rename → null on field `{fm.name}`"
+        | .ok (.refused code msg) => fail s!"{at_}: rename field `{fm.name}` refused ({code}: {msg})"
+        | .ok (.edits fromRead) =>
+          if ← checkRenameEdits env unitSrc renameDir s!"{at_} (field `{fm.name}` of {rd.kind.describe} `{rd.name}`, {inits.length} record literal initialization(s))" fm.name newName fromRead
+              ([(uri, fm.span.line - 1, ch), declPos] ++ initPos) then
+            if inits.isEmpty then fail s!"{at_}: field `{fm.name}` has no record literal initialization in the unit (the check wants to cover `R \{ {fm.name}: … }`)"
+            match ← renameAt env (System.Uri.pathToUri rm.file) (f.span.line - 1) (utf16Of rmText f.span.line f.span.col) newName with
+            | .ok (.edits fromDecl) =>
+              if sameEdits fromDecl fromRead then ok s!"{rel env rm.file}:{f.span.line}:{f.span.col}: textDocument/rename on the declared field `{fm.name}` → the same edits as from its read"
+              else fail s!"{rel env rm.file}:{f.span.line}:{f.span.col}: rename on the declared field `{fm.name}` → different edits than from its read"
+            | .ok .null => fail s!"{rel env rm.file}:{f.span.line}:{f.span.col}: rename on the declared field `{fm.name}` → null"
+            | .ok (.refused code msg) => fail s!"{rel env rm.file}:{f.span.line}:{f.span.col}: rename on the declared field `{fm.name}` refused ({code}: {msg})"
+            | .error e => fail s!"{rel env rm.file}:{f.span.line}:{f.span.col}: {e}"
+  -- 5e''. リネームできない位置では null: コメント行、予約語 `fn`、仮引数(局所名)、enum の宣言の中の variant 名、stdlib のメソッド名
+  for (what, pos) in [("a comment line", commentLine.map (·, 2)), ("the keyword `fn`", fnLine.map (·, 0))] do
+    match pos with
+    | none => fail s!"{probeRel}: no {what} to probe"
+    | some (l, ch) => checkRenameNull env probePath l ch what
+  match (unitChecked.mods.find? (·.file == probePath)).bind fun m => m.decls.find? fun d => d.kind == .fn && !d.params.isEmpty with
+  | none => fail s!"{probeRel}: no fn with a parameter to probe"
+  | some d =>
+    let p := d.params[0]!
+    checkRenameNull env probePath (p.span.line - 1) (utf16Of probeText p.span.line p.span.col) s!"the parameter `{p.name}` of fn `{d.name}` (a local name)"
+  match unitChecked.mods.toList.findSome? fun m => (m.decls.find? fun d => d.kind == .enum && !d.variants.isEmpty).map fun d => (m, d) with
+  | none => fail s!"{unitRoot}/: no enum with a variant to probe"
+  | some (vm, vd) =>
+    let v := vd.variants[0]!
+    checkRenameNull env vm.file (v.span.line - 1) (utf16Of ((unitSrc.lookup vm.file).getD "") v.span.line v.span.col) s!"the declared variant `{v.name}` of enum `{vd.name}`"
+  match unitChecked.members.find? (·.kind == .method) with
+  | none => fail s!"{unitRoot}/: no stdlib method reference to probe"
+  | some mr =>
+    checkRenameNull env mr.file (mr.span.line - 1) (utf16Of ((unitSrc.lookup mr.file).getD "") mr.span.line mr.span.col) s!"the stdlib method `{mr.name}`"
+  -- 5e'''. リネームの検体 `tests/units/accept/rename_cases/`: 略記の欄 `Point { x, ..p }`(欄の改名は `xRenamed: x`、宣言の改名は値だけ)、
+  -- claim bundle の略記の項目 `nonNegative,`(claim の改名は `nonNegative: nonNegativeRenamed` で項目名を保つ)と明示の項目 `second: doubled`、
+  -- 局所名に捕まる改名(`twice` → `v`)の拒否、予約名 / 既存の欄名の拒否、`.` の前後に空白のある経路(`Color . Red`)、診断のある単位と古い索引での拒否
+  match (← listUnits "accept").find? (·.name == "rename_cases") with
+  | none => fail s!"{unitsDir}/accept/rename_cases is missing"
+  | some u =>
+    let mut rcSrc : List (String × String) := []
+    for f in u.files do
+      let abs := (env.root / f).toString
+      rcSrc := rcSrc ++ [(abs, ← IO.FS.readFile abs)]
+    let rcUris := rcSrc.map fun (f, _) => System.Uri.pathToUri f
+    let shapes := (rcSrc.find? fun (f, _) => f.endsWith "Shapes.naru").map (·.1) |>.getD ""
+    let rules := (rcSrc.find? fun (f, _) => f.endsWith "Rules.naru").map (·.1) |>.getD ""
+    let shapesText := (rcSrc.lookup shapes).getD ""
+    let rulesText := (rcSrc.lookup rules).getD ""
+    let shapesUri := System.Uri.pathToUri shapes
+    let rulesUri := System.Uri.pathToUri rules
+    let (rcDiags, _) := Naru.compileSources rcSrc
+    if !rcDiags.isEmpty then fail s!"rename_cases: naru compile reports {rcDiags.size} diagnostic(s) for the fixture"
+    for (f, t) in rcSrc do didOpen env (System.Uri.pathToUri f) t
+    let some got ← barrier env | return
+    let _ ← agrees "rename_cases: didOpen" got #[] rcUris
+    let at_ (needle : String) (text : String) (off : Nat := 0) (occurrence : Nat := 0) : Nat × Nat :=
+      match findIn text needle occurrence with
+      | some (l, c) => (l, c + off)
+      | none => (0, 0)
+    let ed (uri : String) (pos : Nat × Nat) (width : Nat) (newText : String) : String × TextEdit := (uri, (pos.1, pos.2, pos.2 + width, newText))
+    -- 欄 `x`(宣言 → 初期化 `x: 0`、略記 `{ x, ..p }` → `xRenamed: x`、読み `p.x`。仮引数 `x` は触らない)
+    let fieldDecl := at_ "x: Nat" shapesText
+    match ← renameAt env shapesUri fieldDecl.1 fieldDecl.2 "xRenamed" with
+    | .ok (.edits changes) =>
+      let _ ← checkExactEdits env rcSrc "rename_cases: field `x` of `Point` from its declaration" changes
+        [ed shapesUri fieldDecl 1 "xRenamed", ed shapesUri (at_ "x: 0" shapesText) 1 "xRenamed",
+         ed shapesUri (at_ "x, ..p" shapesText) 1 "xRenamed: x", ed shapesUri (at_ "p.x" shapesText 2) 1 "xRenamed"]
+    | .ok .null => fail "rename_cases: rename on field `x` → null"
+    | .ok (.refused code msg) => fail s!"rename_cases: rename on field `x` refused ({code}: {msg})"
+    | .error e => fail s!"rename_cases: {e}"
+    checkRenameRefused env shapesUri fieldDecl.1 fieldDecl.2 "mk" "reserved" "rename_cases: field `x` → `mk`"
+    checkRenameRefused env shapesUri fieldDecl.1 fieldDecl.2 "y" "already has a field" "rename_cases: field `x` → `y`"
+    -- claim `nonNegative`(宣言と略記の項目: 項目名を保って値だけ変える)
+    let claimPos := at_ "claim nonNegative" rulesText 6
+    match ← renameAt env rulesUri claimPos.1 claimPos.2 "nonNegativeRenamed" with
+    | .ok (.edits changes) =>
+      if ← checkExactEdits env rcSrc "rename_cases: claim `nonNegative` (shorthand bundle item)" changes
+          [ed rulesUri claimPos "nonNegative".length "nonNegativeRenamed", ed rulesUri (at_ "  nonNegative," rulesText 2) "nonNegative".length "nonNegative: nonNegativeRenamed"] then
+        let renamedRules := applyEdits rulesText ((changes.lookup rulesUri).getD [])
+        match Naru.parseSource rules renamedRules with
+        | .ok m =>
+          let items := ((m.decls.find? (·.kind == .claimBundle)).map fun d => d.items.toList.map (·.1)).getD []
+          if items == ["nonNegative", "second"] then ok s!"rename_cases: after renaming the claim, the bundle's item names are unchanged {items} (claim surface preserved)"
+          else fail s!"rename_cases: after renaming the claim, the bundle's item names are {items}, expected [nonNegative, second]"
+        | .error d => fail s!"rename_cases: the renamed Rules.naru does not parse: {d.msg}"
+    | .ok .null => fail "rename_cases: rename on claim `nonNegative` → null"
+    | .ok (.refused code msg) => fail s!"rename_cases: rename on claim `nonNegative` refused ({code}: {msg})"
+    | .error e => fail s!"rename_cases: {e}"
+    -- claim `doubled`(明示の項目 `second: doubled`: 値だけ変わる)
+    let doubledPos := at_ "claim doubled" rulesText 6
+    match ← renameAt env rulesUri doubledPos.1 doubledPos.2 "doubledRenamed" with
+    | .ok (.edits changes) =>
+      let _ ← checkExactEdits env rcSrc "rename_cases: claim `doubled` (explicit bundle item `second: doubled`)" changes
+        [ed rulesUri doubledPos "doubled".length "doubledRenamed", ed rulesUri (at_ "second: doubled" rulesText 8) "doubled".length "doubledRenamed"]
+    | .ok .null => fail "rename_cases: rename on claim `doubled` → null"
+    | .ok (.refused code msg) => fail s!"rename_cases: rename on claim `doubled` refused ({code}: {msg})"
+    | .error e => fail s!"rename_cases: {e}"
+    -- fn `twice`: 局所名 `v` に捕まる改名は拒否、`twiceRenamed` は宣言 + 呼出し 2 つ(runtime の `scale`、spec の `doubled`)
+    let twicePos := at_ "fn twice" shapesText 3
+    checkRenameRefused env shapesUri twicePos.1 twicePos.2 "v" "captured" "rename_cases: fn `twice` → `v` (a local name of `scale` which calls it)"
+    let twiceExpected := [ed shapesUri twicePos 5 "twiceRenamed", ed shapesUri (at_ "{ twice(v) }" shapesText 2) 5 "twiceRenamed", ed rulesUri (at_ "{ twice(n)" rulesText 2) 5 "twiceRenamed"]
+    match ← renameAt env shapesUri twicePos.1 twicePos.2 "twiceRenamed" with
+    | .ok (.edits changes) => let _ ← checkExactEdits env rcSrc "rename_cases: fn `twice`" changes twiceExpected
+    | .ok .null => fail "rename_cases: rename on fn `twice` → null"
+    | .ok (.refused code msg) => fail s!"rename_cases: rename on fn `twice` refused ({code}: {msg})"
+    | .error e => fail s!"rename_cases: {e}"
+    -- `Color . Red`(空白入りの経路): `Red` の上は null(variant)、`Color` の上は enum の名前の範囲、改名は宣言・仮引数の型・経路の 3 箇所
+    let spaced := at_ "Color . Red" shapesText
+    checkRenameNull env shapes spaced.1 (spaced.2 + 8) "the variant `Red` of the spaced path `Color . Red`"
+    match ← prepareRenameAt env shapesUri spaced.1 spaced.2 with
+    | .ok (some ((l, sc, ec), placeholder)) =>
+      if placeholder == "Color" && l == spaced.1 && sc == spaced.2 && ec == spaced.2 + 5 then
+        ok s!"rename_cases: textDocument/prepareRename on `Color` of the spaced path `Color . Red` → the `Color` token, placeholder `Color`"
+      else fail s!"rename_cases: prepareRename on `Color . Red` → range {l + 1}:{sc + 1}-{ec + 1} placeholder `{placeholder}`, expected `Color` at {spaced.1 + 1}:{spaced.2 + 1}"
+    | .ok none => fail "rename_cases: prepareRename on `Color` of `Color . Red` → null"
+    | .error e => fail s!"rename_cases: {e}"
+    match ← renameAt env shapesUri spaced.1 spaced.2 "ColorRenamed" with
+    | .ok (.edits changes) =>
+      let _ ← checkExactEdits env rcSrc "rename_cases: enum `Color` from the spaced path" changes
+        [ed shapesUri (at_ "enum Color" shapesText 5) 5 "ColorRenamed", ed shapesUri (at_ "c: Color" shapesText 3) 5 "ColorRenamed", ed shapesUri spaced 5 "ColorRenamed"]
+    | .ok .null => fail "rename_cases: rename on enum `Color` → null"
+    | .ok (.refused code msg) => fail s!"rename_cases: rename on enum `Color` refused ({code}: {msg})"
+    | .error e => fail s!"rename_cases: {e}"
+    -- 診断のある単位(E011)では拒否、戻すと通る。構文エラーで索引が古いままの文書でも拒否、戻すと通る
+    let brokenE011 := shapesText ++ "\nfn broken() -> Nat { lspUndefinedName(1) }\n"
+    didChange env shapesUri 2 brokenE011
+    let some got ← barrier env | return
+    let brokenExpected := expectedOf (rcSrc.map fun (f, t) => if f == shapes then (f, brokenE011) else (f, t))
+    if ← agrees "rename_cases: didChange (E011)" got brokenExpected [shapesUri] then
+      checkRenameRefused env shapesUri twicePos.1 twicePos.2 "twiceRenamed" "diagnostics" "rename_cases: with E011 in the unit, rename `twice`"
+    didChange env shapesUri 3 shapesText
+    let some got ← barrier env | return
+    if ← agrees "rename_cases: didChange (restore)" got #[] [shapesUri] then
+      match ← renameAt env shapesUri twicePos.1 twicePos.2 "twiceRenamed" with
+      | .ok (.edits changes) => let _ ← checkExactEdits env rcSrc "rename_cases: fn `twice` after restoring the text" changes twiceExpected
+      | .ok .null => fail "rename_cases: rename on fn `twice` after restoring → null"
+      | .ok (.refused code msg) => fail s!"rename_cases: rename on fn `twice` after restoring refused ({code}: {msg})"
+      | .error e => fail s!"rename_cases: {e}"
+    let brokenSyntax := shapesText ++ "\nfn broken( {\n"
+    didChange env shapesUri 4 brokenSyntax
+    let some got ← barrier env | return
+    let syntaxExpected := expectedOf (rcSrc.map fun (f, t) => if f == shapes then (f, brokenSyntax) else (f, t))
+    if ← agrees "rename_cases: didChange (syntax error)" got syntaxExpected [shapesUri] then
+      checkRenameRefused env shapesUri twicePos.1 twicePos.2 "twiceRenamed" "changed since" "rename_cases: with a syntax error (stale index), rename `twice`"
+    didChange env shapesUri 5 shapesText
+    let some got ← barrier env | return
+    if ← agrees "rename_cases: didChange (restore again)" got #[] [shapesUri] then
+      match ← renameAt env shapesUri twicePos.1 twicePos.2 "twiceRenamed" with
+      | .ok (.edits changes) => let _ ← checkExactEdits env rcSrc "rename_cases: fn `twice` after restoring the text again" changes twiceExpected
+      | .ok .null => fail "rename_cases: rename on fn `twice` after restoring again → null"
+      | .ok (.refused code msg) => fail s!"rename_cases: rename on fn `twice` after restoring again refused ({code}: {msg})"
+      | .error e => fail s!"rename_cases: {e}"
+    for uri in rcUris do
+      didClose env uri
+      let some got ← barrier env | return
+      let _ ← agrees s!"rename_cases: didClose {relOfUri env uri}" got #[] [uri]
+    -- 開いていないファイルがディスクで変わったとき(索引が古い): 検体の複製(`.lake/naru/test/lsp/stale/`)を単位として Shapes だけ開き、
+    -- 閉じている Rules をディスクで書き換えると断る。開いている文書を送り直して検査し直すと通る
+    let staleDir := env.root / ".lake" / "naru" / "test" / "lsp" / "stale"
+    if ← staleDir.pathExists then IO.FS.removeDirAll staleDir
+    IO.FS.createDirAll (staleDir / "src")
+    IO.FS.writeFile (staleDir / "naru.toml") (← IO.FS.readFile (env.root / unitsDir / "accept" / u.name / "naru.toml"))
+    let stalePath (f : String) : System.FilePath := staleDir / "src" / ((System.FilePath.mk f).fileName.getD f)
+    for (f, t) in rcSrc do IO.FS.writeFile (stalePath f) t
+    let sShapes := (stalePath shapes).toString
+    let sRules := (stalePath rules).toString
+    let sShapesUri := System.Uri.pathToUri sShapes
+    let sRulesUri := System.Uri.pathToUri sRules
+    let staleExpected := [ed sShapesUri twicePos 5 "twiceRenamed", ed sShapesUri (at_ "{ twice(v) }" shapesText 2) 5 "twiceRenamed", ed sRulesUri (at_ "{ twice(n)" rulesText 2) 5 "twiceRenamed"]
+    didOpen env sShapesUri shapesText
+    let some got ← barrier env | return
+    if ← agrees "stale copy: didOpen Shapes.naru (Rules.naru stays closed)" got #[] [sShapesUri] then
+      match ← renameAt env sShapesUri twicePos.1 twicePos.2 "twiceRenamed" with
+      | .ok (.edits changes) => let _ ← checkExactEdits env [(sShapes, shapesText), (sRules, rulesText)] "stale copy: fn `twice` with Rules.naru closed (read from disk)" changes staleExpected
+      | .ok .null => fail "stale copy: rename on fn `twice` → null"
+      | .ok (.refused code msg) => fail s!"stale copy: rename on fn `twice` refused ({code}: {msg})"
+      | .error e => fail s!"stale copy: {e}"
+      let rulesChanged := rulesText ++ "// changed on disk after the last check\n"
+      IO.FS.writeFile (stalePath rules) rulesChanged
+      checkRenameRefused env sShapesUri twicePos.1 twicePos.2 "twiceRenamed" "changed on disk" "stale copy: with the closed Rules.naru changed on disk, rename `twice`"
+      didChange env sShapesUri 2 shapesText
+      let some got ← barrier env | return
+      if ← agrees "stale copy: didChange (re-check reads the disk)" got #[] [sShapesUri] then
+        match ← renameAt env sShapesUri twicePos.1 twicePos.2 "twiceRenamed" with
+        | .ok (.edits changes) => let _ ← checkExactEdits env [(sShapes, shapesText), (sRules, rulesChanged)] "stale copy: fn `twice` after re-checking" changes staleExpected
+        | .ok .null => fail "stale copy: rename on fn `twice` after re-checking → null"
+        | .ok (.refused code msg) => fail s!"stale copy: rename on fn `twice` after re-checking refused ({code}: {msg})"
+        | .error e => fail s!"stale copy: {e}"
+      didClose env sShapesUri
+      let some got ← barrier env | return
+      let _ ← agrees "stale copy: didClose" got #[] [sShapesUri]
   -- 6. didChange(ソースルートの単位: 開いた文書のバッファで検査する)
   let targetRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let target := (env.root / targetRel).toString

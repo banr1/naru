@@ -231,7 +231,7 @@ partial def checkExpr (ctx : Ctx) : Expr → R Unit
     if let some t := tail then checkExpr c t
   | .recordLit span name fields base => do
     checkRef ctx span name
-    for (_, e) in fields do checkExpr ctx e
+    for (_, _, e) in fields do checkExpr ctx e
     if let some b := base then checkExpr ctx b
   | .listLit _ es => do
     for e in es do checkExpr ctx e

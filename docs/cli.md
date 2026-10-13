@@ -57,14 +57,15 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 ## 言語サーバー(`naru lsp`)
 
-Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバー・定義ジャンプ・補完に応える。応じるのは `initialize`(全文同期
-`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`、`completionProvider`(`triggerCharacters` は `.`))/ `initialized` / `shutdown` / `exit` と
-`textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)。それ以外の
-リクエスト(リネーム・整形の C32 / C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
+Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバー・定義ジャンプ・補完・リネームに応える。応じるのは `initialize`(全文同期
+`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`、`completionProvider`(`triggerCharacters` は `.`)、`renameProvider`(`prepareProvider`))/
+`initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、
+`textDocument/completion`(C31)、`textDocument/prepareRename` / `textDocument/rename`(C32)。それ以外のリクエスト(整形の C33 は未対応)には `MethodNotFound`(-32601)を
+返し、それ以外の通知(`$/…` 等)は無視する。
 
-- 位置にあるもの(ホバーと定義ジャンプの共通): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` に書かれた経路(`Phase.Tick` のような経路の上なら
+- 位置にあるもの(ホバー・定義ジャンプ・リネームの共通): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` の名前に書かれた経路(`Phase.Tick` のような経路の上なら
   その最長の接頭辞で解決した宣言と、カーソルのある区切り。UFCS の `x.f(…)` の `f` も)—、宣言名そのもの、record / state / enum の宣言の中の欄名 / variant 名、
-  型検査が解決した式の中の欄名 / stdlib のメソッド名の順に探す。位置はトークン(経路)の先頭から終わりまでで、終わりの直後の列(識別子の末尾にあるカーソル)も含む。
+  型検査が解決した式の中の欄名(読み `r.f` と record literal の初期化 `R { f: … }`)/ stdlib のメソッド名の順に探す。位置はトークン(経路)の先頭から終わりまでで、終わりの直後の列(識別子の末尾にあるカーソル)も含む。
   索引は名前解決が集めた参照(`Checked.refs`)と型検査が集めた欄・メソッドの参照(`Checked.members`)・アクセスの受け手の型(`Checked.accesses`、
   [architecture.md](architecture.md))で、単位ごとに直前の検査(全ファイルが構文解析できたもの)の結果を持ち、ホバーと定義ジャンプは検査し直さない。
 - 定義ジャンプ(`textDocument/definition`): 参照・宣言名からは同じコンパイル単位の宣言(別ファイルを含む)の URI と宣言の名前のトークンの範囲(`Location`)、欄名
@@ -91,6 +92,19 @@ Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開い�
   - それ以外の位置: 位置を含む宣言の仮引数と、その位置より前に束ねられた局所名(`let` / lambda / 量化 / パターン。有効範囲は位置の前後で近似する)、
     単位の全宣言(名前解決は単位の 1 つの大域表なので import の有無に関わらず見える)、予約語、組み込みの型と構築子(`Some` / `None` / `Ok` / `Err` / `sort`)。
   - 行コメント・同じ行で開いたブロックコメント・文字列リテラルの中では空(行をまたぐブロックコメントは見ない)。
+- リネーム(`textDocument/prepareRename` / `textDocument/rename`): 位置にあるもの(ホバーと同じ探し方)が宣言名(宣言そのもの、または参照の経路のうち
+  解決した宣言名の区切り — `Consensus.Objects.Time.genesisStamp` なら最後、`Phase.Tick` なら `Phase`)か欄名(record / state の宣言の中、式の中の読み `r.f`、
+  record literal の初期化 `R { f: … }`)なら、`prepareRename` はその名前のトークンの範囲と `placeholder`(現在の名前)を返し、`rename` は同じコンパイル単位の
+  全ファイル(開いていないファイルも URI で)のその名前の箇所を `newName` に置き換える `WorkspaceEdit`(`changes`: URI → `TextEdit` の列)を返す。
+  宣言なら名前解決の索引 `Checked.refs` のその宣言への全参照(値の位置・型の位置・record literal の型名・パターンの構築子・UFCS のメソッド名・scenario の
+  `input … = …;` の束縛)の宣言名の区切りと宣言の名前のトークン、欄なら型検査の索引 `Checked.members` のその欄の全参照(読みと初期化)と宣言の欄名。
+  略記(欄名 / 項目名と値が同じトークン: `R { f }`、`claim bundle B { c }`)は名前と値を分けて、宣言の改名なら `c: cRenamed`(項目名・欄名を保つ。
+  claim surface を変えない)、欄の改名なら `fRenamed: f`(値の局所名を保つ)に展開する。コメント・文字列の中は変えない。variant・stdlib のメソッド・局所名・
+  モジュール名の区切りの上では null。次のときは編集を返さず `RequestFailed`(-32803)と理由を返す: 単位に診断がある(索引が不完全)、開いている文書が直前の
+  検査の本文と違う(構文エラーの途中で索引が古い)、開いていないファイルがディスクで変わった、参照の位置の本文が元の名前でない、新しい名前が不適切 — 識別子(`[A-Za-z_][A-Za-z0-9_]*` + 末尾の `?`)で
+  ない、予約語・組み込みの名前、元の名前と大文字 / 小文字の区分が違う(大文字始まりは型・モジュール・enum・構築子の経路として読まれる)、宣言なら同じ
+  単位の他の宣言名と重なる(E012)か、その宣言を参照する宣言の局所名(仮引数・let・lambda・量化・パターン)に捕まる、欄なら同じ record の他の欄名と重なるか
+  Lean が生成する予約名(`mk` / `rec` …)。書き換えるのは単位の `.naru` だけで、生成 Lean・手書きの Proofs・golden は変えない(改名後に再生成する)。
 
 - 検査の単位: 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下なら `<ルート>/**/*.naru` 全体を 1 つのコンパイル単位にし、
   開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。

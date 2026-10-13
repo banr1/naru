@@ -1,0 +1,5 @@
+# 複数ファイルの受理例(IDEAL.md C32): 言語サーバーのリネームの検体。record literal の略記の欄(`Point { x, ..p }`)、claim bundle の略記の項目
+# (`nonNegative,`)と明示の項目(`second: doubled`)、改名すると局所名に捕まる呼出し(`scale(v)` の中の `twice(v)`)、`.` の前後に空白を置いた経路
+# (`Color . Red`)。CLI は exit 0、LSP は診断 0 件、生成 Lean は型検査が通る。`naru_test lsp` が rename の編集の位置と文面(略記は `old: new` /
+# `new: old` に展開する)、局所名との衝突の拒否、診断のある単位・古い索引での拒否を確かめる。
+sources = ["src"]

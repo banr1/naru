@@ -1,0 +1,13 @@
+// 受理例(C32): リネームの検体の spec 側。claim bundle の略記の項目(項目名 = claim 名)と明示の項目。
+module Rename.Rules
+import Rename.Shapes
+
+claim nonNegative(p: Point) { total(p) >= 0 }
+
+claim doubled(n: Nat) { twice(n) == n + n }
+
+// `nonNegative` の改名は項目名を保つ(`nonNegative: nonNegativeRenamed`)、`doubled` の改名は値だけを変える
+claim bundle Bundle {
+  nonNegative,
+  second: doubled
+}

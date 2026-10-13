@@ -59,8 +59,9 @@ inductive MemberKind where
   | method
 deriving Inhabited, BEq, Repr, DecidableEq
 
-/-- 型検査が解決した欄・stdlib メソッドの参照 1 つ(名前解決の索引 `Resolve.Ref` には無いもの。言語サーバーのホバー(C29)が引く)。
-`span` は欄名 / メソッド名のトークンの位置。型は宣言の終わり(`finishDecl`)に確定したもの。 -/
+/-- 型検査が解決した欄・stdlib メソッドの参照 1 つ(名前解決の索引 `Resolve.Ref` には無いもの。言語サーバーのホバー(C29)と
+欄名のリネーム(C32)が引く)。`span` は欄名 / メソッド名のトークンの位置。型は宣言の終わり(`finishDecl`)に確定したもの。
+欄は式の中の読み `r.f` と record literal の初期化 `R { f: … }`(`init`)の両方。 -/
 structure MemberRef where
   file : String
   span : Span
@@ -76,6 +77,10 @@ structure MemberRef where
   params : List (Option String × TyV) := []
   /-- 欄の型 / メソッドの戻り型。 -/
   ret : TyV
+  /-- record literal の欄の初期化(`R { f: e }` の `f`)なら true。読み `r.f` とメソッドは false。 -/
+  init : Bool := false
+  /-- 初期化が略記(`R { f }`: 欄名と値の局所名 `f` が同じトークン)なら true。リネームはこの欄を `new: f` に展開する。 -/
+  shorthand : Bool := false
 deriving Inhabited
 
 /-- 欄 / メソッドのアクセス(`r.name` / `r.name(…)`)1 つの受け手の型。名前が欄 / メソッドとして解決できたかに関わらず、受け手の型が決まった
@@ -1336,11 +1341,11 @@ partial def inferBinop (ctx : Ctx) (span : Span) (op : String) (l r : Expr) : M 
     return (.unknown, .error)
 
 partial def inferRecordLit (ctx : Ctx) (span : Span) (name : List String)
-    (fields : Array (String × Expr)) (base : Option Expr) : M (TyV × CExpr) := do
+    (fields : Array (String × Span × Expr)) (base : Option Expr) : M (TyV × CExpr) := do
   let t ← convTy ctx (.named span name #[])
   let vctx := ctx.value s!"a field of `{renderPath name}`"
   let loosely : M Unit := do
-    for (_, x) in fields do
+    for (_, _, x) in fields do
       let _ ← infer vctx x
     if let some b := base then
       let _ ← infer vctx b
@@ -1350,12 +1355,20 @@ partial def inferRecordLit (ctx : Ctx) (span : Span) (name : List String)
     | some (.record fs _) =>
       let mut seen : List String := []
       let mut given : List (String × CExpr) := []
-      for (fname, x) in fields do
+      for (fname, fsp, x) in fields do
         if seen.contains fname then
           report ctx x.span Code.arity s!"field `{fname}` is given twice in `{d}` literal"
         seen := fname :: seen
         match fs.toList.lookup fname with
-        | some ft => given := given ++ [(fname, ← check (ctx.value s!"the field `{fname}` of `{d}`") x ft)]
+        | some ft =>
+          -- 欄名の位置も索引に残す(C32: 欄名のリネームが record literal の初期化も書き換える。略記 `R { f }` は欄名と値が同じトークン)
+          let shorthand := match x with
+            | .var sp [n] => sp == fsp && n == fname
+            | _ => false
+          let m : MemberRef :=
+            { file := ctx.file, span := fsp, kind := .field, owner := k, ownerName := d, name := fname, recv := .named k d, ret := ft, init := true, shorthand }
+          modify fun s => { s with members := s.members.push m }
+          given := given ++ [(fname, ← check (ctx.value s!"the field `{fname}` of `{d}`") x ft)]
         | none =>
           report ctx x.span Code.arity s!"record `{d}` has no field `{fname}`"
           let _ ← infer vctx x
