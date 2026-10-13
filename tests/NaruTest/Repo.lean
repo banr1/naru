@@ -433,17 +433,8 @@ def declKinds : List Naru.DeclKind :=
   [.typeAlias, .record, .state, .enum, .input, .fn, .protocol, .observer, .scenario,
    .predicate, .condition, .regime, .property, .claim, .claimBundle]
 
-/-- 行が `//` のコメントなら、`//` と前後の空白を落とした本文。 -/
-def commentBody (l : String) : Option String :=
-  let t := l.trimAscii.toString
-  if t.startsWith "//" then some ((t.drop 2).toString.trimAscii.toString) else none
-
-/-- 宣言の行か: 字下げを除いて種類のキーワードで始まる(`claim` は `claim bundle` と区別する)。 -/
-def startsDecl (kind : Naru.DeclKind) (l : String) : Bool :=
-  let t := l.trimAscii.toString
-  match kind with
-  | .claim => t.startsWith "claim " && !(t.startsWith "claim bundle ")
-  | k => t.startsWith (k.describe ++ " ")
+/-! 宣言コメントの読み方(宣言の行の特定 `Naru.declLine?`、直上の `//` ブロック `Naru.commentAbove`、本文 `Naru.commentBody`)は
+コンパイラの `Naru/Describe.lean` のもので、`naru lsp` のホバー(C29)と同じ。 -/
 
 structure DeclCommentIssue where
   file : String
@@ -502,28 +493,12 @@ def scanDeclComments (path : String) : IO (Except String DeclCommentScan) := do
     for d in m.decls do
       let issue (reason : String) : DeclCommentIssue :=
         { file := path, line := d.span.line, kind := d.kind, name := d.name, reason }
-      -- 宣言の行: 名前のトークンの行から、種類のキーワードで始まる行まで(最大 3 行)遡る
-      let mut l := d.span.line
-      let mut found := false
-      let mut tries := 0
-      while l ≥ 1 && tries < 4 do
-        if l ≤ lines.size && startsDecl d.kind lines[l - 1]! then
-          found := true
-          break
-        l := l - 1
-        tries := tries + 1
-      if !found then
-        r := { r with issues := r.issues.push (issue s!"宣言の行を特定できない(名前の行の近くに `{d.kind.describe}` で始まる行が無い)") }
-        continue
-      -- 直上のコメントブロック(空行を挟まない `//` の連続)
-      let mut i := l - 1
-      let mut block : List String := []
-      while i ≥ 1 do
-        match commentBody lines[i - 1]! with
-        | some b =>
-          block := b :: block
-          i := i - 1
-        | none => break
+      -- 宣言の行: 名前のトークンの行から、種類のキーワードで始まる行まで(最大 3 行)遡る(`Naru.declLine?`)
+      let some l := Naru.declLine? lines d
+        | r := { r with issues := r.issues.push (issue s!"宣言の行を特定できない(名前の行の近くに `{d.kind.describe}` で始まる行が無い)") }
+          continue
+      -- 直上のコメントブロック(空行を挟まない `//` の連続。`Naru.commentAbove`)
+      let block := Naru.commentAbove lines l
       r := { r with decls := r.decls.push (d.kind, d.name, block) }
       match block with
       | [] =>

@@ -46,8 +46,10 @@ structure Checked where
   /-- 受理した再帰のサイクルと測度(`Totality`)。 -/
   recursions : Array Totality.Recursion
   /-- 名前解決が集めた参照の索引(値の位置・型の位置の名前 → 宣言。出現順)。名前解決まで進めば診断があっても残る
-  (言語サーバーの定義ジャンプ(C30)がこれを引く)。構文解析や同名モジュール(E017)で止まれば空。 -/
+  (言語サーバーの定義ジャンプ(C30)とホバー(C29)がこれを引く)。構文解析や同名モジュール(E017)で止まれば空。 -/
   refs : Array Resolve.Ref := #[]
+  /-- 型検査が解決した欄・stdlib メソッドの参照の索引(出現順。言語サーバーのホバー(C29)が引く)。型検査まで進めば診断があっても残る。 -/
+  members : Array Typecheck.MemberRef := #[]
 deriving Inhabited
 
 /-- `(パス, 内容)` の列を 1 つのコンパイル単位として検査する。診断の `file` には与えたパスがそのまま入る。
@@ -62,6 +64,7 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
   let mut core : Array Core.Module := #[]
   let mut recs : Array Totality.Recursion := #[]
   let mut refs : Array Resolve.Ref := #[]
+  let mut members : Array Typecheck.MemberRef := #[]
   if diags.isEmpty then
     -- C18: 同名のモジュール(E017)。名前解決の前に(大域表の鍵がモジュール名で決まるので)
     diags := Modules.duplicates mods
@@ -70,9 +73,10 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
     diags := ds
     refs := rs
   if diags.isEmpty then
-    let (ds, cs) := typecheckAll mods
+    let (ds, cs, ms) := typecheckAll mods
     diags := ds
     core := cs
+    members := ms
   if diags.isEmpty then
     -- C35: 診断なしに検査を通った Core に `.error` / 未解決の型が残っていればコンパイラの不変条件の破れ。
     -- 黙って backend に渡さず、宣言の位置に E014 を出す(`Core.Decl.unsound`)
@@ -93,7 +97,7 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
     recs := rs
   if !diags.isEmpty then
     core := #[]
-  return (diags, { mods, core, recursions := recs, refs })
+  return (diags, { mods, core, recursions := recs, refs, members })
 
 /-- パス列を読んで 1 つのコンパイル単位として検査する(`compileSources`)。 -/
 def compileFiles (paths : List String) : IO (Array Diagnostic × Checked) := do

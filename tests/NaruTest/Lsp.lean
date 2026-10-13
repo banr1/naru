@@ -2,18 +2,26 @@ import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C30)
+# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30)
 
 リポジトリのルートで実行する。`lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と標準入出力で LSP を話し、
 次を確かめる(`ok:` / `FAIL:`)。期待値はコンパイラ(`Naru.compileSources`、CLI の `compile` と同じ検査)から取る。
 
-1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `definitionProvider = true`(C30)がある。`initialized` を送る。
+1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `hoverProvider = true`(C29)・`definitionProvider = true`(C30)が
+   ある。`initialized` を送る。
 2. 未対応のリクエスト(`textDocument/signatureHelp`: C29〜C33 に挙げた以外のリクエスト)には `MethodNotFound`(-32601)が返る。この応答は以後、
    通知の処理の終わりを待つ barrier にも使う(サーバーはメッセージを順に処理するので、応答が返れば直前の通知の診断は送り終わっている)。
    定義ジャンプ(C30、`textDocument/definition`): 受理例 1 つ(単独の単位)を開き、同じファイルの参照の位置から、その宣言の名前の範囲が返る(3d)。
    移植ソース(5b): 別ファイルの fn / type への参照(先頭と、先頭の区切りの最後の文字)から、宣言ファイルの URI と宣言の名前のトークンの範囲
    (`compileSources` の参照の索引 `Checked.refs` の `target` から計算した期待)が返り、コメント行・予約語 `fn` の位置では null、
-   宣言名の上ではその宣言自身が返る(5c)。
+   宣言名の上ではその宣言自身が返る(5c)。欄名の上では record の欄の名前のトークンが返る(5d)。
+   ホバー(C29、`textDocument/hover`): 同じ参照の先頭へのホバーが Markdown(`contents.kind = "markdown"`)で、参照先の宣言の署名
+   (`Decl.signature`: fn なら各仮引数 `名前: 型` と `-> 戻り型`)・種類と名前・モジュール名と、その宣言の宣言コメント(C60)の 1 行目
+   (`Naru.declComment`)を含み、範囲が参照の経路を覆う(3d は単独の受理例なのでコメントは要求しない。5b の別ファイルの fn 8 / type 8)。
+   空白(空行・字下げ)・コメント行・予約語 `fn` の位置では null、宣言名の上ではその宣言の署名(5c。`fn genesisStamp() -> Stamp` と
+   `type Time = Int` は固定の期待で、表示関数の誤りも検出する)。record / enum の宣言の中の欄名 / variant 名の上では `Record.欄: 型` /
+   `Enum.Variant(型)` で定義ジャンプは自身(5c')。式の中の欄名の上では `Record.欄: 型` と欄の record の宣言コメント、Set の stdlib メソッド名の
+   上では受け手の型で実体化した署名 `Set<T>.m(…) -> 戻り型`(5d。型検査の索引 `Checked.members` から)。
 3. `tests/reject/` の各反例を `didOpen` すると、`naru compile` と同じ E 番号・同じ行(・列)の診断がその URI に返り、
    反例の先頭コメントが名指しする E 番号(`期待: … E001`)がその中にある。`didClose` で空になる。
    `tests/accept/` の各受理例(単独の単位)を `didOpen` すると診断 0 件(C35 の正常例 `prop_bool.naru` を含む)、`didClose` で空。
@@ -300,6 +308,98 @@ def distinctTargets (rs : Array Naru.Resolve.Ref) (n : Nat) : List Naru.Resolve.
     out := out ++ [r]
   return out
 
+/-! ## ホバー(C29) -/
+
+/-- 範囲の要約: (0 始まりの行, 開始の UTF-16 の列, 終わりの列)。1 行の中で幅が正のもの。 -/
+def parseRange (j : Json) : Except String (Nat × Nat × Nat) := do
+  let st ← j.getObjVal? "start"
+  let en ← j.getObjVal? "end"
+  let sl ← (st.getObjVal? "line" >>= Json.getNat?)
+  let sc ← (st.getObjVal? "character" >>= Json.getNat?)
+  let el ← (en.getObjVal? "line" >>= Json.getNat?)
+  let ec ← (en.getObjVal? "character" >>= Json.getNat?)
+  if el != sl || ec ≤ sc then throw s!"range {sl}:{sc}-{el}:{ec} is not a non-empty range on one line"
+  return (sl, sc, ec)
+
+/-- `textDocument/hover` を送り、`result` を読む: null → none、`Hover`(`contents` は `MarkupContent` の `markdown`、`range` あり)→ 本文と範囲。 -/
+def hoverAt (env : Env) (uri : String) (line ch : Nat) : IO (Except String (Option (String × (Nat × Nat × Nat)))) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/hover"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("position", Json.mkObj [("line", line), ("character", ch)])])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/hover"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then return .error s!"textDocument/hover → error {e.compress}"
+    match getField resp "result" with
+    | none => return .error s!"textDocument/hover: response without result: {resp.compress}"
+    | some Json.null => return .ok none
+    | some h =>
+      let some contents := getField h "contents" | return .error s!"textDocument/hover: result without contents: {h.compress}"
+      if getStr contents "kind" != some "markdown" then
+        return .error s!"textDocument/hover: contents.kind is not \"markdown\": {contents.compress}"
+      let some value := getStr contents "value" | return .error s!"textDocument/hover: contents without value: {contents.compress}"
+      let some range := getField h "range" | return .error s!"textDocument/hover: result without range: {h.compress}"
+      match parseRange range with
+      | .error e => return .error s!"textDocument/hover: {e}"
+      | .ok r => return .ok (some (value, r))
+
+/-- ホバーの本文に `needle` が含まれるか(Markdown の逃がし `\` を除いて比べる。`needle` は空でないこと)。 -/
+def hoverHas (value needle : String) : Bool :=
+  ((value.replace "\\" "").splitOn (needle.replace "\\" "")).length > 1
+
+/-- ホバーの本文の 1 行目(署名のコードブロックの中身)。 -/
+def hoverSignature (value : String) : String := ((value.splitOn "\n").getD 1 "")
+
+/-- 宣言 `d`(モジュール `m`)のホバーに含まれるべき文字列: 署名、種類と名前、モジュール、fn なら各仮引数 `名前: 型` と `-> 戻り型`。 -/
+def wantInHover (m : Naru.Module) (d : Naru.Decl) : List String :=
+  [d.signature, s!"{d.kind.describe} `{d.name}`", s!"module `{Naru.renderPath m.name}`"]
+    ++ (if d.kind == .fn then d.params.toList.map Naru.Param.render ++ (d.ret.toList.map fun t => s!"-> {t.render}") else [])
+
+/-- 位置 `(line1, col1)`(1 始まりの文字の列)へのホバーが、宣言 `d` の署名等と(`needComment` なら)宣言コメントの 1 行目を含み、
+範囲が `(line1, col1)` から始まって `minWidth` 以上の幅を持つか。失敗は `fail` に書く。 -/
+def checkHover (env : Env) (sources : List (String × String)) (file : String) (line1 col1 minWidth : Nat)
+    (m : Naru.Module) (d : Naru.Decl) (needComment : Bool) : M (Option String) := do
+  let text := (sources.lookup file).getD ""
+  let at_ := s!"{rel env file}:{line1}:{col1}"
+  let targetLines := (((sources.lookup m.file).getD "").splitOn "\n").toArray
+  let comment := Naru.declComment targetLines d
+  let mut want := wantInHover m d
+  if needComment then
+    match comment.head? with
+    | some summary => want := want ++ [summary]
+    | none =>
+      fail s!"{rel env m.file}:{d.span.line}: `{d.name}` has no declaration comment (C60), nothing to expect in the hover"
+      return none
+  let ch := utf16Of text line1 col1
+  match ← hoverAt env (System.Uri.pathToUri file) (line1 - 1) ch with
+  | .error e => fail s!"{at_}: {e}"; return none
+  | .ok none => fail s!"{at_}: hover → null, expected the hover of {d.kind.describe} `{d.name}`"; return none
+  | .ok (some (value, (l, sc, ec))) =>
+    let missing := want.filter fun n => !(hoverHas value n)
+    if !missing.isEmpty then
+      fail s!"{at_}: hover lacks {missing}; got: {value.take 300}"
+      return none
+    if l != line1 - 1 || sc != ch || ec < ch + minWidth then
+      fail s!"{at_}: hover range {l + 1}:{sc + 1}-{ec + 1} does not cover the token (expected start {ch + 1}, width ≥ {minWidth})"
+      return none
+    return some (hoverSignature value)
+
+/-- 参照 `r` の先頭へのホバー(参照先の宣言の署名・種類・モジュール・宣言コメントの 1 行目、範囲は経路の先頭から)。 -/
+def checkHoverOf (env : Env) (sources : List (String × String)) (checked : Naru.Checked) (r : Naru.Resolve.Ref)
+    (needComment : Bool) : M (Option String) := do
+  let some (m, d) := (checked.mods.find? (·.file == r.target.file)).bind fun m => (m.decls.find? (·.name == r.target.name)).map fun d => (m, d)
+    | fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: the target declaration `{r.target.name}` is not in {rel env r.target.file}"
+      return none
+  checkHover env sources r.file r.span.line r.span.col (r.path.head?.getD "").length m d needComment
+
+/-- 位置へのホバーが null であること。 -/
+def checkHoverNull (env : Env) (file : String) (line0 ch : Nat) (what : String) : M Unit := do
+  let at_ := s!"{rel env file}:{line0 + 1}:{ch + 1} ({what})"
+  match ← hoverAt env (System.Uri.pathToUri file) line0 ch with
+  | .ok none => ok s!"{at_}: textDocument/hover → null (no identifier there)"
+  | .ok (some (value, _)) => fail s!"{at_}: hover → {value.take 80}, expected null"
+  | .error e => fail s!"{at_}: {e}"
+
 def checks (env : Env) : M Unit := do
   let c := env.client
   -- 1. initialize / initialized
@@ -312,10 +412,11 @@ def checks (env : Env) : M Unit := do
   let change := sync >>= fun s => (s.getObjVal? "change" >>= Json.getNat?).toOption
   let openClose := sync >>= fun s => (s.getObjVal? "openClose" >>= Json.getBool?).toOption
   let definitionProvider := caps >>= fun s => (s.getObjVal? "definitionProvider" >>= Json.getBool?).toOption
-  if change == some 1 && openClose == some true && definitionProvider == some true then
-    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, definitionProvider = true"
+  let hoverProvider := caps >>= fun s => (s.getObjVal? "hoverProvider" >>= Json.getBool?).toOption
+  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true then
+    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true"
   else
-    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true and definitionProvider = true, got {resp.compress}"
+    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true and definitionProvider = true, got {resp.compress}"
   notify c "initialized" (Json.mkObj [])
   -- 2. 未対応のリクエスト
   let some _ ← barrier env | return
@@ -381,6 +482,8 @@ def checks (env : Env) : M Unit := do
     let some _ ← barrier env | return
     if ← checkDefinitionOf env [(abs, text)] r then
       ok s!"{p}: textDocument/definition on `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → {r.target.kind.describe} `{r.target.name}` at {showLoc env (wantLoc [(abs, text)] r.target)}"
+    if let some sig ← checkHoverOf env [(abs, text)] checked r (needComment := false) then
+      ok s!"{p}: textDocument/hover on `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → markdown with `{sig}`"
     didClose env uri
     let some got ← barrier env | return
     let _ ← agrees s!"{p}: didClose" got #[] [uri]
@@ -549,13 +652,24 @@ def checks (env : Env) : M Unit := do
       shown := shown ++ [s!"{Naru.renderPath r.path}@{rel env r.file}:{r.span.line} → {r.target.kind.describe} {r.target.name}@{showLoc env (wantLoc unitSrc r.target)}"]
   if nDef == (fnRefs ++ tyRefs).length && nDef > 0 then
     ok s!"{unitRoot}/: textDocument/definition on {fnRefs.length} cross-file fn reference(s) and {tyRefs.length} cross-file type reference(s) (at the head and at its last character) → the declaring file's URI and the declaration name's range: {shown}"
-  -- 5c. 宣言の無い位置では null、宣言名の上ではその宣言自身
+  -- 5b'. ホバー(C29): 同じ参照の先頭へのホバーが、参照先の宣言の署名(fn なら仮引数と戻り型)・種類と名前・モジュール・宣言コメントの 1 行目を含む
+  let mut nHover := 0
+  let mut shownHover : List String := []
+  for r in fnRefs ++ tyRefs do
+    if let some sig ← checkHoverOf env unitSrc unitChecked r (needComment := true) then
+      nHover := nHover + 1
+      shownHover := shownHover ++ [s!"{Naru.renderPath r.path}@{rel env r.file}:{r.span.line} → `{sig}`"]
+  if nHover == (fnRefs ++ tyRefs).length && nHover > 0 then
+    ok s!"{unitRoot}/: textDocument/hover on the same {fnRefs.length} cross-file fn reference(s) and {tyRefs.length} cross-file type reference(s) → markdown with the declaration's signature (fn: each parameter and the return type), kind and name, module, and the first line of its declaration comment: {shownHover}"
+  -- 5c. 宣言の無い位置では null、宣言名の上ではその宣言自身(定義ジャンプ)/ その宣言の署名(ホバー)
   let probeRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let probePath := (env.root / probeRel).toString
   let probeText := (unitSrc.lookup probePath).getD ""
   let probeLines := probeText.splitOn "\n"
   let commentLine := probeLines.findIdx? fun l => l.trimAscii.toString.startsWith "//"
   let fnLine := probeLines.findIdx? fun l => l.startsWith "fn "
+  let emptyLine := probeLines.findIdx? fun l => l.isEmpty
+  let indentLine := probeLines.findIdx? fun l => l.startsWith "  "
   for (what, pos) in [("a comment line", commentLine.map (·, 2)), ("the keyword `fn`", fnLine.map (·, 0))] do
     match pos with
     | none => fail s!"{probeRel}: no {what} to probe"
@@ -564,9 +678,14 @@ def checks (env : Env) : M Unit := do
       | .ok none => ok s!"{probeRel}:{l + 1}:{ch + 1} ({what}): textDocument/definition → null (no declaration there)"
       | .ok (some got) => fail s!"{probeRel}:{l + 1}:{ch + 1} ({what}): definition → {showLoc env got}, expected null"
       | .error e => fail s!"{probeRel}:{l + 1}:{ch + 1} ({what}): {e}"
-  match (unitChecked.mods.find? (·.file == probePath)).bind fun m => m.decls.find? (·.kind == .fn) with
+  for (what, pos) in [("a comment line", commentLine.map (·, 2)), ("the keyword `fn`", fnLine.map (·, 0)), ("an empty line", emptyLine.map (·, 0)),
+      ("the leading whitespace of an indented line", indentLine.map (·, 0))] do
+    match pos with
+    | none => fail s!"{probeRel}: no {what} to probe"
+    | some (l, ch) => checkHoverNull env probePath l ch what
+  match (unitChecked.mods.find? (·.file == probePath)).bind fun m => (m.decls.find? (·.kind == .fn)).map fun d => (m, d) with
   | none => fail s!"{probeRel}: no fn declaration to probe"
-  | some d =>
+  | some (pm, d) =>
     let self : Naru.Resolve.Sym := { name := d.name, qualified := d.name, kind := d.kind, file := probePath, span := d.span }
     let want := wantLoc unitSrc self
     match ← definitionAt env (System.Uri.pathToUri probePath) (d.span.line - 1) (utf16Of probeText d.span.line d.span.col) with
@@ -575,6 +694,108 @@ def checks (env : Env) : M Unit := do
       else fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name): definition → {showLoc env got}, expected {showLoc env want}"
     | .ok none => fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): definition → null, expected {showLoc env want}"
     | .error e => fail s!"{probeRel}:{d.span.line}:{d.span.col}: {e}"
+    -- 固定の期待(表示関数の誤りも検出する): Time.naru の最初の fn の署名は `fn genesisStamp() -> Stamp`
+    if let some sig ← checkHover env unitSrc probePath d.span.line d.span.col d.name.length pm d (needComment := true) then
+      if sig == "fn genesisStamp() -> Stamp" then
+        ok s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): textDocument/hover → markdown with `{sig}` (the fixed expectation) and its declaration comment"
+      else fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): hover signature `{sig}`, expected exactly `fn genesisStamp() -> Stamp`"
+  match (unitChecked.mods.find? (·.file == probePath)).bind fun m => (m.decls.find? (·.kind == .typeAlias)).map fun d => (m, d) with
+  | none => fail s!"{probeRel}: no type declaration to probe"
+  | some (pm, d) =>
+    if let some sig ← checkHover env unitSrc probePath d.span.line d.span.col d.name.length pm d (needComment := true) then
+      if sig == "type Time = Int" then
+        ok s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): textDocument/hover → markdown with `{sig}` (the fixed expectation) and its declaration comment"
+      else fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): hover signature `{sig}`, expected exactly `type Time = Int`"
+  -- 5c'. 宣言の中の欄名 / variant 名(record の最初の欄、enum の最初の variant): ホバーは `Record.欄: 型` / `Enum.Variant(型)`、定義ジャンプは自身
+  let declaredProbes : List (String × Option (Naru.Module × Naru.Decl × String × Naru.Span × String)) :=
+    [("field", (unitChecked.mods.toList.findSome? fun m => (m.decls.find? fun d => d.kind == .record && !d.fields.isEmpty).map fun d =>
+        let f := d.fields[0]!;
+        (m, d, f.name, f.span, s!"{d.name}.{f.name}: {f.ty.render}"))),
+     ("variant", (unitChecked.mods.toList.findSome? fun m => (m.decls.find? fun d => d.kind == .enum && !d.variants.isEmpty).map fun d =>
+        let v := d.variants[0]!;
+        (m, d, v.name, v.span, s!"{d.name}.{v.render}")))]
+  for (what, probe) in declaredProbes do
+    match probe with
+    | none => fail s!"{unitRoot}/: no {what} declaration to probe"
+    | some (dm, dd, name, sp, wantSig) =>
+      let text := (unitSrc.lookup dm.file).getD ""
+      let at_ := s!"{rel env dm.file}:{sp.line}:{sp.col}"
+      if tokenAt text sp.line sp.col != name then
+        fail s!"{at_}: the {what}'s position should be its name `{name}`, found `{tokenAt text sp.line sp.col}`"
+        continue
+      let ch := utf16Of text sp.line sp.col
+      let uri := System.Uri.pathToUri dm.file
+      match ← hoverAt env uri (sp.line - 1) ch with
+      | .error e => fail s!"{at_}: {e}"
+      | .ok none => fail s!"{at_}: hover on the declared {what} `{name}` → null"
+      | .ok (some (value, (l, sc, ec))) =>
+        if hoverSignature value != wantSig then
+          fail s!"{at_}: hover signature `{hoverSignature value}`, expected `{wantSig}`"
+        else if !(hoverHas value s!"{what} `{name}` of {dd.kind.describe} `{dd.name}`") then
+          fail s!"{at_}: hover lacks `{what} `{name}` of {dd.kind.describe} `{dd.name}``; got: {value.take 300}"
+        else if l != sp.line - 1 || sc != ch || ec != ch + name.length then
+          fail s!"{at_}: hover range {l + 1}:{sc + 1}-{ec + 1}, expected the {what} name `{name}`"
+        else ok s!"{at_}: textDocument/hover on the declared {what} `{name}` of {dd.kind.describe} `{dd.name}` → markdown with `{wantSig}`"
+      let selfSym : Naru.Resolve.Sym := { name, qualified := name, kind := dd.kind, file := dm.file, span := sp }
+      let want := wantLoc unitSrc selfSym
+      match ← definitionAt env uri (sp.line - 1) ch with
+      | .ok (some got) =>
+        if got == want then ok s!"{at_}: textDocument/definition on the declared {what} `{name}` → itself {showLoc env want}"
+        else fail s!"{at_}: definition on the declared {what} `{name}` → {showLoc env got}, expected {showLoc env want}"
+      | .ok none => fail s!"{at_}: definition on the declared {what} `{name}` → null, expected {showLoc env want}"
+      | .error e => fail s!"{at_}: {e}"
+  -- 5d. 欄名と stdlib のメソッド名(型検査の索引 `Checked.members`): 欄名へのホバーは `Record.欄: 型` と record の宣言コメント、定義ジャンプは
+  -- record の欄の名前のトークン。Set のメソッド名へのホバーは受け手の型で実体化した署名
+  match unitChecked.members.find? (·.kind == .field) with
+  | none => fail s!"{unitRoot}/: no resolved field reference to probe"
+  | some fm =>
+    let text := (unitSrc.lookup fm.file).getD ""
+    let at_ := s!"{rel env fm.file}:{fm.span.line}:{fm.span.col}"
+    let ch := utf16Of text fm.span.line fm.span.col
+    match (unitChecked.mods.toList.findSome? fun m => (m.decls.find? fun d => Naru.renderPath (m.name ++ [d.name]) == fm.owner).map fun d => (m, d)) with
+    | none => fail s!"{at_}: the record `{fm.owner}` of field `{fm.name}` is not in the unit"
+    | some (rm, rd) =>
+      let wantSig := s!"{fm.ownerName}.{fm.name}: {fm.ret.render}"
+      let summary := (Naru.declComment (((unitSrc.lookup rm.file).getD "").splitOn "\n").toArray rd).head?.getD ""
+      match ← hoverAt env (System.Uri.pathToUri fm.file) (fm.span.line - 1) ch with
+      | .error e => fail s!"{at_}: {e}"
+      | .ok none => fail s!"{at_}: hover on field `{fm.name}` → null"
+      | .ok (some (value, (l, sc, ec))) =>
+        let want := [wantSig, s!"field `{fm.name}` of {rd.kind.describe} `{rd.name}`", s!"module `{Naru.renderPath rm.name}`"] ++ (if summary.isEmpty then [] else [summary])
+        let missing := want.filter fun n => !(hoverHas value n)
+        if !missing.isEmpty then fail s!"{at_}: hover on field `{fm.name}` lacks {missing}; got: {value.take 300}"
+        else if l != fm.span.line - 1 || sc != ch || ec != ch + fm.name.length then
+          fail s!"{at_}: hover range {l + 1}:{sc + 1}-{ec + 1}, expected the field name `{fm.name}`"
+        else ok s!"{at_}: textDocument/hover on field `{fm.name}` → markdown with `{wantSig}`, `{rd.kind.describe} {rd.name}` of module {Naru.renderPath rm.name} and the record's declaration comment"
+      match rd.fields.find? (·.name == fm.name) with
+      | none => fail s!"{at_}: record `{rd.name}` has no field `{fm.name}`"
+      | some f =>
+        let fieldSym : Naru.Resolve.Sym := { name := f.name, qualified := fm.owner ++ "." ++ f.name, kind := rd.kind, file := rm.file, span := f.span }
+        let want := wantLoc unitSrc fieldSym
+        match ← definitionAt env (System.Uri.pathToUri fm.file) (fm.span.line - 1) ch with
+        | .ok (some got) =>
+          if got == want then ok s!"{at_}: textDocument/definition on field `{fm.name}` → the field in {rd.kind.describe} `{rd.name}` at {showLoc env want}"
+          else fail s!"{at_}: definition on field `{fm.name}` → {showLoc env got}, expected {showLoc env want}"
+        | .ok none => fail s!"{at_}: definition on field `{fm.name}` → null, expected {showLoc env want}"
+        | .error e => fail s!"{at_}: {e}"
+  match unitChecked.members.find? fun m => m.kind == .method && (match m.recv with | .set _ => true | _ => false) with
+  | none => fail s!"{unitRoot}/: no resolved Set method reference to probe"
+  | some mm =>
+    let text := (unitSrc.lookup mm.file).getD ""
+    let at_ := s!"{rel env mm.file}:{mm.span.line}:{mm.span.col}"
+    let ch := utf16Of text mm.span.line mm.span.col
+    let wantHead := s!"{mm.recv.render}.{mm.name}("
+    let wantRet := s!"-> {mm.ret.render}"
+    match ← hoverAt env (System.Uri.pathToUri mm.file) (mm.span.line - 1) ch with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok none => fail s!"{at_}: hover on method `{mm.name}` → null"
+    | .ok (some (value, (l, sc, ec))) =>
+      let want := [wantHead, wantRet, s!"method `{mm.name}` of `{mm.owner}`"]
+      let missing := want.filter fun n => !(hoverHas value n)
+      if !missing.isEmpty then fail s!"{at_}: hover on method `{mm.name}` lacks {missing}; got: {value.take 300}"
+      else if l != mm.span.line - 1 || sc != ch || ec != ch + mm.name.length then
+        fail s!"{at_}: hover range {l + 1}:{sc + 1}-{ec + 1}, expected the method name `{mm.name}`"
+      else ok s!"{at_}: textDocument/hover on stdlib method `{mm.name}` → markdown with `{hoverSignature value}`"
   -- 6. didChange(ソースルートの単位: 開いた文書のバッファで検査する)
   let targetRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let target := (env.root / targetRel).toString

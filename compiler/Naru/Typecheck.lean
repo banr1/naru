@@ -54,6 +54,30 @@ structure Entry where
   decl : Decl
 deriving Inhabited
 
+inductive MemberKind where
+  | field
+  | method
+deriving Inhabited, BEq, Repr, DecidableEq
+
+/-- 型検査が解決した欄・stdlib メソッドの参照 1 つ(名前解決の索引 `Resolve.Ref` には無いもの。言語サーバーのホバー(C29)が引く)。
+`span` は欄名 / メソッド名のトークンの位置。型は宣言の終わり(`finishDecl`)に確定したもの。 -/
+structure MemberRef where
+  file : String
+  span : Span
+  kind : MemberKind
+  /-- 欄なら record / state の修飾名(大域表の鍵)、メソッドなら受け手の型の名前(`Set` / `List` / … stdlib の表の名前)。 -/
+  owner : String
+  /-- 欄なら record / state の表示名、メソッドなら `owner` と同じ。 -/
+  ownerName : String
+  name : String
+  /-- 受け手の型。 -/
+  recv : TyV
+  /-- メソッドの仮引数(名前付きで渡せるものはその名前つき)。欄は空。 -/
+  params : List (Option String × TyV) := []
+  /-- 欄の型 / メソッドの戻り型。 -/
+  ret : TyV
+deriving Inhabited
+
 structure St where
   /-- 単純名と修飾名の両方を鍵にする(`Resolve` と同じ)。 -/
   decls : HashMap String Entry := {}
@@ -69,6 +93,10 @@ structure St where
   /-- いま検査中の宣言で、終わりに capability を要求する位置(`Set.of` / `Set.singleton` の要素の `eq` など。
   要素の型が後から決まるので、宣言の終わりに zonk してから検査する。満たさなければ E005)。 -/
   pendingCaps : Array (Span × String × TyV × String) := #[]
+  /-- 解決した欄・stdlib メソッドの参照(出現順。C29)。 -/
+  members : Array MemberRef := #[]
+  /-- `members` のうち型を確定済み(`finishDecl`)の個数。 -/
+  membersDone : Nat := 0
 
 abbrev M := StateM St
 
@@ -1161,7 +1189,11 @@ partial def inferField (ctx : Ctx) (span : Span) (r : Expr) (name : String) : M 
     match (← get).types.get? k with
     | some (.record fs _) =>
       match fs.toList.lookup name with
-      | some t => return (t, .field cr k name)
+      | some t =>
+        let m : MemberRef :=
+          { file := ctx.file, span := span, kind := .field, owner := k, ownerName := d, name := name, recv := rt, ret := t }
+        modify fun s => { s with members := s.members.push m }
+        return (t, .field cr k name)
       | none =>
         report ctx span Code.arity s!"record `{d}` has no field `{name}`"
         return (.unknown, .error)
@@ -1228,6 +1260,10 @@ partial def inferMethod (ctx : Ctx) (span : Span) (r : Expr) (name : String) (ar
         for (cap, t) in caps do
           requireCap ctx span cap t s!"`{tyName}.{name}`"
         need span ret s!"the result of `{tyName}.{name}`"
+        let m : MemberRef :=
+          { file := ctx.file, span := span, kind := .method, owner := tyName, ownerName := tyName, name := name, recv := rt,
+            params := ps, ret := ret }
+        modify fun s => { s with members := s.members.push m }
         return (ret, .method tyName name cr cargs.toList rt)
 
 /-- 二項演算の両辺を同じ型にする。左辺が数値リテラルなら右辺の型(Int かもしれない)に合わせる。 -/
@@ -1474,6 +1510,15 @@ def finishDecl (ctx : Ctx) : M Unit := do
   -- 宣言の終わりに要素の型が決まった上で capability を検査する(決まっていなければ上の E014 が出ている)
   for (span, cap, t, what) in pendingCaps do
     requireCap ctx span cap t what
+  -- この宣言で解決した欄・メソッドの参照の型を確定する(C29。メタ変数が残れば上の E014 が出ている)
+  let mut ms := (← get).members
+  for i in [(← get).membersDone:ms.size] do
+    let m := ms[i]!
+    let recv ← zonk m.recv
+    let params ← m.params.mapM fun (n, t) => do return (n, ← zonk t)
+    let ret ← zonk m.ret
+    ms := ms.set! i { m with recv, params, ret }
+  modify fun s => { s with members := ms, membersDone := ms.size }
 
 /-! ## 宣言 -/
 
@@ -1695,8 +1740,8 @@ def checkScenarioInputs (mods : Array Module) (cmods : Array Core.Module) : M Un
 end Typecheck
 
 /-- コンパイル単位全体の型検査・capability 検査・選択/順序の検査と、Core IR への elaboration。
-診断(空なら合格)と Core のモジュール列を返す。名前解決(`resolveAll`)が通った後に呼ぶ。 -/
-def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module :=
+診断(空なら合格)と Core のモジュール列、解決した欄・stdlib メソッドの参照の索引(C29)を返す。名前解決(`resolveAll`)が通った後に呼ぶ。 -/
+def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module × Array Typecheck.MemberRef :=
   let run : Typecheck.M (Array Core.Module) := do
     for m in mods do Typecheck.collect m
     for m in mods do
@@ -1712,6 +1757,6 @@ def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module :
     Typecheck.checkScenarioInputs mods out
     return out
   let (cmods, st) := run.run {}
-  (st.diags, cmods)
+  (st.diags, cmods, st.members)
 
 end Naru

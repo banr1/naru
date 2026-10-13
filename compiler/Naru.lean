@@ -1,6 +1,7 @@
 import Naru.Diag
 import Naru.Lexer
 import Naru.Ast
+import Naru.Describe
 import Naru.Core
 import Naru.Parser
 import Naru.Resolve

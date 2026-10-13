@@ -9,7 +9,7 @@ import Naru
   (無ければ検査だけ。反例ソースの検査や受理例の確認に使う)。
   診断があれば標準エラーに `file:line:col: error[E0xx]: …` を出して exit 1。
 - `naru check-reject <file.naru> <Exxx>` — 反例が `Exxx` で拒否されることを検査する。
-- `naru lsp` — 標準入出力で言語サーバー(LSP)として動き、コンパイラの診断を返す(C18。`Naru/Lsp.lean`)。
+- `naru lsp` — 標準入出力で言語サーバー(LSP)として動き、コンパイラの診断(C18)とホバー(C29)・定義ジャンプ(C30)を返す(`Naru/Lsp.lean`)。
 - `naru simulate <ソースルート配下の scenario.naru>` — そのルート全体を検査して生成先に Model を作り直し(`compile` と同じ)、
   そのファイルの scenario を実行する `.lake/naru/simulate/Simulate.lean`(`main`)を書いて `lake build naru_simulate` →
   `.lake/build/bin/naru_simulate` を実行する(C7。「naru を実行する」= 生成 Lean を native 実行する。C26: 生成先には

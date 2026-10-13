@@ -57,15 +57,26 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 ## 言語サーバー(`naru lsp`)
 
-Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、定義ジャンプに応える。応じるのは `initialize`(全文同期 `textDocumentSync.change = 1`、
-`openClose`、`save`、`definitionProvider`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、
-`textDocument/definition`(C30)。それ以外のリクエスト(ホバー・補完・リネーム・整形の C29 / C31〜C33 は未対応)には `MethodNotFound`(-32601)を返し、
-それ以外の通知(`$/…` 等)は無視する。
+Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバーと定義ジャンプに応える。応じるのは `initialize`(全文同期
+`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/
+`didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)。それ以外のリクエスト(補完・リネーム・整形の C31〜C33 は未対応)には
+`MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
 
-- 定義ジャンプ(`textDocument/definition`): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` に書かれた経路(`Phase.Tick` のような経路の上なら
-  その最長の接頭辞で解決した宣言。UFCS の `x.f(…)` の `f` も)— または宣言名そのものから、同じコンパイル単位の宣言(別ファイルを含む)の URI と、宣言の名前の
-  トークンの範囲(`Location`)を返す。どちらも無い位置(コメント・予約語・局所変数・欄名・stdlib のメソッド)では null。索引は名前解決が集めた参照
-  (`Checked.refs`、[architecture.md](architecture.md))で、単位ごとに直前の検査(全ファイルが構文解析できたもの)の結果を持ち、検査し直さない。
+- 位置にあるもの(ホバーと定義ジャンプの共通): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` に書かれた経路(`Phase.Tick` のような経路の上なら
+  その最長の接頭辞で解決した宣言と、カーソルのある区切り。UFCS の `x.f(…)` の `f` も)—、宣言名そのもの、record / state / enum の宣言の中の欄名 / variant 名、
+  型検査が解決した式の中の欄名 / stdlib のメソッド名の順に探す。位置はトークン(経路)の先頭から終わりまでで、終わりの直後の列(識別子の末尾にあるカーソル)も含む。
+  索引は名前解決が集めた参照(`Checked.refs`)と型検査が集めた欄・メソッドの参照(`Checked.members`、[architecture.md](architecture.md))で、単位ごとに
+  直前の検査(全ファイルが構文解析できたもの)の結果を持ち、検査し直さない。
+- 定義ジャンプ(`textDocument/definition`): 参照・宣言名からは同じコンパイル単位の宣言(別ファイルを含む)の URI と宣言の名前のトークンの範囲(`Location`)、欄名
+  (式の中・宣言の中)からはその record / state の欄の名前のトークン、宣言の中の variant 名からはその variant を返す。どれも無い位置(コメント・予約語・局所変数・
+  stdlib のメソッド)では null。
+- ホバー(`textDocument/hover`): Markdown(`contents.kind = "markdown"`)で、宣言の署名のコードブロック(fn / input / observer / spec 宣言なら仮引数と戻り型、
+  record / state なら欄と `derive`、enum なら variant と `derive`、type なら右辺、claim bundle なら項目名)、種類・名前・モジュール(protocol の中の宣言ならその
+  protocol)、その宣言の宣言コメント(C60: 宣言の直上の `//` ブロック。1 行目の要旨を段落、2 行目以降を行ごとの改行で。バッククォートの外の `\ * _ < > [ ] #` は
+  Markdown から逃がす)を返す。経路の残りが enum の variant(`Stamp.At`)と宣言の中の variant 名ならその variant の形(`Stamp.At(Time)`)と variant の直上の
+  1 行の説明と enum の宣言コメント、欄名(式の中・宣言の中)なら `Record.欄: 型`(宣言に書かれた型)と欄の直上の 1 行の説明と record の宣言コメント、stdlib の
+  メソッド名なら受け手の型で実体化した署名(`Set<ValidatorId>.contains(ValidatorId) -> Bool`)。`range` は参照の経路 / トークンの範囲。識別子でない位置
+  (空白・コメント・予約語・局所変数)では null。
 
 - 検査の単位: 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下なら `<ルート>/**/*.naru` 全体を 1 つのコンパイル単位にし、
   開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。

@@ -1,20 +1,29 @@
 import Lean.Data.Json
 import Naru.Driver
+import Naru.Describe
 import Naru.Config
 
 /-!
-# 言語サーバー(`naru lsp`、IDEAL.md C18 / C30)
+# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30)
 
-標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、名前解決の索引から取る
-定義ジャンプ(`textDocument/definition`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
+標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、コンパイラの索引から取る
+ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を
+起動し、開いた文書を送ってくる。
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
-  `didSave` / `didClose`、`textDocument/definition`(C30)。それ以外のリクエスト(ホバー・補完・リネーム・整形の C29 / C31〜C33 は未対応)には
-  `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
-- 定義ジャンプ(C30): 文書の位置にある参照(名前解決の索引 `Checked.refs`: 値の位置・型の位置・scenario の input の束縛に書かれた経路。
-  経路 `A.B.c` の上ならその最長の接頭辞で解決した宣言)または宣言名そのものから、同じコンパイル単位の宣言(別ファイルを含む)の URI と、
-  宣言の名前のトークンの範囲(`Location`)を返す。どちらも無い位置では null。索引は単位ごとに直前の検査(全ファイルが構文解析できたもの)
-  のものを持つ。
+  `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)。それ以外のリクエスト(補完・リネーム・整形の
+  C31〜C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+- 位置にあるもの(`locate`。C29 / C30 の共通): 文書の位置にある参照(名前解決の索引 `Checked.refs`: 値の位置・型の位置・scenario の input の
+  束縛に書かれた経路。経路 `A.B.c` の上ならその最長の接頭辞で解決した宣言と、カーソルのある区切り)、宣言名そのもの、型検査の索引
+  `Checked.members` の欄名 / stdlib のメソッド名の順に探す。索引は単位ごとに直前の検査(全ファイルが構文解析できたもの)のものを持つ。
+- 定義ジャンプ(C30): 参照・宣言名からは同じコンパイル単位の宣言(別ファイルを含む)の URI と宣言の名前のトークンの範囲(`Location`)、
+  欄名(式の中・宣言の中)からはその record の欄の名前のトークン、宣言の中の variant 名からはその variant。どれも無い位置(stdlib のメソッドを
+  含む)では null。
+- ホバー(C29): Markdown(`MarkupContent`)で、宣言の署名のコードブロック(`Decl.signature`: fn なら仮引数と戻り型、record / enum なら
+  欄 / variant と derive …)、種類・名前・モジュール、その宣言の宣言コメント(C60。`Naru.declComment`: 宣言の直上の `//` ブロック。
+  1 行目を段落、以降を行ごとの改行で)。経路の残りが enum の variant(と宣言の中の variant 名)ならその variant(1 行の説明があればそれも)、
+  欄(式の中・宣言の中)なら `Record.field: T`(宣言に書かれた型)と欄の 1 行の説明と record の宣言コメント、stdlib のメソッドなら受け手の型で
+  実体化した署名。範囲(`range`)は参照の経路 / トークン。識別子でない位置(空白・コメント・予約語・局所変数)では null。
 - 検査の単位: 開いた文書のパスの祖先で最も近い `naru.toml`(`Naru/Config.lean`)を読み、その `sources` のソースルート配下
   なら、そのルートの `**/*.naru` 全体を 1 つのコンパイル単位にし、開いている文書はディスクではなくバッファの内容で検査する。
   それ以外の文書(`naru.toml` が無い・どのルートの配下でもない)は単独で検査する。どちらも `Driver.compileSources`
@@ -320,30 +329,180 @@ def closeDoc (uri : String) : M Unit := do
         if u != uri then publish u #[]
       set { st with published := st.published.filter (·.1 != key), index := st.index.filter (·.key != key) }
 
+/-! ## 位置にあるもの(定義ジャンプ C30 とホバー C29 の共通) -/
+
+/-- 文書の位置にあるもの。 -/
+inductive Target where
+  /-- 名前解決の参照。`segIdx` はカーソルのある区切り(0 始まり)、`prefixLen` は参照先の宣言に解決した接頭辞の区切りの数。 -/
+  | ref (r : Resolve.Ref) (segIdx prefixLen : Nat)
+  /-- 宣言名そのもの。 -/
+  | decl (file : String) (d : Decl)
+  /-- record / state の宣言の中の欄名。 -/
+  | field (m : Module) (d : Decl) (f : Field)
+  /-- enum の宣言の中の variant 名。 -/
+  | variant (m : Module) (d : Decl) (v : Variant)
+  /-- 型検査が解決した欄 / stdlib のメソッド(式の中)。 -/
+  | member (m : Typecheck.MemberRef)
+
+structure Found where
+  what : Target
+  /-- 文書の行の中の範囲(文字の添字、終わりは排他的)。参照なら書かれた経路の全体、宣言名・欄名・メソッド名ならそのトークン。 -/
+  startIdx : Nat
+  endIdx : Nat
+
+/-- 経路 `path` が `start` から空白なしで書かれているとき、文字の添字 `i` がどの区切りの上か(0 始まり)。書かれていなければ 0。 -/
+def segmentAt (line : Array Char) (start : Nat) (path : List String) (i : Nat) : Nat := Id.run do
+  let cs := (renderPath path).toList
+  if cs.isEmpty || (line.toList.drop start).take cs.length != cs then return 0
+  let mut off := 0
+  let mut k := 0
+  let mut idx := 0
+  for seg in path do
+    if start + off ≤ i then idx := k
+    off := off + seg.length + 1
+    k := k + 1
+  return idx
+
+/-- 参照の経路のうち、参照先の宣言に解決した接頭辞の区切りの数(名前解決は最長の接頭辞から試し、単純名か修飾名に一致したもの)。 -/
+def prefixLen (r : Resolve.Ref) : Nat := Id.run do
+  let mut k := r.path.length
+  while k > 1 do
+    let p := renderPath (r.path.take k)
+    if p == r.target.name || p == r.target.qualified then return k
+    k := k - 1
+  return k
+
+/-- 文書 `doc`(行 `line0` の文字 `chars`、文字の添字 `i`)の位置にあるもの。参照 → 宣言名 → 宣言の中の欄名 / variant 名 →
+式の中の欄 / メソッドの順に探す。位置はトークン(経路)の先頭から終わり(終わりの直後の列を含む: カーソルが識別子の末尾にあるときも
+引ける)まで。 -/
+def locate (doc : Doc) (idx : UnitIndex) (chars : Array Char) (line0 i : Nat) : Option Found :=
+  let hit (sp : Span) (endIdx : Nat) : Bool := sp.line == line0 + 1 && sp.col - 1 ≤ i && i ≤ endIdx
+  let token (sp : Span) (name : String) (what : Target) : Found :=
+    { what, startIdx := sp.col - 1, endIdx := sp.col - 1 + name.length }
+  match idx.checked.refs.find? fun r => r.file == doc.path && hit r.span (pathEnd chars (r.span.col - 1) r.path) with
+  | some r =>
+    let start := r.span.col - 1
+    some { what := .ref r (segmentAt chars start r.path i) (prefixLen r), startIdx := start, endIdx := pathEnd chars start r.path }
+  | none =>
+    let here := idx.checked.mods.find? (·.file == doc.path)
+    match here.bind fun m => m.decls.find? fun d => hit d.span (d.span.col - 1 + d.name.length) with
+    | some d => some (token d.span d.name (.decl doc.path d))
+    | none =>
+      let declared : Option Found := here.bind fun m => m.decls.findSome? fun d =>
+        match d.fields.find? fun f => hit f.span (f.span.col - 1 + f.name.length) with
+        | some f => some (token f.span f.name (.field m d f))
+        | none =>
+          (d.variants.find? fun v => hit v.span (v.span.col - 1 + v.name.length)).map fun v => token v.span v.name (.variant m d v)
+      match declared with
+      | some found => some found
+      | none =>
+        match idx.checked.members.find? fun m => m.file == doc.path && hit m.span (m.span.col - 1 + m.name.length) with
+        | some m => some (token m.span m.name (.member m))
+        | none => none
+
+/-- 参照先の宣言(モジュールと宣言)。 -/
+def declOf (idx : UnitIndex) (sym : Resolve.Sym) : Option (Module × Decl) :=
+  (idx.checked.mods.find? (·.file == sym.file)).bind fun m => (m.decls.find? (·.name == sym.name)).map fun d => (m, d)
+
+/-- 修飾名(`A.B.c`)の宣言(欄の record / state)。 -/
+def declByKey (idx : UnitIndex) (key : String) : Option (Module × Decl) := Id.run do
+  for m in idx.checked.mods do
+    if let some d := m.decls.find? fun d => renderPath (m.name ++ [d.name]) == key then return some (m, d)
+  return none
+
+/-- ファイルの本文(開いていればバッファ、なければ索引のソース)。 -/
+def textOf (st : State) (idx : UnitIndex) (file : String) : String :=
+  match st.docs.find? (fun (d : Doc) => d.path == file) with
+  | some d => d.text
+  | none => (idx.sources.lookup file).getD ""
+
 /-! ## 定義ジャンプ(`textDocument/definition`、C30) -/
 
-/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)にある参照または宣言名から、宣言の `Location`。無ければ null。
-位置はトークンの先頭から終わり(終わりの直後の列を含む: カーソルが識別子の末尾にあるときも引ける)まで。 -/
+/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)にある参照・宣言名・欄名から、宣言(欄ならその record の欄)の `Location`。無ければ null。 -/
 def definition (uri : String) (line0 ch : Nat) : M Json := do
   let st ← get
   let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return Json.null
   let some idx := st.index.find? (·.key == unitKey doc) | return Json.null
   let chars := ((doc.text.splitOn "\n").getD line0 "").toList.toArray
-  let i := charIndex chars ch
-  let hit (sp : Span) (endIdx : Nat) : Bool := sp.line == line0 + 1 && sp.col - 1 ≤ i && i ≤ endIdx
-  let fromRef : Option (String × Span × String) :=
-    (idx.checked.refs.find? fun r => r.file == doc.path && hit r.span (pathEnd chars (r.span.col - 1) r.path)).map
-      fun r => (r.target.file, r.target.span, r.target.name)
-  let fromDecl : Option (String × Span × String) :=
-    ((idx.checked.mods.find? (·.file == doc.path)).bind fun m =>
-      m.decls.find? fun d => hit d.span (d.span.col - 1 + d.name.length)).map fun d => (doc.path, d.span, d.name)
-  match fromRef <|> fromDecl with
+  let some found := locate doc idx chars line0 (charIndex chars ch) | return Json.null
+  let target : Option (String × Span × String) := match found.what with
+    | .ref r .. => some (r.target.file, r.target.span, r.target.name)
+    | .decl file d => some (file, d.span, d.name)
+    | .field m _ f => some (m.file, f.span, f.name)
+    | .variant m _ v => some (m.file, v.span, v.name)
+    | .member m =>
+      match m.kind with
+      | .field => (declByKey idx m.owner).bind fun (md, d) => (d.fields.find? (·.name == m.name)).map fun f => (md.file, f.span, f.name)
+      | .method => none
+  match target with
   | none => return Json.null
-  | some (file, sp, name) =>
-    let text := match st.docs.find? (fun (d : Doc) => d.path == file) with
-      | some d => d.text
-      | none => (idx.sources.lookup file).getD ""
-    return locationJson (uriOfFile st file) (text.splitOn "\n") sp name
+  | some (file, sp, name) => return locationJson (uriOfFile st file) ((textOf st idx file).splitOn "\n") sp name
+
+/-! ## ホバー(`textDocument/hover`、C29) -/
+
+/-- ホバーの本文(Markdown): 署名のコードブロック、種類・名前・モジュール、コメントのブロック(空のものは飛ばす)。 -/
+def hoverMarkdown (sig what : String) (comments : List (List String)) : String :=
+  "\n\n".intercalate (s!"```naru\n{sig}\n```" :: what :: (comments.filter (!·.isEmpty)).map commentMarkdown)
+
+def describeDecl (m : Module) (d : Decl) : String :=
+  s!"{d.kind.describe} `{d.name}` — module `{renderPath m.name}`" ++ (match d.owner with
+    | some p => s!" (protocol `{p}`)"
+    | none => "")
+
+/-- 欄のホバー: `Record.欄: 型`(宣言に書かれた型)、欄の直上の 1 行の説明、record の宣言コメント。 -/
+def fieldHover (lines : Array String) (m : Module) (d : Decl) (f : Field) : String :=
+  hoverMarkdown s!"{d.name}.{f.name}: {f.ty.render}" s!"field `{f.name}` of {d.kind.describe} `{d.name}` — module `{renderPath m.name}`"
+    [memberComment lines d f.span.line, declComment lines d]
+
+/-- variant のホバー: `Enum.Variant(引数の型)`、variant の直上の 1 行の説明、enum の宣言コメント。 -/
+def variantHover (lines : Array String) (m : Module) (d : Decl) (v : Variant) : String :=
+  hoverMarkdown s!"{d.name}.{v.render}" s!"variant `{v.name}` of enum `{d.name}` — module `{renderPath m.name}`"
+    [memberComment lines d v.span.line, declComment lines d]
+
+/-- 位置にあるもののホバーの本文。宣言が索引に無ければ none。 -/
+def hoverOf (st : State) (idx : UnitIndex) : Target → Option String
+  | .ref r segIdx prefixLen => do
+    let (m, d) ← declOf idx r.target
+    let lines := ((textOf st idx m.file).splitOn "\n").toArray
+    -- 経路の残り(`Phase.Tick` の `Tick`)の上で、それが enum の variant ならその variant
+    if segIdx ≥ prefixLen && d.kind == .enum then
+      if let some v := (r.path[segIdx]?).bind fun n => d.variants.find? (·.name == n) then
+        return variantHover lines m d v
+    return hoverMarkdown d.signature (describeDecl m d) [declComment lines d]
+  | .decl file d => do
+    let m ← idx.checked.mods.find? (·.file == file)
+    let lines := ((textOf st idx file).splitOn "\n").toArray
+    return hoverMarkdown d.signature (describeDecl m d) [declComment lines d]
+  | .field m d f => some (fieldHover (((textOf st idx m.file).splitOn "\n").toArray) m d f)
+  | .variant m d v => some (variantHover (((textOf st idx m.file).splitOn "\n").toArray) m d v)
+  | .member mr =>
+    match mr.kind with
+    | .field => do
+      let (m, d) ← declByKey idx mr.owner
+      let lines := ((textOf st idx m.file).splitOn "\n").toArray
+      match d.fields.find? (·.name == mr.name) with
+      | some f => return fieldHover lines m d f
+      | none =>
+        -- 宣言に無い欄は無い(型検査が解決した欄)が、念のため型検査の型で
+        return hoverMarkdown s!"{mr.ownerName}.{mr.name}: {mr.ret.render}"
+          s!"field `{mr.name}` of {d.kind.describe} `{d.name}` — module `{renderPath m.name}`" [declComment lines d]
+    | .method =>
+      let ps := ", ".intercalate (mr.params.map fun (n, t) => match n with
+        | some n => s!"{n} = {t.render}"
+        | none => t.render)
+      some (hoverMarkdown s!"{mr.recv.render}.{mr.name}({ps}) -> {mr.ret.render}" s!"method `{mr.name}` of `{mr.owner}` (stdlib)" [])
+
+/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)のホバー(`Hover`: Markdown の `contents` と `range`)。無ければ null。 -/
+def hover (uri : String) (line0 ch : Nat) : M Json := do
+  let st ← get
+  let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return Json.null
+  let some idx := st.index.find? (·.key == unitKey doc) | return Json.null
+  let chars := ((doc.text.splitOn "\n").getD line0 "").toList.toArray
+  let some found := locate doc idx chars line0 (charIndex chars ch) | return Json.null
+  let some value := hoverOf st idx found.what | return Json.null
+  return Json.mkObj [
+    ("contents", Json.mkObj [("kind", "markdown"), ("value", value)]),
+    ("range", rangeJson line0 (utf16Col chars found.startIdx) (utf16Col chars found.endIdx))]
 
 /-! ## メッセージの処理 -/
 
@@ -351,6 +510,7 @@ def initializeResult (version : String) : Json :=
   Json.mkObj [
     ("capabilities", Json.mkObj [
       ("textDocumentSync", Json.mkObj [("openClose", true), ("change", 1), ("save", true)]),
+      ("hoverProvider", true),
       ("definitionProvider", true)]),
     ("serverInfo", Json.mkObj [("name", "naru"), ("version", version)])]
 
@@ -406,6 +566,10 @@ def handle (msg : Json) : M Unit := do
     match docUri params, positionOf params with
     | some uri, some (line, ch) => respond id (← definition uri line ch)
     | _, _ => respondError id (-32602) "definition: textDocument.uri / position missing"
+  | "textDocument/hover", some id =>
+    match docUri params, positionOf params with
+    | some uri, some (line, ch) => respond id (← hover uri line ch)
+    | _, _ => respondError id (-32602) "hover: textDocument.uri / position missing"
   | _, some id => respondError id (-32601) s!"method not found: {method}"
   | _, none => pure ()
 

@@ -3,7 +3,7 @@
 現時点の naru に無いものの一覧。言語の現状は [language.md](language.md)、実装の構成は [architecture.md](architecture.md)。
 
 - E007(runtime 条件の classical 依存。[diagnostics.md](diagnostics.md))
-- `naru lsp` の編集支援の残り(C29 ホバー / C31 補完 / C32 リネーム / C33 整形。[cli.md](cli.md)「言語サーバー」。定義ジャンプ C30 は実装済みで、未対応のリクエストには `MethodNotFound` を返す)と、それらを人間の Zed で観測する C62
+- `naru lsp` の編集支援の残り(C31 補完 / C32 リネーム / C33 整形。[cli.md](cli.md)「言語サーバー」。ホバー C29 と定義ジャンプ C30 は実装済みで、未対応のリクエストには `MethodNotFound` を返す)と、それらを人間の Zed で観測する C62
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)
 - 型引数付きのユーザ宣言(`record R<T>`)

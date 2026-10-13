@@ -22,6 +22,13 @@ inductive Ty where
 
 instance : Inhabited Ty := ⟨.tuple default #[]⟩
 
+/-- 型をソースの表記に戻す(`Name<T1, T2>` / `(T1, T2)` / `(T1) -> U`)。言語サーバーのホバー(C29)が署名を見せるのに使う。 -/
+partial def Ty.render : Ty → String
+  | .named _ name args =>
+    renderPath name ++ (if args.isEmpty then "" else "<" ++ ", ".intercalate (args.toList.map Ty.render) ++ ">")
+  | .tuple _ elems => "(" ++ ", ".intercalate (elems.toList.map Ty.render) ++ ")"
+  | .fn _ params ret => "(" ++ ", ".intercalate (params.toList.map Ty.render) ++ ") -> " ++ ret.render
+
 inductive Lit where
   | nat (n : Nat)
   | str (s : String)
