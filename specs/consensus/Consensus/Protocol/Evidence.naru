@@ -10,8 +10,10 @@ module Consensus.Protocol.Evidence
 import Consensus.Objects.Blocks
 import Consensus.Protocol.Store
 
-// The attestations carried by B's chain: ⋃_{C ⪯ B} C.attestations. Every attestation any transition on this chain folds is
-// a member, and no other attestation can move the derived state. Duplicates across blocks collapse.
+// ブロック b の鎖が運ぶ attestation の集合 ⋃_{C ⪯ b} C.attestations を返す。
+// この鎖上のどの遷移が畳み込む attestation もこの集合の要素で、これ以外の attestation は導出される状態を動かせない。
+// ブロックをまたいだ重複は集合として一つにまとまる。Genesis は空、Node は自身の attestation と親の鎖の和集合。
+// 手書き `chain_attestations` の写し(Block への構造的再帰)で、有限集合への変換と和集合を ats.toSet().union にした。
 fn chainAttestations(b: Block) -> Set<CombinedAttestation> {
   match b {
     Block.Genesis => Set.empty(),
@@ -19,5 +21,8 @@ fn chainAttestations(b: Block) -> Set<CombinedAttestation> {
   }
 }
 
-// The evidence a store holds: the carried attestations of every processed block (Σ.T is never pruned).
+// store st が保持する証拠、つまり処理済みの全ブロックが運ぶ attestation の集合を返す。
+// Σ.T(st.tree)は刈り込まれないので、木の各ブロックの chainAttestations を Set.flatMap で合わせるだけ。
+// 和集合は可換なので、木の要素の順序には依存しない。
+// 手書き `store_attestations` の写しで、各ブロックへの和集合の取り方を Set.flatMap にした。
 fn storeAttestations(st: Store) -> Set<CombinedAttestation> { st.tree.flatMap(|b| chainAttestations(b)) }

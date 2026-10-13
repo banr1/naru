@@ -4,22 +4,48 @@
 // 全順序なので、`derive order`(欄の辞書式順序)がそれに一致する。
 module Consensus.Objects.Identifiers
 
-// §1 slot number
+// §1 スロット番号を表す別名で、自然数そのものである。
+// プロトコルの時間軸を区切る算術上の座標で、スロット s の開始時刻は slotStart で 4Δs と定まる。
+// 高さ(Height)やラウンド(Round)と型としては同一の Nat だが、役割を読み分けるために名前を分けている。
+// 新しい型を作る別名ではなく、Nat の演算や比較がそのまま使える。
+// 手書き `Slot` は Lean の abbrev で、同じく Nat の別名であり、写し方に差は無い。
+// スロットから時刻への変換は Time.naru の slotStart / slotOfTime が受け持つ。
 type Slot = Nat
 
-// §4 height: the finality counter, separate from slot
+// §4 高さ(finality の計数器)を表す別名で、スロット番号とは別物として扱う自然数である。
+// 手書きの文書では「Height is a finality counter」とされ、スロットとは別の座標である。
+// 型の上では Slot と同じ Nat だが、混同を避けるため読み手が役割で区別する。
+// 新しい型を作る別名ではなく、Nat の演算や比較がそのまま使える。
+// 手書き `Height` は Lean の abbrev で Nat の別名であり、写し方に差は無い。
+// 本宣言自体は値の制約を持たず、名前を与えるだけである。
 type Height = Nat
 
-// §3 round index; round r is slots rR … rR+R−1
+// §3 ラウンドの添字を表す別名で、自然数そのものである。
+// ラウンド r はスロット rR から rR+R−1 までの R 個のスロットを束ねる単位である。
+// R はこの宣言には現れず、ラウンドとスロットの対応はラウンドを使う側の宣言が与える。
+// 型の上では Slot や Height と同じ Nat で、役割だけが異なる。
+// 新しい型を作る別名ではなく、Nat の演算や比較がそのまま使える。
+// 手書き `Round` は Lean の abbrev で Nat の別名であり、写し方に差は無い。
 type Round = Nat
 
-// §1 B.root: the nominal block identity. Roots are opaque; only equality and the fixed order are used.
+// §1 ブロックの名目上の同一性(B.root)を表す識別子で、Nat を包んだ record である。
+// 欄 value は根の下地の値で、根は不透明であり、使うのは等しさと固定された順序だけである。
+// derive eq は欄の等しさ、derive order は欄の辞書式順序を与え、deepest や ghost の argmax の同点処理に使われる。
+// 欄が value の 1 つだけなので辞書式順序は value の大小順に一致する。
+// 手書き `BlockId` は structure で、`LinearOrder` を value で持ち上げた全順序として与えている。
+// 手書きの順序と本宣言の derive order は同じ順序になるため、写し方に意味の差は無い。
 record BlockId { value: Nat } derive eq, order
 
-// §1 the root of B_gen: the model fixes the least root, so genesis loses every root tie-break
+// §1 genesis ブロック B_gen の根を返す。
+// 返す値は value が 0 の BlockId で、モデルが最小の根を固定することで genesis はどの根の同点処理にも負ける。
+// 文書は genesis に固有の欄を与えていないので、この選び方はモデル側の取り決めである。
+// 手書き `genesisRoot` は ⟨0⟩ の定数で、本宣言は引数なしの関数として同じ値を返す。
 fn genesisRoot() -> BlockId { BlockId { value: 0 } }
 
+// validator の識別子を表す record で、Nat を包む。欄 value が識別子の下地の値である。
 // 手書き Model の型引数 `V`(validator の型。Witnesses では `Fin n`)は naru では具体的な識別子に固定する。
-// naru には型引数付きの宣言が無く、Model が V に要るのは等しさと(集合の正規化のための)順序だけなので、
-// `Fin n` の値は `value` で写せる(golden test はこの対応で手書き Model と突き合わせる)。
+// naru には型引数付きの宣言が無く、Model が V に要るのは等しさと(集合の正規化のための)順序だけである。
+// derive eq, order はその等しさと順序を与える。順序は欄 value の大小順である。
+// `Fin n` の値は value で写せる(golden test はこの対応で手書き Model と突き合わせる)。
+// 手書きに直接の対応物は無い(手書きは型引数 V で、naru 側だけの具体化である)。
 record ValidatorId { value: Nat } derive eq, order

@@ -18,7 +18,12 @@ import Consensus.Spec.Interface
 import Consensus.Spec.Constants
 import Consensus.Spec.Conditions
 
-// A continuation preserves retained honest validators' event prefixes.
+// run `rho2` が `rho` の続きであり、残る honest 検証者の cutoff 前の event 列を保つことを表す。
+// 第 1 に `rho2.honest` が `rho.honest` の部分集合(`subset`)であること。つまり honest な検証者は増えない。
+// 第 2 に `rho2` の honest な各 `v` について、`v` の event で時刻が `cutoff` 未満のものの列(`filter`)が `rho` と等しいこと。
+// 比較は List の等しさで、順序も含めて一致する。`Continues` がこれを使って、回復 prefix の続きを定義する。
+// 手書き `AgreesUntil` は欄 `honest_subset` / `events` を持つ構造体で、`&&` で束ねて写した。
+// `decide (e.node = v ∧ e.time < cutoff)` は `eventNode(ev) == v && eventTime(ev) < cutoff` に当たる。
 regime AgreesUntil(rho: NamedRun, rho2: NamedRun, cutoff: Time) {
   rho2.honest.subset(rho.honest)
     && forall v: ValidatorId {
@@ -28,12 +33,22 @@ regime AgreesUntil(rho: NamedRun, rho2: NamedRun, cutoff: Time) {
        }
 }
 
-// A continuation agrees before `cut` and reaches `upto`. The event comparison uses the half-open prefix `time < cut`.
+// run `rho` が `source` の続きとして `cut` の前まで一致し、`upto` まで届くことを表す。
+// `AgreesUntil(source, rho, cut)`(`cut` 前の event が一致)と、`upto <= rho.horizon`(地平線が `upto` に届く)の連言。
+// event の比較は半開区間の接頭辞 `time < cut` で行い、`cut` ちょうどの event は比べない。
+// `RecoveredBy` が、回復 prefix の終わりと回復の終点を `cut` と `upto` に与えて使う。
+// 手書き `Continues` は欄 `agrees` / `covered` を持つ構造体で、`&&` で束ねて写した。
+// 引数 `source` が元の run、`rho` が続きの run である。
 regime Continues(source: NamedRun, rho: NamedRun, cut: Time, upto: Time) {
   AgreesUntil(source, rho, cut) && upto <= rho.horizon
 }
 
-// Execution and partial synchrony with a below-one-third, fully awake electorate.
+// 実行が正当で、部分同期であり、全員が起きていて不正が 1/3 未満の選挙人集団である regime を表す。
+// `ExecutionValid` と `PartialSynchrony` に加え、`s.e.tGST <= t0`(GST が `t0` 以前)、`HonestCommittees(rho.honest)`、
+// `BelowOneThird(s, rho.honest)`(不正な集団が 1/3 未満)、`FullParticipation`(全員が起きている)を要求する。
+// `RecoveryRegime` と `FinalityRegime` がこの regime を土台にして、再発条件などを足す。
+// 手書き `BFTRegime` は欄 `execution` / `partialSynchrony` / `gst` / `committees` / `belowThird` / `allAwake` を持つ構造体で、
+// 順序そのままに `&&` で束ねて写した。手書きの `E` / `I` は `s` に統合されている。
 regime BFTRegime(s: Setup, rho: NamedRun, t0: Time) {
   ExecutionValid(s, rho)
     && PartialSynchrony(s, rho)
@@ -43,14 +58,24 @@ regime BFTRegime(s: Setup, rho: NamedRun, t0: Time) {
     && FullParticipation(s, rho)
 }
 
-// A bounded recovery prefix with proposer recurrence and a protocol-specific horizon.
+// 提案者の再発と、プロトコル固有の地平線を持つ、有限の回復 prefix の regime を表す。
+// `BFTRegime(s, rho, t0)` を満たし、さらに `MultiProposerRecurrence(s, rho, s.e.tGST, gap)`(GST 以降、間隔 `gap` の各窓に
+// honest な提案者の連続する slot が現れる)と、`rho.horizon == prefixEnd(s, t0, gap)`(run の長さが prefix の終端にちょうど等しい)を要求する。
+// `RecoveredBy` の中で、`source` の run がこの regime を満たすことが回復の出発点になる。
+// 手書き `RecoveryRegime` は `BFTRegime` を `extends` した構造体で、親を `&&` の先頭に含めて写した。
+// 欄 `recurrence` / `horizon` がそれぞれ後ろの 2 項に当たる。
 regime RecoveryRegime(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   BFTRegime(s, rho, t0)
     && MultiProposerRecurrence(s, rho, s.e.tGST, gap)
     && rho.horizon == prefixEnd(s, t0, gap)
 }
 
-// The run is recovered at genesis or after a bounded recovery prefix.
+// run が、時刻 `t` で genesis から、または有限の回復 prefix の後に回復済みであることを表す。
+// `t == 0`(genesis)であるか、run の領域 `RunDomain(s, source)` に入るある `source` と `t0`, `gap` があり、
+// `source` が `RecoveryRegime(s, source, t0, gap)` を満たし、`rho` がその `Continues`(cut は `prefixEnd`、upto は `recoveryEnd`)
+// であり、`SlashableBound(s, rho)` が成り立ち、`t == recoveryEnd(s, t0, gap)` である。
+// 手書き `RecoveredBy` は帰納型(`genesis` / `recovered`)だが再帰しないので、存在量化の選言として写した。
+// `source` に `RunDomain` を足すのは、手書きの型が保証する run の領域を naru では明示する必要があるため。
 regime RecoveredBy(s: Setup, rho: NamedRun, t: Time) {
   t == 0
     || exists source: NamedRun { exists t0: Time { exists gap: Nat {
@@ -62,11 +87,20 @@ regime RecoveredBy(s: Setup, rho: NamedRun, t: Time) {
        } } }
 }
 
-// The accountable regime: a well-formed run without one-third-slashable evidence.
+// 説明責任つきの regime、すなわち整形式の run で、1/3 以上の slashable な証拠が無いことを表す。
+// `RunWellFormed(s, rho)`(run の整形式性)と `SlashableBound(s, rho)`(slashable な証拠に関する上限)の連言。
+// 説明責任つきの性質(`AccountablySafeFrom` など)に対応する、slashable な証拠の量の制限を課す regime である。
+// `BFTRegime` と違い、`RunWellFormed` と `SlashableBound` の 2 項だけで構成する。
+// 手書き `AccountableRegime` は `RunWellFormed` を `extends` し、欄 `slashableBound` を足した構造体で、`&&` に写した。
+// 引数 `s` と `rho` だけを取り、時刻の引数は持たない。
 regime AccountableRegime(s: Setup, rho: NamedRun) { RunWellFormed(s, rho) && SlashableBound(s, rho) }
 
-// The sleepy regime from `t0`: validity, partial synchrony after GST ≤ t0, honest committees, a fresh-window majority at
-// every time from `t0`, and a sound start (genesis or a completed recovery).
+// `t0` 以降の sleepy regime、すなわち参加の窓と出発点についての前提の束を表す。
+// 実行が正当(`ExecutionValid`)、部分同期(`PartialSynchrony`)、`s.e.tGST <= t0`、`HonestCommittees` に加え、
+// `t0` 以降の各時刻 `t` で `WindowMajority`(参加窓 `participationWindow(s)` での honest 過半数)が成り立つこと、
+// 健全な出発(`RecoveredBy(s, rho, t0)`、genesis または回復の完了)を要求する。
+// 窓の条件は `participationLag(s) <= t` かつ `t - participationLag(s) <= rho.horizon` の範囲の `t` だけに課される。
+// 手書き `SleepyRegime` の欄 `execution` … `windows` / `start` を `&&` で束ねて写した。
 regime SleepyRegime(s: Setup, rho: NamedRun, t0: Time) {
   ExecutionValid(s, rho)
     && PartialSynchrony(s, rho)
@@ -79,13 +113,22 @@ regime SleepyRegime(s: Setup, rho: NamedRun, t0: Time) {
     && RecoveredBy(s, rho, t0)
 }
 
-// A live sleepy regime with tier-1 single-proposer recurrence from `t0`.
+// 第 1 層の単一提案者の再発を持つ、活性のある sleepy regime を表す。
+// `SleepyRegime(s, rho, t0)` を満たし、さらに `SingleProposerRecurrence(s, rho, t0, gap)`(`t0` 以降、間隔 `gap` ごとに
+// honest な単一の提案者が現れる)を要求する。`gap` はその再発の間隔を表す引数である。
+// 提案者の再発は、`SleepyRegime` の前提に活性のための条件を 1 つ足すものである。
+// 手書き `LiveSleepyRegime` は `SleepyRegime` を `extends` し、欄 `recurrence` を足した構造体で、`&&` に写した。
+// 引数 `gap` は `SingleProposerRecurrence` にそのまま渡される。
 regime LiveSleepyRegime(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   SleepyRegime(s, rho, t0) && SingleProposerRecurrence(s, rho, t0, gap)
 }
 
-// A fresh sleepy regime from `t0`: the sleepy regime, and a fresh majority at every time from `t0` whose reference sample
-// is in the run.
+// `t0` 以降の fresh な sleepy regime、すなわち参照標本が run の中にある fresh な過半数を要求する regime を表す。
+// `SleepyRegime(s, rho, t0)` を満たし、さらに `t0 <= t`、`participationLag(s) <= t`、`t - participationLag(s) <= rho.horizon` の
+// 各時刻 `t` で `FreshMajority(s, rho.honest, t)` が成り立つことを要求する。
+// 窓の過半数 `WindowMajority`(`SleepyRegime` 側)に加えて、`FreshMajority` を別の条件として足している。
+// 手書き `FreshSleepyRegime` は `SleepyRegime` を `extends` し、欄 `fresh` を足した構造体で、`&&` に写した。
+// 引数は `SleepyRegime` と同じ `s`, `rho`, `t0` である。
 regime FreshSleepyRegime(s: Setup, rho: NamedRun, t0: Time) {
   SleepyRegime(s, rho, t0)
     && forall t: Time {
@@ -94,8 +137,12 @@ regime FreshSleepyRegime(s: Setup, rho: NamedRun, t0: Time) {
        }
 }
 
-// The finality regime from `t0`: BFT premises, strong recurrence from GST within `gap ≤ maxGap − 2` periods, and a run
-// long enough to contain the startup.
+// `t0` からの finality regime、すなわち BFT の前提と、GST 以降の強い再発と、起動を含む十分な長さを要求する regime を表す。
+// `BFTRegime(s, rho, t0)` を満たし、`StrongMultiProposerRecurrence(s, rho, s.e.tGST, gap)`(GST 以降、間隔 `gap`)と、
+// `gap + 2 <= maxGap(s)`(`gap` は `maxGap - 2` 以下)と、`t0 + finalityStartup(s, gap) <= rho.horizon`
+// (run が finality の起動期間を含む長さ)を要求する。
+// 手書き `FinalityRegime` は `BFTRegime` を `extends` した構造体で、親を先頭に含め、欄 `recurrence` / `gapBound` /
+// `longEnough` を順に `&&` で写した。
 regime FinalityRegime(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   BFTRegime(s, rho, t0)
     && StrongMultiProposerRecurrence(s, rho, s.e.tGST, gap)
@@ -103,8 +150,12 @@ regime FinalityRegime(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
     && t0 + finalityStartup(s, gap) <= rho.horizon
 }
 
-// The outage regime for a stable read at `tRead` and the half-open outage window [b0, b1). The interval fields also record
-// the boundary needed for delivery after the window.
+// 時刻 `tRead` の stable な読みと、半開区間 `[b0, b1)` の停止(outage)窓についての regime を表す。
+// 実行の正当性、部分同期、`s.e.tGST <= b1`、`HonestCommittees`、`HealthyPrefixDelivery(s, rho, b0)`(窓の前の配送が健全)、
+// 区間 `0 <= b0 <= b1 <= rho.horizon`、`PublicTime(s.e, b0)`(窓の始点が公開時刻)、
+// 時刻 `participationLag(s) <= t <= rho.horizon + participationLag(s)` での `FreshMajority`、`SlashableBound` を要求する。
+// 最後に窓の位置として `outageStart(s, tRead) <= b0`、`b1 + s.e.delta <= expiry(s, tRead)`、`b1 + s.e.delta <= rho.horizon` を課す。
+// 区間の欄は、窓の後の配送に必要な境界も記録する。手書き `OutageRegime` の欄 `interval` / `window` などを `&&` で写した。
 regime OutageRegime(s: Setup, rho: NamedRun, tRead: Time, b0: Time, b1: Time) {
   ExecutionValid(s, rho)
     && PartialSynchrony(s, rho)

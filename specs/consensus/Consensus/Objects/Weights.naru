@@ -11,24 +11,43 @@ module Consensus.Objects.Weights
 
 import Consensus.Objects.Identifiers
 
-// §3 a finite electorate with fixed positive integer weights.
+// §3 固定された正の整数の重みを持つ有限の electorate(投票者集合)を表す。
+// 欄 weight は validator から重みへの表で、表のキーの集合が validator の集合 V になる。
+// 手書き `Electorate` は有限型 V 上の関数 `weight : V → Nat` と重みが正である `weight_pos` を持つ。
+// naru の ValidatorId は有限型ではないので、有限表で持ち、表に無い validator は electorate の外(重み 0)とみなす。
+// `weight_pos`(重みは正)は Model には書かず、Statements の premise として表す(IDEAL.md「理想化」)。
+// derive eq は表の等しさを与える。
 record Electorate { weight: Table<ValidatorId, Nat> } derive eq
 
-// §3 the validator set `V` as the electorate's domain.
+// §3 electorate の定義域である validator の集合 V を返す。
+// 引数 e の weight 表のキーの集合をそのまま返し、重みの値は見ない。
+// 手書きでは V が型引数で、手書きに直接の対応物は無い(表のキーが型 V の役を担う)。
 fn validators(e: Electorate) -> Set<ValidatorId> { e.weight.keys() }
 
-// §3 w(v): the weight of a validator (0 outside the electorate).
+// §3 validator v の重み w(v) を返し、electorate に居なければ 0 を返す。
+// 引数は electorate e と validator v で、表の getOr で 0 を既定値にして引く。
+// 手書き `Electorate.weight` に対応し、手書きは全域関数なので「居なければ 0」は naru 側の取り決めである。
 fn weightOfValidator(e: Electorate, v: ValidatorId) -> Nat { e.weight.getOr(v, 0) }
 
-// §3 W = w(V): the total fixed validator weight.
+// §3 固定された validator の重みの総和 W = w(V) を返す。
+// validators(e) の各 validator の重みを足し合わせる。
 // 和は可換なので、集合の内部順序に依存せずに `sum` で取れる。
+// 手書き `Electorate.totalWeight` は型 V 全体の和 `∑ i, E.weight i` で、naru は型の代わりに表のキー validators(e) 上で和を取る。
 fn totalWeight(e: Electorate) -> Nat { validators(e).sum(|v| weightOfValidator(e, v)) }
 
-// §3 w(S), counting each validator in a finite set once.
+// §3 validator の有限集合 S の重み w(S) を返し、各 validator を 1 回だけ数える。
+// 引数は electorate e と集合 s で、s の各要素の weightOfValidator を足す。
+// electorate の外の validator は重み 0 として足されるので、結果に影響しない。
+// 手書き `Electorate.weightOf` に対応し、`∑ i ∈ S, E.weight i` を sum で書いたものである。
 fn weightOf(e: Electorate, s: Set<ValidatorId>) -> Nat { s.sum(|v| weightOfValidator(e, v)) }
 
-// §4 q = ⌈2W/3⌉. Natural-number ceiling division by three is written (2W+2)/3.
+// §4 finality の閾値 q = ⌈2W/3⌉ を返す。
+// 自然数の 3 での切り上げ除算を (2W+2)/3 と書き、W は totalWeight(e) である。
+// quorumCheck がこの閾値と集合の重みを比べる。
+// 手書き `Electorate.finalityThreshold` に対応し、式は同じである。
 fn finalityThreshold(e: Electorate) -> Nat { (2 * totalWeight(e) + 2) / 3 }
 
-// Executable quorum check.
+// 集合 s が quorum(定足数)を満たすかを実行可能な検査として返す。
+// finalityThreshold(e) が weightOf(e, s) 以下なら真で、つまり s の重みが閾値 q に達している。
+// 手書き `Electorate.quorumCheck` に対応し、決定可能性の判定を直接の比較で書いた点だけが違う。
 fn quorumCheck(e: Electorate, s: Set<ValidatorId>) -> Bool { finalityThreshold(e) <= weightOf(e, s) }

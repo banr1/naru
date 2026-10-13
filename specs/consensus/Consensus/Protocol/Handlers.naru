@@ -38,29 +38,43 @@ import Consensus.Protocol.Store
 
 // ── User confirmation record update ──
 
-// Retain confirmed progress when the candidate is an ancestor. Otherwise accept the candidate, including when it
-// conflicts with an old record (safety regimes establish compatibility before claiming monotonicity).
+// 確認記録 old を候補 candidate で更新し、候補が old の祖先なら old を保ち、そうでなければ候補を採る。
+// 引数: old は現在の記録、candidate は今回の duty が出した候補。戻り値は新しい記録の block。
+// candidate ⪯ old(preceq)のときは進捗を戻さないので old を返す。
+// それ以外は、old と衝突する candidate でもそのまま受け入れる(単調性は安全性の regime が適合を示した上で主張する)。
+// updateConfirmationWith が stable 記録と confirmed 記録の両方の更新に使う。
+// 手書き `advance_confirmed` を、条件分岐ごとそのまま写した。
 fn advanceConfirmed(old: Block, candidate: Block) -> Block { if preceq(candidate, old) { old } else { candidate } }
 
-// The confirmation record's floor on the stable record, three cases in order: the duty's own candidate when it extends
-// the new stable record; otherwise the prior record while that still extends the stable record; otherwise the stable
-// record itself (the only case where the record moves off the prior record's chain, onto the stable one).
+// 確認記録を stable 記録の上に載せ直す下限処理で、3 つの場合を順に試す。
+// (1) stable ⪯ candidate なら duty 自身の候補 candidate を返す。
+// (2) そうでなく stable ⪯ old なら、直前の記録 old を保つ(stable の枝を離れた候補は記録せず無視する)。
+// (3) どちらでもなければ stable そのものを返す(記録が old の鎖を離れて stable の鎖へ移る唯一の場合)。
+// 戻り値は常に stable 以降の block。updateConfirmationWith の latestConfirmed の更新で使う。
+// 手書き `floor_on_stable` に対応し、`@[irreducible]` は証明の都合の属性なので写していない。
 fn floorOnStable(stable: Block, candidate: Block, old: Block) -> Block {
   if preceq(stable, candidate) { candidate } else if preceq(stable, old) { old } else { stable }
 }
 
 // ── §7.2 The handlers ──
 
-// §5 state_transition(σ, B): s ← B.slot, fold B's carried attestations, L ← B, then the height events.
+// §5 state_transition(σ, B): block b を親の chain 状態 sigma に適用して b の事後状態を作る。
+// 順に、s を b の slot にし、b が運ぶ attestation を先頭から畳み込み、L を b にし、最後に高さの事象を処理する。
+// 引数の e は環境、cfg は高さの設定で、戻り値は b の事後 ChainState。
+// onBlock が onBlockUsing に渡す buildState の本体になる。
+// 手書き `state_transition` に対応し、畳み込みは foldl を fold に書き換えただけである。
 fn stateTransition(e: ProtocolEnv, cfg: HeightConfig, sigma: ChainState, b: Block) -> ChainState {
   let afterSlot = ChainState { s: slot(b), ..sigma };
   let afterAttestations = attestations(b).fold(afterSlot, |acc, a| processAttestation(acc, a));
   processHeightEvents(e, cfg, ChainState { l: b, ..afterAttestations })
 }
 
-// §5.2 update_finality(Σ, σ) at the cumulative store. Three statements in order, each reading the store the previous one
-// produced: Σ.h_max only grows; J advances to σ.J when F ⪯ σ.J and (h_j, J.root) grows; F advances to σ.F when it is a
-// strict descendant of F, an ancestor of J, and viable in the store.
+// §5.2 update_finality(Σ, σ): 累積 store st の確定情報を、ブロックの chain 状態 sigma を読んで更新する。
+// 3 つの文を順に実行し、各文は直前の文が作った store を読む。
+// (1) hMax は sigma.h との max を取るので増える一方である。
+// (2) J は F ⪯ sigma.J かつ (hJ, J.root) の組が真に大きくなるときだけ sigma.J と sigma.hJ へ進む。
+// (3) F は sigma.f が F の真の子孫で J の祖先であり、かつ store の viableTree に含まれるときだけ sigma.f へ進む。
+// 手書き `update_finality` に対応し、全域写像の `σ.F ∈ viable_tree …` は viableTree(…).contains(…) に写した。
 fn updateFinality(st: Store, sigma: ChainState) -> Store {
   let afterMax = Store { hMax: st.hMax.max(sigma.h), ..st };
   let current = HeightId { height: afterMax.hJ, id: root(afterMax.j) };
@@ -75,8 +89,12 @@ fn updateFinality(st: Store, sigma: ChainState) -> Store {
   }
 }
 
-// §7.2 on_goldfish_vote(Σ, vote), the final version: the slot guard and the duplicate test, the two-vote cap, and the
-// insertion that stamps the vote. A rejected vote is never stamped.
+// §7.2 on_goldfish_vote(Σ, vote) の最終版: 受理された Goldfish 票を store に入れて時刻印を押す。
+// 次のどれかなら st をそのまま返す: 票の slot が s−1 より前か s より後、同じ票が既に入っている、
+// 票の投票者が storePool(st, vote.slot) で既に equivocates している(票数の上限 2)。
+// 受理するときは gfVotes の該当 slot の一覧に票を末尾追加し、timestampVote に現在時刻 st.t の Stamp.At を記録する。
+// 棄却された票には時刻印を押さない。
+// 手書き `on_goldfish_vote` に対応し、全域写像の更新は insert(k, getOr(k, []).append([vote])) に写した。
 fn onGoldfishVote(st: Store, vote: GoldfishVote) -> Store {
   if vote.slot < st.s - 1 || st.s < vote.slot || st.gfVotes.getOr(vote.slot, []).contains(vote) {
     st
@@ -91,16 +109,22 @@ fn onGoldfishVote(st: Store, vote: GoldfishVote) -> Store {
   }
 }
 
-// The §7 ingress rejects a vote from outside its slot committee; a committee vote goes to the admitted-vote handler.
-// Head-slot validity is enforced when the head is resolved, so unknown and later-slot heads remain in the pool.
+// §7 の入口として、その slot の committee 外の票を棄却し、committee の票だけ onGoldfishVote に渡す。
+// 票の head の slot が妥当かどうかは head を解決するときに確かめるので、未知の head や後の slot の head の票も pool に残る。
+// 引数は store st と票 vote で、戻り値は更新後の store である。
+// committee は Parameters の input なので、手書きと違って環境 e を取らない。
+// 手書き `on_goldfish_vote_checked` に対応する。
 fn onGoldfishVoteChecked(st: Store, vote: GoldfishVote) -> Store {
   if !committee(vote.slot).contains(vote.valIndex) { st } else { onGoldfishVote(st, vote) }
 }
 
-// §7.2 raw valid-core on_block(Σ, B): the guards slot-or-duplicate-or-unknown-parent, then the finalized-ancestor check
-// (Σ.F ⪯ B), then the transition's proposer assertion and the parent-slot assertion as guards. Then the post-state is
-// computed and stored, the block enters the tree stamped, the carried votes are unpacked in list order, and the finality
-// caches are folded. Re-processing a tree member is a no-op.
+// §7.2 の素の有効核 on_block(Σ, B): 事後状態の作り方 buildState を引数に取り、block b を store に取り込む。
+// 先に守り条件を順に見て、どれかに当たれば st を返す: b の slot が現在 slot より後、b が tree に既にある、
+// 親が tree に無い、Σ.F ⪯ b でない、b の proposer? が proposer(slot(b)) と違う、親の slot が b の slot より前でない。
+// 通れば、親の chain 状態に buildState を適用して事後状態を作り、sigma と tree に入れて時刻印を押す。
+// 続いて b が運ぶ Goldfish 票を並び順に onGoldfishVoteChecked で取り込み、最後に updateFinality を畳む。
+// tree 内の block を再処理しても何も起きない。buildState は関数型の仮引数のまま残し、呼出し側が lambda を渡す。
+// 手書き `on_block_using` に対応する。proposer は input なので e は取らない。
 fn onBlockUsing(st: Store, b: Block, buildState: (ChainState) -> ChainState) -> Store {
   if st.s < slot(b) || st.tree.contains(b) || !st.tree.contains(parent(b)) {
     st
@@ -123,34 +147,51 @@ fn onBlockUsing(st: Store, b: Block, buildState: (ChainState) -> ChainState) -> 
   }
 }
 
-// The default block body: the §5 state transition on the block's own (erased) attestations.
+// 既定の block 取り込みで、事後状態の作り方に §5 の stateTransition を使う onBlockUsing である。
+// ここでの attestation は block 自身が運ぶ(署名情報を消した)ものである。
+// 引数は環境 e・高さの設定 cfg・store st・block b で、戻り値は更新後の store。
+// 手書き `on_block` に対応する。
 fn onBlock(e: ProtocolEnv, cfg: HeightConfig, st: Store, b: Block) -> Store {
   onBlockUsing(st, b, |parentState| stateTransition(e, cfg, parentState, b))
 }
 
-// A block is admissible only when every carried attestation is from its slot's round or an earlier round.
+// block b が運ぶ attestation がすべて受け入れ可能かを返す述語的な関数である。
+// 受け入れ可能とは、各 attestation の round が b の slot の round(roundOf(hc, slot(b)))以下であること。
+// 未来の round の attestation を運ぶ block を onBlockCheckedUsing が弾くために使う。
+// 手書き `carried_attestations_admissible` に対応する。
 fn carriedAttestationsAdmissible(hc: HealConfig, b: Block) -> Bool {
   attestations(b).all(|a| a.round <= roundOf(hc, slot(b)))
 }
 
-// The receiver-side block handler: invalid carried attestations reject the entire block before the core runs.
+// 受信側の block 処理で、運ばれた attestation が不正なら核の処理の前に block 全体を棄却する。
+// 引数 handle は核の処理(Store から Store への関数)で、carriedAttestationsAdmissible が真のときだけ st に適用する。
+// 偽なら st をそのまま返す。handle は関数型の仮引数のまま残し、呼出し側が lambda を渡す。
+// 手書き `on_block_checked_using` に対応する。
 fn onBlockCheckedUsing(handle: (Store) -> Store, hc: HealConfig, st: Store, b: Block) -> Store {
   if carriedAttestationsAdmissible(hc, b) { handle(st) } else { st }
 }
 
-// The checked wrapper over the default block body.
+// 既定の block 本体 onBlock を、attestation の検査で包んだ受信側の処理である。
+// onBlockCheckedUsing の handle に onBlock(e, cfg, current, b) を渡すだけで、独自の計算は無い。
+// 手書き `on_block_checked` に対応する。
 fn onBlockChecked(e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: Store, b: Block) -> Store {
   onBlockCheckedUsing(|current| onBlock(e, cfg, current, b), hc, st, b)
 }
 
-// §7.2 round_votes: "the validator's confirmed blocks this round", as a set (⊥-confirmed included), so that the
-// |round_votes| = 2 guard means two distinct confirmed blocks.
+// §7.2 round_votes: attestation a の投票者がその round で確認した block の集合を返す。
+// sgPool(st, a.round) のうち a と同じ valIndex の attestation について confirmed を集めた集合で、⊥ の確認も含む。
+// 集合なので、onSgVote の |round_votes| = 2 の守り条件は「相異なる 2 つの確認 block」を意味する。
+// 戻り値の型 Set<Option<BlockId>> の None が ⊥ の確認に当たる。
+// 手書き `round_votes` に対応する。
 fn roundVotes(st: Store, a: CombinedAttestation) -> Set<Option<BlockId>> {
   sgPool(st, a.round).filter(|b| b.valIndex == a.valIndex).map(|b| b.confirmed)
 }
 
-// §7.2 on_sg_vote(Σ, a): reject stale or future-round attestations, duplicate projected votes, and a third distinct
-// confirmed head by one validator in a round; otherwise append the attestation and stamp its projection.
+// §7.2 on_sg_vote(Σ, a): 合成 attestation a を store に受理するか棄却する。
+// 現在 round r は roundOf(hc, st.s)。a.round が r − etaSG より前または r より後、射影した票が既にある
+// (roundVotes に a.confirmed が含まれる)、同じ投票者が同じ round で 3 つ目の相異なる確認 head を出す(size が 2)のいずれかなら st を返す。
+// 受理するときは sgVotes の a.round の一覧に a を末尾追加し、sgVote(a) の射影に現在時刻の時刻印を timestampSgVote へ記録する。
+// 手書き `on_sg_vote` に対応し、全域写像の更新は insert と getOr の組に写した。
 fn onSgVote(hc: HealConfig, st: Store, a: CombinedAttestation) -> Store {
   let r = roundOf(hc, st.s);
   if a.round < r - hc.etaSG || r < a.round || roundVotes(st, a).contains(a.confirmed) || roundVotes(st, a).size() == 2 {
@@ -164,12 +205,15 @@ fn onSgVote(hc: HealConfig, st: Store, a: CombinedAttestation) -> Store {
   }
 }
 
-// §7.2 update_confirmation(Σ, s), the final version: the composed fork choice, genuine-or-nothing. The window sets are
-// §2's (support excludes equivocators outright; the denominator is the late participants). The walk descends from the
-// SG root of the current round over the filtered tree; live_confirmed takes the walk result only when it itself carries a
-// window majority, else the FG root (a floor marker, not a confirmation). The stable record advances on the round's G2
-// root, and the confirmation record is floored on that stable record (an eligible walk result, else the optional G2
-// candidate, else the prior record).
+// §7.2 update_confirmation(Σ, s) の最終版: 合成した fork choice で slot s の確認を評価し、本物の確認か何も無しかのどちらかにする。
+// 窓の票集合は §2 のもので、支持票は equivocator を完全に除き(early のうち late で二重投票した者を除く)、分母は late の参加者数 lateCount。
+// walk は現在 round の SG root(getSgRootWith)から、絞り込んだ tree の上を ghost で下る。
+// liveConfirmed は walk の結果が自身で窓の過半数(lateCount < 2 * score)を持つときだけそれを採り、でなければ FG root(確認ではなく下限の目印)にする。
+// latestStable は round の G2 root(frameStableRoot)で advanceConfirmed して進める。
+// latestConfirmed は floorOnStable で stable の上に載せる(適格な walk 結果、なければ G2 の任意候補 frameSgCandidate、なければ従来の記録)。
+// 手書き `update_confirmation_with` に対応し、contract.stableRoot は frameStableRoot、
+// contract.confirmationSG の `.optional select` は frameSgCandidate に写した(c: Cache は手書き `GradeContract` に当たる)。
+// 局所の score / eligible(lambda の let)は、関数型を注釈した let に写した。
 fn updateConfirmationWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: Store, s: Slot) -> Store {
   let earlyVotes = storePool(st, s).filter(|u| occurrenceBefore(storeTau(st, u), supportCutoff(e, s)));
   let lateVotes = storePool(st, s).filter(|u| occurrenceBefore(st.timestampVote.get?(u), confirmationTime(e, s)));
@@ -205,23 +249,31 @@ fn updateConfirmationWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: Store, s
 
 // ── §7.2 The duties ──
 
-// §6.4 get_head_in_tree at the cumulative store: the supplied tree changes only the Goldfish child domain; the SG
-// anchor, score resolution and eligibility read the full store.
+// §6.4 get_head_in_tree を累積 store 上で行い、与えた tree と票の集合から head の block を返す。
+// 引数の tree は Goldfish の子の範囲だけを変え、SG の anchor・スコアの解決・適格性の判定は store 全体を読む。
+// 本体は storeToHealing(st) に直して getHeadInTreeWithLayer へ渡すだけの薄い写しである。
+// 手書き `get_head_in_tree_with` に対応する(c: Cache は手書き `GradeContract` に当たる)。
 fn getHeadInTreeWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: Store, tree: Set<Block>,
                      votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, k: Slot) -> Block {
   getHeadInTreeWithLayer(c, e, hc, storeToHealing(st), tree, votes, supportVotes, k)
 }
 
-// §7.2 voter_filtered_block_tree(Σ, s): the voter's frozen processed-block view, with viability and the FG-root filter
-// recomputed inside that view (not an intersection with the full-store candidate tree).
+// §7.2 voter_filtered_block_tree(Σ, s): slot s の投票者が見る、凍結した処理済み block の tree を絞り込んで返す。
+// 凍結した view(voterProcessedBlockTree)の内側で viable の判定と FG root の絞り込みをやり直す。
+// store 全体の候補 tree との共通部分ではないので、view の外に後から現れた witness で、より前の block が viable になることはない。
+// goldfishVoteWith が票の head を選ぶ tree として使う。
+// 手書き `voter_filtered_block_tree` に対応する。
 fn voterFilteredBlockTree(e: ProtocolEnv, st: Store, s: Slot) -> Set<Block> {
   let hs = storeToHealing(st);
   getFilteredBlockTreeFrom(hs, voterProcessedBlockTree(e, fgToGoldfish(hs), s))
 }
 
-// §2.5 goldfish_vote(Σ) at the cumulative store: the two merged vote views keep their §2 semantics; the vote duty alone
-// restricts the Goldfish child domain to the voter's filtered tree. A committee member votes for the head at slot s − 1
-// and admits its own vote through the checked handler.
+// §2.5 goldfish_vote(Σ) を累積 store 上で行い、更新後の store と、出した票(あれば)を返す。
+// 併合した 2 つの票の view(voterView / voterSupportView)は §2 の意味のままで、投票の duty だけが Goldfish の子の範囲を投票者の絞り込んだ tree に限る。
+// 現在 slot s で、head は slot s − 1 の getHeadInTreeWith で求める。
+// node nd が slot s の committee に属するなら、その head の root への票を作って
+// onGoldfishVoteChecked で自分の store に取り込み、Some(票) を返す。属さなければ store を変えず None を返す。
+// 手書き `goldfish_vote_with` に対応する(c: Cache は手書き `GradeContract` に当たる)。
 fn goldfishVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: Store) -> (Store, Option<GoldfishVote>) {
   let s = st.s;
   let base = fgToGoldfish(storeToHealing(st));
@@ -239,33 +291,57 @@ fn goldfishVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: Stor
 
 // ── The three user-facing chains (finalized Σ.F, stable, confirmed — nested by construction) ──
 
-// The client-facing stable tip: the stored stable record when it extends the finalized block, else finality.
+// クライアントに見せる stable の先端で、保存した stable 記録が finalized な F を延長していればそれ、でなければ F を返す。
+// F ⪯ latestStable(preceq)の判定だけで決まり、store は変えない。
+// getConfirmed の下限としても使う。
+// 手書き `get_stable` に対応する。
 fn getStable(st: Store) -> Block { if preceq(st.f, st.latestStable) { st.latestStable } else { st.f } }
 
-// The client-facing confirmed tip: the stored confirmation record when it extends the stable output, else that output.
+// クライアントに見せる confirmed の先端で、保存した確認記録が getStable の出力を延長していればそれ、でなければその出力を返す。
+// これで finalized F、stable、confirmed の 3 つの鎖は構成上入れ子になる。
+// store は変えず、判定は preceq だけで行う。
+// 手書き `get_confirmed` に対応する。
 fn getConfirmed(st: Store) -> Block {
   if preceq(getStable(st), st.latestConfirmed) { st.latestConfirmed } else { getStable(st) }
 }
 
 // ── The named store and carried-row admission ──
 
-// The carried-attestation admission seam of the named runtime (one mode: carried rows are also admitted).
+// named 実行系で、block が運ぶ attestation の行(carried row)をどう取り込むかを選ぶ継ぎ目の型である。
+// 現在の variant は AlsoCarried の 1 つだけで、運ばれた行も SG の pool に取り込むモードを表す。
+// admitCarried と onBlockWith の第 1 引数として渡されるが、admitCarried の本体は値を読まない。
+// 手書きも構築子 alsoCarried の 1 つだけの帰納型で、それをそのまま 1 variant の enum に写した。
+// 手書き `CarriedAdmission` に対応する(手書きの構築子は `alsoCarried`)。
+// derive eq により等価判定ができる(手書きも決定可能な等価判定を導出している)。
 enum CarriedAdmission { AlsoCarried } derive eq
 
-// The named store: the erased core, the retained signed bodies, and the admitted original named rows per round.
+// named 実行系の store で、署名情報を消した核の Store に、署名付きの本体と元の attestation の行を添えたものである。
+// core は署名を消した累積 store で、共通の handler(onBlockUsing 等)が読み書きする。
+// bodies は保持した署名付き block 本体(NamedBlock)の有限集合で、親が保持されているかの判定に使う。
+// sgRows は round ごとに受理した元の named attestation(NamedAttestation)の一覧で、受理の順に並ぶ。
+// 手書き `NamedStore` に対応し、欄 core / bodies / sg_rows も同じ。全域写像 sg_rows は Table<Round, List<…>> に写した。
+// derive eq により等価判定ができる。
 record NamedStore { core: Store, bodies: Set<NamedBlock>, sgRows: Table<Round, List<NamedAttestation>> } derive eq
 
+// named store の初期値で、核は initStore()、本体は genesis だけ、行は空の表である。
+// 引数は取らず、戻り値は NamedStore。実行の起点として使う。
+// 手書き `NamedStore.initial` に対応し、名前だけ initialNamedStore に改めた。
 fn initialNamedStore() -> NamedStore {
   NamedStore { core: initStore(), bodies: Set.singleton(NamedBlock.Genesis), sgRows: Table.empty() }
 }
 
-// Clock staging changes no signed body or pool entry.
+// 時刻 t を named store の核の時計に設定し、slot も slotOf(e, t) に合わせる。
+// 署名付きの本体、pool の項目、sgRows には触れず、core の t と s だけを変える。
+// 手書き `NamedStore.setClock` に対応する。
 fn setClock(e: ProtocolEnv, st: NamedStore, t: Time) -> NamedStore {
   NamedStore { core: Store { t: t, s: slotOf(e, t), ..st.core }, ..st }
 }
 
-// Commit the named body only when the common handler inserted its fresh geometry; an existing-erasure alias does not
-// replace the retained signed body.
+// 共通 handler が処理した結果 after を、named store before に反映して named 本体を保持するか決める。
+// b の署名を消した形 eraseBlock(b) が before の tree に無く after の tree にある(新しく入った)ときだけ bodies に b を足す。
+// 既存の消去形と同じになる別名の本体は、保持している署名付き本体を置き換えない。
+// どちらの場合も core は after に差し替える。
+// 手書き `NamedStore.commitBlock` に対応する。
 fn commitBlock(before: NamedStore, after: Store, b: NamedBlock) -> NamedStore {
   let geometry = eraseBlock(b);
   if !before.core.tree.contains(geometry) && after.tree.contains(geometry) {
@@ -275,8 +351,11 @@ fn commitBlock(before: NamedStore, after: Store, b: NamedBlock) -> NamedStore {
   }
 }
 
-// The exact named parent must be held. All ordinary guards, insertion, GF carried-vote processing and finality updates
-// use the shared block core, with the state builder fixed to B's actual named rows. Pool admission is a separate tail.
+// named block b の核の処理で、b の署名付きの親 namedParent(b) が bodies に保持されていなければ何もしない。
+// 通常の守り条件、tree への挿入、Goldfish の運ばれた票の処理、finality の更新は共通の block 核
+// (onBlockCheckedUsing の中の onBlockUsing)を使い、状態の作り方は b の実際の named 行を使う namedTransition に固定する。
+// 結果は commitBlock で named store に反映する。pool への受理は別の後続処理(admitCarried)に残してある。
+// 手書き `process_block_core` に対応する(手書きでは NamedStore の名前空間の中にある)。
 fn processBlockCore(e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: NamedStore, b: NamedBlock) -> NamedStore {
   if !st.bodies.contains(namedParent(b)) {
     st
@@ -289,8 +368,11 @@ fn processBlockCore(e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: Named
   }
 }
 
-// Admit one named row through on_sg_vote: new erased-row membership witnesses admission, and the original named row is
-// retained (SG-projection duplicates are still rejected).
+// named attestation の行 row を onSgVote 経由で 1 件受理し、受理されたら元の named 行を保持する。
+// 受理の判定は既存の onSgVote に任せ、消去した行 erased が pool に無く、処理後の pool にある(新しく入った)ことを受理の証拠にする。
+// 受理されたときは sgRows の row.round の一覧に row を末尾追加し、されなかったときは core だけを更新する。
+// SG の射影が重複する行は、これまでどおり棄却される。
+// 手書き `admit_row` に対応する。
 fn admitRow(hc: HealConfig, st: NamedStore, row: NamedAttestation) -> NamedStore {
   let erased = eraseAttestation(row);
   let after = onSgVote(hc, st.core, erased);
@@ -301,16 +383,25 @@ fn admitRow(hc: HealConfig, st: NamedStore, row: NamedAttestation) -> NamedStore
   }
 }
 
+// named attestation の行の一覧 rows を、先頭から順に admitRow で受理していく。
+// 折り畳み(fold)で store を引き継ぐので、各行は直前の行を受理した後の store を読む。
+// 手書き `admit_rows` に対応し、foldl を fold に書き換えただけである。
 fn admitRows(hc: HealConfig, st: NamedStore, rows: List<NamedAttestation>) -> NamedStore {
   rows.fold(st, |acc, row| admitRow(hc, acc, row))
 }
 
-// Only a newly admitted full named body triggers the carried-row tail, which reads the body's original rows.
+// block 本体 b が新しく取り込まれたときだけ、b が運ぶ行を受理する後続処理である。
+// before に b が無く after に b がある(新規の完全な named 本体)ときに、b の元の行 namedAttestations(b) を admitRows で受理する。
+// そうでなければ after をそのまま返す。第 1 引数 _admission は取り込みのモードで、本体では読まない。
+// 手書き `admit_carried` に対応する。
 fn admitCarried(_admission: CarriedAdmission, hc: HealConfig, before: NamedStore, after: NamedStore, b: NamedBlock) -> NamedStore {
   if !before.bodies.contains(b) && after.bodies.contains(b) { admitRows(hc, after, namedAttestations(b)) } else { after }
 }
 
-// The named block core followed by the named carried-row admission: the active named receipt path.
+// named block の核の処理 processBlockCore に、運ばれた行の受理 admitCarried を続けたものである。
+// 現在使われている named な受信の経路で、引数は取り込みのモード admission・環境 e・各設定・store st・block b。
+// 戻り値は更新後の named store。
+// 手書き `on_block_with` に対応する(手書きでは NamedAdmission の名前空間の中にある)。
 fn onBlockWith(admission: CarriedAdmission, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, st: NamedStore, b: NamedBlock) -> NamedStore {
   admitCarried(admission, hc, st, processBlockCore(e, hc, cfg, st, b), b)
 }

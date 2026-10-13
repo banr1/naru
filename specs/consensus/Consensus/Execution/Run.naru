@@ -29,9 +29,17 @@ import Consensus.Execution.Node
 
 // ── Generic.Event instantiated: a scheduler event at a node ──
 
-// A node's local clock tick, or the delivery of one object to it.
+// スケジューラが node に与える event を表す enum である。
+// Tick(v, t) は validator v のローカル時計が時刻 t で刻む tick、
+// Deliver(v, o, t) は validator v に時刻 t でオブジェクト o が配送されることを表す。
+// 手書き `Generic.Event` の構築子 `tick` / `deliver` に対応し、
+// V = ValidatorId、Object = NamedObject に固定している(手書き `NamedEvent` に相当)。
+// run の events はこの event の列で、World の更新(worldStep)がそれを 1 つずつ畳み込む。
 enum NamedEvent { Tick(ValidatorId, Time), Deliver(ValidatorId, NamedObject, Time) } derive eq
 
+// event の時刻を返す。Tick も Deliver も最後の引数 t が時刻である。
+// 手書き `NamedEvent.time` に対応する。
+// 配送の絞り込み(stateBeforeTime / readAt)と eventKey が、この時刻を読む。
 fn eventTime(ev: NamedEvent) -> Time {
   match ev {
     NamedEvent.Tick(_, t) => t,
@@ -39,6 +47,9 @@ fn eventTime(ev: NamedEvent) -> Time {
   }
 }
 
+// event の宛先 node(validator)を返す。Tick も Deliver も最初の引数 v である。
+// 手書き `NamedEvent.node` に対応する。
+// worldStep はこの validator の状態だけを更新する。
 fn eventNode(ev: NamedEvent) -> ValidatorId {
   match ev {
     NamedEvent.Tick(v, _) => v,
@@ -46,6 +57,9 @@ fn eventNode(ev: NamedEvent) -> ValidatorId {
   }
 }
 
+// event が運ぶオブジェクトを返す。Deliver なら Some(o)、Tick なら None である。
+// 手書き `NamedEvent.object?` に対応する。
+// runObjects が配送 event の payload を集めるのに使う。
 fn eventObject?(ev: NamedEvent) -> Option<NamedObject> {
   match ev {
     NamedEvent.Tick(_, _) => None,
@@ -53,7 +67,9 @@ fn eventObject?(ev: NamedEvent) -> Option<NamedObject> {
   }
 }
 
-// Ticks precede deliveries at the same time.
+// 同じ時刻での event の phase 番号を返す。Tick は 0、Deliver は 1 で、同時刻なら tick が配送より先になる。
+// eventKey の第 2 成分として使う。
+// 手書き `Event.phase` に対応する。
 fn eventPhase(ev: NamedEvent) -> Nat {
   match ev {
     NamedEvent.Tick(_, _) => 0,
@@ -61,20 +77,37 @@ fn eventPhase(ev: NamedEvent) -> Nat {
   }
 }
 
-// Event order is lexicographic by time and phase; equal keys keep their list order.
+// event の順序を決める鍵 (時刻, phase) を返す。
+// 順序は時刻、次に phase の辞書式で、鍵が等しい event は events 列の並びを保つ。
+// 手書き `Event.key` に対応する(手書きは Lex (Time × Nat) の toLex、naru では tuple の辞書式順序)。
 fn eventKey(ev: NamedEvent) -> (Time, Nat) { (eventTime(ev), eventPhase(ev)) }
 
 // ── Generic.World instantiated: every node's local state ──
 
+// 全 node の局所状態を表す型で、validator から NamedNodeState への表(Table)である。
+// 手書き `World`(validator から状態への関数)に対応し、手書き `NamedWorld` に相当する。
+// 表に無い validator は既定の初期 node 状態(worldAt が initialNode() を返す)として読む。
+// 更新は worldStep が insert で行い、Mathlib の `Function.update` に当たる。
+// 関数の代わりに有限の表を使うので、読みは worldAt を通す。
+// 初期値は worldInit の空の表である。
 type NamedWorld = Table<ValidatorId, NamedNodeState>
 
+// run の開始時の World を返す。表は空で、全 node が初期状態として読まれる。
+// 手書き `NamedWorld.init`(Generic の `World.init` = 全 validator が `P.init` を、名前付き node に具体化したもの)に対応し、
+// worldInit と改名した。
+// 手書きの全 validator が初期状態という関数は、既定値付きの読み(worldAt)で表している。
 fn worldInit() -> NamedWorld { Table.empty() }
 
-// The state of node `v`: every node starts at the initial node state.
+// World w における validator v の node 状態を返す。
+// 表に無ければ initialNode() を返すので、まだ event を受けていない node は初期状態になる。
+// 手書き `NamedWorld` の関数適用 `w v` に対応する。
 fn worldAt(w: NamedWorld, v: ValidatorId) -> NamedNodeState { w.getOr(v, initialNode()) }
 
-// One event folded into the world: a tick replaces the node's state by its post-tick state (the emitted objects are not
-// delivered by the fold), a delivery by its receipt.
+// event 1 つを World に畳み込んだ新しい World を返す。
+// Tick は node の状態を nodeTick の tick 後の状態に置き換える(出力オブジェクトは畳み込みでは配送しない)。
+// Deliver は node の状態を nodeProcess による受信後の状態に置き換える。
+// 手書き `NamedWorld.step`(Generic の `World.step` を名前付き node に具体化したもの)に対応し、`Function.update` を Table の
+// insert にしている。worldStep と改名した。
 fn worldStep(s: Setup, w: NamedWorld, ev: NamedEvent) -> NamedWorld {
   match ev {
     NamedEvent.Tick(v, t) => {
@@ -88,55 +121,87 @@ fn worldStep(s: Setup, w: NamedWorld, ev: NamedEvent) -> NamedWorld {
 
 // ── Generic.Run instantiated: the honest set, the horizon, and the event list ──
 
+// 実行 1 回(run)を表す record である。欄は次の 3 つ。
+//   honest: 誠実な validator の集合(手書きでは有限集合)、
+//   horizon: run の地平線の時刻、
+//   events: 起きた event の列(畳み込みの順序を決める)。
+// 手書き `Generic.Run` の欄 `honest` / `horizon` / `events` に対応し、手書き `NamedRun` に相当する。
+// World の読み(stateBefore など)はこの events を先頭から畳み込んで得る。
 record NamedRun { honest: Set<ValidatorId>, horizon: Time, events: List<NamedEvent> } derive eq
 
-// Events before index `i` have been folded into the returned world.
+// index i より前の event を畳み込んだ World を返す。
+// events の先頭 i 個を worldInit から worldStep で順に畳み込む。
+// 手書き `Run.stateBefore` に対応する。
+// emittedAt が tick の直前状態を得るのに使う。
 fn stateBefore(s: Setup, rho: NamedRun, i: Nat) -> NamedWorld {
   rho.events.take(i).fold(worldInit(), |w, ev| worldStep(s, w, ev))
 }
 
-// The returned world includes events strictly before time `t`.
+// 時刻 t より厳密に前の event を畳み込んだ World を返す。
+// events から時刻が t 未満のものだけを残し、worldInit から worldStep で畳み込む。
+// 手書き `Run.stateBeforeTime` に対応する。
 fn stateBeforeTime(s: Setup, rho: NamedRun, t: Time) -> NamedWorld {
   rho.events.filter(|ev| eventTime(ev) < t).fold(worldInit(), |w, ev| worldStep(s, w, ev))
 }
 
-// The returned world includes events up to and including time `t`.
+// 時刻 t まで(t を含む)の event を畳み込んだ World を返す。
+// events から時刻が t 以下のものだけを残し、worldInit から worldStep で畳み込む。
+// 手書き `Run.readAt` に対応する。
 fn readAt(s: Setup, rho: NamedRun, t: Time) -> NamedWorld {
   rho.events.filter(|ev| eventTime(ev) <= t).fold(worldInit(), |w, ev| worldStep(s, w, ev))
 }
 
-// The returned world includes the complete event list.
+// event 列の全部を畳み込んだ最終の World を返す。
+// events 全体を worldInit から worldStep で畳み込む。
+// 手書き `Run.final` に対応し、finalWorld と改名した。
 fn finalWorld(s: Setup, rho: NamedRun) -> NamedWorld { rho.events.fold(worldInit(), |w, ev| worldStep(s, w, ev)) }
 
-// The objects emitted by the tick at index `i`, recomputed from its pre-event state.
+// index i の tick が出力したオブジェクト列を、その event の直前の状態から再計算して返す。
+// 直前の World は stateBefore(s, rho, i) で、validator v の状態に nodeTick を時刻 t で適用し、出力側だけを返す。
+// events には出力が記録されないため、手書きどおり再計算で求める。
+// 手書き `Run.emittedAt` に対応する。
 fn emittedAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, t: Time) -> List<NamedObject> {
   match nodeTick(s, v, worldAt(stateBefore(s, rho, i), v), t) {
     (_, out) => out,
   }
 }
 
-// Payloads from delivery events only; self-emitted objects are not included.
+// run の配送 event が運んだオブジェクトの列を返す。
+// Deliver の payload だけを events の順に集め、node が自分で出力したオブジェクトは含めない。
+// 手書き `Run.objects` に対応し、runObjects と改名した。
 fn runObjects(rho: NamedRun) -> List<NamedObject> { rho.events.filterMap(|ev| eventObject?(ev)) }
 
 // ── Execution/Run.lean: the reads a run exposes ──
 
-// The named store of validator `v` after every event up to and including time `t` (what the Statements read).
+// 時刻 t まで(t を含む)の全 event の後の、validator v の名前付き store を返す。
+// readAt(s, rho, t) の World から v の node 状態を読み、その st を取り出す。
+// Statements が読む store はこの関数の結果である。
+// 手書き `Run.storeAt` に対応する。
 fn storeAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> NamedStore { worldAt(readAt(s, rho, t), v).st }
 
-// The existing named core call, with the supplied configuration unchanged (手書き `NamedReceiptCalls.postCore`).
+// 既存の名前付き core 呼び出しを、渡された設定を変えずに行った後の store を返す。
+// before にブロック b を processBlockCore で処理させ、環境 s.e・healing 設定 s.hc・高さ設定 s.cfg をそのまま渡す。
+// 手書き `NamedReceiptCalls.postCore` に対応する。
 fn postCore(s: Setup, before: NamedStore, b: NamedBlock) -> NamedStore { processBlockCore(s.e, s.hc, s.cfg, before, b) }
 
-// The actual cache preparation at the start of `nodeTick`.
+// nodeTick の冒頭で実際に行う phase キャッシュの準備を返す。
+// 受け取った store の core を healing に写し、onPhaseTick で時刻 t まで phase を完了させたキャッシュである。
+// 手書き `NamedActionReads.preparedCache` に対応する。
 fn preparedCache(s: Setup, before: NamedNodeState, t: Time) -> Cache {
   onPhaseTick(s.e, s.hc, storeToHealing(before.st.core), t, before.cache)
 }
 
-// The confirmation input at a support-cutoff tick: clock update and the same prepared cache, with the incoming signing record.
+// support の締切 tick での確認(confirmation)の入力となる node 状態を返す。
+// store は setClock で時計を時刻 t に更新し、キャッシュは preparedCache と同じ準備済みのもの、
+// 署名 record は受け取ったものをそのまま使う。
+// 手書き `NamedActionReads.confirmationReadFrom` に対応する。
 fn confirmationReadFrom(s: Setup, before: NamedNodeState, t: Time) -> NamedNodeState {
   NamedNodeState { st: setClock(s.e, before.st, t), signing: before.signing, cache: preparedCache(s, before, t) }
 }
 
-// The strict read followed by support-cutoff clock/cache staging.
+// 時刻 t の確認用の読みを返す。
+// stateBeforeTime で t より厳密に前の World を読み、validator v の状態に confirmationReadFrom で時計とキャッシュの段取りを施す。
+// 手書き `NamedActionReads.confirmationReadAt` に対応する。
 fn confirmationReadAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> NamedNodeState {
   confirmationReadFrom(s, worldAt(stateBeforeTime(s, rho, t), v), t)
 }

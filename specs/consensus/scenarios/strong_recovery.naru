@@ -19,7 +19,9 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Run
 import Scenarios.Trace
 
-// The StrongRecovery setup: Δ = 1, GST 1, weights 3 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+// StrongRecovery の Setup(環境・回復設定・高さ設定)を組み立てて返す。
+// 引数は無い。Δ = 1、GST 1、重みは validator 0 が 3、validator 1 が 1、R = 3、η = 2、K = 4、D = 2、timeout 6 を固定値で与える。
+// 手書き `S` の `E` / `hc` / `cfg` に写る。WeakGenesis との差は GST と重みで、awake は Setup でなく scenario の input。
 fn strongRecoverySetup() -> Setup {
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
@@ -32,11 +34,19 @@ fn strongRecoverySetup() -> Setup {
   }
 }
 
-// The StrongRecovery run with rho 30: node `v0` ticks at t = 0 … 30; no deliveries.
+// StrongRecovery の rho 30 に当たる run を返す: node `v0` が t = 0 … 30 に tick するだけで、配達は無い。
+// 引数 `v0` は tick する node の ValidatorId。戻り値は honest = {v0}、horizon = 30、events = 31 個の Tick の NamedRun。
+// 手書き `rho`(引数 N = 30)と `events` / `tickEvents` が作る tick 列と同じ。golden test(tests/golden/Golden.lean)も使う(C10)。
 fn strongRecoveryRun(v0: ValidatorId) -> NamedRun {
   NamedRun { honest: Set.singleton(v0), horizon: 30, events: List.range(31).map(|t| NamedEvent.Tick(v0, t.toInt())) }
 }
 
+// StrongRecovery(rho 30)の run を移植 protocol で動かし、各 tick の後の読みと t = 30 の保持 block・読みを表示する scenario。
+// input: proposer は全 slot で validator 0、committee は全 slot で {validator 0}、newRoot は slot + 1 を root とする BlockId。
+// input: awake は全 node で true(手書き `nd` の awake := fun _ => true。WeakGenesis は node 0 だけ)。
+// 手書き `E` の proposer / committees、手書き `nd` の new_root / awake に対応する。
+// observe: `trace` が各 event 後の読み、`heldAt` が t = 30 に body を持つ block の root、`readsAt` が t = 30 の読みを出す。
+// 単独の node 0 の読みは WeakGenesis と同じ列になる(confirmed は t = 10 … 30 で root 2 … 7、stable は t = 26 から root 4、finalized は 0)。
 scenario strongRecovery {
   input proposer(slot) = ValidatorId { value: 0 };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 });

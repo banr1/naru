@@ -18,20 +18,34 @@ import Consensus.Objects.Weights
 import Consensus.Objects.Parameters
 import Consensus.Protocol.ChainState
 
-// A validator `i` is slashable between two evidence sets: one occurrence from each, both `i`'s, satisfying E1 or E2.
-// `a` and `b` are chosen independently, so the conflicting occurrences can be in one attestation.
+// validator i が 2 つの evidence 集合の間で slashable であることを表す。各集合から 1 つずつ取った出現が衝突する。
+// 手書き `SlashableBetween` に対応し、a1 の a と a2 の b がどちらも i の署名(valIndex == i)で、E1 または E2 に当たる。
+// 元の Lean の `Protocol.Slashable a b`(命題)は、Model の `slashable(a, b)`(Bool、e1Slashable || e2Slashable)になる。
+// a と b は独立に選ぶので、衝突する 2 つの出現が同じ attestation に入っていてもよい。
+// `∃ a ∈ A₁, ∃ b ∈ A₂` は `exists … { a1.contains(a) && a2.contains(b) && … }` と書く。
+// 結論の形の述語で、証拠となる履歴を名指す。HasSlashableWeightBetween が各 i に対して要求する。
 predicate SlashableBetween(a1: Set<CombinedAttestation>, a2: Set<CombinedAttestation>, i: ValidatorId) {
   exists a: CombinedAttestation { exists b: CombinedAttestation {
     a1.contains(a) && a2.contains(b) && a.valIndex == i && b.valIndex == i && slashable(a, b)
   } }
 }
 
-// The weight floor w(S) ≥ 2q − W for an intersection of two quorums, written additively as 2q ≤ W + w(S).
+// 2 つの quorum の交わりの重みの下限 w(S) ≥ 2q − W を、加法の形 2q <= W + w(S) で表す。
+// 手書き `HasIntersectionWeight` に対応し、元の Lean の `E.q` / `E.W` は `envQ(e)` / `envW(e)`(Interface.naru)になる。
+// 自然数の引き算 2q − W は q が W/2 を下回ると黙って 0 に切り詰められるので、引き算を使わずに書く。
+// 重みは `weightOf(e.electorate, w)` で測る。w は validator の集合である。
+// 下限 2q − W は、2 つの quorum がそれぞれ重み q 以上なら交わりの重みが必ずそれ以上になる値である。
+// HasSlashableWeightBetween が、slashable な validator の集合 w に課す重みの条件として使う。
 condition HasIntersectionWeight(e: ProtocolEnv, w: Set<ValidatorId>) {
   2 * envQ(e) <= envW(e) + weightOf(e.electorate, w)
 }
 
-// Slashable weight 2q − W between two evidence sets (the accountability conclusion form).
+// 2 つの evidence 集合の間に、重み 2q − W の slashable な validator 集合が存在することを表す(責任追及の結論の形)。
+// 手書き `HasSlashableWeightBetween` に対応し、重みの条件と各 i の SlashableBetween を満たす集合 S の存在を主張する。
+// 有限集合の存在は `exists members: List<ValidatorId>` と `members.toSet()` で書き、List から正規形の集合を作る。
+// 手書きの存在量化は validator の有限集合 S にかかり、naru では List を量化して `toSet()` で S を作る。
+// 正規化で重複が消えるので、同じ validator の重みを数え過ぎない。
+// 集合 w の重みは HasIntersectionWeight、w の各 i が SlashableBetween であることを要求する。
 predicate HasSlashableWeightBetween(e: ProtocolEnv, a1: Set<CombinedAttestation>, a2: Set<CombinedAttestation>) {
   exists members: List<ValidatorId> {
     let w = members.toSet();
@@ -39,8 +53,12 @@ predicate HasSlashableWeightBetween(e: ProtocolEnv, a1: Set<CombinedAttestation>
   }
 }
 
-// Roots identify blocks within the ancestry below the two tips (手書き `RootInjectiveOnAncestors` =
-// `RootInjectiveBelow {tip₁, tip₂}`): the collision-free hash idealization on two chains.
+// 2 つの tip の祖先の範囲で、root が block を一意に決めることを表す(2 本の chain 上での hash の衝突なしの理想化)。
+// 手書き `RootInjectiveOnAncestors` は `RootInjectiveBelow {tip₁, tip₂}` と定義され、naru は後者を展開して書く。
+// 元の Lean の `∃ B ∈ {tip₁, tip₂}, A ⪯ B` は `preceq(a, tip1) || preceq(a, tip2)` になる。
+// 任意の祖先 a と c が同じ `root` を持てば a == c である。
+// 手書きは範囲を Block の有限集合 S で一般に書いた `RootInjectiveBelow` で、それを 2 点に特化したものが対応先である。
+// root の比較を使う遷移から、結論の block の等しさを引き出すための前提として claim に置く。
 predicate RootInjectiveOnAncestors(tip1: Block, tip2: Block) {
   forall a: Block { forall c: Block {
     (preceq(a, tip1) || preceq(a, tip2)) && (preceq(c, tip1) || preceq(c, tip2)) && root(a) == root(c)
@@ -48,7 +66,12 @@ predicate RootInjectiveOnAncestors(tip1: Block, tip2: Block) {
   } }
 }
 
-// The internal certificate-finalization predicate: the named derived state of `c` carries (F, h_F) = (target, h).
+// certificate の finalization を表す内部の述語で、c の名前付き導出状態が (F, h_F) = (target, h) を持つことを表す。
+// 手書き `NamedFinalizedAt` に対応し、元の Lean の `derive_named E cfg C` は `deriveNamed(e, cfg, c)` になる。
+// 欄 `F` は `.f`、`h_F` は `.hF` と書く。e は環境、cfg は高さの設定、c は NamedBlock である。
+// 公開の generic な liveness の記録(手書き `FinalizedAt`)とは別物で、内部の certificate 側の述語である。
+// target は finalize された block、h はその高さである。
+// 本体は `deriveNamed(e, cfg, c)` の `.f` が target と、`.hF` が h と等しいことの連言である。
 predicate NamedFinalizedAt(e: ProtocolEnv, cfg: HeightConfig, c: NamedBlock, target: Block, h: Height) {
   deriveNamed(e, cfg, c).f == target && deriveNamed(e, cfg, c).hF == h
 }

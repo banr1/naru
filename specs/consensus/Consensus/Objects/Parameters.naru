@@ -12,23 +12,47 @@ import Consensus.Objects.Identifiers
 import Consensus.Objects.Time
 import Consensus.Objects.Weights
 
-// §1 the fixed protocol environment: the schedule unit Δ, t_GST, and the weighted electorate.
+// §1 固定されたプロトコル環境を表す。スケジュール単位 Δ、t_GST、重み付き electorate を持つ。
+// 欄 delta は Δ で、スロットの長さの単位であり、t_GST の後は配送の厳密な上限でもある。
+// 欄 tGST は t_GST で、これ以降は Δ が配送を抑え、正直なノードは処理した全オブジェクトを中継する。
+// 欄 electorate は重み付き electorate(w(·) と W)である。
+// 手書き `Env` に対応するが、`Δ_pos`(0 < Δ)と `t_GST_nonneg`(0 ≤ t_GST)は証明の欄なので Model には置かない。
+// それらは Statements の premise にする。名前は将来の stdlib の Env と分けるため ProtocolEnv にした。
+// 手書きの proposer と committees は環境のオラクルなので、欄ではなく下の input に分けてある。
 record ProtocolEnv { delta: Time, tGST: Time, electorate: Electorate } derive eq
 
-// §1 the assigned proposer of each slot.
+// §1 各スロットに割り当てられた proposer を返す環境からの入力である。
+// 引数 slot に対して ValidatorId を 1 つ返し、scenario が値を与える。
+// 手書き `Env.proposer` は関数の欄 `Slot → V` だが、環境のオラクル(非決定性)なので naru では input として明示する。
+// 本体は無く、プロトコルの Model はこの値を読むだけで決めない。
+// IDEAL.md「言語の意味論」の入力の扱いに従う。
+// 関数としての入力なので同じ slot には常に同じ validator を返し、値は scenario ごとに違ってよい。
 input proposer(slot: Slot) -> ValidatorId
 
-// §1 the fixed committees K_s ⊆ V. Goldfish counts cardinalities of subsets of K_s, never weights.
+// §1 固定された委員会 K_s ⊆ V を返す環境からの入力である。
+// 引数 slot に対して、そのスロットの委員会の validator の集合を返し、scenario が値を与える。
+// Goldfish は K_s の部分集合の濃度を数えるだけで、重みは数えない(electorate の重みは使わない)。
+// 手書き `Committees.members` に対応し、手書きの `Env.committee` が同じ値を読む。
+// 手書きは環境のオラクルとして欄に持つが、naru では input として明示する。
+// 関数としての入力なので同じ slot には常に同じ集合を返し、値は scenario ごとに違ってよい。
 input committee(slot: Slot) -> Set<ValidatorId>
 
-// §1 t_s = 4Δs
+// §1 スロット s の開始時刻 t_s = 4Δs を返す。
+// 引数は環境 e とスロット番号 s で、e.delta を Δ として slotStart に渡す。
+// 手書き `Env.t` に対応し、名前だけが違う。
 fn slotTime(e: ProtocolEnv, s: Slot) -> Time { slotStart(e.delta, s) }
 
-// §1 s = ⌊t / 4Δ⌋
+// §1 時刻 u を含むスロット s = ⌊t / 4Δ⌋ を返す。
+// 引数は環境 e と時刻 u で、e.delta を Δ として slotOfTime に渡す。
+// 手書き `Env.slotOf` に対応し、写し方に差は無い。
 fn slotOf(e: ProtocolEnv, u: Time) -> Slot { slotOfTime(e.delta, u) }
 
-// §3 W = w(V)
+// §3 validator の重みの総和 W = w(V) を返す。
+// 環境 e の electorate に対する totalWeight をそのまま返す。
+// 手書き `Env.W` に対応し、名前を envW にした点だけが違う。
 fn envW(e: ProtocolEnv) -> Nat { totalWeight(e.electorate) }
 
-// §4 q = ⌈2W/3⌉
+// §4 finality の閾値 q = ⌈2W/3⌉ を返す。
+// 環境 e の electorate に対する finalityThreshold をそのまま返す。
+// 手書き `Env.q` に対応し、名前を envQ にした点だけが違う。
 fn envQ(e: ProtocolEnv) -> Nat { finalityThreshold(e.electorate) }

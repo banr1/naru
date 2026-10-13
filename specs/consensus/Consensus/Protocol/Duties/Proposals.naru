@@ -27,47 +27,72 @@ import Consensus.Protocol.Duties.Inputs
 
 // ── Proposal rows ──
 
-// The source of proposal rows (one mode: window-filtered processed pool rows, then carried rows of eligible bodies).
+// 提案に入れる行の供給元を表す列挙で、現在は PoolAndCarried の 1 つだけを持つ。
+// PoolAndCarried は、窓で絞った処理済みの pool の行を先に、次に適格な body が運ぶ行を並べる方式を指す。
+// 手書き `ProposalRowSource` の poolAndCarried に対応し、手書きもこの 1 variant だけを持つ。
+// selectRows の引数 source として渡されるが、中では読まれず、選び方は常にこの方式になる。
+// variant が 1 つだけなので、行の選び方は常にこの方式に固定されている。
+// 比較できるよう derive eq を付けている。
 enum ProposalRowSource { PoolAndCarried } derive eq
 
-// The inclusive SG admission window [round(Σ.s) − η_SG, round(Σ.s)], applied to the row's own round.
+// round r が SG の受理窓 [round(Σ.s) − η_SG, round(Σ.s)] に入るかを返す(両端を含む)。
+// 窓の基準は store の現在 slot の round で、判定する r は行自身の round。
+// 手書き `ProposalRows.inWindow` に対応し、手書きは decide で Bool にする。
 fn inWindow(hc: HealConfig, st: Store, r: Round) -> Bool {
   roundOf(hc, st.s) - hc.etaSG <= r && r <= roundOf(hc, st.s)
 }
 
-// Every admitted named row up to the current round, in round order then admission order.
+// 現在の round までに受理された named 行を、round 順、次に受理順に並べて返す。
+// round 0 から現在の round までの各 round の sgRows を連結し、記録の無い round は空として扱う。
+// 手書き `NamedProposalRows.processedRows` に対応し、手書きは sg_rows をそのまま使う。
 fn processedRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
   List.range(roundOf(hc, st.core.s) + 1).flatMap(|r| st.sgRows.getOr(r, []))
 }
 
-// The retained bodies' roots in the fixed root order.
+// 保持している body の根を、固定の根の順序(昇順)に並べて返す。
+// body の根を取り出し、sort の並べ替えの鍵に根そのものを使う。
+// 手書き `NamedProposalRows.orderedRoots` に対応し、手書きは根の有限集合を昇順に並べる。
 fn orderedRoots(st: NamedStore) -> List<BlockId> { sort(st.bodies.map(|b| namedRoot(b)), by = |r| r) }
 
-// The retained bodies in root order. A root collision has no unique answer, just as in the resolver.
+// 保持している body を根の順序で並べて返す。
+// 同じ根の body が複数あると一意の答えが無く、その根は落ちる。resolver と同じ扱い。
+// 手書き `NamedProposalRows.orderedBodies` に対応し、手書きの pickUnique? に当たるのが findUnique?。
 fn orderedBodies(st: NamedStore) -> List<NamedBlock> {
   orderedRoots(st).filterMap(|r| st.bodies.findUnique?(|b| namedRoot(b) == r))
 }
 
-// A body is eligible when its round is in the window and its carried rows are admissible.
+// body が提案の行の供給元として適格かを返す。条件は body の round が受理窓に入り、運ぶ行が受理可能なこと。
+// round は body の slot から求め、運ぶ行の受理可能性は eraseBlock で名前を消した block に対して調べる。
+// 手書き `NamedProposalRows.eligibleBody` に対応し、手書きは carried_attestations_admissible を使う。
 fn eligibleBody(hc: HealConfig, st: NamedStore, b: NamedBlock) -> Bool {
   inWindow(hc, st.core, roundOf(hc, namedSlot(b))) && carriedAttestationsAdmissible(hc, eraseBlock(b))
 }
 
+// 処理済みの行のうち、行自身の round が受理窓に入るものを返す(SG head が未解決の行も含む)。
+// processedRows の順序を保ったまま inWindow で絞るだけの関数。
+// 手書き `NamedProposalRows.poolRows` に対応する。
 fn poolRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
   processedRows(hc, st).filter(|row| inWindow(hc, st.core, row.round))
 }
 
+// 適格な body が運ぶ行のうち、行自身の round が受理窓に入るものを、body の根の順に並べて返す。
+// 適格でない body は空にし、適格な body の行だけ inWindow で絞る。
+// 手書き `NamedProposalRows.carriedRows` に対応する。
 fn carriedRows(hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
   orderedBodies(st).flatMap(|b|
     if eligibleBody(hc, st, b) { namedAttestations(b).filter(|row| inWindow(hc, st.core, row.round)) } else { [] })
 }
 
-// The source rows: window-filtered pool rows (unresolved SG heads included), then the carried rows of eligible bodies.
+// 提案の元になる行を返す。窓で絞った pool の行(未解決の SG head を含む)の後に、適格な body の運ぶ行を並べる。
+// 先頭の _source は読まれず、方式は常に PoolAndCarried と同じ。
+// 手書き `NamedProposalRows.select` に対応し、命名の衝突を避けて selectRows とした。
 fn selectRows(_source: ProposalRowSource, hc: HealConfig, st: NamedStore) -> List<NamedAttestation> {
   poolRows(hc, st).append(carriedRows(hc, st))
 }
 
-// Full named rows on the head's recursive ancestor chain.
+// head から祖先をたどった連鎖上にある named 行をすべて集めて返す(自分の行が先、祖先の行が後)。
+// Genesis は空、Node は自分の行の後ろに親の chainRows をつなぐ再帰になる。
+// 手書き `NamedProposalRows.chainRows` に対応する。
 fn chainRows(b: NamedBlock) -> List<NamedAttestation> {
   match b {
     NamedBlock.Genesis => [],
@@ -75,34 +100,43 @@ fn chainRows(b: NamedBlock) -> List<NamedAttestation> {
   }
 }
 
-// Drop the rows already on the parent chain (full named rows; no erased-row equality is used here).
+// 親の連鎖にすでにある行を rows から取り除く(完全な named 行で比べ、erase 後の等しさは使わない)。
+// 判定は chainRows(head) に行が含まれるかで、含まれない行だけ順序を保って残す。
+// 手書き `NamedProposalRows.excludeOnChain` に対応する。
 fn excludeOnChain(head: NamedBlock, rows: List<NamedAttestation>) -> List<NamedAttestation> {
   rows.filter(|row| !chainRows(head).contains(row))
 }
 
-// Keep the first two distinct full rows of each (validator, round), in list order; later rows of that pair and repeated
-// rows are dropped.
+// (検証者, round) ごとに、異なる完全な行を列の順で最初の 2 つまで残し、それ以降と重複の行を落とす。
+// 左から畳み込み、すでに acc にある行、または同じ (valIndex, round) の行が 2 つ以上ある場合は acc のまま返す。
+// 手書き `NamedProposalRows.capPerSigner` に対応する。
 fn capPerSigner(rows: List<NamedAttestation>) -> List<NamedAttestation> {
   rows.fold([], |acc, row|
     if acc.contains(row) || 2 <= acc.filter(|a| a.valIndex == row.valIndex && a.round == row.round).size() { acc }
     else { acc.append([row]) })
 }
 
-// The honest proposal's rows: drop rows already on the parent chain, then keep at most two distinct rows per
-// (validator, round). At most 2 · |V| · (η_SG + 1) rows result.
+// 誠実な提案に入れる行を返す。親の連鎖にある行を落とし、(検証者, round) ごとに異なる行を最大 2 つまで残す。
+// 結果は多くても 2 · |V| · (η_SG + 1) 行になる。
+// 手書き `NamedProposalRows.proposalRows` に対応し、excludeOnChain の後に capPerSigner を適用するだけ。
 fn proposalRows(parent: NamedBlock, rows: List<NamedAttestation>) -> List<NamedAttestation> {
   capPerSigner(excludeOnChain(parent, rows))
 }
 
 // ── Named constructors ──
 
-// The retained signed body of the selected core parent, compared by complete erasure (not only the root).
+// 選ばれた core の親 block に対応する、保持済みの署名付き body を探して返す。
+// 根だけでなく、eraseBlock で名前を消した完全な block が parent と等しい body を、一意なものとして選ぶ。
+// 見つからない、または複数あるときは None を返し、任意の store で親の検索が失敗しうることを表に出す。
+// 手書き `NamedActions.parentBody?` に対応する。
 fn parentBody?(st: NamedStore, parent: Block) -> Option<NamedBlock> {
   st.bodies.findUnique?(|b| eraseBlock(b) == parent)
 }
 
-// The honest named proposal: the shared proposal read, the retained parent body, and the bounded rows. The optional
-// result exposes a failed parent lookup for arbitrary stores.
+// 誠実な named 提案を作って返す。共有の提案読み、保持済みの親 body、上限付きの行から NamedBlock.Node を組む。
+// 親 body が見つからない場合は None になり、任意の store での検索失敗がそのまま結果に出る。
+// 行は selectRows で選び、proposalRows で連鎖の重複と署名者ごとの上限を整える。
+// 手書き `NamedActions.proposal_with` に対応し、with_proposal_input の継続は let inp に置き換えた。
 fn proposalWith(c: Cache, source: ProposalRowSource, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore) -> Option<NamedBlock> {
   let inp = proposalInput(c, e, hc, nd, storeToHealing(st.core));
   parentBody?(st, inp.parent).map(|parent|
@@ -110,19 +144,27 @@ fn proposalWith(c: Cache, source: ProposalRowSource, e: ProtocolEnv, hc: HealCon
                     proposalRows(parent, selectRows(source, hc, st)), inp.proposer))
 }
 
-// Structural conversion only: the shared read already computed every field.
+// AttestationInput を RecordInput に構造的に写すだけの変換で、各欄をそのまま移す。
+// 共有の読みがすべての欄(SG head・FG source・finality head を含む)をすでに計算している。
+// 手書き `NamedActions.creatorInput` に対応し、手書きの Input は NamedRecord.Input。
 fn creatorInput(inp: AttestationInput) -> RecordInput {
   RecordInput { valIndex: inp.valIndex, round: inp.round, confirmed: inp.confirmed, fields: inp.fields, hJ: inp.hJ, j: inp.j, hF: inp.hF }
 }
 
-// The round action: the signing client updates its height-wide locks and named timeout history exactly once.
+// round action を行い、更新後の named 署名状態と、作った named attestation の行を返す。
+// attestationInput の共有読みを creatorInput で写し、署名クライアント namedCreate に渡す。
+// 署名クライアントは高さ全体の lock と named の timeout 履歴を 1 回だけ更新する。
+// 手書き `NamedActions.round_action_with` に対応し、手書きの NamedRecord.create は namedCreate に当たる。
 fn roundActionWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: HealingStore, rec: NamedRecord) -> (NamedRecord, NamedAttestation) {
   namedCreate(rec, creatorInput(attestationInput(c, e, hc, nd, st)))
 }
 
 // ── Named duties ──
 
-// Process the exact constructed named block with carried-row admission. A failed parent lookup changes nothing.
+// 構築した named block を、運ぶ行の受理付きでそのまま処理する。戻り値は (更新後の store, 作った block)。
+// 親 body の検索に失敗したときは store を変えず None を返す。
+// 受理は onBlockWith に CarriedAdmission.AlsoCarried を渡して行い、行の供給元は PoolAndCarried に固定する。
+// 手書き `NamedDuties.propose_block_with` に対応する。
 fn proposeBlockWith(c: Cache, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, nd: Node, st: NamedStore) -> (NamedStore, Option<NamedBlock>) {
   match proposalWith(c, ProposalRowSource.PoolAndCarried, e, hc, nd, st) {
     None => (st, None),
@@ -130,19 +172,25 @@ fn proposeBlockWith(c: Cache, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig,
   }
 }
 
-// Direct use of the core GF duty; the retained named data is unchanged.
+// core の Goldfish 投票の duty をそのまま使い、保持している named データは変えない。
+// st.core にだけ goldfishVoteWith を適用し、その結果の core を差し戻す。戻り値は (更新後の store, 投票)。
+// 手書き `NamedDuties.goldfish_vote_with` に対応し、core 版(Handlers)と区別して改名した。
 fn namedGoldfishVoteWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore) -> (NamedStore, Option<GoldfishVote>) {
   match goldfishVoteWith(c, e, hc, nd, st.core) {
     (core, out) => (NamedStore { core: core, ..st }, out),
   }
 }
 
-// Direct use of the core confirmation update.
+// core の confirmation 更新をそのまま使い、named 側のデータは変えない。
+// st.core にだけ updateConfirmationWith を適用し、その結果の core を差し戻す。
+// 手書き `NamedDuties.update_confirmation_with` に対応し、core 版(Handlers)と区別して改名した。
 fn namedUpdateConfirmationWith(c: Cache, e: ProtocolEnv, hc: HealConfig, st: NamedStore, s: Slot) -> NamedStore {
   NamedStore { core: updateConfirmationWith(c, e, hc, st.core, s), ..st }
 }
 
-// Construct and locally accept the original named row once (the caller supplies the post-confirmation store).
+// 元の named 行を 1 回だけ構築し、局所的に受理する。戻り値は (更新後の store, 更新後の署名状態, 行)。
+// 呼出し側は confirmation 更新後の store を渡す必要がある。行は roundActionWith が作り、admitRow が store に入れる。
+// 手書き `NamedDuties.attest_with` に対応し、手書きの NamedAdmission.admit_row は admitRow に当たる。
 fn attestWith(c: Cache, e: ProtocolEnv, hc: HealConfig, nd: Node, st: NamedStore, rec: NamedRecord) -> (NamedStore, NamedRecord, NamedAttestation) {
   match roundActionWith(c, e, hc, nd, storeToHealing(st.core), rec) {
     (rec2, row) => (admitRow(hc, st, row), rec2, row),

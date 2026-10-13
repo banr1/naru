@@ -25,8 +25,14 @@ import Consensus.Spec.Properties
 import Consensus.Spec.Conditions
 import Consensus.Spec.Regimes
 
-// Available outputs from `t0`; inclusion needs no recurrence: an honest proposal is confirmed by everyone within
-// `confirmationDelay`, and is in everyone's stable chain within `stableInclusionDelay`.
+// 時刻 t0 以降に、confirmed と stable の出力が安全で、honest の提案が期限内に包含される(利用可能性)ことを表す。
+// 4 つの部分の連言: confirmed が SafeFrom、confirmed が confirmationDelay(s) 以内に IncludedFrom、
+// stable が SafeFrom、stable が stableInclusionDelay(s) 以内に IncludedFrom。
+// 包含には提案の再発(recurrence)が要らず、honest の提案は全員の confirmed に confirmationDelay 以内、
+// 全員の stable チェーンに stableInclusionDelay 以内に入る。claim available の結論として使われる。
+// 手書き `AvailableAt` に当たる。手書きは欄 confirmedSafe / confirmedIncluded / stableSafe / stableIncluded の構造体で、
+// naru は欄を持つ構造体を作らず && で束ねた property にした。手書きの I.confirmed / C.confirmationDelay は
+// Output.Confirmed / confirmationDelay(s) に当たる。
 property AvailableAt(s: Setup, rho: NamedRun, t0: Time) {
   SafeFrom(s, rho, Output.Confirmed, t0)
     && IncludedFrom(s, rho, Output.Confirmed, t0, confirmationDelay(s))
@@ -34,7 +40,13 @@ property AvailableAt(s: Setup, rho: NamedRun, t0: Time) {
     && IncludedFrom(s, rho, Output.Stable, t0, stableInclusionDelay(s))
 }
 
-// The finalized output from the end of the startup.
+// 起動の終わり t1 以降の finalized 出力が、期限内に包含され、活性を持つことを表す。
+// 2 つの部分の連言: finalized が finalityDeadline(s, gap) 以内に IncludedFrom、
+// finalized が gap * period(s) + finalityDeadline(s, gap) 以内に LiveFrom(読みが増え続ける)。
+// 引数 t1 は起動の終わりの時刻(claim finalized では t0 + finalityStartup(s, gap))、gap は再発の間隔。
+// claim finalized の結論として使われる。
+// 手書き `FinalizedAt` に当たる。手書きの欄 finalizedIncluded / finalizedLive を && で束ねて写し、
+// 手書きの (gap : Time) * C.period は gap.toInt() * period(s) になる。
 property FinalizedAt(s: Setup, rho: NamedRun, t1: Time, gap: Nat) {
   IncludedFrom(s, rho, Output.Finalized, t1, finalityDeadline(s, gap))
     && LiveFrom(s, rho, Output.Finalized, t1, gap.toInt() * period(s) + finalityDeadline(s, gap))
@@ -42,77 +54,148 @@ property FinalizedAt(s: Setup, rho: NamedRun, t1: Time, gap: Nat) {
 
 // ── The 13 claims of the generic consensus bundle, instantiated to the selected protocol ──
 
-// The constants satisfy the stated timing and bound constraints.
+// 定数が、述べられた時間と上下限の制約を満たす。
+// 前提は SetupWellFormed(s) だけで、run は取らない。手書きの Setup は Δ > 0、R >= 3 などを型が保証したので、
+// naru の Setup が持たないそれらの数値の前提を明示するために置く。
+// 結論は ConstantsValid(s)(period が正、遅れが非負、回復完了が prefix の終端以後、outage の窓が空でない)。
+// 手書き `Consensus.constants`(`C.Valid` を述べる欄)に当たる。regime の前提も run も持たず、Setup の数値の前提だけを置く。
+// bundle Consensus の最初の項目である。
 claim constants(s: Setup) { SetupWellFormed(s) implies ConstantsValid(s) }
 
-// No premise: the finalized, stable, and confirmed outputs are ordered by prefix.
+// どの run でも、finalized・stable・confirmed の出力は接頭辞の順に並ぶ。
+// 手書きの欄は run への前提を持たない(∀ rho だけ)。naru は run の領域も型で保証されないので、
+// 前提は SetupWellFormed(s) と RunDomain(s, rho)(honest 集合が electorate の正規集合であること)の 2 つに限る。
+// 結論は OutputOrder(s, rho)で、任意のノード・任意の時刻で finalized が stable の、stable が confirmed の接頭辞になる。
+// 手書き `Consensus.nested` に当たる。regime の前提(同期や過半数)は要らない。
+// 引数は Setup s と run rho で、bundle Consensus の 2 番目の項目である。
 claim nested(s: Setup, rho: NamedRun) { SetupWellFormed(s) && RunDomain(s, rho) implies OutputOrder(s, rho) }
 
-// No run premise: two collision-free certificates finalize compatible targets, or contain slashable evidence.
+// run の前提なしに、衝突のない 2 つの証明書は互換な対象を finalize するか、slash 可能な証拠を含む。
+// 前提は SetupWellFormed(s)、CollisionFree(c, c2)(root が衝突しない)、Finalizes(s, c, target)、Finalizes(s, c2, target2)。
+// run を取らないので RunDomain は要らない。root の衝突なしは、ハッシュの衝突でなければ分岐が不正の証拠になることに必要。
+// 結論は compatible(target, target2) か Evidence(s, c, c2)の選言(finalize された対象が食い違えば証拠が残る)。
+// 手書き `Consensus.certificatesAccountable` に当たる。手書きの Block.Compatible は Model の compatible に当たる。
+// 手書きの I.collisionFree / I.finalizes / I.evidence は Interface.naru の CollisionFree / Finalizes / Evidence になる。
 claim certificatesAccountable(s: Setup, c: NamedBlock, c2: NamedBlock, target: Block, target2: Block) {
   SetupWellFormed(s) && CollisionFree(c, c2) && Finalizes(s, c, target) && Finalizes(s, c2, target2)
     implies compatible(target, target2) || Evidence(s, c, c2)
 }
 
-// Well-formed run: finalized reads are compatible, or the two read states hold slashable evidence.
+// 整形式の run では、finalized の読みは互換であるか、読んだ 2 つの状態に slash 可能な証拠がある。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、RunWellFormed(s, rho)(整列済み・horizon が非負・理想化を満たす run)。
+// 同期や過半数の regime は要らないので、安全性が破れても不正の証拠が残るという説明責任だけを言う。
+// 結論は AccountablySafeFrom(s, rho, Output.Finalized, 0)で、時刻 0(genesis)から全期間を対象にする。
+// 手書き `Consensus.finalizedAccountable` に当たり、手書きの前提 RunWellFormed E I rho は RunWellFormed(s, rho) に当たる。
+// SetupWellFormed / RunDomain は手書きの型が保証していた前提を足したものである。
+// 手書き `RunWellFormed` が取る環境 E と interface I は naru では Setup s にまとまり、run の領域は RunDomain が担う。
 claim finalizedAccountable(s: Setup, rho: NamedRun) {
   SetupWellFormed(s) && RunDomain(s, rho) && RunWellFormed(s, rho)
     implies AccountablySafeFrom(s, rho, Output.Finalized, 0)
 }
 
-// Well-formed run: each honest node's finalized reads only extend.
+// 整形式の run では、honest な各ノードの finalized の読みは伸びるだけで後退しない。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、RunWellFormed(s, rho)。合意(AgreeFrom)と違い他のノードとの
+// 比較を含まないので、安全性の regime ではなく整形式の run だけを前提にする。
+// 結論は MonotoneFrom(s, rho, Output.Finalized, 0)で、同じノードの時刻 t <= t2 の読みが接頭辞になる。
+// 手書き `Consensus.finalizedMonotone` に当たる。
+// 前提が finalizedAccountable と同じなのは、どちらも整形式の run だけで成り立つ finalized の性質だからである。
 claim finalizedMonotone(s: Setup, rho: NamedRun) {
   SetupWellFormed(s) && RunDomain(s, rho) && RunWellFormed(s, rho) implies MonotoneFrom(s, rho, Output.Finalized, 0)
 }
 
-// Unforgeable run: no honest validator is ever slashed.
+// 偽造できない run では、honest な検証者が slash されることは決して無い。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、UnforgeableRun(s, rho)(署名が偽造不能・整列済み・horizon が非負)。
+// 署名を偽造できれば honest の名で二重署名ができてしまうので、偽造不能を前提にする必要がある。
+// 結論は rho.honest に含まれる任意の v について !Slashes(s, rho, v)(どの 2 つの読みも v に帰属する証拠を持たない)。
+// 手書き `Consensus.honestNeverSlashed` に当たる。手書きの ∀ v ∈ rho.honest, ¬ I.slashes rho v を
+// forall と contains の含意で書いた。
 claim honestNeverSlashed(s: Setup, rho: NamedRun) {
   SetupWellFormed(s) && RunDomain(s, rho) && UnforgeableRun(s, rho) implies
     forall v: ValidatorId { rho.honest.contains(v) implies !Slashes(s, rho, v) }
 }
 
-// Accountable regime: finalized reads agree.
+// 説明責任つきの regime では、finalized の読みはすべて合意する。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、AccountableRegime(s, rho)(整形式の run で、run の証明書どうしの間に
+// slash 可能な証拠が無い)。finalizedAccountable は矛盾の際に証拠が残ると言うだけだが、そのような証拠が無いと仮定すれば
+// 矛盾は起きないので合意に強まる。
+// 結論は AgreeFrom(s, rho, Output.Finalized, 0)で、時刻 0 から全期間・全 honest ノードの読みが互換になる。
+// 手書き `Consensus.finalizedSafe` に当たる。
+// 前提の AccountableRegime は RunWellFormed を含むので、finalizedAccountable の前提より強い(SlashableBound を足す)。
 claim finalizedSafe(s: Setup, rho: NamedRun) {
   SetupWellFormed(s) && RunDomain(s, rho) && AccountableRegime(s, rho) implies AgreeFrom(s, rho, Output.Finalized, 0)
 }
 
-// Sleepy regime: the confirmed and stable outputs are safe and include honest proposals.
+// sleepy regime では、confirmed と stable の出力が安全で、honest の提案を包含する。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、SleepyRegime(s, rho, t0)(部分同期、参加窓の honest 過半数、健全な出発)。
+// 過半数の窓があれば sleepy な参加でも安全と包含が保たれるので、regime がこの前提として必要になる。
+// 結論は AvailableAt(s, rho, t0)で、confirmed と stable の SafeFrom と、それぞれの期限内の IncludedFrom の連言。
+// 再発(recurrence)は要らない。手書き `Consensus.available` に当たる。
+// 引数 t0 は sleepy regime が成り立ち始める時刻で、結論の AvailableAt にもそのまま渡される。
 claim available(s: Setup, rho: NamedRun, t0: Time) {
   SetupWellFormed(s) && RunDomain(s, rho) && SleepyRegime(s, rho, t0) implies AvailableAt(s, rho, t0)
 }
 
-// Live sleepy regime: the confirmed output grows.
+// 活性のある sleepy regime では、confirmed の出力が増え続ける。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、LiveSleepyRegime(s, rho, t0, gap)(sleepy regime に加え、
+// 間隔 gap で単一の提案者が現れ続ける再発)。増え続けるには honest の提案が繰り返し現れる必要があるため再発を足す。
+// 結論は LiveFrom(s, rho, Output.Confirmed, t0, growthDelay(s, gap))で、遅れは gap * period + confirmationDelay。
+// 手書き `Consensus.confirmedLive` に当たる。
+// 引数 gap は再発の間隔(period 単位)で、前提の再発と結論の遅れの両方に現れる。
 claim confirmedLive(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   SetupWellFormed(s) && RunDomain(s, rho) && LiveSleepyRegime(s, rho, t0, gap)
     implies LiveFrom(s, rho, Output.Confirmed, t0, growthDelay(s, gap))
 }
 
-// Live sleepy regime: the stable output grows.
+// 活性のある sleepy regime では、stable の出力が増え続ける。
+// 前提は confirmedLive と同じ SetupWellFormed(s)、RunDomain(s, rho)、LiveSleepyRegime(s, rho, t0, gap)。
+// 前提が同じなのは、増える出力が confirmed か stable かの違いだけで、再発の条件は同じだからである。
+// 結論は LiveFrom(s, rho, Output.Stable, t0, stableGrowthDelay(s, gap))で、遅れは gap * period + stableInclusionDelay。
+// 手書き `Consensus.stableLive` に当たる。
+// 引数 gap は再発の間隔で、遅れ stableGrowthDelay(s, gap) の gap * period の部分に現れる。
 claim stableLive(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   SetupWellFormed(s) && RunDomain(s, rho) && LiveSleepyRegime(s, rho, t0, gap)
     implies LiveFrom(s, rho, Output.Stable, t0, stableGrowthDelay(s, gap))
 }
 
-// Fresh sleepy regime: stable inclusion without the window lag.
+// fresh な sleepy regime では、窓の遅れ無しで stable に包含される。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、FreshSleepyRegime(s, rho, t0)(sleepy regime に加え、参照標本の fresh な過半数)。
+// 参照標本が fresh な過半数だと、etaSG 個のラウンドの窓を待たず 2 周期分で済むので、速い遅れを主張できる。
+// 結論は IncludedFrom(s, rho, Output.Stable, t0, fastStableInclusionDelay(s))。
+// 手書き `Consensus.stableIncludedFast` に当たる。
+// 再発は要らず、引数は available と同じ Setup s・run rho・時刻 t0 である。
 claim stableIncludedFast(s: Setup, rho: NamedRun, t0: Time) {
   SetupWellFormed(s) && RunDomain(s, rho) && FreshSleepyRegime(s, rho, t0)
     implies IncludedFrom(s, rho, Output.Stable, t0, fastStableInclusionDelay(s))
 }
 
-// Finality regime: the finalized output includes honest proposals and grows after the startup.
+// finality regime では、起動の後に finalized の出力が honest の提案を包含し、増え続ける。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、FinalityRegime(s, rho, t0, gap)(BFT の前提、GST 以降の強い再発、
+// gap + 2 <= maxGap、run が起動期間を含む長さ)。finality には BFT の前提と強い再発が要るため、この regime を置く。
+// 結論は FinalizedAt(s, rho, t0 + finalityStartup(s, gap), gap)で、起動の終わりから包含と活性が成り立つ。
+// 手書き `Consensus.finalized` に当たる。
+// 起動の時刻 finalityStartup(s, gap) は t0 から数え、FinalizedAt の遅れは別に finalityDeadline が与える。
 claim finalized(s: Setup, rho: NamedRun, t0: Time, gap: Nat) {
   SetupWellFormed(s) && RunDomain(s, rho) && FinalityRegime(s, rho, t0, gap)
     implies FinalizedAt(s, rho, t0 + finalityStartup(s, gap), gap)
 }
 
-// Outage regime: the stable output read at `tRead` persists through the outage window.
+// outage regime では、時刻 tRead に読んだ stable の出力が outage の窓の間も残り続ける。
+// 前提は SetupWellFormed(s)、RunDomain(s, rho)、OutageRegime(s, rho, tRead, b0, b1)(部分同期、窓の前の配送が健全、
+// 窓 [b0, b1) が outageStart(s, tRead) <= b0 かつ b1 + Δ <= expiry(s, tRead) の範囲、fresh な過半数)。
+// 窓が票の失効より前に収まるときだけ、非同期でも stable の読みが残ると言えるので、窓の位置を前提にする。
+// 結論は PersistsFrom(s, rho, Output.Stable, tRead, b0)で、tRead の読みが b0 以降は全ノードの読みに残る。
+// 手書き `Consensus.stableAsynchronyResilient` に当たる。
 claim stableAsynchronyResilient(s: Setup, rho: NamedRun, tRead: Time, b0: Time, b1: Time) {
   SetupWellFormed(s) && RunDomain(s, rho) && OutageRegime(s, rho, tRead, b0, b1)
     implies PersistsFrom(s, rho, Output.Stable, tRead, b0)
 }
 
-// The consensus bundle: each item has one named regime premise and one named conclusion record or output predicate.
-// The labels are the claim surface (IDEAL.md 用語) and must match verified-consensus's `Consensus` field names.
+// 公開する保証の一覧である consensus の claim bundle で、13 個の claim を項目として列挙する。
+// 各項目は 1 つの regime(または整形式の条件)を前提とし、1 つの結論の property か出力の述語を述べる。
+// 項目名が claim surface(IDEAL.md 用語)で、手書き verified-consensus の `Consensus` の欄の名前と一致していなければならない。
+// 手書きの欄は ∀ rho …, premise → conclusion の形で、naru は欄ごとに同名の claim を書き、bundle が並べる。
+// 手書き `Consensus`(Generic 版の構造体と、Setup を固定した Instantiation 版の命題)に当たる。
+// 項目の順序は手書きの欄の順序と同じ(constants … stableAsynchronyResilient)。
 claim bundle Consensus {
   constants,
   nested,

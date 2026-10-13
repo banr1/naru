@@ -19,10 +19,17 @@ import Consensus.Protocol.Duties.Proposals
 import Consensus.Execution.Setup
 import Consensus.Execution.Run
 
-// One line of the simulation output: a node's client-facing reads after every event up to and including `time`.
+// simulation 出力の 1 行: ある node の client-facing な読みを、時刻 `time` までの event の後の値として持つ record。
+// `time` は読んだ時刻、`node` は読んだ node の ValidatorId。
+// `confirmed` / `stable` はそれぞれ手書き `get_confirmed` / `get_stable` が返す block の root。
+// `finalized` は store の finalized block(手書き `Store.F`)の root。
+// 値は BlockId だけで、state そのものは出さない(IDEAL.md 用語「observer」)。1 行の derive eq は等値比較に使う。
+// 手書きにこの record そのものは無く、手書き Model の読みを golden test で突き合わせるための naru 側の型である。
 record Observation { time: Time, node: ValidatorId, confirmed: BlockId, stable: BlockId, finalized: BlockId } derive eq
 
-// The reads of node `v` in world `w` at time `t` (the roots of the confirmed / stable tips and of the finalized block).
+// world `w` の node `v` の読みを、時刻 `t` の Observation として返す。
+// confirmed / stable は getConfirmed / getStable の root、finalized は store の finalized block `st.core.f` の root。
+// 手書き `get_confirmed` / `get_stable` / `Store.F` の読みを、BlockId の root だけに畳む。
 fn observeWorld(w: NamedWorld, v: ValidatorId, t: Time) -> Observation {
   let st = worldAt(w, v).st;
   Observation {
@@ -31,7 +38,9 @@ fn observeWorld(w: NamedWorld, v: ValidatorId, t: Time) -> Observation {
   }
 }
 
-// One event folded into the scan: the world after it, and the rows so far plus node `v`'s reads after it.
+// trace の畳み込みの 1 歩: event `ev` を適用した world と、それまでの行に node `v` の event 後の読みを足した行を返す。
+// `acc` は (これまでの world, これまでの行)。worldStep で world を進め、時刻は eventTime(ev) を使う。
+// 手書き `NamedWorld.step` を 1 event ずつ畳み込む `NamedRun.stateBefore` と同じ進め方で、読みを途中経過として残す点が違う。
 fn traceStep(s: Setup, v: ValidatorId, acc: (NamedWorld, List<Observation>), ev: NamedEvent) -> (NamedWorld, List<Observation>) {
   match acc {
     (w, rows) => {
@@ -41,7 +50,12 @@ fn traceStep(s: Setup, v: ValidatorId, acc: (NamedWorld, List<Observation>), ev:
   }
 }
 
-// The reads of node `v` after each event of the run, in event order (one scan of the run).
+// run `rho` の各 event の後の node `v` の読みを、event 順に 1 行ずつ返す observer。
+// 引数 `s` は Setup、`rho` は NamedRun、`v` は読む node。戻り値は Observation の list(長さは event 数)。
+// 初期 world(worldInit)から rho.events を traceStep で 1 回走査し、各 event の後の読みを溜める。
+// 手書き `NamedWorld.init` から `NamedWorld.step` を畳む `NamedRun.stateBefore` と同じ経路で world を進める。
+// basic / outage / strong_recovery / two_nodes / equivocation の各 scenario が経過を見るために使い、golden test と突き合わせる。
+// 各行は Observation(時刻・node・confirmed / stable / finalized の root)で、traceStep が 1 event ごとに 1 行足す。
 observer trace(s: Setup, rho: NamedRun, v: ValidatorId) -> List<Observation> {
   let start: (NamedWorld, List<Observation>) = (worldInit(), []);
   match rho.events.fold(start, |acc, ev| traceStep(s, v, acc, ev)) {
@@ -49,7 +63,12 @@ observer trace(s: Setup, rho: NamedRun, v: ValidatorId) -> List<Observation> {
   }
 }
 
-// The reads of node `v` after every event up to and including time `t` (手書き `Run.storeAt` の読み)。
+// 時刻 `t` までの event を畳み込んだ後の node `v` の読みを、1 つの Observation として返す observer。
+// 引数 `s` は Setup、`rho` は NamedRun、`v` は読む node、`t` は読む時刻。storeAt で store を取り、trace と同じ 3 つの root を読む。
+// confirmed / stable は getConfirmed / getStable の root、finalized は store の finalized block `st.core.f` の root。
+// 手書き `Run.storeAt` が返す store を、手書き `get_confirmed` / `get_stable` / `Store.F` で読む形に当たる。
+// 最終時刻の読みを 1 行で見る用途で、golden test では手書き Model の同時刻の読みと突き合わせる。
+// trace が全 event の行を返すのに対し、こちらは指定した時刻の 1 行だけを返す。
 observer readsAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Observation {
   let st = storeAt(s, rho, v, t);
   Observation {
@@ -58,20 +77,39 @@ observer readsAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Observatio
   }
 }
 
-// The roots of the blocks node `v` holds the body of after every event up to and including time `t`, ascending
-// (手書き `(st.bodies.image NamedBlock.root).sort (· ≤ ·)`)。
+// 時刻 `t` までに node `v` が body を持つ block の root を、昇順の list で返す observer。
+// 引数は readsAt と同じ(Setup `s`、run `rho`、node `v`、時刻 `t`)。storeAt の store に対して orderedRoots を呼ぶ。
+// 配達された block が届いたかを見るために使う(two_nodes では node 1 が t = 4 で root 2 を持つ様子を見る)。
+// 手書き `Run.storeAt` の store の `NamedStore.bodies` から root を取って整列した列に当たる。
+// golden test は各 event 後の bodies の個数だけを比べるので、手書き Model 側と root の列そのものは突き合わせていない。
+// 戻り値は BlockId の list で、orderedRoots が昇順に整列する。
 observer heldAt(s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> List<BlockId> { orderedRoots(storeAt(s, rho, v, t)) }
 
-// The number of delivery events of the run (手書き `Run.objects`: payloads of deliveries only).
+// run の配達 event の数を返す observer。
+// 引数 `rho` は NamedRun。runObjects(rho) の要素数で、配達 event の payload だけを数える。
+// 自分が emit した object は数えないので、tick だけの run では 0 になる。
+// 手書き `Run.objects` に当たり、equivocation や two_nodes で配達の個数を確かめるために使う。
+// two_nodes の期待値は t = 0 … 7 で 3(slot 1 の block、Goldfish vote、attestation)。
+// 戻り値は Nat で、node や時刻には依らず run の events に含まれる配達の個数だけを数える。
 observer deliveries(rho: NamedRun) -> Nat { runObjects(rho).size() }
 
-// The number of slot-`k` Goldfish votes node `v` holds after every event up to and including time `t` (手書き `(st.pool k).card`).
+// 時刻 `t` までに node `v` が slot `k` の pool に持つ Goldfish vote の数を返す observer。
+// 引数は Setup `s`、run `rho`、node `v`、slot `k`、時刻 `t`。storeAt の store の core から storePool(core, k) を取り size を数える。
+// 同じ validator の矛盾する 2 票も別々に数える(equivocation の twoFaced は t = 5 で自分の票 + v1 の 2 票の 3 票)。
+// 手書き `Run.storeAt` の store の `Store.gf_votes` に当たる slot k の vote の個数で、golden の読みの行は現在 slot の
+// 票数を比べるので、k が現在 slot のときに限って間接的に突き合う。
+// equivocation.naru の votesHeldAt 観測で、配達された票が pool に入ったかを見るために使う。
+// 戻り値は Nat で、まだ配達されていない票や他の slot の票は数えない。
 observer votesHeldAt(s: Setup, rho: NamedRun, v: ValidatorId, k: Slot, t: Time) -> Nat {
   storePool(storeAt(s, rho, v, t).core, k).size()
 }
 
-// The validators that equivocate in node `v`'s slot-`k` pool after every event up to and including time `t`, ascending
-// (手書き `raw_equivocators (st.pool k)`: two distinct votes of theirs are held).
+// 時刻 `t` までに node `v` の slot `k` の pool で equivocate している validator を、昇順の list で返す observer。
+// 引数は votesHeldAt と同じ。storePool(core, k) に rawEquivocators を適用し、結果を恒等写像のキーで整列する。
+// 同じ validator の異なる 2 票を pool が持っていると equivocator になる(手書き `raw_equivocators`)。
+// equivocation の twoFaced は t = 5 に [v1]、oneVote は空になる。
+// 手書き `raw_equivocators`(Goldfish.lean)に当たる読みで、golden test では突き合わせていない。
+// 戻り値は ValidatorId の list で、equivocator が居なければ空になる。
 observer equivocatorsAt(s: Setup, rho: NamedRun, v: ValidatorId, k: Slot, t: Time) -> List<ValidatorId> {
   sort(rawEquivocators(storePool(storeAt(s, rho, v, t).core, k)), by = |x| x)
 }

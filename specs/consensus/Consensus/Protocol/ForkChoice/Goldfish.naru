@@ -36,23 +36,36 @@ import Consensus.Protocol.ChainState
 
 // ── §2.4 Represented validators and score ──
 
-// The validators represented in `votes` (the domain the counts below range over).
+// `votes` に現れる validator(票の valIndex)の集合を返す。
+// 以下の equivocator・participant・supporter の数え上げが走る範囲を与える補助 fn である。
+// 手書きに直接の対応物は無い。手書きは有限型の全 validator を回すが、naru の `ValidatorId` は
+// 有限型ではないので票に現れる validator だけを回す(現れない者はどの判定も偽なので集合は同じ)。
 fn voters(votes: Set<GoldfishVote>) -> Set<ValidatorId> { votes.map(|vote| vote.valIndex) }
 
-// The source-exact equivocator set: no committee filter is applied here.
+// 票の集合 `votes` の中で equivocate している validator の集合を返す(生の equivocator 集合)。
+// `voters(votes)` のうち `equivocates(votes, v)` が真の者だけを残し、委員会による絞り込みはここでは行わない。
+// 手書き `raw_equivocators` に対応する(手書きは全 validator を回すが、こちらは票に現れる者を回す)。
 fn rawEquivocators(votes: Set<GoldfishVote>) -> Set<ValidatorId> { voters(votes).filter(|v| equivocates(votes, v)) }
 
-// The source-exact participant set: every validator represented in `votes`.
+// 票の集合 `votes` に参加している validator の集合を返す(生の participant 集合)。
+// `voters(votes)` のうち `participates(votes, v)` が真の者を残す。equivocator も参加者に含まれる。
+// 手書き `raw_participants` に対応する(手書きは全 validator を回すが、こちらは票に現れる者を回す)。
 fn rawParticipants(votes: Set<GoldfishVote>) -> Set<ValidatorId> { voters(votes).filter(|v| participates(votes, v)) }
 
-// The source-exact participant count.
+// 生の participant の人数を返す。
+// `rawParticipants(votes)` の大きさそのもので、Goldfish の過半数判定(eligible)の分母になる。
+// 手書き `raw_voters_count` に対応する。
 fn rawVotersCount(votes: Set<GoldfishVote>) -> Nat { rawParticipants(votes).size() }
 
-// The active source-exact participant count. `e` and `s` remain in the public API (手書きと同じ) and are not read.
+// 現在有効な参加者数を返す。本体は `rawVotersCount(votes)` に等しい。
+// 引数 `_e`(環境)と `_s`(slot)は手書きの公開 API と揃えて残してあるだけで、本体では読まない。
+// 手書き `voters_count` に対応する。
 fn votersCount(_e: ProtocolEnv, votes: Set<GoldfishVote>, _s: Slot) -> Nat { rawVotersCount(votes) }
 
-// §2.4 whether `vote`'s target resolves in `tree` to a block descending from `b` (the B ⪯ B' of the supporter test).
-// A target that `tree` does not resolve supports nothing.
+// §2.4 票 `vote` の head が `tree` の中で解決でき、その block が `b` の子孫かどうかを返す(supporter 判定の B ⪯ B')。
+// `findRoot?(tree, vote.head)` が見つけた block `c` について、`slot(c) <= vote.slot` かつ `preceq(b, c)` のとき真。
+// `tree` で解決できない head は何も支持しない(偽)。
+// 手書き `targets_under` に対応し、手書きの `Block.find?` は `findRoot?` に写している。
 fn targetsUnder(tree: Set<Block>, b: Block, vote: GoldfishVote) -> Bool {
   match findRoot?(tree, vote.head) {
     Some(c) => slot(c) <= vote.slot && preceq(b, c),
@@ -60,51 +73,73 @@ fn targetsUnder(tree: Set<Block>, b: Block, vote: GoldfishVote) -> Bool {
   }
 }
 
-// The source-exact supporter set: non-equivocators (in the raw view) with a slot-`s` support vote under `b`.
+// block `b` を支持する validator の集合を返す(生の supporter 集合)。
+// `supportVotes` に現れる validator のうち、`votes` で equivocate しておらず、slot が `s` で
+// `targetsUnder(tree, b, vote)` を満たす支持票を 1 つでも持つ者を数える。委員会による絞り込みは行わない。
+// 手書き `raw_supporters` に対応する(手書きの `votes_by` は `votesBy` に写している)。
 fn rawSupporters(tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Set<ValidatorId> {
   voters(supportVotes).filter(|v|
     !equivocates(votes, v) && votesBy(supportVotes, v).any(|vote| vote.slot == s && targetsUnder(tree, b, vote)))
 }
 
-// The source-exact Goldfish score, over all represented validators: equivocators count for every block.
+// block `b` の生の Goldfish score を返す。
+// 票に現れる全 validator について数え、equivocator の人数に `b` の supporter の人数を足した値になる。
+// equivocator はどの block の score にも 1 票ずつ入る。
+// 手書き `raw_goldfish_score` に対応する。
 fn rawGoldfishScore(tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Nat {
   rawEquivocators(votes).size() + rawSupporters(tree, votes, supportVotes, s, b).size()
 }
 
-// The active source-exact Goldfish score. `e` remains only as a compatibility parameter.
+// 現在有効な Goldfish score を返し、walk の score と eligible の多数判定に使われる。
+// 本体は `rawGoldfishScore(tree, votes, supportVotes, s, b)` に等しい。
+// 引数 `_e`(環境)は手書きと揃えるための互換引数で、本体では読まない。
+// 手書き `goldfish_score` に対応する。
 fn goldfishScore(_e: ProtocolEnv, tree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Nat {
   rawGoldfishScore(tree, votes, supportVotes, s, b)
 }
 
 // ── §2.4 The walk ──
 
-// §2.4 the argmax order of the walk: higher score wins, ties by the fixed root order (`outranks(score, b, c)` says b beats c;
-// the greatest root wins a tie, as in `deeper`).
+// §2.4 walk の argmax の順序で、`outranks(score, b, c)` は b が c に勝つことを表す。
+// score が高い方が勝ち、同点なら固定された root の順序で決め、root が最大の方が勝つ(`deeper` と同じ向き)。
+// 手書き `outranks` に対応する。
 fn outranks(score: (Block) -> Nat, b: Block, c: Block) -> Bool {
   score(c) < score(b) || (score(c) == score(b) && root(c) < root(b))
 }
 
-// §2.4 whether no member of `children` beats `b`.
+// §2.4 `children` のどの要素も `b` に勝たない(`outranks` で上回られない)かどうかを返す。
+// `argmax?` が最良の子を選ぶ条件として使う。
+// 手書き `is_best_in` に対応する。
 fn isBestIn(score: (Block) -> Nat, children: Set<Block>, b: Block) -> Bool { children.all(|c| !outranks(score, c, b)) }
 
-// §2.4 argmax over `children`, ties by root order. `None` on an empty set, and on the degenerate tie where two distinct
-// children share a score and a root. Choice-free, like `deepest?`.
+// §2.4 `children` の中で score が最大の block を返す argmax で、同点は root の順序で決める。
+// `isBestIn` を満たす要素がちょうど 1 つあればそれを `Some` で返す(`findUnique?`)。
+// 子が空の集合では `None`。score も root も同じ別個の 2 つの子がある退化した同点でも `None` になる。
+// 選択公理を使わない形で、`deepest?` と同じ作りである。
+// 手書き `argmax?` に対応する(手書きの `pickUnique?` は `findUnique?` に写している)。
 fn argmax?(score: (Block) -> Nat, children: Set<Block>) -> Option<Block> {
   children.findUnique?(|b| isBestIn(score, children, b))
 }
 
-// §2.4 the eligible children of `h` in `tree`. The child edge comes from the full parent relation and membership in `tree`
-// is tested on the child only, so a walk may descend out of an anchor that `tree` does not hold.
+// §2.4 `tree` の中にある、`h` の eligible な子の集合を返す。
+// 親子の辺は全体の親関係 `parent?(b) == Some(h)` から取り、`tree` への所属は子についてだけ確かめる。
+// そのため `tree` が持たない anchor からでも walk は降りられる。`parent?` は genesis を自分の子にしない。
+// 手書き `ghost_children` に対応する。
 fn ghostChildren(tree: Set<Block>, eligible: (Block) -> Bool, h: Block) -> Set<Block> {
   tree.filter(|b| parent?(b) == Some(h) && eligible(b))
 }
 
-// §2.4 one step of the walk: the argmax over the eligible children, or `None` where the loop returns `h`.
+// §2.4 walk の 1 歩として、eligible な子の argmax を返す。
+// 子が選べないとき(eligible な子が無い、または退化した同点)は `None` で、そのとき loop は `h` を返す。
+// 手書き `ghost_step` に対応する。
 fn ghostStep(tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool, h: Block) -> Option<Block> {
   argmax?(score, ghostChildren(tree, eligible, h))
 }
 
-// §2.4 the fuelled descent. Returns the current head on both "no eligible child" and fuel exhaustion.
+// §2.4 燃料 `fuel` 付きで `h` から降り続ける walk を行い、止まった時点の block を返す。
+// 燃料が 0 なら `h`。そうでなければ `ghostStep` が `None` なら `h`、`Some(c)` なら燃料を 1 減らして `c` から続ける。
+// 「eligible な子が無い」ときと燃料切れのどちらでも現在の head を返す。明示燃料の再帰(E002 の受理形)。
+// 手書き `ghost_walk` に対応する。
 fn ghostWalk(tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool, fuel: Nat, h: Block) -> Block {
   if fuel == 0 { h } else {
     match ghostStep(tree, score, eligible, h) {
@@ -114,27 +149,41 @@ fn ghostWalk(tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool,
   }
 }
 
-// §2.4 ghost(anchor, tree, score, eligible): descend from `anchor` through eligible children in `tree`, taking the highest
-// score at each step, and stop where no child is eligible. Fuel is `tree.size()`: every step after the first moves to a
-// member of `tree` of strictly greater depth, so no member is visited twice.
+// §2.4 ghost(anchor, tree, score, eligible) として、`anchor` から Goldfish の walk を行い到達した block を返す。
+// 各歩で `tree` の eligible な子のうち score が最高のものへ降り、eligible な子が無くなったところで止まる。
+// score と eligible は関数型の引数で、Goldfish fork choice と available confirmation が別の score / gate で同じ walk を使う。
+// 燃料は手書きどおり `tree.size()` で、最初の歩を除く各歩は `tree` の深さが真に増える要素へ進むため同じ要素を 2 度通らない。
+// 手書き `ghost` に対応する。
 fn ghost(anchor: Block, tree: Set<Block>, score: (Block) -> Nat, eligible: (Block) -> Bool) -> Block {
   ghostWalk(tree, score, eligible, tree.size(), anchor)
 }
 
 // ── §2.6 Vote cleanliness ──
 
-// §2.6 whether `late` holds no second distinct vote by `vote`'s validator.
+// §2.6 `late` が、`vote` の validator による 2 つ目の異なる票を含まないかどうかを返す。
+// `late` の全要素 `u` が `vote` 自身であるか、別の validator の票であるとき真になる。
+// 個数で数えず `late` の要素を直接調べる(`early ⊆ late` は仮定できず別に述べられる性質のため)。
+// 手書き `no_second_vote_in` に対応する。
 fn noSecondVoteIn(late: Set<GoldfishVote>, vote: GoldfishVote) -> Bool {
   late.all(|u| u == vote || u.valIndex != vote.valIndex)
 }
 
 // ── §3.1 SG votes and §3.2 the SG store ──
 
-// §3.1 an SG vote (v, r, C) from validator v with confirmed block C (by root) or ⊥. Not carried by blocks.
+// §3.1 SG の票 (v, r, C) を表す。validator v が round r に確認済み block C(root で指す)または ⊥ を投じる。
+// 欄は `valIndex`(投票者)、`round`(票の round)、`confirmed`(確認済み block の root。`None` が ⊥)。
+// 誠実な validator は a_r で現在の live_confirmed(block)に投票するので、`None` は敵対的な票にだけ現れる。
+// 確認済み block は root で持ち、fork choice の補助 fn が処理済み tree に対して root を解決する。
+// SG の票は block には載らない(Goldfish の票と違い block が運ばない)。
+// 手書き `SGVote` に対応する。
 record SGVote { valIndex: ValidatorId, round: Round, confirmed: Option<BlockId> } derive eq
 
-// §3.2 the §3 store: §2's seven components plus Σ.sg_votes[·] (at most two distinct votes per validator, enforced by
-// on_sg_vote) and the SG-vote fibre of Σ.timestamp[·].
+// §3.2 §3 の store を表し、§2 の store の 8 欄に SG の票の欄 2 つを足したもの。
+// 足した欄は `sgVotes`(Σ.sg_votes[·])と `timestampSgVote`(Σ.timestamp[·] の SG 票の部分)。
+// validator ごとに保つ異なる票は高々 2 つで、この上限は型ではなく on_sg_vote が守る。
+// 手書きは §2 の store を継承(extends)するが、naru に継承は無いので欄を複製し、`sgToGoldfish` で §2 の store へ射影する。
+// 欄 `sgVotes` は round から有限集合への関数だった手書きの欄を、無い round は空とする `Table<Round, Set<SGVote>>` で持つ。
+// 手書き `SGStore` に対応する。
 record SGStore {
   t: Time,
   s: Slot,
@@ -144,13 +193,16 @@ record SGStore {
   gfVotes: Table<Slot, List<GoldfishVote>>,
   liveConfirmed: Block,
   latestConfirmed: Block,
-  // §3.2 Σ.sg_votes[r]: the processed round-r SG votes (a total map over all rounds with the empty default).
+  // §3.2 Σ.sg_votes[r]: 処理済みの round r の SG 票(全 round にわたる全域写像で、既定は空)。
   sgVotes: Table<Round, Set<SGVote>>,
-  // §3.2 the SG-vote fibre of Σ.timestamp[·]. No rule of §3 reads it; the grades of §6 do.
+  // §3.2 Σ.timestamp[·] の SG 票の部分。§3 の規則は読まないが、§6 の grade が読む。
   timestampSgVote: Table<SGVote, Stamp>
 } derive eq
 
-// The §2 projection of a §3 store (手書きの `extends` による暗黙の `toGoldfishStore`).
+// §3 の store から §2 の store への射影を返す。
+// §2 の store の 8 欄(t / s / tree / timestampBlock / timestampVote / gfVotes / liveConfirmed / latestConfirmed)を
+// そのまま写し、SG 票の 2 欄だけを落とす。
+// 手書きでは継承が暗黙に与える親の射影に当たり、手書きに同名の def は無い(直接の対応物は無い)。
 fn sgToGoldfish(st: SGStore) -> GoldfishStore {
   GoldfishStore {
     t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,
@@ -158,33 +210,55 @@ fn sgToGoldfish(st: SGStore) -> GoldfishStore {
   }
 }
 
-// §3.2 Σ.sg_votes[r] read off a §3 store (empty for rounds never written).
+// §3.2 §3 の store から Σ.sg_votes[r](round r の処理済み SG 票)を読んで返す。
+// 一度も書かれていない round では空集合を返す(`getOr` の既定値)。
+// 手書き `SGStore.sg_votes` の欄を round r で読むことに対応する。
 fn sgVotesAt(st: SGStore, r: Round) -> Set<SGVote> { st.sgVotes.getOr(r, Set.empty()) }
 
 // ── §3.3 Latest votes ──
 
-// §3.3 the expiry window [max{0, r − η_SG}, r), in ascending order. Half-open on the right; empty at r = 0.
+// §3.3 失効窓 [max{0, r − η_SG}, r) の round を昇順の列で返す。
+// 右端は開いていて、round r の票は r+1 以降にしか読めない。r = 0 では空になる。
+// `r - etaSG` は Nat の切り捨て減算でそのまま max{0, r − η_SG} になり、窓の長さは `min(r, etaSG)`。
+// 手書き `latest_window` は `List.range'` で書くが、naru では `List.range(...).map(...)` に写している。
 fn latestWindow(etaSG: Round, r: Round) -> List<Round> { List.range(r.min(etaSG)).map(|i| r - etaSG + i) }
 
 // ── §5 Justification events and §5.1 derived sets ──
 
-// §5 a justification event (h_j, J.root), compared lexicographically (the fixed root order breaks height ties).
+// §5 justification の事象 (h_j, J.root) を表し、辞書式に比べる(高さが同じなら固定された root の順序で決める)。
+// 欄は `height`(justification の高さ h_j)と `id`(justified block の root J.root)。
+// 辞書式の全順序は `derive order` が与え、欄の宣言順(height、次に id)の辞書式になる。
+// update_finality が新旧の事象を比べるときに使う。walk の argmax に次ぐ、固定 root 順序の 2 つ目の使い道である。
+// 順序の土台になる単射性の補題 手書き `HeightId.rank_injective` は証明であり、Model には無い。
+// 手書き `HeightId` に対応する(手書きの全順序のインスタンスは `derive order` で置き換わる)。
 record HeightId { height: Height, id: BlockId } derive eq, order
 
-// §5.1 the descendants of the finalized block F in T (the inline `F ⪯ B` filter of the document).
+// §5.1 tree の中で finalized block f の子孫(`preceq(f, b)` を満たす block)の集合を返す。
+// 文書がインラインで書く `F ⪯ B` の絞り込みに名前を付けたもので、`viableTree` の最初の絞り込みになる。
+// 手書き `finalized_descendants` に対応する。
 fn finalizedDescendants(f: Block, tree: Set<Block>) -> Set<Block> { tree.filter(|b| preceq(f, b)) }
 
 // ── §5.1 The FG store ──
 
-// §5.1 Σ.σ[·]: the post-states of processed blocks, as a map with the initial chain state as the default
-// (手書きの全域写像 `Block → ChainState`). Written by on_block, read through `chainStateOf`.
+// §5.1 Σ.σ[·] の型別名で、処理済み block の事後状態を block から ChainState への表で表す。
+// 表に無い block の既定値は初期の chain state で、block から chain state への手書きの全域写像を表現する。
+// 書き込むのは on_block だけで、読みは `chainStateOf` を通す。
+// 手書きは σ を関数型の欄で持つが、naru は `Table<Block, ChainState>` で持つ。
+// 型別名なので値は持たず、fn の引数や欄の型を短く書くための名前である。
+// この型別名に直接の対応物は無く、手書き `FGStore.σ` の欄の型が相当する。
 type ChainStates = Table<Block, ChainState>
 
-// §5.1 Σ.σ[B]: the initial chain state for a block never written (σ[B_gen] and σ[B_gen.parent] are both this state).
+// §5.1 Σ.σ[B] を読んで返す。一度も書かれていない block には初期の chain state を返す。
+// σ[B_gen] と σ[B_gen.parent] はどちらもこの初期状態になる(on_block が genesis の子で σ[B.parent] を読むため)。
+// 手書きの全域写像 σ の適用に対応し、既定値 `initialChainState()` は手書き `ChainState.initial` に当たる。
 fn chainStateOf(sigma: ChainStates, b: Block) -> ChainState { sigma.getOr(b, initialChainState()) }
 
-// §5.1 the §5 store: §3's store plus the block state map and the four finality fields Σ.σ[·], (Σ.F, Σ.J, Σ.h_j, Σ.h_max).
-// Σ.T is never pruned; the live tree is derived below the finalized block.
+// §5.1 §5 の store を表し、§3 の store に block の状態表と 4 つの finality 欄を足したもの。
+// 足した欄は Σ.σ[·](`sigma`)と、(Σ.F, Σ.J, Σ.h_j, Σ.h_max) に当たる `f` / `j` / `hJ` / `hMax`。
+// Σ.T(`tree`)は刈り込まず、live tree は finalized block より下を使うたびに導出する。
+// 手書きは `toSG` という名前の親の射影を持つ継承だが、naru は欄を複製し、射影は `fgToSG` で与える。
+// 欄 `σ` は `sigma` と綴る。
+// 手書き `FGStore` に対応する。
 record FGStore {
   t: Time,
   s: Slot,
@@ -196,19 +270,21 @@ record FGStore {
   latestConfirmed: Block,
   sgVotes: Table<Round, Set<SGVote>>,
   timestampSgVote: Table<SGVote, Stamp>,
-  // §5.1 Σ.σ[B]: the post-state of B, written by on_block. Total, with the initial chain state as the default.
+  // §5.1 Σ.σ[B]: block B の事後状態で、on_block が書く。全域で、既定値は初期の chain state。
   sigma: ChainStates,
-  // §5.1 Σ.F: the store's finalized block.
+  // §5.1 Σ.F: store の finalized block。
   f: Block,
-  // §5.1 Σ.J: the store's justified block.
+  // §5.1 Σ.J: store の justified block。
   j: Block,
-  // §5.1 Σ.h_j: its height.
+  // §5.1 Σ.h_j: Σ.J の高さ。
   hJ: Height,
-  // §5.1 Σ.h_max: the running maximum state height. Monotone: the field only grows.
+  // §5.1 Σ.h_max: 状態の高さの実行中の最大値。単調で、この欄は増えるだけである。
   hMax: Height
 } derive eq
 
-// The §3 projection of a §5 store (手書きの `extends toSG`).
+// §5 の store から §3 の store への射影を返す。
+// block の状態表 `sigma` と finality の 4 欄(`f` / `j` / `hJ` / `hMax`)を落とし、残りの 10 欄をそのまま写す。
+// 手書き `FGStore` の親の射影 `toSG` に当たる(手書きは名前の衝突を避けるため `toSG` と明示している)。
 fn fgToSG(st: FGStore) -> SGStore {
   SGStore {
     t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,
@@ -217,43 +293,59 @@ fn fgToSG(st: FGStore) -> SGStore {
   }
 }
 
-// The §2 projection of a §5 store (手書きの `st.toSG.toGoldfishStore`。§6 / §7 の duty が pool と proposer view を読む).
+// §5 の store から §2 の store への射影を返す。
+// `fgToSG` で §3 の store に落としてから `sgToGoldfish` で §2 の store に落とす合成である。
+// §6 / §7 の duty が pool と proposer view を読むために使う。
+// 手書きでは `st.toSG` から §2 の親の射影を辿る形に当たり、手書きに同名の def は無い(直接の対応物は無い)。
 fn fgToGoldfish(st: FGStore) -> GoldfishStore { sgToGoldfish(fgToSG(st)) }
 
 // ── §5.2 Derived sets and the fork-choice root ──
 
-// §5.2 the viability witness: a processed descendant W of b (in `tree`) whose state height is at most one below the
-// current maximum. Height is Nat, so h_max − 1 truncates at zero, which does not change the answer.
+// §5.2 viable の証人の判定で、block `b` が viable かどうかを返す。
+// `tree` の中に `b` の処理済みの子孫 w があり、その状態の高さが現在の最大 `hMax` より高々 1 低いとき真になる。
+// 証人 w は処理済みの `tree` 全体から探す。
+// Height は Nat なので `hMax - 1` は 0 で切り捨てられるが、答えは変わらない。
+// 手書き `viable` に対応する。
 fn viable(sigma: ChainStates, hMax: Height, tree: Set<Block>, b: Block) -> Bool {
   tree.any(|w| preceq(b, w) && hMax - 1 <= chainStateOf(sigma, w).h)
 }
 
-// §5.2 viable_tree(Σ) = {B ∈ Σ.T : Σ.F ⪯ B, ∃ W ∈ Σ.T, B ⪯ W, σ[W].h ≥ h_max − 1}: the finalized-descendants
-// filter, then the viability test with its witness over the processed tree. Derived at every use.
+// §5.2 viable_tree(Σ) = {B ∈ Σ.T : Σ.F ⪯ B, ∃ W ∈ Σ.T, B ⪯ W, σ[W].h ≥ h_max − 1} を返す。
+// finalized block `f` の子孫への絞り込みの後に、処理済みの tree 上の証人を使う `viable` の判定で絞る。
+// 使うたびに導出し、store には保存しない。
+// 手書き `viable_tree` に対応する。
 fn viableTree(sigma: ChainStates, f: Block, hMax: Height, tree: Set<Block>) -> Set<Block> {
   finalizedDescendants(f, tree).filter(|b| viable(sigma, hMax, tree, b))
 }
 
-// §5.2 get_fg_root(Σ): the block the walk starts from — Σ.J when the store's maximum state height is exactly one
-// above the justification, Σ.F otherwise. Σ.J need not be viable, so the anchor can sit outside the walked tree.
+// §5.2 get_fg_root(Σ) として、walk が出発する block を返す。
+// store の最大の状態の高さ `hMax` が justification の高さ `hJ` のちょうど 1 上なら Σ.J、そうでなければ Σ.F。
+// Σ.J は viable とは限らないので、anchor が walk の降りる tree の外に立つことがある。
+// 手書き `get_fg_root` に対応する。
 fn getFgRoot(st: FGStore) -> Block { if st.hMax == st.hJ + 1 { st.j } else { st.f } }
 
-// §5.2 get_filtered_block_tree_from(Σ, blocks): recompute viability inside an explicit processed-block view, then keep
-// the viable blocks below the full-store fork-choice root (Σ.σ, Σ.F, Σ.h_max and the root keep their full-store values).
+// §5.2 get_filtered_block_tree_from(Σ, blocks) として、明示された処理済み block の view の中で viable を再計算して返す。
+// `blocks` を `viableTree` に渡すので候補の所属も証人も `blocks` の中に限られ、その後 fork choice の root より下だけを残す。
+// Σ.σ・Σ.F・Σ.h_max と root は store 全体の値のまま使う。
+// 手書き `get_filtered_block_tree_from` に対応する。
 fn getFilteredBlockTreeFrom(st: FGStore, blocks: Set<Block>) -> Set<Block> {
   let fgRoot = getFgRoot(st);
   viableTree(st.sigma, st.f, st.hMax, blocks).filter(|b| preceq(fgRoot, b))
 }
 
-// §5.2 get_filtered_block_tree(Σ): the ordinary full processed-tree specialization.
+// §5.2 get_filtered_block_tree(Σ) として、通常の処理済み tree 全体 `st.tree` に対する絞り込みを返す。
+// `getFilteredBlockTreeFrom(st, st.tree)` に等しい特殊化である。
+// 手書き `get_filtered_block_tree` に対応する。
 fn getFilteredBlockTree(st: FGStore) -> Set<Block> { getFilteredBlockTreeFrom(st, st.tree) }
 
 // ── §5.2 Fork choice ──
 
-// §5.2 goldfish_eligible(Σ, votes, s, B), the final version: §2's two clauses plus the height clause, keyed on the block
-// the walk stands on ("a child of a block whose state height is below Σ.h_max − 1 is eligible without a majority").
-// The majority gate therefore applies exactly when the current block is inside the band {h_max − 1, h_max}.
-// `parent` is the total accessor (genesis is its own parent); `cur` is Σ.s.
+// §5.2 goldfish_eligible(Σ, votes, s, B) の最終版として、block `b` が eligible かどうかを返す。
+// 次の 3 つの節のどれかが真なら eligible: 親の状態の高さが `hMax - 1` 未満(高さ節)、参加者数が score の 2 倍未満(多数節)、
+// `slot(b) == cur`。高さ節は walk が立っている block を基準にし、状態の高さが Σ.h_max − 1 未満の block の子は多数なしで通す。
+// そのため多数の関門が効くのは現在の block が帯 {h_max − 1, h_max} の中にあるときに限る。
+// `parent(b)` は全域の取り出しで genesis は自分自身が親。`cur` は Σ.s。σ・h_max・cur は store ではなく引数で受け取る。
+// 手書き `goldfish_eligible` に対応する(§6 / §7 が自分の欄を同じ規則に渡すため)。
 fn goldfishEligible(e: ProtocolEnv, sigma: ChainStates, hMax: Height, tree: Set<Block>, cur: Slot,
                     votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot, b: Block) -> Bool {
   chainStateOf(sigma, parent(b)).h < hMax - 1
@@ -261,8 +353,10 @@ fn goldfishEligible(e: ProtocolEnv, sigma: ChainStates, hMax: Height, tree: Set<
     || slot(b) == cur
 }
 
-// §2.4 goldfish_fork_choice(Σ, anchor, tree, votes, s) with the §5 gate: the body is §2's, only the gate differs.
-// `tree` resolves ancestry (Σ.T); `walkTree` is the tree the walk descends (the filtered candidate tree).
+// §2.4 goldfish_fork_choice(Σ, anchor, tree, votes, s) を §5 の関門付きで行い、選ばれた head を返す。
+// 本体は §2 のものと同じで、違うのは eligible だけ(`goldfishEligible`)。`ghost` に score と eligible を lambda で渡す。
+// `tree` は祖先関係を解決する処理済みの tree(Σ.T)、`walkTree` は walk が降りる tree(絞り込んだ候補 tree)。
+// 手書き `goldfish_fork_choice` に対応し、手書きの部分適用に当たる箇所を lambda で書く。
 fn goldfishForkChoice(e: ProtocolEnv, sigma: ChainStates, hMax: Height, tree: Set<Block>, cur: Slot, anchor: Block,
                       walkTree: Set<Block>, votes: Set<GoldfishVote>, supportVotes: Set<GoldfishVote>, s: Slot) -> Block {
   ghost(anchor, walkTree,

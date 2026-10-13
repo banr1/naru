@@ -23,10 +23,15 @@ import Consensus.Protocol.Handlers
 import Consensus.Protocol.Duties.Proposals
 import Consensus.Execution.Objects
 
-// on_tick(Σ, t): stage the clock, then run the duties of the timetable in order — the proposal at t_s (the slot's
-// proposer), the Goldfish vote at t_s + Δ, the confirmation evaluation of slot s − 1 at t_s + 2Δ, and the round action at
-// a_r = t_{rR} + 6Δ when the node is awake — each reading the state the preceding duty produced, and collecting the
-// emitted objects in that order.
+// on_tick(Σ, t): 時刻 t に node nd が行う処理で、時計を進めてから時間表の duty を順に実行する。
+// 順序は、t_s の提案(slot の proposer のとき)、t_s + Δ の Goldfish 投票、t_s + 2Δ の slot s − 1 の確認評価、
+// a_r = t_{rR} + 6Δ の round の action(nd が awake のとき)で、各 duty は直前の duty が作った状態を読む。
+// 戻り値は更新後の named store・更新後の記録・出力した object の一覧で、一覧は提案、投票、attestation の順に並ぶ。
+// 提案・投票・確認評価の 3 つは slot が 0 でないことも条件で、round と awake の判定は確認評価の後の状態で行う。
+// 手書き `tick` は generic な `runWith` に唯一の instantiation `namedOps` を渡す定義で、
+// 手書き `runWith` / `namedOps` の本体を inline した。duty は手書き `NamedDuties.propose_block_with` /
+// `NamedDuties.goldfish_vote_with` / `NamedDuties.update_confirmation_with` / `NamedDuties.attest_with` に当たる
+// (c: Cache は手書き `GradeContract` に当たる)。
 fn tick(c: Cache, e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig, nd: Node, st: NamedStore, rec: NamedRecord, t: Time)
     -> (NamedStore, NamedRecord, List<NamedObject>) {
   let s = slotOf(e, t);

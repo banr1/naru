@@ -28,8 +28,11 @@ import Consensus.Execution.Setup
 
 // ── NamedProfile: closed named behavior with the supplied Setup unchanged ──
 
-// Call the existing named tick once with the original environment, healing config, height config and node identity.
-// Preserve its full returned payloads.
+// 既存の名前付き tick を、渡された Setup を変えずに 1 回だけ呼ぶ。
+// 引数は Setup s、準備済みの phase キャッシュ c、validator v、名前付き store st、署名 record rec、時刻 t である。
+// 環境 s.e・healing 設定 s.hc・高さ設定 s.cfg・node(setupNode(v))をそのまま tick に渡し、
+// 返る (store, record, 出力オブジェクト列) を欠かさず返す。
+// 手書き `NamedProfile.tick` に対応する。手書き `NamedProfile.gradeContract` は naru では c(Cache)そのものなので渡す引数で済む。
 fn profileTick(s: Setup, c: Cache, v: ValidatorId, st: NamedStore, rec: NamedRecord, t: Time)
     -> (NamedStore, NamedRecord, List<NamedObject>) {
   tick(c, s.e, s.hc, s.cfg, setupNode(v), st, rec, t)
@@ -37,7 +40,12 @@ fn profileTick(s: Setup, c: Cache, v: ValidatorId, st: NamedStore, rec: NamedRec
 
 // ── NamedReceipt: full named ingress checks and closed local dispatch ──
 
-// Apply the existing three wire-shape checks to the full named object (the wire-shape test uses only the block projection).
+// 名前付きオブジェクトが wire 形として整っているかを、既存の 3 つの検査で判定する。
+// ブロックは消去した幾何(eraseBlock)について、運ばれる投票・support の形と、
+// 含まれる Goldfish 投票の作成者が各 slot の committee に属することを調べる。
+// 投票は voteWellFormed、attestation 行は常に true である。
+// 手書き `NamedReceipt.wellFormed` に対応する。手書きは Setup を取るが、読むのは committee だけなので
+// naru では s を取らず input の committee を読む。
 fn wellFormed(o: NamedObject) -> Bool {
   match o {
     NamedObject.Block(b) => {
@@ -50,7 +58,10 @@ fn wellFormed(o: NamedObject) -> Bool {
   }
 }
 
-// Blocks require their exact named parent. Vote resolution is a later read.
+// オブジェクトの依存が store に揃っているかを返す。
+// ブロックは名前付きの親ブロックそのものが st.bodies に含まれることを要求する。
+// 投票と attestation 行は依存を要求せず常に true で、投票の解決は後段の読みで行う。
+// 手書き `NamedReceipt.depsPresent` に対応する。
 fn depsPresent(st: NamedStore, o: NamedObject) -> Bool {
   match o {
     NamedObject.Block(b) => st.bodies.contains(namedParent(b)),
@@ -59,7 +70,10 @@ fn depsPresent(st: NamedStore, o: NamedObject) -> Bool {
   }
 }
 
-// Mark the full admitted object, including the original named row.
+// オブジェクトが store に受理済みかを、元の名前付き行まで含めて判定する。
+// ブロックは st.bodies に含まれること、投票は slot の pool(storePool)に含まれること、
+// attestation は round ごとの sgRows に含まれることを調べる。
+// 手書き `NamedReceipt.processed` に対応する。
 fn processed(st: NamedStore, o: NamedObject) -> Bool {
   match o {
     NamedObject.Block(b) => st.bodies.contains(b),
@@ -68,8 +82,10 @@ fn processed(st: NamedStore, o: NamedObject) -> Bool {
   }
 }
 
-// A block that conflicts with the node's finalized block (neither is an ancestor of the other) is excluded for good, since
-// finality only extends; votes and attestations are never excluded.
+// node の finalized ブロックと衝突するブロック(互いに祖先でない)が永久に除外されるかを返す。
+// finality は延びるだけなので、一度衝突したブロックは二度と受理されない。
+// 判定は compatible(st.core.f, eraseBlock(b)) の否定で、投票と attestation は除外されず常に false である。
+// 手書き `NamedReceipt.excludes` に対応する。
 fn excludes(st: NamedStore, o: NamedObject) -> Bool {
   match o {
     NamedObject.Block(b) => !compatible(st.core.f, eraseBlock(b)),
@@ -78,7 +94,11 @@ fn excludes(st: NamedStore, o: NamedObject) -> Bool {
   }
 }
 
-// The block branch admits carried rows (`AlsoCarried`) and forwards s.cfg unchanged.
+// 受信したオブジェクト 1 つを store に反映した新しい名前付き store を返す。
+// ブロックは運ばれた行も受理する(`AlsoCarried`)onBlockWith に s.cfg を変えずに渡す。
+// 投票は onGoldfishVoteChecked で core を更新し、attestation は admitRow で行を受理する。
+// 手書き `NamedReceipt.process` に対応する。naru の大域名は 1 つの表なので、手書き `NamedNode.process`(naru の nodeProcess)と
+// 同じ `process` になるのを避けて receiptProcess と改名した。
 fn receiptProcess(s: Setup, st: NamedStore, o: NamedObject) -> NamedStore {
   match o {
     NamedObject.Block(b) => onBlockWith(CarriedAdmission.AlsoCarried, s.e, s.hc, s.cfg, st, b),
@@ -89,16 +109,26 @@ fn receiptProcess(s: Setup, st: NamedStore, o: NamedObject) -> NamedStore {
 
 // ── NamedNode: one named node with the existing phase cache ──
 
-// The node state: the named store, the signing record (手書き `record`。`record` は naru の予約語、`rec` は Lean の生成名なので
-// `signing`), and the phase cache.
+// 名前付き node 1 つの状態を表す record である。
+// 欄 st は名前付き store、signing は署名 record、cache は phase キャッシュ(Cache)である。
+// 手書き `NamedNodeState` に対応し、手書きの欄 record は naru の予約語なので signing と改名した
+// (`rec` は Lean の生成名なので避けた)。
+// run の World はこの状態を validator ごとに持つ(Run.naru の NamedWorld)。
+// st と cache は tick と受信(nodeTick / nodeProcess)で更新され、signing は tick でだけ更新される(受信では保たれる)。
+// cache は更新のたびに finalized ブロックで clip される。
 record NamedNodeState { st: NamedStore, signing: NamedRecord, cache: Cache } derive eq
 
+// node の初期状態を返す。名前付き store・署名 record・phase キャッシュをそれぞれの初期値にする。
+// 手書き `NamedNode.initial` に対応し、tick と衝突しないよう initialNode と改名した。
+// 引数は取らず、Run.naru の worldAt が未登録の validator に返す既定の状態として使う。
 fn initialNode() -> NamedNodeState {
   NamedNodeState { st: initialNamedStore(), signing: initialNamedRecord(), cache: initialCache() }
 }
 
-// Complete phases from the incoming store, then call the closed tick once; the returned finalized root supplies the final
-// cache clip.
+// node に時刻 t の tick を 1 回与え、新しい node 状態と出力オブジェクト列を返す。
+// まず受け取った store から onPhaseTick で phase を完了させたキャッシュ c を作り、
+// profileTick を 1 回呼ぶ。新しいキャッシュは、返った store の finalized ブロックで c を clipCache した結果になる。
+// 手書き `NamedNode.tick` に対応し、Protocol.Tick の tick との衝突を避けて nodeTick と改名した。
 fn nodeTick(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> (NamedNodeState, List<NamedObject>) {
   let c = onPhaseTick(s.e, s.hc, storeToHealing(n.st.core), t, n.cache);
   match profileTick(s, c, v, n.st, n.signing, t) {
@@ -106,7 +136,9 @@ fn nodeTick(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> (NamedNodeS
   }
 }
 
-// A receipt retains the signing record and clips the existing cache.
+// node がオブジェクト o を受信したときの新しい node 状態を返す。
+// store は receiptProcess で更新し、署名 record はそのまま保ち、キャッシュは新しい finalized ブロックで clipCache する。
+// 手書き `NamedNode.process` に対応し、nodeProcess と改名した。
 fn nodeProcess(s: Setup, n: NamedNodeState, o: NamedObject) -> NamedNodeState {
   let st = receiptProcess(s, n.st, o);
   NamedNodeState { st: st, signing: n.signing, cache: clipCache(st.core.f, n.cache) }

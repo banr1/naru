@@ -45,23 +45,38 @@ import Consensus.Protocol.ForkChoice.Goldfish
 
 // ── §6.1 Round schedule ──
 
-// §6.1 the parameters of the graded layer: the round length R ≥ 3 (round r is the slots rR … rR+R−1) and the expiry
-// window η_SG ≥ 1 of the relative rule. The bounds are Statements premises.
+// §6.1 段階付き層(graded layer)の定数、ラウンド長 R と相対規則の失効窓 η_SG を束ねる設定 record である。
+// 欄 `r` は 1 ラウンドの長さ R(ラウンド r はスロット rR … rR+R−1)、欄 `etaSG` は失効窓 η_SG を表す。
+// 手書き `HealConfig` の欄 `R` / `η_SG` に対応し、名前だけを `r` / `etaSG` に改めた。
+// 手書きの証明の欄 `R_ge_three`(3 ≤ R)と `η_SG_ge_one`(1 ≤ η_SG)は Model には置かず、Statements の premise にする。
+// そのためこの record 自体は値の範囲(R ≥ 3、η_SG ≥ 1)を検査しない。
+// `derive eq` により等値比較ができる。
 record HealConfig { r: Nat, etaSG: Round } derive eq
 
-// §3.1 round(s) = ⌊s/R⌋
+// §3.1 round(s) = ⌊s/R⌋ を計算し、スロット s の属するラウンドを返す。
+// 本体は `s / hc.r`(自然数の切り捨て除算)である。
+// 手書き `HealConfig.round_of` に対応する(手書きは `hc.round_of s` の形、naru では第 1 引数に `hc` を取る)。
 fn roundOf(hc: HealConfig, s: Slot) -> Round { s / hc.r }
 
-// §3.1 the opening slot rR of round r
+// §3.1 ラウンド r の開始スロット rR を返す。
+// 本体は `r * hc.r`(ラウンド番号にラウンド長を掛ける)である。
+// 手書き `HealConfig.opening_slot` に対応する。`actionTime` と `openingTime` がこの値を使う。
 fn openingSlot(hc: HealConfig, r: Round) -> Slot { r * hc.r }
 
-// §6.1 a_r = t_{rR} + 6Δ: the action time, the opening slot's confirmation evaluation (手書き `HealConfig.a`).
+// §6.1 a_r = t_{rR} + 6Δ、すなわち開始スロットでの confirmation 評価の時刻(action time)を返す。
+// 引数は設定 `hc`、遅延上限 `delta`、ラウンド `r`。開始スロットの開始時刻に 6 * delta を足した値を返す。
+// 手書き `HealConfig.a` に対応する(手書きは `hc.a Δ r`)。§3 で自由にしてあった時刻をここで確定する。
 fn actionTime(hc: HealConfig, delta: Time, r: Round) -> Time { slotStart(delta, openingSlot(hc, r)) + 6 * delta }
 
 // ── Grade view substrate ──
 
-// The small projection of the store the selected protocol reads: the processed tree (to resolve roots), its receipt
-// times, the currently filtered tree, the projected SG vote pool and its receipt times.
+// 選んだプロトコルが読む store の小さな射影で、段階(grade)の計算が入力として受け取る record である。
+// 欄 `tree` は処理済みブロック木で、署名された root を解決するのに使う。`timestampBlock` はその各ブロックの受信時刻。
+// 欄 `filteredTree` は現在のフィルタ済みブロック木、`sgVotes` はラウンドごとの SG 票の集合、
+// `timestampSgVote` はその SG 票の受信時刻である。
+// 手書き `GradeView` の欄を次のように改名した: `T` → `tree`(store と同じ名)、`tree` → `filteredTree`、
+// `timestamp_block` → `timestampBlock`、`sg_votes` → `sgVotes`、`timestamp_sg_vote` → `timestampSgVote`。
+// store の表現から段階の計算を独立させるための射影であり、`gradeView` が store から作る。
 record GradeView {
   tree: Set<Block>,
   timestampBlock: Table<Block, Stamp>,
@@ -70,7 +85,10 @@ record GradeView {
   timestampSgVote: Table<SGVote, Stamp>
 } derive eq
 
-// Whether a resolved head names a descendant of `b` in the processed tree.
+// 解決済みの head が、処理済みの木の中でブロック `b` の子孫(自身を含む)を指すかを返す。
+// `h` が `None` なら false。`Some(r)` なら木 `tree` から root `r` のブロックを探し(`findRoot?`)、
+// 見つかれば `preceq(b, head)`、見つからなければ false を返す。
+// 手書き `head_covers` に対応する(手書きの `T` は `tree`、`B` は `b`、`H` は `h`)。
 fn headCovers(tree: Set<Block>, b: Block, h: Option<BlockId>) -> Bool {
   match h {
     None => false,
@@ -85,10 +103,18 @@ fn headCovers(tree: Set<Block>, b: Block, h: Option<BlockId>) -> Bool {
 
 // ── The §6 store projection ──
 
-// The §6 store is a thin wrapper over the finality-gadget store (手書き `HealingStore extends toFG : FGStore`、欄の追加なし).
+// §6 の store を表す型別名で、finality gadget の store `FGStore` と同じ型である。
+// 手書き `HealingStore` は `extends toFG : FGStore` と書かれるが、欄を 1 つも足さない薄い包みである。
+// そのため naru では包まず別名にし、手書き側の `st.toFG` は `st` そのものになる。
+// grade の読み手(`gradeView` / `anchor` / `grade2Block` / `onPhaseTick` など)はこの型で store を受け取る。
+// 欄の読み出しは `FGStore` と共通で、手書き側の `st.F` は `st.f`、`st.T` は `st.tree` に当たる。
+// 値を作るときも `FGStore` の値がそのまま `HealingStore` として使え、変換の関数は要らない。
 type HealingStore = FGStore
 
-// The store projected to the fields used by grade-runtime readers.
+// store を、grade 実行系の読み手が使う欄だけに射影した `GradeView` にして返す。
+// `tree` / `timestampBlock` / `sgVotes` / `timestampSgVote` は store の同名の欄をそのまま写し、
+// `filteredTree` だけは `getFilteredBlockTree(st)` で求めたフィルタ済みの木にする。
+// 手書き `HealingStore.gradeView` に対応する(手書き側の `T` / `get_filtered_block_tree st.toFG` を使う)。
 fn gradeView(st: HealingStore) -> GradeView {
   GradeView {
     tree: st.tree, timestampBlock: st.timestampBlock, filteredTree: getFilteredBlockTree(st),
@@ -98,7 +124,9 @@ fn gradeView(st: HealingStore) -> GradeView {
 
 // ── Executable grade interfaces ──
 
-// The ancestors of `b`, deepest first, under a fuel bound.
+// ブロック `b` の祖先の列を、深いもの(`b` 自身)から順に、燃料 `n` の上限つきで返す。
+// `n` が 0 または親が無いとき `[b]`、そうでなければ `b` に `chainUp(n - 1, p)`(`p` は親)を続ける。
+// 手書き `chain_up` に対応する。明示した燃料での再帰は E002 の受理形である(手書きは `n+1` の構造的再帰)。
 fn chainUp(n: Nat, b: Block) -> List<Block> {
   if n == 0 { [b] } else {
     match parent?(b) {
@@ -108,24 +136,44 @@ fn chainUp(n: Nat, b: Block) -> List<Block> {
   }
 }
 
-// The structural ancestor chain used by both clear walks.
+// ブロック `b` の祖先の全列を深いものから順に返す(2 つの clear 探索が共通に使う)。
+// 燃料に `depth(b)` を渡して `chainUp` を呼ぶだけなので、`b` から genesis までを過不足なく含む。
+// 手書き `chain_of` に対応する。
 fn chainOf(b: Block) -> List<Block> { chainUp(depth(b), b) }
 
-// The deepest clear ancestor in the segment from `floor` to `c` (no floor: the whole chain).
+// `floor` から `c` までの区間にある、clear な祖先のうち最も深いものを返す(`floor` が無ければ鎖全体)。
+// `c` の祖先の鎖から、`floor` が `Some(base)` なら `preceq(base, b)` を満たし、かつ `test(b)` が真のブロックを選び、
+// その中で最も深いもの(`deepest?`)を返す。該当が無ければ `None`。
+// 手書き `deepest_clear` に対応する(手書き側の `floor.elim true …` は `floor.map(…).getOr(true)`)。
 fn deepestClear(floor: Option<Block>, c: Block, test: (Block) -> Bool) -> Option<Block> {
   deepest?(chainOf(c).toSet().filter(|b| floor.map(|base| preceq(base, b)).getOr(true) && test(b)))
 }
 
-// §6 a saved phase result: `None` = pending, `Some(None)` = completed empty, `Some(Some(b))` = completed root.
+// §6 で保存される 1 つの phase の結果を表す型別名である。
+// `None` は未完了(pending)、`Some(None)` は完了したが空、`Some(Some(b))` は完了して root `b` を得たことを表す。
+// 手書きには名前つきの対応物は無く、`Option (Option (Block V))` と直接書かれている。
+// `Frame` の 3 つの欄(g0 / g1 / g2)と `phaseResult` / `clipResult` / `anchor` がこの型を使う(`putPhase` は完了した結果
+// `Option<Block>` を `Some` で包んでこの型の欄に書く)。
+// 一度完了(空を含む)した結果は `completeOne` で再計算されない。
+// 保存後は `clipResult` が、完了した root だけを現在の `f` に両立する祖先へ切り詰める。
 type PhaseResult = Option<Option<Block>>
 
-// All phase results must be complete before a height source is evaluated. Scheduled attestations occur at T+6Δ,
-// after all three fixed phase times.
+// 1 ラウンド分の 3 つの phase(G0 / G1 / G2)の保存結果をまとめる record である。
+// 欄 `g0` / `g1` / `g2` はそれぞれ `PhaseResult`(未完了・完了して空・完了して root)を持つ。
+// height の源を評価する前に、3 つの結果がすべて完了している必要がある(`allClosed`)。
+// 予定された attestation は T+6Δ に起きるので、固定された 3 つの phase 時刻の後になる。
+// 手書き `Frame` に対応する。`pendingFrame` / `emptyFrame` が初期値、`Cache` がこれを 2 つ持つ。
+// `clear` と `grade2Block` は frame を読み、`putPhase` と `clipFrame` は新しい frame を返す。
 record Frame { g0: PhaseResult, g1: PhaseResult, g2: PhaseResult } derive eq
 
+// frame の 3 つの phase の結果がすべて完了済み(未完了が無い)かを返す。
+// `g0` / `g1` / `g2` のそれぞれが `Some`(空を含む)であることの論理積で、`grade2Block` が使う。
+// 手書き `allClosed` に対応する。
 fn allClosed(frame: Frame) -> Bool { frame.g0.isSome() && frame.g1.isSome() && frame.g2.isSome() }
 
-// The clear test of a frame: compatible with the completed G0 root; everything is clear while G0 is pending or empty.
+// frame の clear 判定で、ブロック `b` が clear(G0 の root と両立する)かを返す。
+// `g0` が完了して root `r` を持つなら `compatible(b, r)`、未完了または完了して空なら常に true になる。
+// 手書き `clear` に対応する。`currentSGVote` の探索の条件として、`GradeRead.frame` 越しに使われる。
 fn clear(frame: Frame, b: Block) -> Bool {
   match frame.g0 {
     Some(Some(r)) => compatible(b, r),
@@ -133,10 +181,18 @@ fn clear(frame: Frame, b: Block) -> Bool {
   }
 }
 
-// One local grade read (手書き `GradeRead`): the anchor, the grade-2 candidate Q2, the clear test (as its frame) and rawG2.
+// 1 回のローカルな grade の読みの結果をまとめる record である(手書き `GradeRead`)。
+// 欄 `anchor` は G1 から決まる起点のブロック、`q2`(手書きの欄名は `Q2`)は grade 2 の候補 Q2(無ければ `None`)。
+// 欄 `frame` は clear 判定に使う frame で、読みは `clear(grades.frame, b)` になる。
+// 欄 `rawG2` は G2 が完了して空でないかの真偽である。
+// 手書き側の `clear : Block → Bool`(関数型の欄)は、唯一の具体例が読んだ frame の `clear` なので frame を持つ形に改めた。
+// 手書きの `rawG2`(命題)と判定可能性の欄 `rawG2_decidable` は、Bool の欄 1 つにまとめた。
 record GradeRead { anchor: Block, q2: Option<Block>, frame: Frame, rawG2: Bool } derive eq
 
-// The shared SG walk and its three fallbacks, on one supplied grade read.
+// 与えられた 1 つの grade の読み `grades` について、共通の SG 探索と 3 段の退避で SG 票のブロックを決める。
+// まず `grades.anchor` から `st.liveConfirmed` までの clear な祖先のうち最深のものを返し、無ければ `grades.q2` を使う。
+// それも無ければ、`rawG2` が真なら FG の root(`getFgRoot(st)`)、偽なら `grades.anchor` を返す。
+// 手書き `currentSGVote` に対応する(手書きは `letI` で判定可能性の欄を取り出すが、naru の `rawG2` は最初から Bool)。
 fn currentSGVote(st: HealingStore, grades: GradeRead) -> Block {
   match deepestClear(Some(grades.anchor), st.liveConfirmed, |b| clear(grades.frame, b)) {
     Some(b) => b,
@@ -151,7 +207,9 @@ fn currentSGVote(st: HealingStore, grades: GradeRead) -> Block {
 
 // ── Clipping ──
 
-// The deepest ancestor-or-self of `g` compatible with `f` (genesis is compatible with everything).
+// `g` の祖先(自身を含む)のうち、`f` と両立する最も深いものを返す(genesis はすべてと両立する)。
+// `g` が genesis なら genesis、`g` が node で `compatible(g, f)` なら `g` 自身、そうでなければ親 `p` で再帰する。
+// 手書き `clipGrade` に対応する。Block の構造的再帰で、`clipResult` を通して保存済みの結果を切り詰めるのに使われる。
 fn clipGrade(g: Block, f: Block) -> Block {
   match g {
     Block.Genesis => Block.Genesis,
@@ -161,14 +219,19 @@ fn clipGrade(g: Block, f: Block) -> Block {
 
 // ── Inputs ──
 
-// The sender's SG votes in the expiry window of round r, received before `cutoff`.
+// 送り手 `sender` の SG 票のうち、ラウンド r の失効窓の中にあり、`cutoff` より前に受信したものの集合を返す。
+// 窓は `latestWindow(eta, r)` のラウンド列で、各ラウンドの `gv.sgVotes` を合わせ、
+// `valIndex == sender` かつ受信時刻が `cutoff` より前(`occurrenceBefore`)のものに絞る。
+// 手書き `rawInputs` に対応する(手書きは `latest_window` のラウンド列の和集合で同じ集合を作る)。
 fn rawInputs(gv: GradeView, eta: Round, r: Round, cutoff: Time, sender: ValidatorId) -> Set<SGVote> {
   latestWindow(eta, r).toSet().flatMap(|k| gv.sgVotes.getOr(k, Set.empty()))
     .filter(|u| u.valIndex == sender && occurrenceBefore(gv.timestampSgVote.get?(u), cutoff))
 }
 
-// The body condition uses only the phase's retained tree and finalized root. A finalized ancestor keeps its original
-// head. An unknown root is not ready.
+// SG 票 `u` の本体の条件(証拠が揃っているか)を判定する。phase が保持する木と確定した root だけを使う。
+// `u.confirmed` が `None` なら true。`Some(r)` なら木 `gv.tree` から root を探し、未知の root は ready でない(false)。
+// 見つかった head `h` については、受信時刻が `cutoff` より前で、かつ `compatible(h, f)` のとき true を返す。
+// 確定済みの祖先はもとの head を保つ。手書き `bodyReady` に対応する(手書きは `stampedBefore`、naru は `occurrenceBefore`)。
 fn bodyReady(gv: GradeView, f: Block, cutoff: Time, u: SGVote) -> Bool {
   match u.confirmed {
     None => true,
@@ -181,22 +244,35 @@ fn bodyReady(gv: GradeView, f: Block, cutoff: Time, u: SGVote) -> Bool {
   }
 }
 
+// `rawInputs` のうち、本体の条件 `bodyReady` を満たす SG 票だけの集合を返す(証拠の揃った入力)。
+// 引数は `rawInputs` と同じ送り手・失効窓・ラウンド・`cutoff` に、本体の判定に使う確定 root の `f` を加えたもの。
+// 手書き `interpretedInputs` に対応する。
 fn interpretedInputs(gv: GradeView, f: Block, eta: Round, r: Round, cutoff: Time, sender: ValidatorId) -> Set<SGVote> {
   rawInputs(gv, eta, r, cutoff, sender).filter(|u| bodyReady(gv, f, cutoff, u))
 }
 
 // ── Support / opposition algebra ──
 
-// A grade token (round, key), the key being the signed confirmed root (手書き `Token (Option BlockId)`).
+// grade の token(ラウンド, 鍵)を表す record で、鍵は署名された confirmed root である。
+// 欄 `round` は SG 票のラウンド、`key` は SG 票の `confirmed`(`Option<BlockId>`)をそのまま持つ。
+// 手書き `Token` に対応する。手書き側の `Token (Key : Type*)` は鍵の型を引数に取る汎用の型だが、
+// 実際の具体例は `Key = Option BlockId`(手書き `token`)だけなので naru では固定した。
+// SG 票から `token` で作り、`cleanFrom` / `supports` / `opposes` が token の集合を判定する。
+// 鍵が `None` の token は、confirmed root を持たない SG 票に対応する。
 record Token { round: Nat, key: Option<BlockId> } derive eq
 
-// No two tokens of `raw` at one round ≥ k carry different keys.
+// `raw` の中に、ラウンド k 以上の同じラウンドで鍵の異なる 2 つの token が無いかを返す。
+// 任意の `x` / `y` について、`k <= x.round` かつ `x.round == y.round` なら `x.key == y.key` であることを全称で確かめる。
+// 手書き `CleanFrom` に対応する(手書きは命題で、有界な全称 `∀ x ∈ raw` を `all`、含意を `!a || b` で表した Bool)。
 fn cleanFrom(raw: Set<Token>, k: Nat) -> Bool {
   raw.all(|x| raw.all(|y| !(k <= x.round && x.round == y.round) || x.key == y.key))
 }
 
-// `early` and `late` contain evidence-ready tokens. `raw` also contains signed roots whose evidence is incomplete.
-// Thus equivocation needs no body.
+// ブロック `b` が、token の集合 `early` / `late` / `raw` から支持(support)されるかを返す。
+// `early` と `late` は証拠の揃った token、`raw` は証拠が未完の署名済み root も含むので、二重署名の検出に本体は要らない。
+// `early` に token `u` があり、(1) `u` のラウンドが `early` で最大、(2) `covers(u.key, b)`、(3) `cleanFrom(raw, u.round)`、
+// (4) `late` のうち `u` より新しいラウンドの token はすべて `b` を覆う、を満たすとき true になる。
+// 手書き `Supports` に対応する。`covers` は手書きの仮引数 `covers`(鍵とブロックから命題)を `(Option<BlockId>, Block) -> Bool` にした仮引数。
 fn supports(covers: (Option<BlockId>, Block) -> Bool, early: Set<Token>, late: Set<Token>, raw: Set<Token>, b: Block) -> Bool {
   early.any(|u|
     early.all(|x| x.round <= u.round)
@@ -205,53 +281,84 @@ fn supports(covers: (Option<BlockId>, Block) -> Bool, early: Set<Token>, late: S
       && late.all(|x| !(u.round < x.round) || covers(x.key, b)))
 }
 
+// ブロック `b` が、token の集合 `early` / `late` / `raw` から反対(oppose)されるかを返す。
+// 次のどちらかで true になる。(1) `late` に token `x` があり、`early` のラウンドがすべて `x.round` 以下で、`covers(x.key, b)` が偽。
+// (2) `raw` に同じラウンドで鍵の異なる 2 つの token `x` / `y` があり、`early` のラウンドがすべて `x.round` 以下(二重署名)。
+// 手書き `Opposes` に対応する(手書きの命題を Bool にし、`∃ x ∈ late` などの有界な存在を `any` で表した)。
 fn opposes(covers: (Option<BlockId>, Block) -> Bool, early: Set<Token>, late: Set<Token>, raw: Set<Token>, b: Block) -> Bool {
   late.any(|x| early.all(|u| u.round <= x.round) && !covers(x.key, b))
     || raw.any(|x| raw.any(|y| early.all(|u| u.round <= x.round) && x.round == y.round && x.key != y.key))
 }
 
+// SG 票 `u` を grade の token(票のラウンド, 票の confirmed root)に変換する。
+// 本体は `Token { round: u.round, key: u.confirmed }` で、他の欄は捨てる。手書き `token` に対応する。
+// 手書きは `Token (Option BlockId)` を返す。naru の `Token` は鍵の型を固定してある。
 fn token(u: SGVote) -> Token { Token { round: u.round, key: u.confirmed } }
 
 // ── Selectors ──
 
+// 検証者 `v` の生の入力 `rawInputs` を token の集合にして返す(証拠が未完のものも含む)。
+// `cutoff` より前に受信した、失効窓内の `v` の SG 票をそれぞれ `token` に写す。`opposes` / `supports` の `raw` 引数になる。
+// 手書き `rawView` に対応する(手書きは `.image token`、naru は `.map`)。
 fn rawView(gv: GradeView, eta: Round, r: Round, cutoff: Time, v: ValidatorId) -> Set<Token> {
   rawInputs(gv, eta, r, cutoff, v).map(|u| token(u))
 }
 
+// 検証者 `v` の、証拠の揃った入力 `interpretedInputs` を token の集合にして返す。
+// 確定 root `f` に対して `bodyReady` を満たす SG 票だけを `token` に写す。`supports` / `opposes` の `early` / `late` になる。
+// 手書き `readyView` に対応する(手書きは `.image token`、naru は `.map`)。
 fn readyView(gv: GradeView, f: Block, eta: Round, r: Round, cutoff: Time, v: ValidatorId) -> Set<Token> {
   interpretedInputs(gv, f, eta, r, cutoff, v).map(|u| token(u))
 }
 
+// 鍵 `key` が指す head が、処理済みの木 `gv.tree` の中でブロック `b` の子孫かを返す。
+// `headCovers(gv.tree, b, key)` を呼ぶだけで、`supports` / `opposes` の仮引数 `covers` に渡される。
+// 手書き `localCovers` に対応する(手書き側の `gv.T` は naru の `gv.tree`)。
 fn localCovers(gv: GradeView, key: Option<BlockId>, b: Block) -> Bool { headCovers(gv.tree, b, key) }
 
+// 検証者 `v` がブロック `b` を支持するかを返す。
+// `supports` に、覆い方 `localCovers(gv, …)`、時刻 `early` / `late` の `readyView` 2 つ、時刻 `late` の `rawView` を渡した結果。
+// 手書き `positive` に対応する(手書きは `decide (Supports …)` で命題を Bool にする。naru の `supports` は最初から Bool)。
 fn positive(gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, v: ValidatorId, b: Block) -> Bool {
   supports(|k, x| localCovers(gv, k, x),
            readyView(gv, f, eta, r, early, v), readyView(gv, f, eta, r, late, v), rawView(gv, eta, r, late, v), b)
 }
 
+// 検証者 `v` がブロック `b` に反対するかを返す。
+// `opposes` に、覆い方 `localCovers(gv, …)`、時刻 `early` / `late` の `readyView` 2 つ、時刻 `late` の `rawView` を渡した結果。
+// 手書き `opposing` に対応する(`positive` の対で、`supports` の代わりに `opposes` を使う)。
 fn opposing(gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, v: ValidatorId, b: Block) -> Bool {
   opposes(|k, x| localCovers(gv, k, x),
           readyView(gv, f, eta, r, early, v), readyView(gv, f, eta, r, late, v), rawView(gv, eta, r, late, v), b)
 }
 
-// An executable local grade: the opposing weight is below the supporting weight. Only current tree lookup and finite
-// token sets are used.
+// ブロック `b` の実行可能なローカルな grade を返す。反対する重みが支持する重みより小さいとき true になる。
+// 検証者の全体 `validators(e.electorate)` を `opposing` と `positive` で絞り、それぞれ `weightOf` で重みを求めて比べる。
+// 現在の木の参照と有限な token の集合だけを使う。手書き `gradeBool` に対応する。
+// 手書きの有限型 V の全体を絞る式は、electorate の外の validator が重み 0 なので、和は同じになる(冒頭の注を参照)。
 fn gradeBool(e: ProtocolEnv, gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time, b: Block) -> Bool {
   weightOf(e.electorate, validators(e.electorate).filter(|v| opposing(gv, f, eta, r, early, late, v, b)))
     < weightOf(e.electorate, validators(e.electorate).filter(|v| positive(gv, f, eta, r, early, late, v, b)))
 }
 
-// Freeze the raw phase grade over the processed tree before clipping. The FG activity filter is applied only when the
-// saved root is consumed.
+// 切り詰め(clip)の前に、処理済みの木の上で生の phase の grade を凍結した root を返す。
+// 処理済みの木 `gv.tree` のブロックのうち `gradeBool` が真のものから、最も深いもの(`deepest?`)を選ぶ。無ければ `None`。
+// FG の活動フィルタは、保存した root を使うとき(`activePrefix` の呼び出し側)にだけ適用する。
+// 手書き `freezeRoot` に対応する(手書き側の `gv.T` は naru の `gv.tree`)。
 fn freezeRoot(e: ProtocolEnv, gv: GradeView, f: Block, eta: Round, r: Round, early: Time, late: Time) -> Option<Block> {
   deepest?(gv.tree.filter(|b| gradeBool(e, gv, f, eta, r, early, late, b)))
 }
 
-// A completed root names its graded prefix family.
+// 完了した root `r` が指す、段階づけられた前置き(prefix)の族の中で最も深いブロックを返す。
+// 木 `tree` のブロックのうち `preceq(b, r)`(`r` の祖先または自身)のものから `deepest?` で選ぶ。無ければ `None`。
+// 手書き `activePrefix` に対応する。呼び出し側は `tree` にフィルタ済みの木 `getFilteredBlockTree(st)` を渡す。
 fn activePrefix(tree: Set<Block>, r: Block) -> Option<Block> { deepest?(tree.filter(|b| preceq(b, r))) }
 
-// Adopted shifted schedule: current G1 completes before the opening proposal. Pending and completed-empty G1 use only
-// the FG-root fallback. No instantaneous selector or previous-round G1 is consulted.
+// ローカルな grade の読みの起点(anchor)となるブロックを、G1 の結果 `g1` から決めて返す。
+// 採用したずらしスケジュールでは、現在の G1 は開始 proposal の前に完了する。
+// `g1` が完了して root `r` を持つなら `activePrefix(getFilteredBlockTree(st), r)`(無ければ FG の root)、
+// 未完了または完了して空なら FG の root `getFgRoot(st)` だけを返す。即時の選択子も前ラウンドの G1 も参照しない。
+// 手書き `anchor` に対応する。引数 `_e` / `_hc` / `_r` は手書きと同じく本体で使わない。
 fn anchor(_e: ProtocolEnv, _hc: HealConfig, st: HealingStore, _r: Round, g1: PhaseResult) -> Block {
   match g1 {
     Some(Some(r)) => activePrefix(getFilteredBlockTree(st), r).getOr(getFgRoot(st)),
@@ -259,6 +366,10 @@ fn anchor(_e: ProtocolEnv, _hc: HealConfig, st: HealingStore, _r: Round, g1: Pha
   }
 }
 
+// frame から grade 2 のブロックの候補(Q2)を返す。
+// `allClosed(frame)` が偽なら `None`。真なら `g2` の root を取り出し(未完了・空は `None`)、
+// `activePrefix(getFilteredBlockTree(st), r)` で前置きの族の最深のブロックに写す。
+// 手書き `grade2Block` に対応する(手書き側の `(frame.g2.bind id).bind` は naru の `andThen(|x| x).andThen(…)`)。
 fn grade2Block(st: HealingStore, frame: Frame) -> Option<Block> {
   if allClosed(frame) {
     frame.g2.andThen(|x| x).andThen(|r| activePrefix(getFilteredBlockTree(st), r))
@@ -269,37 +380,75 @@ fn grade2Block(st: HealingStore, frame: Frame) -> Option<Block> {
 
 // ── The phase cache ──
 
+// grade の 3 つの phase(G0 / G1 / G2)を表す enum である。
+// 手書き `Phase` の `g0` / `g1` / `g2` に対応し、variant 名は `G0` / `G1` / `G2` に改めた。
+// stdlib の Event の phase(Tick / Deliver)と名が重なるので、型名を `GradePhase` にした。
+// phase ごとの時刻の差は `earlyOffset` / `lateOffset` / `domainOffset` が与え、
+// `Frame` の欄と `phaseResult` / `putPhase` / `completeOne` が phase で結果を選ぶ。
+// `derive eq` により等値比較ができる。
 enum GradePhase { G0, G1, G2 } derive eq
 
+// phase の early 時刻の、開始 proposal 時刻からのずれを Δ の倍数(整数)で返す。
+// G0 は -3、G1 は -4、G2 は -5。`earlyTime` が `openingTime + earlyOffset(p) * delta` を作る。
+// 手書き `Phase.earlyOffset` に対応する。
 fn earlyOffset(p: GradePhase) -> Int {
   match p { GradePhase.G0 => -3, GradePhase.G1 => -4, GradePhase.G2 => -5 }
 }
 
+// phase の late 時刻の、開始 proposal 時刻からのずれを Δ の倍数(整数)で返す。
+// G0 は -3、G1 は -2、G2 は -1。`lateTime` が `openingTime + lateOffset(p) * delta` を作る。
+// 手書き `Phase.lateOffset` に対応する。
 fn lateOffset(p: GradePhase) -> Int {
   match p { GradePhase.G0 => -3, GradePhase.G1 => -2, GradePhase.G2 => -1 }
 }
 
+// phase の domain 時刻(結果を凍結する時刻)の、開始 proposal 時刻からのずれを Δ の倍数(整数)で返す。
+// G0 は 1、G1 は 0、G2 は -1。`domainTime` が `openingTime + domainOffset(p) * delta` を作る。
+// 手書き `Phase.domainOffset` に対応する。
 fn domainOffset(p: GradePhase) -> Int {
   match p { GradePhase.G0 => 1, GradePhase.G1 => 0, GradePhase.G2 => -1 }
 }
 
-// The opening proposal instant of round r (手書き `opening`).
+// ラウンド r の開始 proposal の時刻を返す。
+// 本体は `proposalTime(e, openingSlot(hc, r))`(開始スロットの proposal 時刻)で、phase の各時刻の基準になる。
+// 手書き `opening` に対応する(手書きは `Protocol.proposal_time E (hc.opening_slot r)`。手書き `proposal_time` を参照)。
 fn openingTime(e: ProtocolEnv, hc: HealConfig, r: Round) -> Time { proposalTime(e, openingSlot(hc, r)) }
 
+// ラウンド r の phase `p` の early 時刻(入力を数える前側の時刻)を返す。
+// `openingTime(e, hc, r) + earlyOffset(p) * e.delta` で求める。手書き `early` に対応する。
+// 名前は `early` だと token の集合の仮引数名と重なるので `earlyTime` に改めた。
 fn earlyTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + earlyOffset(p) * e.delta }
 
+// ラウンド r の phase `p` の late 時刻(入力を数える後側の時刻)を返す。
+// `openingTime(e, hc, r) + lateOffset(p) * e.delta` で求める。手書き `late` に対応する。
+// 名前は `late` だと token の集合の仮引数名と重なるので `lateTime` に改めた。
 fn lateTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + lateOffset(p) * e.delta }
 
+// ラウンド r の phase `p` の domain 時刻(結果を凍結する時刻)を返す。
+// `openingTime(e, hc, r) + domainOffset(p) * e.delta` で求める。手書き `domain` に対応する。
+// `completeOne` は tick の時刻 `t` がちょうどこの時刻に等しいときだけ、未完了の結果を更新する。
 fn domainTime(e: ProtocolEnv, hc: HealConfig, r: Round, p: GradePhase) -> Time { openingTime(e, hc, r) + domainOffset(p) * e.delta }
 
+// 3 つの phase がすべて未完了(`None`)の frame を返す。引数は 0 個の fn である。
+// 飛ばされたラウンドや、まだ何も保存していないラウンドの frame として `alignRound` / `cacheAtRound` が使う。
+// 手書き `pendingFrame` に対応する。
 fn pendingFrame() -> Frame { Frame { g0: None, g1: None, g2: None } }
 
+// 3 つの phase がすべて完了して空(`Some(None)`)の frame を返す。引数は 0 個の fn である。
+// `initialCache` の現在ラウンドの frame として使う。手書き `emptyFrame` に対応する。
+// `pendingFrame` と違い、完了済みなので `completeOne` はこの frame の結果を再計算しない。
 fn emptyFrame() -> Frame { Frame { g0: Some(None), g1: Some(None), g2: Some(None) } }
 
+// frame `fr` から phase `p` の保存結果を取り出す。
+// G0 なら `fr.g0`、G1 なら `fr.g1`、G2 なら `fr.g2` を返す。手書き `phaseResult` に対応する。
+// 値の意味(未完了・完了して空・完了して root)は `PhaseResult` の定義を参照。
 fn phaseResult(fr: Frame, p: GradePhase) -> PhaseResult {
   match p { GradePhase.G0 => fr.g0, GradePhase.G1 => fr.g1, GradePhase.G2 => fr.g2 }
 }
 
+// frame `fr` の phase `p` の欄を、完了した結果 `Some(result)` に置き換えた frame を返す。
+// 他の 2 つの欄は `..fr` でそのまま残る。上書きの可否は見ない(再計算の禁止は `completeOne` が担う)。
+// 手書き `putPhase` に対応する。
 fn putPhase(fr: Frame, p: GradePhase, result: Option<Block>) -> Frame {
   match p {
     GradePhase.G0 => Frame { g0: Some(result), ..fr },
@@ -308,8 +457,11 @@ fn putPhase(fr: Frame, p: GradePhase, result: Option<Block>) -> Frame {
   }
 }
 
-// A completed result is never recalculated, including completed-empty. Only an exact domain-time tick can change a
-// pending result.
+// phase `p` の結果を、時刻 `t` の tick で必要なら凍結して、更新後の frame を返す。
+// 完了済みの結果は、空を含めて決して再計算しない。未完了の結果は、`t` がちょうど `domainTime(e, hc, r, p)` のとき
+// だけ `freezeRoot(e, gradeView(st), st.f, hc.etaSG, r, earlyTime, lateTime)` の結果で完了させる。それ以外は `fr` のまま。
+// 手書き `completeOne` に対応する。手書き側の `st.gradeView` / `st.F` / `hc.η_SG` は、
+// naru では `gradeView(st)` / `st.f` / `hc.etaSG` になる。
 fn completeOne(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Time, p: GradePhase, fr: Frame) -> Frame {
   match phaseResult(fr, p) {
     Some(_) => fr,
@@ -323,37 +475,64 @@ fn completeOne(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Ti
   }
 }
 
+// 時刻 `t` の tick で、frame の 3 つの phase すべてに `completeOne` を適用した frame を返す。
+// 適用の順は G2、G1、G0(G2 が最も内側)。各 phase は自分の domain 時刻と `t` が等しいときだけ変わる。
+// 手書き `completeFrame` に対応する。
 fn completeFrame(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Time, fr: Frame) -> Frame {
   completeOne(e, hc, st, r, t, GradePhase.G0,
     completeOne(e, hc, st, r, t, GradePhase.G1, completeOne(e, hc, st, r, t, GradePhase.G2, fr)))
 }
 
+// 保存された 1 つの phase の結果を、ブロック `f` に両立するよう切り詰めて返す。
+// 完了して root `b` を持つなら `clipGrade(b, f)` に置き換え、未完了と完了して空はそのまま残す。
+// 手書き `clipResult` に対応する(手書きの `F` は `f`)。
 fn clipResult(f: Block, result: PhaseResult) -> PhaseResult { result.map(|r| r.map(|b| clipGrade(b, f))) }
 
+// frame の 3 つの phase の結果を、すべてブロック `f` に対して切り詰めた frame を返す。
+// `g0` / `g1` / `g2` のそれぞれに `clipResult(f, …)` を適用するだけである。
+// 手書き `clipFrame` に対応する。`readFrame` と `clipCache` が使う。
 fn clipFrame(f: Block, fr: Frame) -> Frame { Frame { g0: clipResult(f, fr.g0), g1: clipResult(f, fr.g1), g2: clipResult(f, fr.g2) } }
 
-// G2 for the next round completes before that round opens. Both labels must coexist until the opening rotates the
-// cache. Storage is bounded.
+// phase の結果を保存する cache を表す record で、現在ラウンドと次ラウンドの 2 つの frame を持つ。
+// 欄 `round` は cache が現在とみなすラウンド、`current` はそのラウンドの frame、`next` は次のラウンドの frame である。
+// 次ラウンドの G2 はそのラウンドが開く前に完了するので、開始が cache を回すまで 2 つの添字が共存しなければならない。
+// 保持する frame は常に 2 つなので、記憶量は有界になる。
+// 読むときは `cacheAtRound`、更新するときは `onPhaseTick` と `clipCache` を通す。
+// 手書き `Cache` に対応する。`initialCache` が初期値、`alignRound` がラウンドの進みに合わせて回す。
 record Cache { round: Round, current: Frame, next: Frame } derive eq
 
+// cache の初期値を返す。引数は 0 個の fn である。
+// ラウンド 0、現在の frame は `emptyFrame()`(完了して空)、次の frame は `pendingFrame()`(未完了)にする。
+// 手書き `initialCache` に対応する。
 fn initialCache() -> Cache { Cache { round: 0, current: emptyFrame(), next: pendingFrame() } }
 
-// A skipped round starts pending. Advancing one round carries only the already saved next-round frame; it never
-// reconstructs missed phase results.
+// cache をラウンド `r` に合わせて回した cache を返す。
+// `r` が cache のラウンドと同じなら `c` のまま。ちょうど 1 つ進むなら、保存済みの `c.next` を現在の frame にして次を未完了にする。
+// それ以外(飛ばされたラウンド)は現在も次も未完了から始める。逃した phase の結果を再構成することは決してしない。
+// 手書き `alignRound` に対応する。
 fn alignRound(c: Cache, r: Round) -> Cache {
   if r == c.round { c }
   else if r == c.round + 1 { Cache { round: r, current: c.next, next: pendingFrame() } }
   else { Cache { round: r, current: pendingFrame(), next: pendingFrame() } }
 }
 
+// cache からラウンド `r` の frame を取り出す。
+// `r` が cache のラウンドなら `c.current`、その次のラウンドなら `c.next`、それ以外は `pendingFrame()` を返す。
+// cache を回さずに読むだけの関数である。手書き `cacheAtRound` に対応する。
 fn cacheAtRound(c: Cache, r: Round) -> Frame {
   if r == c.round { c.current } else if r == c.round + 1 { c.next } else { pendingFrame() }
 }
 
+// cache の 2 つの frame を、ブロック `f` に対して切り詰めた cache を返す。
+// ラウンド `round` はそのままで、`current` と `next` のそれぞれに `clipFrame(f, …)` を適用する。
+// 手書き `clipCache` に対応する。`onPhaseTick` が最後に `st.f` で呼ぶ。
 fn clipCache(f: Block, c: Cache) -> Cache { Cache { round: c.round, current: clipFrame(f, c.current), next: clipFrame(f, c.next) } }
 
-// The caller supplies the store strictly before this tick. Same-time objects pass through the object handler only
-// after this operation.
+// 時刻 `t` の phase tick で cache を更新して返す。呼び出し側はこの tick より厳密に前の store を渡す。
+// 同時刻の object は、この操作の後に初めて object の handler を通る。
+// まず `t` のスロットのラウンドへ `alignRound` で cache を合わせ、現在のラウンドと次のラウンドの frame に
+// それぞれ `completeFrame` を適用し、最後に `clipCache(st.f, …)` で切り詰める。
+// 手書き `onPhaseTick` に対応する(手書き側の `hc.round_of (E.slotOf t)` は `roundOf(hc, slotOf(e, t))`)。
 fn onPhaseTick(e: ProtocolEnv, hc: HealConfig, st: HealingStore, t: Time, c: Cache) -> Cache {
   let aligned = alignRound(c, roundOf(hc, slotOf(e, t)));
   clipCache(st.f, Cache {
@@ -365,22 +544,34 @@ fn onPhaseTick(e: ProtocolEnv, hc: HealConfig, st: HealingStore, t: Time, c: Cac
 
 // ── The frame contract ──
 
+// cache からラウンド `r` の frame を読み、store の `st.f` に対して切り詰めた frame を返す。
+// `cacheAtRound(c, r)` を `clipFrame(st.f, …)` に通すだけで、読みの時点の store の `f` に常に揃う。
+// 手書き `readFrame` に対応する(手書き側の `st.F` は naru の `st.f`)。
 fn readFrame(c: Cache, st: HealingStore, r: Round) -> Frame { clipFrame(st.f, cacheAtRound(c, r)) }
 
-// The contract's `read`: anchor from G1, Q2 from the closed frame, the clear test of the frame, rawG2 = G2 completed nonempty.
+// frame 契約の `read`、すなわち cache からラウンド `r` の `GradeRead` を作る。
+// `readFrame(c, st, r)` の frame `fr` から、`anchor` は G1 の `fr.g1` で決め、`q2` は閉じた frame の `grade2Block`、
+// `frame` は `fr` そのもの(clear 判定に使う)、`rawG2` は G2 が完了して空でないこと(`fr.g2.andThen(|x| x).isSome()`)にする。
+// 手書き `frameGradeRead` に対応する(手書きの契約 `contract.read E hc st r` は naru の `frameGradeRead(c, e, hc, st, r)`)。
 fn frameGradeRead(c: Cache, e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round) -> GradeRead {
   let fr = readFrame(c, st, r);
   GradeRead { anchor: anchor(e, hc, st, r, fr.g1), q2: grade2Block(st, fr), frame: fr, rawG2: fr.g2.andThen(|x| x).isSome() }
 }
 
-// The optional SG candidate (手書き `ConfirmationSGCandidate.optional (frameSGCandidate c)`): the caller keeps every
-// successful Goldfish write and invokes this selector only when Goldfish eligibility fails.
+// 任意の SG 候補のブロックを返す選択子である。呼び出し側は成功した Goldfish の書き込みをすべて保ち、
+// Goldfish の資格が失敗したときだけこの選択子を呼ぶ。
+// 現在の store のラウンド `roundOf(hc, st.s)` の frame から、`g2` の root を `activePrefix(getFilteredBlockTree(st), r)` に写す。
+// 手書き `ConfirmationSGCandidate` の `optional` が包む `frameSGCandidate` に対応し、名前は `frameSgCandidate` に改めた。
+// 手書き側の `contract.confirmationSG` の `select` はこの関数になる。引数 `_e` / `_slot` は本体で使わない。
 fn frameSgCandidate(c: Cache, _e: ProtocolEnv, hc: HealConfig, st: HealingStore, _slot: Slot) -> Option<Block> {
   readFrame(c, st, roundOf(hc, st.s)).g2.andThen(|x| x).andThen(|r| activePrefix(getFilteredBlockTree(st), r))
 }
 
-// The round's stable-record root: the frozen slot projected onto the candidate tree, or the FG root when that
-// projection is empty. Never empties.
+// ラウンド `r` の stable record の root を返す。凍結したスロットを候補の木に射影したものを返し、
+// その射影が空なら FG の root `getFgRoot(st)` を返すので、常に `Some` で空にならない。
+// 本体は `frameSgCandidate` と同じ射影を、store の時計のラウンドではなく引数 `r` で読んだものである。
+// 射影は凍結した側ではなく使う側の store を読む。手書き `frameStableRoot` に対応する
+// (手書き側の `contract.stableRoot` は naru の `frameStableRoot`。引数 `_e` / `_hc` は本体で使わない)。
 fn frameStableRoot(c: Cache, _e: ProtocolEnv, _hc: HealConfig, st: HealingStore, r: Round) -> Option<Block> {
   match readFrame(c, st, r).g2.andThen(|x| x).andThen(|g| activePrefix(getFilteredBlockTree(st), g)) {
     Some(g) => Some(g),

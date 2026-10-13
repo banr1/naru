@@ -15,56 +15,98 @@ import Consensus.Objects.Time
 import Consensus.Objects.Blocks
 import Consensus.Objects.Parameters
 
-// §2.5 the validator running the node, written val_index; a node whose val_index holds no duty for the slot
-// simply does not run it.
+// §2.5 node を動かす validator を val_index で名指しする record である。
+// 欄は valIndex のみで、この node が動かす validator の番号を表す。
+// val_index がその slot の duty を持たない node は、単にその duty を実行しない。
+// 手書き `Node` は newRoot と awake も関数型の欄に持つが、環境が決める値(非決定性)なので
+// naru では input newRoot / awake として分け、node は valIndex で名指しする(Parameters の proposer と同じ扱い)。
+// 手書き `Node.val_index` に対応する。
+// derive eq により等価判定ができる。
 record Node { valIndex: ValidatorId } derive eq
 
-// The nominal root of the block the node of `node` proposes in slot `slot` (手書き `Node.new_root`).
+// validator node が slot slot で提案する block の名目上の root を、環境が与える入力として表す。
+// 引数は提案する validator の番号 node と slot slot で、戻り値は BlockId である。
+// 提案の block の root は文書が定めていないが、Block.root は全 tie-break が読むので、node 固有の固定データとして与える。
+// 環境が決める値(非決定性)なので naru では input にし、Witnesses が run ごとの固定データとして与える。
+// 手書き `Node.new_root`(Node の関数型の欄)に対応する。
+// 提案の入力(Duties/Inputs の ProposalInput)の root として読まれる。
 input newRoot(node: ValidatorId, slot: Slot) -> BlockId
 
-// Participation of the node of `node` at the round-`round` action (手書き `Node.awake`). A false value
-// suppresses the whole combined attestation duty; clock ticks and Goldfish duties remain.
+// validator node が round round の action に参加するかを、環境が与える入力として表す。
+// 引数は validator の番号 node と round round で、戻り値の Bool が偽なら合成 attestation の duty 全体を行わない。
+// 偽でも時計の tick と Goldfish の duty は残る。
+// 環境が決める値(非決定性)なので naru では input にし、Witnesses が run ごとの固定データとして与える。
+// 手書き `Node.awake`(Node の関数型の欄)に対応する。
+// tick が round の action を実行するかの判定(actionTime との一致と合わせて)で読む。
 input awake(node: ValidatorId, round: Round) -> Bool
 
 // ── §2.4 Vote-set vocabulary ──
 
-// §2.4 the votes of `votes` cast by `v`. Distinctness of votes is tuple equality, which Set membership already gives.
+// §2.4 票の集合 votes のうち、validator v が投じた票だけの集合を返す。
+// 票の相異は組の等価で決まり、集合の所属が既にそれを与えるので、別に重複を除く処理は要らない。
+// equivocates と participates がこの集合の大きさを見る。
+// 手書き `votes_by` に対応し、filter の条件 vote.valIndex == v も同じ。
 fn votesBy(votes: Set<GoldfishVote>, v: ValidatorId) -> Set<GoldfishVote> {
   votes.filter(|vote| vote.valIndex == v)
 }
 
-// §2.4 `v` equivocates in `votes` when they hold two of its distinct votes. Unqualified by slot, as written.
+// §2.4 validator v が votes の中で equivocate(二重投票)しているかを返す。
+// votes に v の相異なる票が 2 つ以上あるとき真になる(votesBy の大きさが 2 以上)。
+// slot では限定しないので、異なる slot の票が 2 つあっても equivocate とみなす(文書の記述どおり)。
+// 手書き `equivocates` に対応する。
 fn equivocates(votes: Set<GoldfishVote>, v: ValidatorId) -> Bool { 2 <= votesBy(votes, v).size() }
 
-// §2.4 `v` participates in `votes` when they hold at least one of its votes.
+// §2.4 validator v が votes に参加しているか、つまり v の票が 1 つ以上あるかを返す。
+// votesBy の大きさが 0 より大きいときに真で、slot では限定しない(文書の記述どおり)。
+// 手書き `participates` に対応する。
 fn participates(votes: Set<GoldfishVote>, v: ValidatorId) -> Bool { 0 < votesBy(votes, v).size() }
 
 // ── §2.1 Schedule ──
 
-// §2.1 t_s: the proposal instant of slot s.
+// §2.1 t_s: slot s の提案の時刻を返す。
+// 値は slot の開始時刻 slotTime(e, s) そのままで、voteTime などの他の時刻の基準でもある。
+// 手書き `proposal_time` に対応する。
 fn proposalTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) }
 
-// §2.1 t_s + Δ: the Goldfish vote instant of slot s.
+// §2.1 t_s + Δ: slot s の Goldfish 投票の時刻を返す。
+// 値は slotTime(e, s) に環境の遅延上限 e.delta を 1 つ足したもの。
+// tick が投票の duty を実行する時刻の判定に使う。
+// 手書き `vote_time` に対応する。
 fn voteTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + e.delta }
 
-// §2.1 t_s + 2Δ: the support cutoff of slot s.
+// §2.1 t_s + 2Δ: slot s の支持の締切時刻を返す。
+// 値は slotTime(e, s) に e.delta の 2 倍を足したもの。
+// tick が slot s − 1 の確認評価を実行する時刻で、updateConfirmationWith の early 票の判定にも使う。
+// 手書き `support_cutoff` に対応する。
 fn supportCutoff(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 2 * e.delta }
 
-// §2.1 t_s + 3Δ: the view freeze of slot s.
+// §2.1 t_s + 3Δ: slot s の view の凍結時刻を返す。
+// 値は slotTime(e, s) に e.delta の 3 倍を足したもの。
+// 手書き `view_freeze` に対応する。
 fn viewFreeze(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 3 * e.delta }
 
-// §2.1 t_s + 6Δ: the confirmation evaluation of slot s (= support_cutoff of slot s + 1).
+// §2.1 t_s + 6Δ: slot s の確認評価の時刻を返す(slot s + 1 の supportCutoff と等しい)。
+// 値は slotTime(e, s) に e.delta の 6 倍を足したもの。
+// これが次の slot の支持の締切と一致するので、tick は slot s の確認評価を slot s + 1 の締切の枝から呼べる。
+// 手書き `confirmation_time` に対応する。
 fn confirmationTime(e: ProtocolEnv, s: Slot) -> Time { slotTime(e, s) + 6 * e.delta }
 
-// The receiver-independent part of §2.1's Goldfish-vote constraint: the voter is in its own slot's committee.
-// (The "named block's slot ≤ vote.slot" half is enforced at the tree lookup: `resolved`.)
+// §2.1 の Goldfish 票の制約のうち受信側に依らない部分で、投票者が自分の slot の committee に属することを返す。
+// 制約のもう半分「指す block の slot が vote.slot 以下」は、ここではなく tree を引く段階(`resolved`)で強制される。
+// onGoldfishVoteChecked は同じ committee の判定を直接行う。
+// 手書き `vote_well_formed` に対応する。committee は Parameters の input なので、手書きと違って環境 E を取らない。
 fn voteWellFormed(vote: GoldfishVote) -> Bool { committee(vote.slot).contains(vote.valIndex) }
 
 // ── Wire constraints on carried votes ──
 
-// The wire constraint checked on a block's carried raw set: B.votes holds slot-(B.slot − 1) votes.
-// Written `vote.slot + 1 == B.slot` to avoid truncated subtraction, so a slot-0 block carrying any vote fails it.
+// block が運ぶ生の票の集合に課す wire 制約で、B.votes が slot (B.slot − 1) の票だけを持つことを返す。
+// 切り捨て減算を避けて vote.slot + 1 == B.slot と書くので、slot 0 の block が票を 1 つでも運ぶとこの制約を満たさない。
+// 手書きでは named な受信が block 受理の前にこの検査を適用する。
+// 手書き `carried_votes_well_formed` に対応する。
 fn carriedVotesWellFormed(b: Block) -> Bool { gfVotes(b).all(|vote| vote.slot + 1 == slot(b)) }
 
-// §2.1 the proposal's support view is a subset of its carried raw view.
+// §2.1 提案の支持 view が、運ばれた生の view の部分集合であることを返す。
+// block b の gfSupportVotes の各票が gfVotes(b) に含まれるときに真になる。
+// 支持の一覧は固定された提案者の view を記録する付随情報で、取り込み(onBlockUsing)は gfVotes だけを処理する。
+// 手書き `carried_support_well_formed` に対応する。
 fn carriedSupportWellFormed(b: Block) -> Bool { gfSupportVotes(b).all(|vote| gfVotes(b).contains(vote)) }

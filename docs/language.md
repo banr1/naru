@@ -6,7 +6,8 @@ IDEAL.md「前提」の MVP 構文を Rust / TypeScript / Python / Go 利用者�
 
 ## 字句
 
-- 空白・改行は意味を持たない。コメントは `// …` と `/* … */`(入れ子可)。
+- 空白・改行は意味を持たない。コメントは `// …` と `/* … */`(入れ子可)。コメントは字句解析で捨てられ、生成 Lean には写らない
+  (移植ソース `specs/consensus/` では各宣言の直上の `//` ブロックを「宣言コメント」として書く約束。[architecture.md](architecture.md))。
 - 識別子: `[A-Za-z_][A-Za-z0-9_]*` に末尾の `?` を許す(`find?`、`minBy?`)。
 - 命名規約(パーサが依存する): **大文字始まり**は型・モジュール・enum・構築子(`Block`、`Phase.Tick`、`Some`)、
   **小文字始まり**は値(変数・fn・input・predicate 以外の spec 宣言も小文字で良い)。

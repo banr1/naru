@@ -9,10 +9,18 @@ import Consensus.Objects.Identifiers
 import Consensus.Objects.Blocks
 import Consensus.Objects.NamedBlocks
 
-// Named wire objects retain full signed row data: a named block, a Goldfish vote, or a named attestation row.
+// run がネットワーク上で運ぶ「名前付き」wire オブジェクトを表す enum である。
+// 署名済みの行データを欠かさず保持する。variant は 3 つで、次のとおり。
+//   Block: 名前付きブロック NamedBlock、GfVote: Goldfish の投票 GoldfishVote、
+//   Attest: 名前付きの attestation 行 NamedAttestation。
+// ブロックは消去(eraseBlock)した幾何だけでなく元の署名付き本体を持ち回る点が要である。
+// 手書き `NamedObject` の 3 構築子 `block` / `gfVote` / `attest` に 1 対 1 で対応し、
+// 手書きの型引数 V は ValidatorId に固定している(naru にはまだ型引数が無い)。
 enum NamedObject { Block(NamedBlock), GfVote(GoldfishVote), Attest(NamedAttestation) } derive eq
 
-// The validator that authored an object (a genesis block has no author).
+// オブジェクトを作成した validator を返す(genesis ブロックには作成者がいないので None)。
+// ブロックは namedProposer? の結果、投票と attestation 行は欄 valIndex を Some で返す。
+// 手書き `NamedObject.author` に対応し、ブロックの枝は手書き `NamedBlock.proposer?` に相当する。
 fn author(o: NamedObject) -> Option<ValidatorId> {
   match o {
     NamedObject.Block(b) => namedProposer?(b),

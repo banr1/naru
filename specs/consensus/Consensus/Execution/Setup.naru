@@ -15,13 +15,20 @@ import Consensus.Protocol.Schedule
 import Consensus.Protocol.ChainState
 import Consensus.Protocol.Grades
 
-// The fixed data of a run: the protocol environment and wire objects, the healing round schedule, and the finality-gadget
-// height parameters. The named node each validator runs is `setupNode`.
+// run の間変わらない固定データを束ねる record である。
+// 欄 e は protocol 環境(スケジュールと store が読む ProtocolEnv)、hc は healing の round スケジュール、
+// cfg は finality gadget の高さパラメータ(HeightConfig)である。
+// 各 validator が走らせる名前付き node は欄に持たず、関数 setupNode で決まる。
+// 手書き `Setup` の欄 `E` / `hc` / `cfg` に対応する。手書きの欄 node は関数 setupNode に置き換えて Setup に入れない。
+// 証明欄(node_val_index / `timeout_rounds` / `committee_nonempty` / `outage_window`)は Statements の premise にする。
 record Setup { e: ProtocolEnv, hc: HealConfig, cfg: HeightConfig } derive eq
 
-// The node's validator identity is the validator running it (手書き `node_val_index`): without it a validator could tick with
-// someone else's identity and every proposer and committee test would read the wrong name.
+// validator v が走らせる node を返す。node の validator identity は走らせている validator そのものである。
+// 手書き `Setup.node` と `node_val_index` を、構築で identity を v に固定することで置き換える。
+// これが無いと validator が他者の identity で tick でき、proposer や committee の判定が別の名前を読んでしまう。
 fn setupNode(v: ValidatorId) -> Node { Node { valIndex: v } }
 
-// a_r = t_{rR} + 6Δ, the round action time (手書き `Setup.a`).
+// round r の action 時刻 a_r = t_{rR} + 6Δ を返す。
+// 引数は Setup s と round r で、actionTime に s.hc と s.e.delta を渡して計算する。
+// 手書き `Setup.a` に対応する。
 fn setupActionTime(s: Setup, r: Round) -> Time { actionTime(s.hc, s.e.delta, r) }

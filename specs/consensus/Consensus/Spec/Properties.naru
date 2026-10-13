@@ -18,7 +18,13 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Run
 import Consensus.Spec.Interface
 
-// Two outputs do not conflict across honest reads from `t0` to the horizon.
+// 2 つの出力 `g1`, `g2` が、`t0` から地平線までの honest な読みの間で互いに矛盾しないことを表す。
+// honest な任意のノード `u`, `v` と、`t0` 以上 `rho.horizon` 以下の任意の時刻 `t`, `t2` について、
+// `u` が `t` に読んだ `g1` と `v` が `t2` に読んだ `g2` が `compatible`(一方が他方の接頭辞)である。
+// 時刻は `t` と `t2` を独立に動かすので、異なるノード・異なる時刻の読みどうしを比べる。
+// `AgreeFrom` が `g1 = g2` の場合としてこれを使い、`SafeFrom` の土台になる。`AccountablyConsistentFrom` は同じ量化に
+// slashable の選言を足した別の定義である。
+// 手書き `ConsistentFrom` の写しで、`Block.Compatible` は Model の Bool 値の `compatible` に当たる。
 property ConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Time) {
   forall u: ValidatorId { forall v: ValidatorId { forall t: Time { forall t2: Time {
     rho.honest.contains(u) && rho.honest.contains(v)
@@ -27,10 +33,20 @@ property ConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Tim
   } } } }
 }
 
-// No two honest reads of `g` conflict from `t0` on.
+// 出力 `g` の honest な読みのどの 2 つも、`t0` 以降は矛盾しない(合意する)ことを表す。
+// 同じ出力 `g` を両側に置いた `ConsistentFrom(s, rho, g, g, t0)` そのものである。
+// `SafeFrom` の第 1 の要素で、ノードが違っても時刻が違っても読みは必ず互換になる。
+// 第 2 の要素の `MonotoneFrom` は、同じノードの読みが時間とともに伸びるだけであることを言う。
+// 手書き `AgreeFrom` の写しで、定義の形に差はない(引数 `P` を `s` に置き換えただけ)。
+// 引数 `g` は `Output` の値で、どの出力についても同じ形で使える。
 property AgreeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) { ConsistentFrom(s, rho, g, g, t0) }
 
-// Each honest node's reads of `g` only extend from `t0` on.
+// honest な各ノードの出力 `g` の読みが、`t0` 以降は伸びるだけ(後退しない)ことを表す。
+// honest な `v` と `t0 <= t <= t2 <= rho.horizon` を満たす `t`, `t2` について、
+// 時刻 `t` の読みが時刻 `t2` の読みの接頭辞(`preceq`)になる。
+// `AgreeFrom` が異なるノード間の整合を言うのに対し、これは同じノード内の時間方向の単調性を言う。
+// 両者を合わせたものが `SafeFrom` である。
+// 手書き `MonotoneFrom` の写しで、`Block.Preceq` は Model の `preceq` に当たる。
 property MonotoneFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
   forall v: ValidatorId { forall t: Time { forall t2: Time {
     rho.honest.contains(v) && t0 <= t && t <= t2 && t2 <= rho.horizon
@@ -38,12 +54,22 @@ property MonotoneFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
   } } }
 }
 
-// Safety of `g` from `t0`: honest reads never conflict and each honest node's reads only extend.
+// 出力 `g` が `t0` 以降で安全である(honest な読みが矛盾せず、各ノードの読みが伸びるだけ)ことを表す。
+// `AgreeFrom`(読みの合意)と `MonotoneFrom`(読みの単調性)の連言である。
+// 出力 `g` は引数なので、`Output` のどの出力についても同じ形で安全性を述べられる。
+// 手書き `SafeFrom` は欄 `agree` / `monotone` を持つ構造体(命題の組)だが、
+// naru では欄を持つ構造体を作らず、2 つの欄を `&&` で束ねた property として写している。
+// 引数 `t0` は、安全性を主張し始める時刻である。
 property SafeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
   AgreeFrom(s, rho, g, t0) && MonotoneFrom(s, rho, g, t0)
 }
 
-// Compatible output reads, or slashable evidence in the two read states.
+// 出力の読みが互換であるか、読んだ 2 つの状態に slashable な証拠があるかのどちらかであることを表す。
+// `ConsistentFrom` と同じ量化(honest な `u`, `v` と `t0` 以上地平線以下の `t`, `t2`)の下で、
+// `compatible(...)` が成り立つか、`SlashableStates` が `u` の時刻 `t` の状態と `v` の時刻 `t2` の状態に成り立つ。
+// 状態は `worldAt(readAt(s, rho, t), u)` のように、各時刻で読んだ世界からノードの状態を取り出して得る。
+// 矛盾が起きても、誰かの不正(二重署名など)が証拠として状態に残ることを言うので、説明責任つきの安全性になる。
+// 手書き `AccountablyConsistentFrom` の写しで、`I.slashable` は `Interface.slashable` を naru 側の `SlashableStates` で表した。
 property AccountablyConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Output, t0: Time) {
   forall u: ValidatorId { forall v: ValidatorId { forall t: Time { forall t2: Time {
     rho.honest.contains(u) && rho.honest.contains(v)
@@ -53,38 +79,72 @@ property AccountablyConsistentFrom(s: Setup, rho: NamedRun, g1: Output, g2: Outp
   } } } }
 }
 
-// Accountable safety of `g` from `t0`: honest reads are compatible, or the two read states hold slashable evidence.
+// 出力 `g` が `t0` 以降で説明責任つきに安全である(読みが互換か、状態に slashable な証拠がある)ことを表す。
+// 同じ出力 `g` を両側に置いた `AccountablyConsistentFrom(s, rho, g, g, t0)` そのものである。
+// `SafeFrom` と違い、読みの矛盾そのものは許すが、その場合は 2 つの状態に不正の証拠が残ると主張する。
+// 「slashable な証拠」の中身は `SlashableStates`(Interface.naru)が定める。
+// 手書き `AccountablySafeFrom` の写しで、定義の形に差はない。
+// 引数 `t0` は、説明責任つきの安全性を主張し始める時刻である。
 property AccountablySafeFrom(s: Setup, rho: NamedRun, g: Output, t0: Time) {
   AccountablyConsistentFrom(s, rho, g, g, t0)
 }
 
-// One output is below another at every node and time.
+// 出力 `g1` が、すべてのノードとすべての時刻で出力 `g2` の接頭辞である(下にある)ことを表す。
+// `forall v, t` について `preceq(outputAt(g1, ...), outputAt(g2, ...))` が成り立つ。
+// honest に限らず任意の `v: ValidatorId` を量化し、時刻も `t0` の下限や地平線の上限を付けない点に注意する。
+// 同じノード・同じ時刻で 2 つの出力を比べるもので、`OutputOrder` が 2 回使う。
+// 手書き `Prefix` の写しで、`Block.Preceq` は Model の `preceq` に当たる。
+// 引数 `g1` が下側、`g2` が上側である。
 property Prefix(s: Setup, rho: NamedRun, g1: Output, g2: Output) {
   forall v: ValidatorId { forall t: Time { preceq(outputAt(g1, s, rho, v, t), outputAt(g2, s, rho, v, t)) } }
 }
 
-// The finalized, stable, and confirmed outputs are ordered by prefix.
+// finalized、stable、confirmed の 3 つの出力が、この順に接頭辞で並んでいることを表す。
+// `Prefix(Finalized, Stable)`(finalized が stable の下)と `Prefix(Stable, Confirmed)`(stable が confirmed の下)の連言。
+// 引数の出力は enum `Output` の `Finalized` / `Stable` / `Confirmed` を直接指定する。
+// どのノード・どの時刻でも、finalized の読みは stable の読みの、stable の読みは confirmed の読みの接頭辞になる。
+// 手書き `OutputOrder` は欄 `finalizedBelowStable` / `stableBelowConfirmed` を持つ構造体で、`&&` で束ねて写した。
+// 2 つの `Prefix` はいずれも `rho` の全ノード・全時刻にわたる。
 property OutputOrder(s: Setup, rho: NamedRun) {
   Prefix(s, rho, Output.Finalized, Output.Stable) && Prefix(s, rho, Output.Stable, Output.Confirmed)
 }
 
-// Block `b` is in every honest read of `g` at time `t`.
+// ブロック `b` が、時刻 `t` の出力 `g` の honest な読みのすべてに含まれることを表す。
+// honest な任意の `v` について `preceq(b, outputAt(g, s, rho, v, t))`(`b` が読みの接頭辞)が成り立つ。
+// 「含まれる」は読みのチェーンの上に `b` があること(読みが `b` 自身かその子孫であること)を意味する。
+// `LiveFrom` / `IncludedFrom` / `PersistsFrom` が、いつまでに読みに入るかを述べる共通の部品である。
+// 手書き `InBy` の写しで、`Block.Preceq` は Model の `preceq` に当たる。
+// 引数 `t` は読みの時刻で、`b` は `Block`(名前付きではない幾何のブロック)である。
 property InBy(s: Setup, rho: NamedRun, g: Output, b: Block, t: Time) {
   forall v: ValidatorId { rho.honest.contains(v) implies preceq(b, outputAt(g, s, rho, v, t)) }
 }
 
-// The honest proposal of slot `k` is `b`, through the interface.
+// スロット `k` の honest な提案がブロック `b` であることを、interface を通して表す。
+// スロット `k` の提案者 `proposer(k)` が honest であり、かつ `proposedBlock(s, rho, k)` が `Some(b)` である。
+// 提案者が honest でなければ、あるいはその run で提案が無ければ成り立たない。
+// `HonestAfter` / `LiveFrom` / `IncludedFrom` / `NoFutureRead` が「honest が提案したブロック」を指すのに使う。
+// 手書き `HonestProposalAt` の写しで、`I.proposer` / `I.proposedBlock` は `proposer` / `proposedBlock` に当たる。
+// 引数 `k` は `Slot` で、`b` は幾何の `Block` である。
 property HonestProposalAt(s: Setup, rho: NamedRun, k: Slot, b: Block) {
   rho.honest.contains(proposer(k)) && proposedBlock(s, rho, k) == Some(b)
 }
 
-// A block proposed by an honest proposer strictly after `t`.
+// ブロック `b` が、時刻 `t` より厳密に後に honest な提案者によって提案されたものであることを表す。
+// あるスロット `k` について、提案時刻 `proposalTime(s.e, k)` が `t` より大きく、`HonestProposalAt(s, rho, k, b)` が成り立つ。
+// 「厳密に後」なので、`t` ちょうどの提案は含まれない。
+// `LiveFrom` が、各時刻 `t` の後に提案されたブロックの存在を述べるのに使う。
+// 手書き `honestAfter` の写しで、手書きは小文字始まりだが、naru の property 名は大文字始まりにそろえた。
+// 引数 `t` は `Time`、`b` は幾何の `Block` である。
 property HonestAfter(s: Setup, rho: NamedRun, t: Time, b: Block) {
   exists k: Slot { t < proposalTime(s.e, k) && HonestProposalAt(s, rho, k, b) }
 }
 
-// Liveness of `g` from `t0`: from every time `t ≥ t0`, some block proposed by an honest proposer after `t` is strictly
-// above every honest read at `t` and in every honest read by `t + d`.
+// 出力 `g` が `t0` 以降で活性(live)を持つ、すなわち遅延 `d` 以内に新しい honest なブロックが読みに入ることを表す。
+// `t0 <= t` かつ `t + d <= rho.horizon` の各時刻 `t` について、`HonestAfter(s, rho, t, b)` を満たすブロック `b` が存在し、
+// (1) honest な全ノードの時刻 `t` の読みより厳密に上(`prec(outputAt(g, ...), b)`)にあり、
+// (2) 時刻 `t + d` にはすべての honest な読みに含まれる(`InBy`)。
+// 読みが `t` の後も増え続けることを、honest が提案したブロックの存在として具体的に述べている。
+// 手書き `LiveFrom` の写しで、`D` は `d` に、`Block.Prec` は Model の `prec` に当たる。
 property LiveFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
   forall t: Time {
     t0 <= t && t + d <= rho.horizon implies
@@ -96,8 +156,12 @@ property LiveFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
   }
 }
 
-// Inclusion into `g` from `t0`: every block proposed by an honest proposer after `t0` is in every honest read within `d`
-// of its proposal.
+// 出力 `g` への包含が `t0` 以降で成り立つ、すなわち honest が提案したブロックが提案から `d` 以内に読みに入ることを表す。
+// `t0 < proposalTime(s.e, k)`、提案者 `proposer(k)` が honest、`proposalTime(s.e, k) + d <= rho.horizon` を満たす
+// 各スロット `k` について、`HonestProposalAt(s, rho, k, b)` となるブロック `b` が存在し、
+// 時刻 `proposalTime(s.e, k) + d` で `InBy(s, rho, g, b, ...)` が成り立つ。
+// `LiveFrom` が「ある新しいブロック」を言うのに対し、こちらは「すべての honest 提案」を言う。
+// 手書き `IncludedFrom` の写しで、`I.proposalTime s` は `proposalTime(s.e, k)` に当たる。
 property IncludedFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
   forall k: Slot {
     t0 < proposalTime(s.e, k) && rho.honest.contains(proposer(k)) && proposalTime(s.e, k) + d <= rho.horizon implies
@@ -105,8 +169,12 @@ property IncludedFrom(s: Setup, rho: NamedRun, g: Output, t0: Time, d: Time) {
   }
 }
 
-// Persistence of `g`: every block in an honest read of `g` at `tRead` is in every honest read of `g` at every time from
-// `b0` to the horizon.
+// 出力 `g` の永続性、すなわち時刻 `tRead` の読みに含まれるブロックが `b0` 以降ずっと読みに残ることを表す。
+// honest な `v`、`v` の時刻 `tRead` の読みの接頭辞であるブロック `b`、`b0 <= t <= rho.horizon` の時刻 `t` について、
+// `InBy(s, rho, g, b, t)`(`t` では honest な全ノードの読みに `b` が含まれる)が成り立つ。
+// 1 つのノードの読みに入ったものが、他のノードでも `b0` 以降は必ず見えることを言う。
+// 手書き `PersistsFrom` の写しで、`T` は `tRead` に、`b₀` は `b0` に当たる(局所名は小文字始まり)。
+// 引数 `tRead` が読みの時刻、`b0` が残り始める時刻で、`b0` は `tRead` より後とは限らない。
 property PersistsFrom(s: Setup, rho: NamedRun, g: Output, tRead: Time, b0: Time) {
   forall v: ValidatorId { forall b: Block { forall t: Time {
     rho.honest.contains(v) && preceq(b, outputAt(g, s, rho, v, tRead)) && b0 <= t && t <= rho.horizon
@@ -114,7 +182,12 @@ property PersistsFrom(s: Setup, rho: NamedRun, g: Output, tRead: Time, b0: Time)
   } } }
 }
 
-// A proposed block is in no honest read before its proposal time.
+// 提案されたブロックが、提案時刻より前のどの honest な読みにも含まれないことを表す。
+// honest な `v`、時刻 `t`、スロット `k`、ブロック `b` について、`HonestProposalAt(s, rho, k, b)` かつ
+// `t < proposalTime(s.e, k)` なら、`preceq(b, outputAt(g, s, rho, v, t))` は成り立たない。
+// 出力が未来のブロックを先取りして読まないことを言い、包含(`IncludedFrom`)の裏側の健全性条件になる。
+// 手書き `NoFutureRead` の写しで、`¬ Block.Preceq …` を `!preceq(...)` と書いた。
+// 引数 `g` は `Output` で、honest の読みだけを対象にする。
 property NoFutureRead(s: Setup, rho: NamedRun, g: Output) {
   forall v: ValidatorId { forall t: Time { forall k: Slot { forall b: Block {
     rho.honest.contains(v) && HonestProposalAt(s, rho, k, b) && t < proposalTime(s.e, k)

@@ -1,8 +1,9 @@
+import Std.Data.HashSet
 import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test repo` — リポジトリの構成と文書の検査(IDEAL.md C21 / C23 / C25)
+# `naru_test repo` — リポジトリの構成と文書の検査(IDEAL.md C21 / C23 / C25 / C37 / C60 / C61)
 
 リポジトリのルートで `lake exe naru_test repo [--base-commit <sha>]` と実行する。
 
@@ -23,6 +24,20 @@ import NaruTest.Common
   `.idd/progress.md`・`.idd/knowledge.md` を含む)。除くのは `.idd/cycles/` と `.idd/journal.jsonl`(履歴)、IDEAL.md(旧名を禁止する
   要件の本文)、`third_party/`(外部基準)、そして一般規則が旧名の形の利用者モジュールにも適用されることを示す意図的な検体
   `tests/accept/legacy_module_name.naru` だけ。
+- C60(宣言コメントの形): `naru.toml` のソースルート(`specs/consensus/`。`scenarios/` を含む)配下の全 `.naru` を構文解析して
+  宣言(type / record / state / enum / input / fn / protocol / observer / scenario / predicate / condition / regime / property /
+  claim / claim bundle。protocol の中の宣言も含む。module / import / derive と scenario の中の `input` 文は宣言でない)を列挙し、
+  各宣言の直上に空行を挟まず `//` の連続ブロックがあり、1 行目(要旨)が空でなく日本語(ひらがな・カタカナ・漢字)を含み、
+  2 行目以降の説明(空でない行)が fn は 2 行以上・それ以外は 5 行以上で日本語を含むことを確かめ、宣言の総数と種類別の件数を出力する。
+  欠落・不足が 1 件でもあれば FAIL。
+- C61(手書きの対応名の実在): 宣言コメントが「手書き `名前`」(「手書きの `名前`」も同じ。`/`・`・`・`,`・`、` で続く `名前` も)の形で
+  挙げる定義名を抜き出し、`third_party/verified-consensus/`(`.lake/` を除く)の Lean ソースの宣言名の索引(def / theorem / lemma /
+  structure / inductive / abbrev / instance / class / opaque / axiom の名前に `namespace` の接頭辞を付けた完全名と、structure の欄・
+  inductive の構築子の `型名.名前`。完全名はどの後置列(`A.B.c` / `B.c` / `c`)でも引ける)に実在することを確かめる。無い名前が
+  1 件でもあれば FAIL。言及が 1 件も無いのも FAIL(移植ソースは手書きへの対応を書く約束)。
+- C60 / C61 の負の検体: 形の不備(説明不足・コメント無し・空行を挟む・要旨に日本語が無い・要旨が空・record の行数不足)と無い手書き名を
+  含む小さなモジュールを `.lake/naru/test/repo/declcomments/sample.naru` に書き、同じ走査がちょうどそれらを検出し、実在する名前は
+  通すことを確かめる(検査自身の成功例・失敗例)。
 -/
 
 namespace NaruTest.Repo
@@ -399,6 +414,314 @@ def checkOldSpecNames : M Unit := do
     ok s!"C37: git grep -l --untracked -E {oldSpecPattern}: no current file refers to the old module path or name (excluding .idd/cycles/, .idd/journal.jsonl, IDEAL.md, third_party/ and the intentional sample(s) {oldSpecSamples})"
   else fail s!"C37: files still refer to the old module path or name ({oldSpecPattern}): {hits}"
 
+/-! ## C60 / C61: 宣言コメント -/
+
+/-- 日本語の文字(ひらがな・カタカナ・漢字)を含むか。 -/
+def hasJapanese (s : String) : Bool :=
+  s.any fun c =>
+    let n := c.toNat
+    (0x3040 ≤ n && n ≤ 0x309F) || (0x30A0 ≤ n && n ≤ 0x30FF) || (0x4E00 ≤ n && n ≤ 0x9FFF)
+
+/-- 説明(要旨の次の行から)の下限行数(IDEAL.md C60: fn は 2、spec 宣言と type / record / state / enum / input / protocol /
+observer / scenario は 5)。 -/
+def minExplanation : Naru.DeclKind → Nat
+  | .fn => 2
+  | _ => 5
+
+/-- 宣言の種類(IDEAL.md 用語「宣言コメント」の列挙の順)。 -/
+def declKinds : List Naru.DeclKind :=
+  [.typeAlias, .record, .state, .enum, .input, .fn, .protocol, .observer, .scenario,
+   .predicate, .condition, .regime, .property, .claim, .claimBundle]
+
+/-- 行が `//` のコメントなら、`//` と前後の空白を落とした本文。 -/
+def commentBody (l : String) : Option String :=
+  let t := l.trimAscii.toString
+  if t.startsWith "//" then some ((t.drop 2).toString.trimAscii.toString) else none
+
+/-- 宣言の行か: 字下げを除いて種類のキーワードで始まる(`claim` は `claim bundle` と区別する)。 -/
+def startsDecl (kind : Naru.DeclKind) (l : String) : Bool :=
+  let t := l.trimAscii.toString
+  match kind with
+  | .claim => t.startsWith "claim " && !(t.startsWith "claim bundle ")
+  | k => t.startsWith (k.describe ++ " ")
+
+structure DeclCommentIssue where
+  file : String
+  line : Nat
+  kind : Naru.DeclKind
+  name : String
+  reason : String
+
+/-- 1 ファイルの宣言コメントの走査結果。 -/
+structure DeclCommentScan where
+  /-- (種類, 名前, コメントの各行(`//` を除いた本文)) -/
+  decls : Array (Naru.DeclKind × String × List String) := #[]
+  issues : Array DeclCommentIssue := #[]
+  /-- 宣言コメントが「手書き `名前`」で挙げた名前と、その宣言(ファイル・行) -/
+  mentions : Array (String × String × Nat) := #[]
+
+/-- 「手書き `名前`」(「手書きの `名前`」も同じ)が挙げる名前。直後に空白・`/`・`・`・`,`・`、` を挟んで続く `名前` も取る
+(例: 手書き `A` / `B`)。バッククォートの中は 1 つの定義名でなければならない(空白などを含めば不正。後で検出する)。 -/
+def handwrittenNames (text : String) : List String := Id.run do
+  let cs := text.toList.toArray
+  let key := "手書き".toList.toArray
+  let isSep (c : Char) : Bool := c == ' ' || c == '/' || c == '・' || c == ',' || c == '、'
+  let mut out : List String := []
+  let mut i := 0
+  while i < cs.size do
+    if i + key.size ≤ cs.size && cs.extract i (i + key.size) == key then
+      let mut j := i + key.size
+      if j < cs.size && cs[j]! == 'の' then j := j + 1
+      while j < cs.size && cs[j]! == ' ' do j := j + 1
+      let mut go := j < cs.size && cs[j]! == '`'
+      while go do
+        let k := j + 1
+        let mut e := k
+        while e < cs.size && cs[e]! != '`' do e := e + 1
+        if e ≥ cs.size then
+          go := false
+          j := e
+        else
+          out := out ++ [String.ofList (cs.extract k e).toList]
+          j := e + 1
+          let mut s := j
+          while s < cs.size && isSep cs[s]! do s := s + 1
+          if s < cs.size && cs[s]! == '`' then j := s else go := false
+      i := j
+    else
+      i := i + 1
+  return out
+
+/-- 1 ファイルの宣言コメントを走査する(C60 の形と、C61 の「手書き `名前`」の抜き出し)。構文解析に失敗したら `.error`。 -/
+def scanDeclComments (path : String) : IO (Except String DeclCommentScan) := do
+  match ← Naru.parseFile path with
+  | .error d => return .error d.render
+  | .ok m =>
+    let lines := ((← IO.FS.readFile path).splitOn "\n").toArray
+    let mut r : DeclCommentScan := {}
+    for d in m.decls do
+      let issue (reason : String) : DeclCommentIssue :=
+        { file := path, line := d.span.line, kind := d.kind, name := d.name, reason }
+      -- 宣言の行: 名前のトークンの行から、種類のキーワードで始まる行まで(最大 3 行)遡る
+      let mut l := d.span.line
+      let mut found := false
+      let mut tries := 0
+      while l ≥ 1 && tries < 4 do
+        if l ≤ lines.size && startsDecl d.kind lines[l - 1]! then
+          found := true
+          break
+        l := l - 1
+        tries := tries + 1
+      if !found then
+        r := { r with issues := r.issues.push (issue s!"宣言の行を特定できない(名前の行の近くに `{d.kind.describe}` で始まる行が無い)") }
+        continue
+      -- 直上のコメントブロック(空行を挟まない `//` の連続)
+      let mut i := l - 1
+      let mut block : List String := []
+      while i ≥ 1 do
+        match commentBody lines[i - 1]! with
+        | some b =>
+          block := b :: block
+          i := i - 1
+        | none => break
+      r := { r with decls := r.decls.push (d.kind, d.name, block) }
+      match block with
+      | [] =>
+        r := { r with issues := r.issues.push (issue "直上に宣言コメントが無い(直上が空行かコード)") }
+      | head :: rest =>
+        if head.isEmpty then
+          r := { r with issues := r.issues.push (issue "宣言コメントの 1 行目(要旨)が空") }
+        else if !(hasJapanese head) then
+          r := { r with issues := r.issues.push (issue s!"宣言コメントの 1 行目(要旨)に日本語が無い: {head}") }
+        let expl := rest.filter (!·.isEmpty)
+        let need := minExplanation d.kind
+        if expl.length < need then
+          r := { r with issues := r.issues.push (issue s!"説明が {expl.length} 行(`{d.kind.describe}` は要旨の下に {need} 行以上)") }
+        else if !(hasJapanese (" ".intercalate expl)) then
+          r := { r with issues := r.issues.push (issue "説明に日本語が無い") }
+        for n in handwrittenNames ("\n".intercalate block) do
+          r := { r with mentions := r.mentions.push (n, path, l) }
+    return .ok r
+
+/-! 手書き Lean の宣言名の索引(C61)。 -/
+
+def leanDeclKeywords : List String :=
+  ["def", "theorem", "lemma", "structure", "inductive", "abbrev", "instance", "class", "opaque", "axiom"]
+def leanModifiers : List String :=
+  ["private", "protected", "noncomputable", "partial", "unsafe", "scoped", "local", "nonrec"]
+
+def identEnd (c : Char) : Bool :=
+  c == ' ' || c == '\t' || c == '(' || c == ':' || c == '{' || c == '[' || c == '<' || c == '|' || c == '=' ||
+  c == '⟨' || c == '}' || c == ')' || c == ','
+
+def takeIdent (s : String) : String := String.ofList (s.toList.takeWhile (!identEnd ·))
+
+def isIdentChar (c : Char) : Bool := c.isAlphanum || c == '_' || c == '?' || c == '!' || c == '\'' || c == '.' || c.toNat > 127
+
+/-- 完全名 `A.B.c` のすべての後置列(`A.B.c` / `B.c` / `c`)を索引に入れる。 -/
+def insertSuffixes (set : Std.HashSet String) (full : String) : Std.HashSet String := Id.run do
+  let parts := full.splitOn "."
+  let mut s := set
+  for i in [0:parts.length] do
+    s := s.insert (".".intercalate (parts.drop i))
+  return s
+
+/-- 行頭の属性 `@[…]` と修飾語(`private` / `noncomputable` …)を落とす。 -/
+def stripLeanPrefix (s : String) : String := Id.run do
+  let mut s := s
+  if s.startsWith "@[" then
+    match s.splitOn "]" with
+    | _ :: rest => s := ("]".intercalate rest).trimAscii.toString
+    | [] => pure ()
+  let mut changed := true
+  while changed do
+    changed := false
+    for m in leanModifiers do
+      if s.startsWith (m ++ " ") then
+        s := (s.drop (m.length + 1)).toString.trimAscii.toString
+        changed := true
+  return s
+
+/-- 1 つの Lean ソースの宣言名を索引に足す: 宣言の頭(`def` / `theorem` / `structure` / …)の名前に `namespace` の接頭辞を付けた
+完全名、structure / class の欄と inductive の構築子の `型名.名前`。 -/
+def leanDeclaredNames (lines : List String) (acc : Std.HashSet String) : Std.HashSet String := Id.run do
+  let mut set := acc
+  let mut ns : List String := []
+  let mut curType : Option String := none
+  for raw in lines do
+    let t := raw.trimAscii.toString
+    if t.isEmpty then continue
+    if raw.startsWith " " || raw.startsWith "\t" then
+      -- 字下げ行: 直前の structure / inductive / class の欄・構築子
+      match curType with
+      | some ty =>
+        if t.startsWith "| " then
+          let c := takeIdent (t.drop 2).toString.trimAscii.toString
+          if !c.isEmpty && c.all isIdentChar then set := insertSuffixes set (ty ++ "." ++ c)
+        else
+          let c := takeIdent t
+          let rest := (t.drop c.length).toString.trimAscii.toString
+          if !c.isEmpty && c.all isIdentChar && rest.startsWith ":" then set := insertSuffixes set (ty ++ "." ++ c)
+      | none => pure ()
+      continue
+    let s := stripLeanPrefix t
+    if s.startsWith "namespace " then
+      let n := takeIdent (s.drop 10).toString.trimAscii.toString
+      if !n.isEmpty then ns := n :: ns
+      continue
+    if s.startsWith "end " then
+      let n := takeIdent (s.drop 4).toString.trimAscii.toString
+      match ns with
+      | top :: below => if top == n then ns := below
+      | [] => pure ()
+      continue
+    let mut matched := false
+    for kw in leanDeclKeywords do
+      if !matched && s.startsWith (kw ++ " ") then
+        matched := true
+        let name := takeIdent (s.drop (kw.length + 1)).toString.trimAscii.toString
+        if !name.isEmpty && name.all isIdentChar then
+          let nsName := ".".intercalate ns.reverse
+          let full := if nsName.isEmpty then name else nsName ++ "." ++ name
+          set := insertSuffixes set full
+          curType := if kw == "structure" || kw == "inductive" || kw == "class" then some full else none
+        else
+          curType := none
+    if !matched && !(s.startsWith "/-") && !(s.startsWith "--") then curType := none
+  return set
+
+/-- `root` 配下(`.lake/` を除く)の全 `.lean` から宣言名の索引を作る。(ファイル数, 索引)。 -/
+def handwrittenIndex (root : System.FilePath) : IO (Nat × Std.HashSet String) := do
+  let all ← root.walkDir (fun d => pure (d.fileName != some ".lake"))
+  let files := (all.filter (·.extension == some "lean")).qsort (fun a b => a.toString < b.toString)
+  let mut set : Std.HashSet String := {}
+  let mut n := 0
+  for p in files do
+    if ← p.isDir then continue
+    n := n + 1
+    set := leanDeclaredNames ((← IO.FS.readFile p).splitOn "\n") set
+  return (n, set)
+
+/-- 名前として不正(空白・括弧などを含む = 式や文)。 -/
+def badHandwrittenName (n : String) : Bool := n.isEmpty || !(n.all isIdentChar)
+
+def checkDeclComments : M Unit := do
+  match ← sourceRoots with
+  | .error e => fail s!"C60: {e}"
+  | .ok roots =>
+    let mut files : List String := []
+    for r in roots do files := files ++ (← Naru.listFiles r "naru")
+    let mut decls : Array (Naru.DeclKind × String × List String) := #[]
+    let mut issues : Array DeclCommentIssue := #[]
+    let mut mentions : Array (String × String × Nat) := #[]
+    for f in files do
+      match ← scanDeclComments f with
+      | .error e => fail s!"C60: {e}"
+      | .ok r =>
+        decls := decls ++ r.decls
+        issues := issues ++ r.issues
+        mentions := mentions ++ r.mentions
+    let counts := declKinds.filterMap fun k =>
+      let n := (decls.filter (·.1 == k)).size
+      if n == 0 then none else some s!"{k.describe} {n}"
+    if decls.isEmpty then fail s!"C60: ソースルート {roots} に宣言が 1 つも無い"
+    for i in issues do
+      fail s!"C60: {i.file}:{i.line} {i.kind.describe} {i.name}: {i.reason}"
+    if issues.isEmpty && !decls.isEmpty then
+      ok s!"C60: {files.length} ファイル、宣言 {decls.size} 件({", ".intercalate counts})の直上に宣言コメント(空行なしの `//` ブロック。要旨 1 行 + 説明 fn ≥ 2 行 / 他 ≥ 5 行、日本語)"
+    -- C61: 「手書き `名前`」の実在
+    let (nLean, index) ← handwrittenIndex vcPath
+    let bad := mentions.filter fun (n, _, _) => badHandwrittenName n
+    for (n, f, l) in bad do
+      fail s!"C61: {f}:{l}: 「手書き `{n}`」のバッククォートの中は 1 つの定義名でない"
+    let names := (mentions.toList.map (·.1)).eraseDups
+    let missing := names.filter fun n => !(badHandwrittenName n) && !(index.contains n)
+    for n in missing do
+      let at_ := (mentions.filter (·.1 == n)).toList.map fun (_, f, l) => s!"{f}:{l}"
+      fail s!"C61: 手書き `{n}` は {vcPath} の Lean ソースに無い({", ".intercalate at_})"
+    if mentions.isEmpty then
+      fail s!"C61: 宣言コメントに「手書き `名前`」の言及が 1 件も無い"
+    else if bad.isEmpty && missing.isEmpty then
+      ok s!"C61: 宣言コメントが「手書き `名前`」で挙げる定義名 {mentions.size} 件(異なり {names.length})はすべて {vcPath} の Lean ソース({nLean} ファイル、索引 {index.size} 名)に実在する"
+
+/-- C60 / C61 の検査自身の成功例・失敗例: 形の不備と無い手書き名を含む小さなモジュール。 -/
+def declCommentSample : String := "\n".intercalate
+  [ "module Sample.Comments", ""
+  , "// 要旨。", "// 説明一。", "// 説明二。", "fn good() -> Nat { 1 }", ""
+  , "// 要旨。", "// 説明一。", "fn short() -> Nat { 1 }", ""
+  , "fn missing() -> Nat { 1 }", ""
+  , "// 要旨。", "// 説明一。", "// 説明二。", "", "fn gap() -> Nat { 1 }", ""
+  , "// summary without Japanese.", "// 説明一。", "// 説明二。", "fn english() -> Nat { 1 }", ""
+  , "//", "// 説明一。", "// 説明二。", "fn emptyHead() -> Nat { 1 }", ""
+  , "// 要旨。手書き `slotStart` / `Block.genesis` に対応し、手書き `NoSuchDefinition_xyz` は無い名前。"
+  , "// 説明一。", "// 説明二。", "fn mentions() -> Nat { 1 }", ""
+  , "// 要旨。", "// 説明一。", "// 説明二。", "// 説明三。", "// 説明四。", "// 説明五。", "record Full { x: Nat }", ""
+  , "// 要旨。", "// 説明一。", "// 説明二。", "// 説明三。", "// 説明四。", "record Short { x: Nat }", "" ]
+
+def declCommentSampleDir : System.FilePath := ".lake" / "naru" / "test" / "repo" / "declcomments"
+
+def checkDeclCommentSamples : M Unit := do
+  IO.FS.createDirAll declCommentSampleDir
+  let path := declCommentSampleDir / "sample.naru"
+  IO.FS.writeFile path declCommentSample
+  match ← scanDeclComments path.toString with
+  | .error e => fail s!"C60 sample: {e}"
+  | .ok r =>
+    let expected := ["Short", "emptyHead", "english", "gap", "missing", "short"]
+    let got := (r.issues.toList.map (·.name)).eraseDups.mergeSort (· ≤ ·)
+    if got == expected && r.decls.size == 9 then
+      ok s!"C60 sample: {path} の 9 宣言のうち、形の不備のある {expected.length} 件({", ".intercalate expected})だけを検出し、他は通る"
+    else
+      fail s!"C60 sample: 検出した宣言 {got}(期待 {expected})、宣言数 {r.decls.size}(期待 9): {r.issues.toList.map fun i => s!"{i.name}: {i.reason}"}"
+    let names := (r.mentions.toList.map (·.1)).eraseDups
+    let (_, index) ← handwrittenIndex vcPath
+    let present := names.filter index.contains
+    let absent := names.filter fun n => !(index.contains n)
+    if present == ["slotStart", "Block.genesis"] && absent == ["NoSuchDefinition_xyz"] then
+      ok s!"C61 sample: 実在する手書き名 {present} は索引に見つかり、無い名前 {absent} だけが検出される"
+    else
+      fail s!"C61 sample: 見つかった {present}、無い {absent}(期待: slotStart / Block.genesis が見つかり NoSuchDefinition_xyz だけ無い)"
+
 def run (base : Option String) : IO UInt32 := runGroup "naru_test repo" do
   checkReadmeTable
   checkLinks
@@ -406,5 +729,7 @@ def run (base : Option String) : IO UInt32 := runGroup "naru_test repo" do
   checkOldSpecNames
   checkSubmodule base
   checkQuickstart
+  checkDeclCommentSamples
+  checkDeclComments
 
 end NaruTest.Repo

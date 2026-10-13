@@ -12,20 +12,38 @@ import Consensus.Objects.Identifiers
 
 // ── §4 Height and finality pairs ──
 
-// §4 the height pair: a target vote (h,T) with T ≠ ⊥, an empty-target vote (h,⊥), or the empty pair (⊥,⊥).
+// §4 高さの組を表す enum で、target への票 (h,T)(T ≠ ⊥)、空 target への票 (h,⊥)、空の組 (⊥,⊥) の 3 通りがある。
+// Empty は空の組 (⊥,⊥) で、高さを持たないので E1 も E2 も引き起こさない。
+// Timeout(h) は空 target への票 (h,⊥)、Target(h, T) は target への票 (h,T) を表す。
+// 空の組と高さ 0 の timeout が混同されないよう、通信上の 3 通りを別の variant にしている。
+// 手書き `HeightPair` に対応し、variant は empty / timeout / target が Empty / Timeout / Target になる。
+// derive eq は構造の等しさを与える。target は署名の包みを持たず BlockId である。
 enum HeightPair { Empty, Timeout(Height), Target(Height, BlockId) } derive eq
 
-// §4 the finality pair (h_f, T_f) with T_f ≠ ⊥. The empty finality pair is the `None` of an
-// `Option<FinalityPair>` at the use site, so an empty pair carries no height.
+// §4 finality の組 (h_f, T_f)(T_f ≠ ⊥)を表す record である。
+// 欄 height は finalize_height、欄 target は finalize_target に当たる。
+// 空の finality の組は、使う側の Option<FinalityPair> の None で表すので、空の組は高さを持たない。
+// 手書き `FinalityPair` に対応し、欄は height / target で同じである。
+// CombinedAttestation の finalityPair 欄がこれを Option に包んで運ぶ。
+// derive eq は欄ごとの等しさを与える。
 record FinalityPair { height: Height, target: BlockId } derive eq
 
 // ── §1 Wire objects ──
 
-// §2 a Goldfish vote, written (v, s, B) in the document. The named block is carried by root.
+// §2 Goldfish の票を表す record で、文書では (v, s, B) と書かれる。
+// 欄 valIndex は票を投じた validator、欄 slot は票のスロット、欄 head は票が指すブロックである。
+// 指すブロックは文書で欄名を持たず位置で対応づけられる。ブロックそのものではなく root で運ぶ。
+// root で運ぶので、Block が相互再帰にならず単純な再帰 enum のままになる。
+// 手書き `GoldfishVote` に対応し、`val_index` は valIndex に、validator の型引数 V は ValidatorId に固定する。
+// 正直な票の制約(v ∈ K_s、B.slot ≤ s)はこの宣言には含まれず、欄の値に制約を課さない。
 record GoldfishVote { valIndex: ValidatorId, slot: Slot, head: BlockId } derive eq
 
-// §4 the combined attestation (validator, round, confirmed, height, target, finalize_height, finalize_target).
-// The four finality fields are carried as the two derived pairs.
+// §4 combined attestation(validator, round, confirmed, height, target, finalize_height, finalize_target)を表す。
+// 欄 valIndex と round は投票者とラウンド、欄 confirmed は SG 票の射影(timeout の票では None)で root で運ぶ。
+// 4 つの finality の欄は、導出された 2 つの組 heightPair と finalityPair として運ぶ。
+// 同じ情報で通信上の場合分けを明示した形であり、この宣言は欄の値に制約を課さない。
+// finalityPair が None なら空の finality の組である。
+// 手書き `CombinedAttestation` に対応し、`height_pair` / `finality_pair` は heightPair / finalityPair になる。
 record CombinedAttestation {
   valIndex: ValidatorId,
   round: Round,
@@ -34,15 +52,20 @@ record CombinedAttestation {
   finalityPair: Option<FinalityPair>
 } derive eq
 
-// §1 a block, carrying every field every section adds:
-// Node(parent, slot, root, gf_votes, gf_support_votes, attestations, proposer).
-// Genesis's own fields are never given by the document; the accessors fix slot 0, root genesisRoot, and no parent.
+// §1 ブロックを表す enum で、各節が加える欄をすべて運ぶ。
+// Genesis か、Node(親, slot, root, gf_votes, gf_support_votes, attestations, proposer) のどちらかである。
+// 親を直接持つ再帰 enum なので、祖先関係・深さ・鎖は構造的に定まり、上へたどるのに store は要らない。
+// gf_votes は運ぶ Goldfish 票、gf_support_votes はその部分集合で proposer の提案時の view で解決された票を記録する。
+// genesis 自身の欄は文書に無いので、アクセサが slot 0・root は genesisRoot・親なしと固定する。
+// 手書き `Block` に対応し、validator の型引数 V は ValidatorId に固定する。post-state-root の欄は持たない。
 enum Block {
   Genesis,
   Node(Block, Slot, BlockId, List<GoldfishVote>, List<GoldfishVote>, List<CombinedAttestation>, ValidatorId)
 } derive eq
 
-// §1 B.slot; genesis is slot 0.
+// §1 ブロックの slot(B.slot)を返す。genesis は slot 0、Node は slot の欄の値である。
+// 引数 b がどの形でも全域に値を返す。
+// 手書き `Block.slot` に対応し、パターン照合の形が違うだけで意味は同じである。
 fn slot(b: Block) -> Slot {
   match b {
     Block.Genesis => 0,
@@ -50,7 +73,9 @@ fn slot(b: Block) -> Slot {
   }
 }
 
-// §1 B.root
+// §1 ブロックの root(B.root)を返す。genesis は genesisRoot()、Node は root の欄の値である。
+// 同点処理の順序や root 解決(findRoot?)が、この値を使う。
+// 手書き `Block.root` に対応し、写し方に差は無い。
 fn root(b: Block) -> BlockId {
   match b {
     Block.Genesis => genesisRoot(),
@@ -58,7 +83,9 @@ fn root(b: Block) -> BlockId {
   }
 }
 
-// §1 B.parent, absent at genesis.
+// §1 ブロックの親(B.parent)を返し、genesis には親が無いので None を返す。
+// Node は親を Some に包んで返す。親が必ず在る全域版は parent である。
+// 手書き `Block.parent?` に対応し、写し方に差は無い。
 fn parent?(b: Block) -> Option<Block> {
   match b {
     Block.Genesis => None,
@@ -66,7 +93,9 @@ fn parent?(b: Block) -> Option<Block> {
   }
 }
 
-// §1 B.parent as a total function, genesis being its own parent.
+// §1 ブロックの親(B.parent)を全域関数として返し、genesis は自分自身を親とする。
+// Node は親の欄の値を返す。これにより genesis での σ[B.parent] が初期の chain 状態になる。
+// 手書き `Block.parent` に対応し、写し方に差は無い。
 fn parent(b: Block) -> Block {
   match b {
     Block.Genesis => Block.Genesis,
@@ -74,7 +103,9 @@ fn parent(b: Block) -> Block {
   }
 }
 
-// §2 B.votes
+// §2 ブロックが運ぶ Goldfish 票(B.votes)の list を返す。genesis は空、Node は gf_votes の欄の値である。
+// 票は root でブロックを指すので、ここではブロックの解決をしない。
+// 手書き `Block.gf_votes` に対応し、名前が gfVotes になる。
 fn gfVotes(b: Block) -> List<GoldfishVote> {
   match b {
     Block.Genesis => [],
@@ -82,7 +113,9 @@ fn gfVotes(b: Block) -> List<GoldfishVote> {
   }
 }
 
-// §2 B.support_votes, the fixed proposal-time support subset.
+// §2 ブロックの支持票(B.support_votes)の list を返す。genesis は空、Node は gf_support_votes の欄の値である。
+// これは提案時に固定された支持の部分集合で、2 つ目の票集合として処理されるものではない。
+// 手書き `Block.gf_support_votes` に対応し、名前が gfSupportVotes になる。
 fn gfSupportVotes(b: Block) -> List<GoldfishVote> {
   match b {
     Block.Genesis => [],
@@ -90,7 +123,9 @@ fn gfSupportVotes(b: Block) -> List<GoldfishVote> {
   }
 }
 
-// §4 B.attestations
+// §4 ブロックが運ぶ attestation(B.attestations)の list を返す。genesis は空、Node は attestations の欄の値である。
+// 状態遷移がこの list を畳み込む。
+// 手書き `Block.attestations` に対応し、写し方に差は無い。
 fn attestations(b: Block) -> List<CombinedAttestation> {
   match b {
     Block.Genesis => [],
@@ -98,7 +133,9 @@ fn attestations(b: Block) -> List<CombinedAttestation> {
   }
 }
 
-// §1 B.proposer, absent at genesis.
+// §1 ブロックの proposer(B.proposer)を返し、genesis には無いので None を返す。
+// Node は proposer の欄の値を Some に包んで返す。
+// 手書き `Block.proposer?` に対応し、写し方に差は無い。
 fn proposer?(b: Block) -> Option<ValidatorId> {
   match b {
     Block.Genesis => None,
@@ -106,7 +143,9 @@ fn proposer?(b: Block) -> Option<ValidatorId> {
   }
 }
 
-// §1 depth: the number of parent edges from genesis.
+// §1 ブロックの深さを返す。genesis からたどった親の辺の数で、genesis は 0 である。
+// Node は親の深さに 1 を足す。deeper の比較がこの値を使う。
+// 手書き `Block.depth` に対応し、写し方に差は無い。
 fn depth(b: Block) -> Nat {
   match b {
     Block.Genesis => 0,
@@ -116,7 +155,10 @@ fn depth(b: Block) -> Nat {
 
 // ── §1 Ancestry ──
 
-// §1 B ⪯ C: B = C, or B is an ancestor of C. Executable, by walking C upwards.
+// §1 祖先関係 B ⪯ C を返す。B = C、または B が C の祖先なら真である。
+// C を上へたどって実行可能に判定し、genesis に着いたら B が genesis かどうかを見る。
+// 手書き `Block.preceq` に対応し、決定可能性の判定を直接の等しさで書いた点だけが違う。
+// 手書きの命題版 `Preceq` は spec 側の述語なので Statements の移植で書く。
 fn preceq(b: Block, c: Block) -> Bool {
   match c {
     Block.Genesis => b == Block.Genesis,
@@ -124,27 +166,38 @@ fn preceq(b: Block, c: Block) -> Bool {
   }
 }
 
-// §1 B ≺ C: strict ancestry.
+// §1 厳密な祖先関係 B ≺ C を返す。b と c が異なり、かつ b ⪯ c なら真である。
+// 手書き `Block.prec` に対応し、`!decide (B = C) && preceq B C` を != と && で書いたものである。
+// preceq が反射的(b ⪯ b が真)なのに対し、prec は b == c の場合を除くので非反射的である。
 fn prec(b: Block, c: Block) -> Bool { b != c && preceq(b, c) }
 
-// §1 two blocks are compatible when one is an ancestor of the other.
+// §1 2 つのブロックが両立する(一方が他方の祖先である)かを返す。
+// preceq(b, c) か preceq(c, b) のどちらかが真なら真で、等しいブロックも両立する。
+// 手書き `Block.compatible` に対応し、写し方に差は無い。
 fn compatible(b: Block, c: Block) -> Bool { preceq(b, c) || preceq(c, b) }
 
-// §1 the "deepest" order: greater depth wins, ties by the fixed root order.
-// `deeper(b, c)` says b beats c; the greatest root wins a tie.
+// §1 「deepest」の順序で、b が c に勝つかを返す。深いほうが勝ち、同じ深さなら固定された root の順で決める。
+// c の深さが b より小さいか、深さが等しく c の root が b の root より小さければ真で、同点では最大の root が勝つ。
+// 手書き `Block.deeper` に対応し、写し方に差は無い。
 fn deeper(b: Block, c: Block) -> Bool {
   depth(c) < depth(b) || (depth(c) == depth(b) && root(c) < root(b))
 }
 
 // ── §1 Tree resolution ──
 
-// §1 root → block resolution in a processed tree. A root is a block's identity, so a tree that holds
-// two blocks with one root resolves it to neither. (手書きの `Block.find?`)
+// §1 処理済みの木 t の中で root r からブロックを解決し、ちょうど 1 つ見つかればそれを返す。
+// root はブロックの同一性なので、同じ root のブロックを 2 つ持つ木では、どちらにも解決せず None を返す。
+// 手書き `Block.find?` に対応し、手書きの `pickUnique?` に当たる naru の findUnique? を使うので選択公理は要らない。
+// 手書きの名前 find? は Block の名前空間にあるが、naru は大域名が 1 つの表なので findRoot? とした。
 fn findRoot?(t: Set<Block>, r: BlockId) -> Option<Block> { t.findUnique?(|b| root(b) == r) }
 
-// Whether no block of T beats B in the `deeper` order.
+// 木 t の中に、deeper の順で b に勝つブロックが無いかを返す。
+// t のすべての c について deeper(c, b) が偽なら真である。
+// 手書き `Block.isDeepestIn` に対応し、全称の判定を all で書いたものである。
 fn isDeepestIn(t: Set<Block>, b: Block) -> Bool { t.all(|c| !deeper(c, b)) }
 
-// §1 "deepest": maximum depth, ties by the fixed root order. `None` on an empty tree, and on the
-// degenerate tie where two distinct blocks share a depth and a root.
+// §1 木 t の「deepest」なブロック(最大の深さ、同点は固定された root の順)を返す。
+// isDeepestIn を満たすブロックがちょうど 1 つならそれを返し、空の木では None を返す。
+// 異なる 2 つのブロックが深さも root も共有する退化した同点でも None を返す。
+// 手書き `Block.deepest?` に対応し、`pickUnique?` を findUnique? で書いた点だけが違う。
 fn deepest?(t: Set<Block>) -> Option<Block> { t.findUnique?(|b| isDeepestIn(t, b)) }

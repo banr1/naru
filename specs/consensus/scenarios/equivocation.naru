@@ -27,19 +27,24 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Run
 import Scenarios.Trace
 
-// The events of time `t`: node `v0`'s tick, then (at `deliverAt` only) the given votes delivered to it, in list order.
-// Ticks precede deliveries at the same time (Run.naru の event 順序).
+// 時刻 `t` の event 列を返す: node `v0` の tick、`t == deliverAt` のときだけ続けて `votes` を list 順に v0 へ配達する。
+// 引数は v0(受信 node)、votes(配達する Goldfish vote)、deliverAt(配達時刻)、t(いまの時刻)。戻り値は NamedEvent の list。
+// 同時刻では tick が配達に先行する(Run.naru の event 順序)。手書きに直接の対応物は無い(手書き Model の golden 側 fixture は別途組む)。
 fn deliveredVotesStep(v0: ValidatorId, votes: List<GoldfishVote>, deliverAt: Time, t: Time) -> List<NamedEvent> {
   let own = [NamedEvent.Tick(v0, t)];
   if t == deliverAt { own.append(votes.map(|u| NamedEvent.Deliver(v0, NamedObject.GfVote(u), t))) } else { own }
 }
 
-// Node `v0` ticks at t = 0 … n − 1 and receives `votes` at `deliverAt`.
+// node `v0` が t = 0 … n − 1 に tick し、`deliverAt` に `votes` を受け取る event 列を返す。
+// List.range(n) の各 i について deliveredVotesStep を呼んで連結する(flatMap)ので、長さは tick n 個 + 配達の数になる。
+// 手書き `events`(WeakGenesis の tick 列)に配達を差し込んだ形だが、この列自体に手書きの直接の対応物は無い。
 fn deliveredVotesEvents(v0: ValidatorId, votes: List<GoldfishVote>, deliverAt: Time, n: Nat) -> List<NamedEvent> {
   List.range(n).flatMap(|i| deliveredVotesStep(v0, votes, deliverAt, i.toInt()))
 }
 
-// The WeakGenesis setup (basic.naru と同じ。committee は Setup ではなく input): Δ = 1, GST 0, weights 2 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+// WeakGenesis と同じ Setup を返す(basic.naru の basicSetup と同じ値。committee は Setup ではなく scenario の input)。
+// Δ = 1、GST 0、重みは validator 0 が 2、validator 1 が 1、R = 3、η = 2、K = 4、D = 2、timeout 6。
+// 手書き `S` の `E` / `hc` / `cfg` に写る。equivocation 専用の手書き Witness は無い。
 fn equivocationSetup() -> Setup {
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
@@ -52,22 +57,38 @@ fn equivocationSetup() -> Setup {
   }
 }
 
-// `v1`'s slot-1 vote for node 0's slot-1 block (root 2).
+// `v1` が slot 1 で node 0 の slot-1 block(root 2)に投じる Goldfish vote を返す。
+// 引数 `v1` は投票者の ValidatorId。戻り値は valIndex = v1、slot = 1、head = BlockId 2 の GoldfishVote。
+// 手書きに直接の対応物は無い(equivocation 用の naru 側 fixture)。
 fn voteForBlock2(v1: ValidatorId) -> GoldfishVote { GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 2 } } }
 
-// `v1`'s conflicting slot-1 vote for genesis (root 0).
+// `v1` が同じ slot 1 で genesis(root 0)に投じる、voteForBlock2 と矛盾する Goldfish vote を返す。
+// 引数 `v1` は投票者の ValidatorId。戻り値は valIndex = v1、slot = 1、head = BlockId 0 の GoldfishVote。
+// voteForBlock2 と合わせると v1 は slot 1 で異なる 2 票を持つ equivocator になる。手書きに直接の対応物は無い。
 fn voteForGenesis(v1: ValidatorId) -> GoldfishVote { GoldfishVote { valIndex: v1, slot: 1, head: BlockId { value: 0 } } }
 
-// The equivocation run: node `v0` ticks at t = 0 … 14 and at t = 5 receives `v1`'s two conflicting slot-1 votes (heads 2 and 0).
+// equivocation の run を返す: node `v0` が t = 0 … 14 に tick し、t = 5 に `v1` の矛盾する slot-1 の 2 票(head 2 と 0)を受け取る。
+// 引数は v0(honest な受信 node)と v1(Byzantine で honest 集合に入らず、tick もしない投票者)。honest = {v0}、horizon = 14。
+// 配達は voteForBlock2 の票、voteForGenesis の票の順。golden test(tests/golden/Golden.lean)も使う(C10)。
+// 手書きに直接の対応物は無い(手書き Witness に equivocation の run は無い)。
 fn twoFacedRun(v0: ValidatorId, v1: ValidatorId) -> NamedRun {
   NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [voteForBlock2(v1), voteForGenesis(v1)], 5, 15) }
 }
 
-// The contrast run: the same ticks, but only `v1`'s vote for root 2 is delivered at t = 5.
+// 対照の run を返す: twoFacedRun と同じ tick で、t = 5 に配達されるのは `v1` の root 2 への 1 票だけ。
+// 引数は v0(honest な受信 node)と v1(投票者)。honest = {v0}、horizon = 14。
+// equivocator が現れない場合の読み(slot 1 の confirmation が t = 10 で root 2 へ進む)を twoFaced と比べるために置く。
+// 手書きに直接の対応物は無い。
 fn oneVoteRun(v0: ValidatorId, v1: ValidatorId) -> NamedRun {
   NamedRun { honest: Set.singleton(v0), horizon: 14, events: deliveredVotesEvents(v0, [voteForBlock2(v1)], 5, 15) }
 }
 
+// WeakGenesis の環境で、Byzantine な v1 の矛盾する 2 票(twoFaced)と 1 票だけ(oneVote)の 2 run を並べて表示する scenario。
+// input: proposer は全 slot で validator 0、committee は全 slot で {0, 1}(v1 の票が committee 検査を通る)。
+// input: newRoot は slot + 1 を root とする BlockId、awake は node 0 だけ true。
+// observe: 各 run で deliveries(配達数)、votesHeldAt(slot 1 の pool の票数、t = 5)、equivocatorsAt(同 pool の equivocator)、
+// trace(各 event 後の読み)、readsAt(t = 10 と t = 14 の読み)を出す。twoFaced は票 3・equivocator [v1]・t = 10 の confirmed 0、
+// oneVote は票 2・equivocator 無し・t = 10 の confirmed 2 になる。equivocation 専用の手書き Witness は無く、naru 側だけの fixture である。
 scenario equivocation {
   input proposer(slot) = ValidatorId { value: 0 };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 }).insert(ValidatorId { value: 1 });

@@ -19,7 +19,9 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Run
 import Scenarios.Trace
 
-// The Outage setup: Δ = 1, GST 44, weights 3 / 1, R = 3, η = 2, K = 4, D = 2, timeout 6.
+// Outage の Setup(環境・回復設定・高さ設定)を組み立てて返す。
+// 引数は無い。Δ = 1、GST 44、重みは validator 0 が 3、validator 1 が 1、R = 3、η = 2、K = 4、D = 2、timeout 6 を固定値で与える。
+// 手書き `S` の `E` / `hc` / `cfg` に写る。proposer(slot 1 だけ node 0)と committee は Setup でなく scenario の input。
 fn outageSetup() -> Setup {
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
@@ -32,11 +34,19 @@ fn outageSetup() -> Setup {
   }
 }
 
-// The Outage run: node `v0` ticks at t = 0 … 45; no deliveries.
+// Outage の run を返す: node `v0` が t = 0 … 45 に tick するだけで、配達は無い。
+// 引数 `v0` は tick する node の ValidatorId。戻り値は honest = {v0}、horizon = 45、events = 46 個の Tick の NamedRun。
+// 手書き `rho` / `events` の `(List.range 46).map (fun n => .tick 0 n)` と同じ列。golden test(tests/golden/Golden.lean)も使う(C10)。
 fn outageRun(v0: ValidatorId) -> NamedRun {
   NamedRun { honest: Set.singleton(v0), horizon: 45, events: List.range(46).map(|t| NamedEvent.Tick(v0, t.toInt())) }
 }
 
+// Outage の run を移植 protocol で動かし、各 tick の後の読みと t = 45 の保持 block・読みを表示する scenario。
+// input: proposer は slot 1 だけ validator 0、それ以外の slot は validator 1(眠っていて tick しないので提案が出ない)。
+// input: committee は全 slot で {validator 0}、newRoot は slot + 1 を root とする BlockId、awake は node 0 だけ true。
+// 手書き `E` の proposer(`if s = 1 then 0 else 1`)と committees、手書き `node` の new_root / awake に対応する。
+// observe: `trace` が各 event 後の読み、`heldAt` が t = 45 に body を持つ block の root、`readsAt` が t = 45 の読みを出す。
+// 期待値は slot 1 の block(root 2)だけが t = 4 に提案され、confirmed は t = 10 から、stable は t = 26 から root 2、finalized は 0。
 scenario outage {
   input proposer(slot) = ValidatorId { value: if slot == 1 { 0 } else { 1 } };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 });

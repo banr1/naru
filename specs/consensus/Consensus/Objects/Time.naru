@@ -10,26 +10,45 @@ module Consensus.Objects.Time
 
 import Consensus.Objects.Identifiers
 
-// §1 the time domain. The document needs only 4Δs arithmetic and strict comparisons,
-// and Γ_r^{−1} = t_0 − Δ is negative at round 0.
+// §1 時間の領域を表す別名で、整数 Int である。
+// 文書が必要とするのは 4Δs の算術と厳密な大小比較だけである。
+// ラウンド 0 では Γ_r^{−1} = t_0 − Δ が負になるため、自然数ではなく整数を使う。
+// 型としては Int そのもので、新しい型は作らない。
+// 手書き `Time` は Lean の abbrev で Int の別名であり、写し方に差は無い。
+// Stamp・Occurrence・slotStart などの時刻に関わる宣言がこの型を使う。
 type Time = Int
 
-// §1 a processing instant: a time, or `Bottom` (= −∞) for genesis.
-// `WithBot Time` の移植。`derive order` は variant の宣言順なので `Bottom < At(t)`、`At` 同士は t の順。
+// §1 処理時刻(stamp)を表す enum で、有限の時刻 At(t) か、genesis 用の Bottom(= −∞)のどちらかである。
+// Bottom は genesis ブロックの Σ.timestamp が −∞ であることを表す。At(Time) は通常の処理時刻を持つ。
+// 手書きでは `WithBot Time` であり、その移植でderive order は variant の宣言順なので Bottom < At(t) となる。
+// At 同士は中身の t の順で比べる。derive eq は構造の等しさを与える。
+// 手書き `Stamp` は Lean の abbrev で `WithBot Time` の別名であり、naru では専用の enum として持つ。
+// 手書き側の `⊥` が Bottom に、持ち上げられた時刻が At に対応する。
 enum Stamp { Bottom, At(Time) } derive eq, order
 
-// §2, §6 an event instant: a stamp, or `None` (= +∞) when the event never occurs.
+// §2, §6 事象の時刻を表す別名で、stamp か、事象が決して起きないことを表す None(= +∞)である。
+// Some(Bottom) が −∞、None が +∞ であり、1 つの型で文書が使う両方の無限大を運ぶ。
 // 同じ型が timestamp map の値にもなる(`Table<T, Stamp>.get?` が `Occurrence` を返す)。
+// そのため cutoff の検査は常に occurrenceBefore という 1 つの関数で済み、順序の実装を二重に持たない。
+// 手書き `Occurrence` は `Option Stamp` の abbrev であり、写し方に差は無い。
+// 手書きの TimestampMap の値の型とも一致させてある。
 type Occurrence = Option<Stamp>
 
-// §1 Σ.timestamp(B_gen) = −∞
+// §1 genesis ブロックの timestamp である Σ.timestamp(B_gen) = −∞ を返す。
+// 返す値は Stamp.Bottom で、どの有限な cutoff よりも前になる。
+// 手書き `genesisStamp` は `⊥` の定数で、本宣言は引数なしの関数として同じ値を返す。
 fn genesisStamp() -> Stamp { Stamp.Bottom }
 
-// §1 the strict cutoff test on a stamp: `u < Γ`. `−∞` passes it.
+// §1 stamp に対する厳密な cutoff 検査 `u < Γ` で、u が gamma より前なら真を返す。
+// 引数は検査される stamp u と cutoff の時刻 gamma で、比較は Stamp.At(gamma) との厳密な大小である。
+// Bottom(−∞)は常に通り、同時刻(u = At(gamma))は通らない。
+// 手書きに直接の対応物は無い(手書きは `stampedBefore` / `occurrenceBefore` の中で同じ比較を直接書いている)。
 fn stampBefore(u: Stamp, gamma: Time) -> Bool { u < Stamp.At(gamma) }
 
-// §1 the strict cutoff test on a bare occurrence, `x < Γ`. `+∞` fails it; `−∞` passes it.
-// (`stampedBefore ts Γ x` is this test applied to `ts.get?(x)`.)
+// §1 裸の occurrence に対する厳密な cutoff 検査 `x < Γ` で、x が gamma より前なら真を返す。
+// None(+∞)は通らず、Some(Bottom)(−∞)は通る。Some(u) の場合は stampBefore に委ねる。
+// 手書き `stampedBefore` は、この検査を timestamp map の値 ts x に適用したものである。
+// 手書き `occurrenceBefore` に対応し、timestamp map を取る側は使う側で get? 越しに書く。
 fn occurrenceBefore(x: Occurrence, gamma: Time) -> Bool {
   match x {
     None => false,
@@ -37,8 +56,10 @@ fn occurrenceBefore(x: Occurrence, gamma: Time) -> Bool {
   }
 }
 
-// §2 τ as a maximum of two occurrences, `+∞` absorbing.
-// `max` on `Stamp` already puts `−∞` below everything, so genesis's stamp drops out of the maximum.
+// §2 τ を 2 つの occurrence の最大として返す。どちらかが None(+∞)なら結果も None である。
+// 両方が Some のときは、Stamp の順序で大きいほうを Some に包んで返す。
+// Stamp の順序は −∞ をすべての下に置くので、genesis の stamp は最大を取る際に特別扱い無しで落ちる。
+// 手書き `occurrenceMax` に対応し、`max a b` を `if a < b { b } else { a }` と書き下した点だけが違う。
 fn occurrenceMax(x: Occurrence, y: Occurrence) -> Occurrence {
   match (x, y) {
     (Some(a), Some(b)) => Some(if a < b { b } else { a }),
@@ -46,9 +67,13 @@ fn occurrenceMax(x: Occurrence, y: Occurrence) -> Occurrence {
   }
 }
 
-// §1 t_s = 4Δs: the start of slot s
+// §1 スロット s の開始時刻 t_s = 4Δs を返す。
+// 引数は スケジュール単位 delta(Δ)とスロット番号 s で、s は toInt で整数にして掛ける。
+// 手書き `slotStart` は 4 * Δ * s の順に掛けるが、整数の積なので結果は同じである。
 fn slotStart(delta: Time, s: Slot) -> Time { delta * 4 * s.toInt() }
 
-// §1 s = ⌊t / 4Δ⌋: the slot containing t. Floor division, so `slotOfTime(Δ, slotStart(Δ, s)) == s`;
-// times before t_0 clamp to slot 0, which the document never reads.
+// §1 時刻 t を含むスロット s = ⌊t / 4Δ⌋ を返す。
+// 床除算(fdiv)なので `slotOfTime(Δ, slotStart(Δ, s)) == s` が成り立つ。
+// t_0 より前の時刻は toNat でスロット 0 に切り上がるが、文書はその値を読まない。
+// 手書き `slotOfTime` に対応し、`Int.fdiv t (4 * Δ)` を `t.fdiv(delta * 4)` と書いた点だけが違う(整数の積なので結果は同じ)。
 fn slotOfTime(delta: Time, t: Time) -> Slot { t.fdiv(delta * 4).toNat() }

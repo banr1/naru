@@ -23,7 +23,10 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Run
 import Scenarios.Trace
 
-// The WeakGenesis setup: Δ = 1, GST 0, weights 2 / 1 (validators 0 / 1), R = 3, η = 2, K = 4, D = 2, timeout 6.
+// WeakGenesis の Setup(環境・回復設定・高さ設定)を組み立てて返す。
+// 引数は無い。Δ = 1、GST 0、重みは validator 0 が 2、validator 1 が 1、R = 3、η = 2、K = 4、D = 2、timeout 6 を固定値で与える。
+// 手書き `S` は `E` / `hc` / `cfg` / `node` を束ねた構造体で、ここでは env(ProtocolEnv)・hc・cfg の 3 欄に写す。
+// 手書き `node`(new_root と awake)は Setup でなく scenario の input(newRoot / awake)が担う。
 fn basicSetup() -> Setup {
   let v0 = ValidatorId { value: 0 };
   let v1 = ValidatorId { value: 1 };
@@ -36,11 +39,20 @@ fn basicSetup() -> Setup {
   }
 }
 
-// The WeakGenesis run: node `v0` (the only honest node) ticks at t = 0 … 30; no deliveries.
+// WeakGenesis の run を返す: 唯一の honest node `v0` が t = 0 … 30 に tick するだけで、配達は無い。
+// 引数 `v0` は tick する node の ValidatorId、戻り値は honest = {v0}、horizon = 30、events = 31 個の Tick の NamedRun。
+// 手書き `rho` / `events` は `(List.range 31).map (fun n => .tick 0 n)` で、本体はそれと同じ列を List.range(31) で作る。
+// golden test(tests/golden/Golden.lean)が生成 Model から同じ run を取って手書き Model と突き合わせる(C10)。
 fn basicRun(v0: ValidatorId) -> NamedRun {
   NamedRun { honest: Set.singleton(v0), horizon: 30, events: List.range(31).map(|t| NamedEvent.Tick(v0, t.toInt())) }
 }
 
+// WeakGenesis の run を移植 protocol で動かし、各 tick の後の読みと t = 30 の読みを表示する scenario。
+// input: proposer は全 slot で validator 0、committee は全 slot で {validator 0}(手書き `E` の proposer / committees)。
+// input: newRoot は slot + 1 を root とする BlockId、awake は node 0 だけ true(手書き `node` の new_root / awake)。
+// 本体は basicSetup と basicRun(v0) を呼ぶだけで、Setup と run は golden test も共有する。
+// observe: `trace` が各 event 後の confirmed / stable / finalized の root を 1 行ずつ、`readsAt` が t = 30 の読みを出す。
+// 期待値は confirmed が t = 10 から 4 tick ごとに root 2 … 7、stable は t = 26 から root 4、finalized は 0 のまま。
 scenario basic {
   input proposer(slot) = ValidatorId { value: 0 };
   input committee(slot) = Set.singleton(ValidatorId { value: 0 });

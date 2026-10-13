@@ -9,10 +9,18 @@ module Consensus.Objects.NamedBlocks
 import Consensus.Objects.Identifiers
 import Consensus.Objects.Blocks
 
-// Separate named wire payload for entry-bound height votes. The signed row carries the entry annotation.
+// 注釈付きの高さの組(named height pair)を表す enum で、entry に結び付いた高さの票の別個の通信ペイロードである。
+// Empty は空の組、Vote(h, entry, timeout) は高さ h・entry のブロック・timeout かどうかの 3 つ組を運ぶ。
+// 署名された行が entry の注釈を運ぶので、これは受信側だけのメタデータではない。
+// HeightPair の Timeout / Target の区別を Bool の欄 timeout で持ち、entry は timeout のときも残る。
+// 手書き `NamedHeightPair` に対応し、variant の名前の綴りだけが違う。
+// 注釈を落として HeightPair に戻すのが eraseHeightPair である。
 enum NamedHeightPair { Empty, Vote(Height, BlockId, Bool) } derive eq
 
-// Erasure is for prior SG/accountability views, not signed-row identity.
+// 注釈付きの高さの組から注釈を落として HeightPair に戻す。
+// Empty は Empty に、Vote は timeout が真なら Timeout(h) に、偽なら Target(h, entry) に写す。
+// 消去は過去の SG・説明責任の view のためのもので、署名された行の同一性のためではない。
+// 手書き `NamedHeightPair.erase` に対応し、naru の大域名は 1 つの表なので型ごとに名前を分けて eraseHeightPair とした。
 fn eraseHeightPair(p: NamedHeightPair) -> HeightPair {
   match p {
     NamedHeightPair.Empty => HeightPair.Empty,
@@ -21,7 +29,10 @@ fn eraseHeightPair(p: NamedHeightPair) -> HeightPair {
   }
 }
 
-// Both proper targets and timeouts use the same height/entry match.
+// 注釈付きの高さの組が、指定された高さと entry に一致するかを返す。
+// Empty は常に偽、Vote(h, target, _) は h が height に等しく target が entry に等しいときに真である。
+// 本当の target と timeout のどちらにも同じ高さ・entry の一致を使い、timeout の欄は見ない。
+// 手書き `NamedHeightPair.matchesEntry` に対応し、手書きは引数の順が (height, entry, 組) で、naru は組を先頭に置く。
 fn matchesEntry(p: NamedHeightPair, height: Height, entry: BlockId) -> Bool {
   match p {
     NamedHeightPair.Empty => false,
@@ -29,6 +40,12 @@ fn matchesEntry(p: NamedHeightPair, height: Height, entry: BlockId) -> Bool {
   }
 }
 
+// 高さの組が注釈付きである combined attestation を表す record である。
+// 欄は CombinedAttestation と同じ並びで、valIndex は validator、round はラウンド、confirmed は SG 票の射影を持つ。
+// heightPair だけが HeightPair ではなく NamedHeightPair で、entry の注釈を署名された行に運ぶ。
+// finalityPair は CombinedAttestation と同じく Option<FinalityPair> で、None が空の finality pair である。
+// 手書き `NamedAttestation` に対応し、手書きは validator の型引数 V を取るが、naru では ValidatorId に固定する。
+// 注釈を落として CombinedAttestation に戻すのが eraseAttestation である。
 record NamedAttestation {
   valIndex: ValidatorId,
   round: Round,
@@ -37,7 +54,10 @@ record NamedAttestation {
   finalityPair: Option<FinalityPair>
 } derive eq
 
-// Timeout annotations erase to prior timeouts, never to proper targets.
+// 注釈付きの attestation から注釈を落として CombinedAttestation に戻す。
+// 高さの組だけを eraseHeightPair で変換し、他の欄(valIndex・round・confirmed・finalityPair)はそのまま写す。
+// timeout の注釈は過去の timeout に消去され、本当の target には決して写らない。
+// 手書き `NamedAttestation.erase` に対応し、型ごとに名前を分けて eraseAttestation とした。
 fn eraseAttestation(row: NamedAttestation) -> CombinedAttestation {
   CombinedAttestation {
     valIndex: row.valIndex,
@@ -48,12 +68,20 @@ fn eraseAttestation(row: NamedAttestation) -> CombinedAttestation {
   }
 }
 
-// Separate recursive block data with full named rows at every ancestor.
+// 全祖先に注釈付きの完全な行を持つ、別個の再帰的ブロックデータを表す enum である。
+// Genesis か、Node(親, slot, root, gf_votes, gf_support_votes, 注釈付き attestations, proposer) のどちらかで、
+// Block と同じ並びだが attestations だけが NamedAttestation の list になる。
+// 既存の Block の構築子は変えず、消去(eraseBlock)は timeout の注釈を忘れる幾何的な射影であり、
+// 大域的に単射な同一性の符号化ではない。親を直接持つ再帰 enum なので Option 越しにはならない。
+// 手書き `NamedBlock` に対応し、validator の型引数 V は ValidatorId に固定する。
 enum NamedBlock {
   Genesis,
   Node(NamedBlock, Slot, BlockId, List<GoldfishVote>, List<GoldfishVote>, List<NamedAttestation>, ValidatorId)
 } derive eq
 
+// NamedBlock の slot を返す。Genesis は slot 0、Node はその slot の欄の値である。
+// Block の slot と同じ読みだが、大域名が 1 つの表なので named を前置している。
+// 手書き `NamedBlock.slot` に対応する。
 fn namedSlot(b: NamedBlock) -> Slot {
   match b {
     NamedBlock.Genesis => 0,
@@ -61,6 +89,9 @@ fn namedSlot(b: NamedBlock) -> Slot {
   }
 }
 
+// NamedBlock の root を返す。Genesis は genesisRoot()、Node はその root の欄の値である。
+// Block の root と同じ読みだが、大域名が 1 つの表なので named を前置している。
+// 手書き `NamedBlock.root` に対応する。
 fn namedRoot(b: NamedBlock) -> BlockId {
   match b {
     NamedBlock.Genesis => genesisRoot(),
@@ -68,6 +99,9 @@ fn namedRoot(b: NamedBlock) -> BlockId {
   }
 }
 
+// NamedBlock の親を全域関数として返し、Genesis は自分自身を親とする。
+// Node は親の欄の値を返す。Block の parent と同じ読みだが、named を前置している。
+// 手書き `NamedBlock.parent` に対応する。
 fn namedParent(b: NamedBlock) -> NamedBlock {
   match b {
     NamedBlock.Genesis => NamedBlock.Genesis,
@@ -75,6 +109,9 @@ fn namedParent(b: NamedBlock) -> NamedBlock {
   }
 }
 
+// NamedBlock が運ぶ Goldfish 票の list を返す。Genesis は空、Node は gf_votes の欄の値である。
+// 支持票(gf_support_votes)の読みは、この移植では NamedBlock に用意していない。
+// 手書き `NamedBlock.gf_votes` に対応し、Block の gfVotes と同じ読みである。
 fn namedGfVotes(b: NamedBlock) -> List<GoldfishVote> {
   match b {
     NamedBlock.Genesis => [],
@@ -82,6 +119,9 @@ fn namedGfVotes(b: NamedBlock) -> List<GoldfishVote> {
   }
 }
 
+// NamedBlock が運ぶ注釈付き attestation の list を返す。Genesis は空、Node は attestations の欄の値である。
+// Block の attestations と違い、要素は NamedAttestation で注釈を保ったままである。
+// 手書き `NamedBlock.attestations` に対応する。
 fn namedAttestations(b: NamedBlock) -> List<NamedAttestation> {
   match b {
     NamedBlock.Genesis => [],
@@ -89,6 +129,9 @@ fn namedAttestations(b: NamedBlock) -> List<NamedAttestation> {
   }
 }
 
+// NamedBlock の proposer を返し、Genesis には無いので None を返す。
+// Node は proposer の欄の値を Some に包んで返す。
+// 手書き `NamedBlock.proposer?` に対応し、Block の proposer? と同じ読みである。
 fn namedProposer?(b: NamedBlock) -> Option<ValidatorId> {
   match b {
     NamedBlock.Genesis => None,
@@ -96,7 +139,10 @@ fn namedProposer?(b: NamedBlock) -> Option<ValidatorId> {
   }
 }
 
-// The named tree keeps its own payload; only this view erases annotations.
+// NamedBlock の木全体から注釈を落として、対応する Block に戻す。
+// 親を再帰的に消去し、attestations の各行を eraseAttestation で変換し、他の欄はそのまま写す。
+// 注釈付きの木は自分のペイロードを保ち、注釈を消去するのはこの view だけである。
+// 手書き `NamedBlock.erase` に対応し、型ごとに名前を分けて eraseBlock とした。
 fn eraseBlock(b: NamedBlock) -> Block {
   match b {
     NamedBlock.Genesis => Block.Genesis,
@@ -105,7 +151,9 @@ fn eraseBlock(b: NamedBlock) -> Block {
   }
 }
 
-// Equality here compares full named payloads, including all ancestor rows.
+// NamedBlock の祖先関係 a ⪯ b(a = b、または a が b の祖先)を実行可能な検査として返す。
+// b を上へたどり、等しさは全祖先の行を含む注釈付きの完全なペイロードを比べる。
+// 手書き `NamedBlock.preceq` に対応し、Block の preceq と同じ形で、named を前置している。
 fn namedPreceq(a: NamedBlock, b: NamedBlock) -> Bool {
   match b {
     NamedBlock.Genesis => a == NamedBlock.Genesis,

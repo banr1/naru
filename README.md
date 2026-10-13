@@ -10,7 +10,9 @@ Lean 4 を知らない設計者が、Rust / TypeScript / Python / Go を知っ�
 
 基準として、Francesco D'Amato の [verified-consensus](https://github.com/fradamt/verified-consensus)(Lean 4 で書かれた decoupled consensus の
 モデルと証明)を `third_party/` に同梱し、その Model と Statements を naru に移植した `specs/consensus/` が、生成 Model の golden test と
-claim surface の基準になっています。設計の正本は [IDEAL.md](IDEAL.md)(人間が宣言する「実現する状態」)です。
+claim surface の基準になっています。移植ソースの各宣言には日本語の宣言コメント(要旨 1 行と、その下の説明。手書きの対応する定義名を
+「手書き `名前`」で挙げる)が付いていて、作者でない人が移植ソースをそのまま読めます(規約は `docs/architecture.md`)。設計の正本は
+[IDEAL.md](IDEAL.md)(人間が宣言する「実現する状態」)です。
 
 
 呼出しspecの値・命題のlet列には、子式と末尾の双方向の意味対応を明示した証明書からCoreのlet列への意味対応を合成する局所証明がある。同名の値・命題の再束縛も検査する。全spec式の一般同値は `SurfaceCallLowerSpecSemAll.lean` が与えた(後述)。宣言群からのcallee環境の対応と実生成Model/StatementsへのSurfaceからの接続は `SurfaceCallProg.lean` が与えた(後述)。

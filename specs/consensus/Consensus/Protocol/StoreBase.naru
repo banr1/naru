@@ -16,30 +16,37 @@ import Consensus.Objects.Time
 import Consensus.Objects.Blocks
 import Consensus.Protocol.Schedule
 
-// §2.2 the store Σ = (t, s, T, timestamp[·], gf_votes[·], live_confirmed, latest_confirmed).
+// §2.2 Goldfish の store Σ = (t, s, T, timestamp[·], gf_votes[·], live_confirmed, latest_confirmed) を表す record。
+// store はメッセージとその timestamp だけを持ち、各規則はこの一つの pool への timestamp 比較になる。
+// 文書の一つの timestamp[·] はブロック用と票用の二つの型付きの表(Table)に分け、無い鍵は未処理(+∞)を表す。
+// gfVotes は slot ごとの票の List(空が既定)で、集合としての読みは pool が担う。
+// 手書き `GoldfishStore` の写しで、手書きの extends の鎖の根に当たる。
+// 手書きの TimestampMap は Table、Slot → List の全域写像は Table<Slot, List<GoldfishVote>> に置き換えた。
 record GoldfishStore {
-  // §2.2 Σ.t: the current time, written by on_tick only.
+  // §2.2 Σ.t: 現在時刻。on_tick だけが書く。
   t: Time,
-  // §2.2 Σ.s: the current slot, written by on_tick only.
+  // §2.2 Σ.s: 現在の slot。on_tick だけが書く。
   s: Slot,
-  // §2.2 Σ.T: the tree of processed blocks.
+  // §2.2 Σ.T: 処理済みブロックの木。
   tree: Set<Block>,
-  // §2.2 Σ.timestamp[·] on blocks.
+  // §2.2 ブロックに対する Σ.timestamp[·]。
   timestampBlock: Table<Block, Stamp>,
-  // §2.2 Σ.timestamp[·] on Goldfish votes.
+  // §2.2 Goldfish の票に対する Σ.timestamp[·]。
   timestampVote: Table<GoldfishVote, Stamp>,
-  // §2.2 Σ.gf_votes[k]: the processed slot-k votes (at most two distinct per validator; duplicate-free by on_goldfish_vote).
+  // §2.2 Σ.gf_votes[k]: 処理済みの slot k の票(検証者ごとに異なるものは高々二つ。on_goldfish_vote が重複を除く)。
   gfVotes: Table<Slot, List<GoldfishVote>>,
-  // §2.2 Σ.live_confirmed: the block the last evaluated slot confirmed. Not monotone.
+  // §2.2 Σ.live_confirmed: 直近に評価した slot が確定したブロック。単調ではない。
   liveConfirmed: Block,
-  // §2.2 Σ.latest_confirmed: the monotone record the node exposes; no rule in this protocol reads it.
+  // §2.2 Σ.latest_confirmed: ノードが公開する単調な記録。このプロトコルのどの規則も読まない。
   latestConfirmed: Block
 } derive eq
 
 // ── §2.2 Resolution ──
 
-// §2.2 whether the store holds the block `vote` names AND the vote is valid for it: the head is a stored block
-// from the vote's slot or earlier. Absent or ambiguous roots leave the vote unresolved.
+// §2.2 票 vote が resolved か、つまり木 tree が票の指すブロックを持ち、かつ票がそのブロックに対して有効かを返す。
+// 票の head の root から findRoot? で引いたブロックが存在し、その slot が票の slot 以下のときだけ真。
+// root が無い、または曖昧なときは未解決(false)で、後の slot のブロックを指す票も解決しない。
+// 手書き `resolved` の写しで、手書き `Block.find?` に当たる検索は findRoot? 、decide は <= に置き換えた。
 fn resolved(tree: Set<Block>, vote: GoldfishVote) -> Bool {
   match findRoot?(tree, vote.head) {
     Some(b) => slot(b) <= vote.slot,
@@ -47,9 +54,12 @@ fn resolved(tree: Set<Block>, vote: GoldfishVote) -> Bool {
   }
 }
 
-// §2.2 τ(vote) = max{Σ.timestamp(vote), Σ.timestamp(H)}, +∞ while H is missing (or named from a later slot).
-// Nothing is mutated: the two stamps are the frozen receipt instants and τ is their maximum, recomputed at every read.
-// Σ.timestamp(B_gen) = −∞ needs no special case: −∞ is the least Stamp and drops out of the maximum.
+// §2.2 票 vote の resolution time τ(vote) = max{Σ.timestamp(vote), Σ.timestamp(H)} を Occurrence で返す。
+// H が無い(または後の slot のブロックを指す)間は None で、これが +∞ に当たる。
+// 引数は木 tree、ブロックの timestamp の表 tb、票の timestamp の表 tv、対象の票 vote。
+// 何も書き換えず、二つの stamp は受信時刻で固定され、τ はその最大を読むたびに計算し直す。
+// Σ.timestamp(B_gen) = −∞ は特別扱い不要で、−∞ は最小の Stamp なので最大の計算で落ちる。
+// 手書き `resolution_time` の写しだが、手書きは TimestampMap(関数)を返すのに対し、naru は票を引数に足して値を返す。
 fn resolutionTime(tree: Set<Block>, tb: Table<Block, Stamp>, tv: Table<GoldfishVote, Stamp>, vote: GoldfishVote) -> Occurrence {
   match findRoot?(tree, vote.head) {
     None => None,
@@ -57,10 +67,14 @@ fn resolutionTime(tree: Set<Block>, tb: Table<Block, Stamp>, tv: Table<GoldfishV
   }
 }
 
-// §2.2 Σ.gf_votes[k] read as the set it stands for. The list is duplicate-free, so this loses nothing.
+// §2.2 Σ.gf_votes[k] を、それが表す集合として読んで返す(slot k の処理済みの票の集合)。
+// List は重複が無いので、集合にしても情報は失われない。
+// 手書き `GoldfishStore.pool` の写し。
 fn pool(st: GoldfishStore, k: Slot) -> Set<GoldfishVote> { st.gfVotes.getOr(k, []).toSet() }
 
-// §2.2 τ(·) read off the store.
+// §2.2 store st から読んだ票 vote の τ(·) を返す。
+// st の tree と二つの timestamp の表を resolutionTime に渡すだけ。
+// 手書き `GoldfishStore.tau` の写しで、関数を返す代わりに票を引数に足した。
 fn tau(st: GoldfishStore, vote: GoldfishVote) -> Occurrence {
   resolutionTime(st.tree, st.timestampBlock, st.timestampVote, vote)
 }

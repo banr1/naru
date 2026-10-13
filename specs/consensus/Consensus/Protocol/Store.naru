@@ -22,53 +22,62 @@ import Consensus.Protocol.ChainState
 import Consensus.Protocol.ForkChoice.Goldfish
 import Consensus.Protocol.Grades
 
-// §7.1 the SG vote of a combined attestation: its (validator, round, confirmed) projection. Two attestations differing
-// only in their pair fields are one vote, which is exactly what this map collapses.
+// §7.1 結合 attestation a の SG 票、つまり (validator, round, confirmed) の射影を返す。
+// 対の欄だけが異なる二つの attestation は一つの票であり、この写像がちょうどそれらを同一視する。
+// §6 の規則と grade はこの射影だけを読む。
+// 手書き `sgVote` の写し。
 fn sgVote(a: CombinedAttestation) -> SGVote { SGVote { valIndex: a.valIndex, round: a.round, confirmed: a.confirmed } }
 
-// §7.1 the cumulative node store Σ, in the document's tuple order: (t, s, T, timestamp[·] as three typed maps, σ[·],
-// gf_votes[·], sg_votes[·], F, J, h_j, h_max, live_confirmed, latest_confirmed, latest_stable). The saved relative grades
-// are not store fields; they live in the node's Cache. There is no fresh_root[·] and no Λ (that belongs to the validator).
+// §7.1 累積的なノードの store Σ を表す flat な record で、欄は文書の tuple の順
+// (t, s, T, 三つの型付き表にした timestamp[·], σ[·], gf_votes[·], sg_votes[·], F, J, h_j, h_max, live_confirmed,
+// latest_confirmed, latest_stable)で、最後の三つは confirmation の値(liveConfirmed は投票が使うプロトコル側の値、
+// latestConfirmed / latestStable は利用者向けの記録)。
+// 保存済みの相対 grade は store の欄ではなくノードの Cache にある。fresh_root[·] も Λ(検証者側のもの)も持たない。
+// 全域写像の欄(sigma / gfVotes / sgVotes / timestamp)は Table で、無い鍵は既定値(初期 chain state / [] / [] / +∞)。
+// 手書き `Store` の写し(欄 T / σ / F / J / h_j / h_max は tree / sigma / f / j / hJ / hMax に改名)。
+// 手書きの extends の鎖とは別の record で、storeToHealing で §6 の store として読む。
 record Store {
-  // §2.2 Σ.t: the current time.
+  // §2.2 Σ.t: 現在時刻。
   t: Time,
-  // §2.2 Σ.s: the current slot.
+  // §2.2 Σ.s: 現在の slot。
   s: Slot,
-  // §2.2 Σ.T: the processed block tree, never pruned.
+  // §2.2 Σ.T: 処理済みブロックの木。刈り込まれない。
   tree: Set<Block>,
-  // §1 Σ.timestamp[·] on blocks.
+  // §1 ブロックに対する Σ.timestamp[·]。
   timestampBlock: Table<Block, Stamp>,
-  // §1 Σ.timestamp[·] on Goldfish votes.
+  // §1 Goldfish の票に対する Σ.timestamp[·]。
   timestampVote: Table<GoldfishVote, Stamp>,
-  // §1 Σ.timestamp[·] on the SG fibre, keyed by the vote projection (the pool admits at most one attestation per
-  // (validator, head) in a round, so the projection is injective on it).
+  // §1 SG 側の Σ.timestamp[·]。票の射影を鍵とする(pool は round ごとに (validator, head) あたり高々一つの
+  // attestation しか受け付けないので、射影はその上で単射)。
   timestampSgVote: Table<SGVote, Stamp>,
-  // §5.1 Σ.σ[B]: the post-state of B. Total, defaulting to the initial chain state.
+  // §5.1 Σ.σ[B]: B の事後状態。全域で、既定値は初期 chain state。
   sigma: ChainStates,
-  // §2.2 Σ.gf_votes[k]: the processed slot-k Goldfish votes, at most two distinct per validator.
+  // §2.2 Σ.gf_votes[k]: 処理済みの slot k の Goldfish の票(検証者ごとに異なるものは高々二つ)。
   gfVotes: Table<Slot, List<GoldfishVote>>,
-  // §7.1 Σ.sg_votes[r]: the processed round-r combined attestations, at most two with distinct heads per validator.
-  // A List, because propose_block copies it into a block; set-valued reads go through `sgPool`.
+  // §7.1 Σ.sg_votes[r]: 処理済みの round r の結合 attestation(検証者ごとに head が異なるものは高々二つ)。
+  // propose_block がブロックにそのまま写すので List で持ち、集合としての読みは `sgPool` を通す。
   sgVotes: Table<Round, List<CombinedAttestation>>,
-  // §5.1 Σ.F: the finalized block.
+  // §5.1 Σ.F: finalize されたブロック。
   f: Block,
-  // §5.1 Σ.J: the justified block.
+  // §5.1 Σ.J: justify されたブロック。
   j: Block,
-  // §5.1 Σ.h_j: its height.
+  // §5.1 Σ.h_j: その高さ。
   hJ: Height,
-  // §5.1 Σ.h_max: the running maximum state height; monotone.
+  // §5.1 Σ.h_max: 状態の高さの実行中の最大値。単調。
   hMax: Height,
-  // The protocol-facing confirmation used by voting: an eligible Goldfish walk result, or the FG-root floor.
+  // 投票が使うプロトコル側の confirmation: 資格のある Goldfish の walk 結果、または FG-root の下限。
   liveConfirmed: Block,
-  // The user-facing confirmation record (an ancestor candidate leaves it unchanged; an extension or conflict replaces it).
+  // 利用者向けの confirmation の記録(祖先の候補なら変えず、延長または衝突なら置き換える)。
   latestConfirmed: Block,
-  // The user-facing stable record: the latest G2 root, advanced by advance_confirmed.
+  // 利用者向けの stable の記録: 最新の G2 root で、advance_confirmed が進める。
   latestStable: Block
 } derive eq
 
-// §7.1 the initial store: t = s = 0, T = {B_gen}, timestamp(B_gen) = −∞, h_max = 1, F = J = B_gen, h_j = 0,
-// live_confirmed = latest_confirmed = latest_stable = B_gen, and every pool empty. Σ.σ[·] defaults to the initial chain
-// state everywhere (the value on_block reads at a child of genesis).
+// §7.1 初期の store を返す: t = s = 0、T = {B_gen}、timestamp(B_gen) = −∞、h_max = 1、F = J = B_gen、h_j = 0、
+// live_confirmed = latest_confirmed = latest_stable = B_gen で、どの pool も空。
+// Σ.σ[·] は全域で初期 chain state が既定値(on_block が genesis の子で読む値)。
+// timestampBlock は genesis だけを genesisStamp で持つ表で、これが手書きの timestamp_block に当たる。
+// 手書き `Store.init` の改名(initStore)。
 fn initStore() -> Store {
   Store {
     t: 0, s: 0, tree: Set.singleton(Block.Genesis),
@@ -80,19 +89,26 @@ fn initStore() -> Store {
   }
 }
 
-// §2.2 Σ.gf_votes[k] read as the set it stands for. The list is duplicate-free, so this loses nothing.
+// §2.2 Σ.gf_votes[k] を、それが表す集合として読んで返す(slot k の処理済みの Goldfish の票)。
+// List は重複が無いので、集合にしても情報は失われない。
+// 手書き `Store.pool` の改名(storePool。pool は GoldfishStore 用に使っている)。
 fn storePool(st: Store, k: Slot) -> Set<GoldfishVote> { st.gfVotes.getOr(k, []).toSet() }
 
-// §7.1 Σ.sg_votes[r] read as the set it stands for.
+// §7.1 Σ.sg_votes[r] を、それが表す集合として読んで返す(round r の処理済みの結合 attestation)。
+// 欄が List なのは propose_block が写すためで、集合としての読みはこの関数を通す。
+// 手書き `Store.sg_pool` の改名(sgPool)。
 fn sgPool(st: Store, r: Round) -> Set<CombinedAttestation> { st.sgVotes.getOr(r, []).toSet() }
 
-// §2.2 τ(·) on Goldfish votes at the cumulative store: the pure core `resolutionTime` (Σ is its own structure, so §2's
-// `tau` does not reach it).
+// §2.2 累積 store 上の Goldfish の票 vote の τ(·) を返す。
+// Σ は別の構造なので §2 の `tau` は届かず、純粋な核の `resolutionTime` に st の tree と二つの timestamp の表を渡す。
+// 手書き `Store.tau` の改名(storeTau)で、関数を返す代わりに票を引数に足した。
 fn storeTau(st: Store, vote: GoldfishVote) -> Occurrence { resolutionTime(st.tree, st.timestampBlock, st.timestampVote, vote) }
 
-// §7.1 the store read as a §6 store: the one adapter that lets every §6 decision (get_head, the proposal, the round
-// action, the grades) apply here unchanged. The single difference between the two records is the SG pool: this one holds
-// combined attestations, and §6 reads their (validator, round, confirmed) projections. Everything else is copied.
+// §7.1 store を §6 の store(HealingStore)として読み替えて返す唯一のアダプタ。
+// これにより §6 のすべての決定(get_head、proposal、round の action、grade)がここでも変更なしで適用できる。
+// 二つの record の違いは SG の pool だけで、こちらは結合 attestation を持ち、§6 はその (validator, round, confirmed) の
+// 射影を読む。sgVotes は各 round の List を集合にして sgVote で写し、ほかの欄はそのまま写す。
+// 手書き `Store.toHealing` の改名(storeToHealing)。手書きの image は toSet().map に置き換えた。
 fn storeToHealing(st: Store) -> HealingStore {
   FGStore {
     t: st.t, s: st.s, tree: st.tree, timestampBlock: st.timestampBlock, timestampVote: st.timestampVote,

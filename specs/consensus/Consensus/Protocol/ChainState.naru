@@ -31,8 +31,12 @@ import Consensus.Objects.Parameters
 
 // ── §4 Combined attestations: slashing and equivocation ──
 
-// §4 the height-pair half of E1: a height pair (h, T') conflicts with a nonempty finality pair (h, T) when the heights
-// agree and T' ≠ T, T' = ⊥ included. The empty height pair has height ⊥ and so conflicts with nothing.
+// §4 E1 のうち高さ対の側の判定: 高さ対 hp が空でない確定対 pair と衝突するかを返す。
+// 高さが一致し、かつ target が異なる(⊥ を含む)ときに限り衝突する。
+// Empty は高さ ⊥ なので何とも衝突せず false、Timeout(height) は高さの一致だけで true、
+// Target(height, target) は高さ一致かつ target 不一致で true。
+// 戻り値は Bool で、e1Fields が左右の添字を入れ替えて 2 回呼ぶ。
+// 手書き `conflictsWithFinality` の写しで、decide を == / != に置き換えただけで分岐は同じ。
 fn conflictsWithFinality(hp: HeightPair, pair: FinalityPair) -> Bool {
   match hp {
     HeightPair.Empty => false,
@@ -41,21 +45,30 @@ fn conflictsWithFinality(hp: HeightPair, pair: FinalityPair) -> Bool {
   }
 }
 
-// §4 "two pair occurrences from one validator".
+// §4 「二つの対の出現が同じ検証者のもの」という条件で、二つの結合 attestation の valIndex が等しいかを返す。
+// E1 / E2 / SG の頭の二重投票の判定が共通して最初に確かめる、署名者が一人であることの検査。
+// 手書き `sameValidator` の写しで、decide を == にしただけ。
 fn sameValidator(left: CombinedAttestation, right: CombinedAttestation) -> Bool { left.valIndex == right.valIndex }
 
-// §3 one round, the scope of the head-equivocation test.
+// §3 頭の二重投票の判定の範囲である「同じ round」かを返す。
+// 二つの結合 attestation の round 欄が等しいときに真。sgHeadEquivocation だけが使う。
+// 手書き `sameRound` の写しで、decide を == にしただけ。
 fn sameRound(left: CombinedAttestation, right: CombinedAttestation) -> Bool { left.round == right.round }
 
-// §4 E1's field conflict, before the one-signer test. Either attestation may supply the finality pair; taking
-// left = right is what makes "the conflicting occurrences can be in one attestation" hold.
+// §4 E1 の欄の衝突(署名者が一人かの検査より前の部分)を返す。
+// 左の確定対と右の高さ対、または右の確定対と左の高さ対のどちらかが conflictsWithFinality で衝突すれば真。
+// 確定対が None の側は false(getOr(false))として扱う。
+// left = right を渡せば「衝突する出現が一つの attestation の中にある」場合も同じ式で表せる。
+// 手書き `e1Fields` の写しで、Option.elim を map と getOr(false) に置き換えた。
 fn e1Fields(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   left.finalityPair.map(|pair| conflictsWithFinality(right.heightPair, pair)).getOr(false)
     || right.finalityPair.map(|pair| conflictsWithFinality(left.heightPair, pair)).getOr(false)
 }
 
-// §4 E2's field conflict, before the one-signer test: two height pairs (h, T), (h, T') with T, T' ≠ ⊥ and T ≠ T'.
-// A timeout or empty pair on either side is not E2.
+// §4 E2 の欄の衝突(署名者が一人かの検査より前の部分)を返す。
+// 二つの高さ対がどちらも Target で、高さが等しく target が異なるときだけ真。
+// どちらかが Timeout または Empty のときは E2 ではないので、match の残りの場合は false。
+// 手書き `e2Fields` の写しで、decide を == / != に置き換えただけ。
 fn e2Fields(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   match (left.heightPair, right.heightPair) {
     (HeightPair.Target(leftHeight, leftTarget), HeightPair.Target(rightHeight, rightTarget)) =>
@@ -64,66 +77,86 @@ fn e2Fields(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   }
 }
 
-// §4 E1: one finality pair is (h, T) with T ≠ ⊥, and one height pair is (h, T') with T' ≠ T, including T' = ⊥.
+// §4 E1(確定対と高さ対の衝突)で二つの結合 attestation が slashing の対象かを返す。
+// 一方の確定対が (h, T) で T ≠ ⊥、他方の高さ対が (h, T') で T' ≠ T(T' = ⊥ を含む)であり、署名者が同じこと。
+// sameValidator と e1Fields の論理積。手書き `e1Slashable` の写し。
 fn e1Slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   sameValidator(left, right) && e1Fields(left, right)
 }
 
-// §4 E2: two height pairs are (h, T) and (h, T') with T, T' ≠ ⊥ and T ≠ T'.
+// §4 E2(同じ高さへの別 target の二重投票)で二つの結合 attestation が slashing の対象かを返す。
+// 二つの高さ対が (h, T) と (h, T') で T, T' ≠ ⊥ かつ T ≠ T' であり、署名者が同じこと。
+// sameValidator と e2Fields の論理積。手書き `e2Slashable` の写し。
 fn e2Slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   sameValidator(left, right) && e2Fields(left, right)
 }
 
-// §4 slashable under either condition.
+// §4 E1 と E2 のどちらかを満たすとき、二つの結合 attestation が slashing の対象であると返す。
+// e1Slashable と e2Slashable の論理和で、どの handler もこの関数を呼ばない(説明用の述語)。
+// 手書き `slashable` の写し。
 fn slashable(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   e1Slashable(left, right) || e2Slashable(left, right)
 }
 
-// §4 the conflicting occurrences can be in one attestation.
+// §4 衝突する出現が一つの attestation の中にある場合、つまり a 単独で slashing の対象かを返す。
+// slashable に同じ a を左右両方として渡すだけ。
+// 手書き `selfSlashable` の写し。
 fn selfSlashable(a: CombinedAttestation) -> Bool { slashable(a, a) }
 
-// §3, §7 two distinct heads from one validator in one round.
+// §3, §7 同じ検証者が同じ round で二つの異なる頭に投票した(SG の頭の二重投票)かを返す。
+// 署名者と round が等しく、confirmed 欄が異なるときに真。高さ対や確定対は読まない。
+// 手書き `sgHeadEquivocation` の写しで、decide を == / != にしただけ。
 fn sgHeadEquivocation(left: CombinedAttestation, right: CombinedAttestation) -> Bool {
   sameValidator(left, right) && sameRound(left, right) && left.confirmed != right.confirmed
 }
 
 // ── §4 Chain state ──
 
-// §4 the fixed height parameters K ≥ 4, D ≥ 2 and the timeout delay δ_t ≥ 0 in slots (the §4 parameters not already
-// in the environment: w(·) and q come from the electorate). The bounds are Statements premises.
+// §4 固定の高さのパラメータ K ≥ 4、D ≥ 2 と、slot 単位のタイムアウト遅延 δ_t ≥ 0 をまとめた設定。
+// 欄は k(nonjustifiable の周期 K)、d(finality の負債の上限 D)、timeoutDelay(δ_t)。
+// §4 のパラメータのうち環境に無いものだけで、w(·) と q は electorate から来る。
+// K ≥ 4 と D ≥ 2 の下限は Model には置かず Statements の前提(premise)にする。
+// 手書き `HeightConfig` の写しで、証明の欄 `K_ge_four` / `D_ge_two` を持たない点が違う。
+// nonjustifiable が k と d を、progReady が timeoutDelay を読む。
 record HeightConfig { k: Nat, d: Nat, timeoutDelay: Nat } derive eq
 
-// §4 a chain state σ = (L, s, h, T_h, nj, target_participation, progress, finalize, J, h_j, F, h_F), in the document's
-// order. T_h is a block, never ⊥. The three participation arrays are held as their quorum sets.
+// §4 chain state σ = (L, s, h, T_h, nj, target_participation, progress, finalize, J, h_j, F, h_F) を表す平らな record。
+// 欄は文書の tuple の順で、T_h は ⊥ にならず常に Block である。
+// 三つの participation 配列は quorum 集合そのもの(Set<ValidatorId>)として持つ。
+// 各ブロックの状態 σ[B] は、親の状態にブロックの attestation を畳み込み height event を適用して決定的に決まる。
+// 手書き `ChainState` の写しで、有限集合の欄を Set にしたため derive は eq だけ(backend が Ord などを生成する)。
+// 欄名は L → l、T_h → tH、h_j → hJ、F → f、h_F → hF のように小文字始まりの camelCase に改めた。
 record ChainState {
-  // §4 L: the latest block.
+  // §4 L: 鎖の最新ブロック。
   l: Block,
-  // §4 s = L.slot, held as a field because state_transition writes it before it writes L.
+  // §4 s = L.slot。state_transition が L より先に書くので欄として持つ。
   s: Slot,
-  // §4 h: the current height.
+  // §4 h: 現在の高さ。
   h: Height,
-  // §4 T_h: the block that carried the transition into height h.
+  // §4 T_h: 高さ h への遷移を運んだブロック。
   tH: Block,
-  // §4 nj: computed when the chain enters h, fixed until the height changes.
+  // §4 nj: 鎖が高さ h に入るときに計算され、高さが変わるまで固定される。
   nj: Bool,
-  // §4 target_participation, as its quorum set.
+  // §4 target_participation を quorum 集合として持つ。
   targetParticipation: Set<ValidatorId>,
-  // §4 progress, as its quorum set.
+  // §4 progress を quorum 集合として持つ。
   progress: Set<ValidatorId>,
-  // §4 finalize, as its quorum set.
+  // §4 finalize を quorum 集合として持つ。
   finalize: Set<ValidatorId>,
-  // §4 J: the latest justification on the chain.
+  // §4 J: 鎖上の最新の justification。
   j: Block,
-  // §4 h_j: the height of that justification.
+  // §4 h_j: その justification の高さ。
   hJ: Height,
-  // §4 F: the latest finalization on the chain.
+  // §4 F: 鎖上の最新の finalization。
   f: Block,
-  // §4 h_F: the height of that finalization.
+  // §4 h_F: その finalization の高さ。
   hF: Height
 } derive eq
 
-// §4 the initial chain state: L = T_h = J = F = B_gen, s = 0, h = 1, h_j = h_F = 0, nj = false, every array empty.
-// This is the default of the total map Σ.σ[·], so σ[B_gen] and σ[B_gen.parent] are both this state.
+// §4 初期の chain state を返す: L = T_h = J = F = B_gen、s = 0、h = 1、h_j = h_F = 0、nj = false、三つの集合は空。
+// 全域写像 Σ.σ[·] の既定値なので、σ[B_gen] も σ[B_gen.parent] もこの状態になる。
+// nj は文書どおりの false で、h = 1 で nj の式を評価した値ではない。
+// 手書き `ChainState.initial` の改名(initialChainState)で、欄の値は同じ。
 fn initialChainState() -> ChainState {
   ChainState {
     l: Block.Genesis, s: 0, h: 1, tH: Block.Genesis, nj: false,
@@ -132,34 +165,51 @@ fn initialChainState() -> ChainState {
   }
 }
 
-// §4 Q_target(σ): here the array is its quorum set, so the three derived sets are identities.
+// §4 Q_target(σ) として target 参加者の quorum 集合を返す。
+// 配列がそのまま quorum 集合なので、三つの派生集合(qTarget / qProg / qFinality)は欄の恒等な読み出しになる。
+// 手書き `ChainState.Q_target` の改名。
 fn qTarget(st: ChainState) -> Set<ValidatorId> { st.targetParticipation }
 
-// §4 Q_prog(σ)
+// §4 Q_prog(σ) として progress の quorum 集合を返す。
+// progress 欄の恒等な読み出しで、progReady が progQuorum 経由で使う。
+// 手書き `ChainState.Q_prog` の改名。
 fn qProg(st: ChainState) -> Set<ValidatorId> { st.progress }
 
-// §4 Q_finality(σ)
+// §4 Q_finality(σ) として finalize の quorum 集合を返す。
+// finalize 欄の恒等な読み出しで、finalityQuorum が使う。
+// 手書き `ChainState.Q_finality` の改名。
 fn qFinality(st: ChainState) -> Set<ValidatorId> { st.finalize }
 
-// §4 w(Q_target(σ)) ≥ q. Weights and q are the electorate's; Goldfish's unit counts never reach this test.
+// §4 w(Q_target(σ)) ≥ q が成り立つか、つまり target の quorum が揃ったかを返す。
+// 重みと q は環境 e の electorate のもので、Goldfish の単位数(1 人 1 票)はこの検査に届かない。
+// 手書き `ChainState.targetQuorum` の写しで、electorate の quorumCheck を呼ぶ(手書き `Electorate.quorumCheck`)。
 fn targetQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qTarget(st)) }
 
-// §4 w(Q_prog(σ)) ≥ q
+// §4 w(Q_prog(σ)) ≥ q が成り立つか、つまり progress の quorum が揃ったかを返す。
+// タイムアウト行は遅延の後にだけ数えられ、その遅延の判定は progReady 側にある。
+// 手書き `ChainState.progQuorum` の写し。
 fn progQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qProg(st)) }
 
-// §4 w(Q_finality(σ)) ≥ q
+// §4 w(Q_finality(σ)) ≥ q が成り立つか、つまり finalize の quorum が揃ったかを返す。
+// finalityReady が h_F < h_j との論理積で使う。
+// 手書き `ChainState.finalityQuorum` の写し。
 fn finalityQuorum(e: ProtocolEnv, st: ChainState) -> Bool { quorumCheck(e.electorate, qFinality(st)) }
 
 // ── §4 The deterministic state transition ──
 
-// §4 the nonjustifiability rule nj ← (K | h) ∧ (h − h_F > D). Both read the already-updated h_F.
-// Height is Nat, so h − h_F truncates at zero; with D ≥ 1 a state with h < h_F gives false either way.
+// §4 nonjustifiable の規則 nj ← (K | h) ∧ (h − h_F > D) を計算し、高さ h が justification 不可かを返す。
+// 引数は設定 cfg、(新しい)高さ h、更新済みの h_F。K ∣ h は h % k == 0 で書く(k = 0 なら h == 0 のときだけ真)。
+// Height は Nat なので h − h_F は 0 で切り捨てられ、D ≥ 1 なら h < h_F の状態はどちらの読みでも false になる。
+// 手書き `nonjustifiable` の写しで、decide を == / < に置き換えただけ。
 fn nonjustifiable(cfg: HeightConfig, h: Height, hF: Height) -> Bool { h % cfg.k == 0 && cfg.d < h - hF }
 
-// §4 process_attestation(σ, a). The two tests are independent guarded ifs: one call can set the finality bit and a
-// height bit. A target vote sets both height bits, a timeout vote sets only progress; any other pair sets neither.
-// Equality of pairs is equality of roots: a carried target is a BlockId, so the tests compare σ.T_h.root and σ.J.root.
-// The finality guard omits σ.F ⪯ σ.J (redundant at every reachable state; the handwritten proofs show the two agree).
+// §4 process_attestation(σ, a): 結合 attestation a を chain state st に一つ畳み込んだ新しい状態を返す。
+// 二つの検査は独立した if で、一度の呼び出しで finality のビットと高さのビットを両方立てうる。
+// 高さ対が Target(h, T_h の root) なら targetParticipation と progress の両方、Timeout(h) なら progress だけに
+// 署名者を足し、それ以外の対ではどちらにも足さない。
+// 対の等価は root の等価で、持ち運ぶ target は BlockId なので st.tH と st.j の root と比べる。
+// finality の guard は σ.F ⪯ σ.J を省く(到達可能な状態では冗長で、手書きの証明が両者の一致を示している)。
+// 手書き `process_attestation` の写し。
 fn processAttestation(st: ChainState, a: CombinedAttestation) -> ChainState {
   let i = a.valIndex;
   let finalityHit = st.hF < st.hJ && a.finalityPair == Some(FinalityPair { height: st.hJ, target: root(st.j) });
@@ -177,20 +227,29 @@ fn processAttestation(st: ChainState, a: CombinedAttestation) -> ChainState {
   }
 }
 
-// §4 the finality guard of process_height_events: h_j > h_F, and Q_finality is a quorum (F ⪯ J omitted, as above).
+// §4 process_height_events の finality の guard を返す: h_j > h_F かつ Q_finality が quorum であること。
+// processAttestation と同じく F ⪯ J の節は省く。
+// 手書き `finalityReady` の写し。
 fn finalityReady(e: ProtocolEnv, st: ChainState) -> Bool { st.hF < st.hJ && finalityQuorum(e, st) }
 
-// §4 the justification guard: ¬nj, and Q_target is a quorum. There is no "T_h is set" clause — T_h is always a block.
+// §4 justification の guard を返す: nj が偽で、Q_target が quorum であること。
+// 「T_h が設定済み」という節は無い。T_h は常にブロックだから。
+// 手書き `targetReady` の写し。
 fn targetReady(e: ProtocolEnv, st: ChainState) -> Bool { !st.nj && targetQuorum(e, st) }
 
-// §4 the progress guard: an exact target quorum is consumed immediately; a progress quorum that can contain timeout
-// rows is consumed only at or after T_h.slot + timeoutDelay.
+// §4 progress の guard を返す。target の quorum が揃っていれば即座に消費する。
+// タイムアウト行を含みうる progress の quorum は、st.s が T_h.slot + timeoutDelay 以上のときにだけ消費する。
+// 遅延が過ぎるまでタイムアウト行は progress に残る。
+// 手書き `progReady` の写し。
 fn progReady(e: ProtocolEnv, cfg: HeightConfig, st: ChainState) -> Bool {
   targetQuorum(e, st) || (slot(st.tH) + cfg.timeoutDelay <= st.s && progQuorum(e, st))
 }
 
-// §4 advance_height(σ): increment the height, carry the latest block into T_h, recompute nj from the new height and
-// the already-updated h_F, and clear the target and progress sets. σ.finalize is deliberately not cleared here.
+// §4 advance_height(σ): 高さを一つ進めた chain state を返す。
+// 最新ブロック l を tH に移し、新しい高さと更新済みの h_F から nj を再計算し、target と progress の集合を空にする。
+// finalize はここでは意図して空にしない(空にするのは justification の枝だけ)ので、高さ h で立てた finality のビットは
+// (J, h_j) が動かない限り後の進行でも finalization を起こしうる。
+// 手書き `advance_height` の写し。
 fn advanceHeight(cfg: HeightConfig, st: ChainState) -> ChainState {
   let next = st.h + 1;
   ChainState {
@@ -200,9 +259,12 @@ fn advanceHeight(cfg: HeightConfig, st: ChainState) -> ChainState {
   }
 }
 
-// §4 process_height_events(σ): three branches in the document's order. The finality branch falls through — it mutates
-// (F, h_F) and the two height branches then read the mutated state. Justification has priority over progress.
-// The justification write (J, h_j) ← (T_h, h) uses the height being left, so the new height is h_j + 1.
+// §4 process_height_events(σ): 文書の順に三つの枝を適用した chain state を返す。
+// finality の枝は fall through する。(F, h_F) を書き換え、続く二つの高さの枝は書き換え後の状態を読む。
+// justification は progress より優先する。justification の書き込み (J, h_j) ← (T_h, h) は離れる側の高さを使うので、
+// 新しい高さは h_j + 1 になり、このとき finalize も空にする。
+// 引数は環境 e、設定 cfg、状態 st。
+// 手書き `process_height_events` の写し。
 fn processHeightEvents(e: ProtocolEnv, cfg: HeightConfig, st: ChainState) -> ChainState {
   let afterFinality = if finalityReady(e, st) { ChainState { f: st.j, hF: st.hJ, ..st } } else { st };
   if targetReady(e, afterFinality) {
@@ -216,40 +278,55 @@ fn processHeightEvents(e: ProtocolEnv, cfg: HeightConfig, st: ChainState) -> Cha
 
 // ── Entry-bound row interpretation and block folding ──
 
-// One unified height/entry match (手書き `TimeoutBinding.targetedHeightPair`). A mismatch erases only the height field;
-// the base row still supplies the original finality component.
+// 名前付き行 row の高さ対を、chain state st の (h, T_h の root) に照らして解釈した高さ対を返す。
+// 一致すれば名前を消した高さ対(eraseHeightPair)、不一致なら Empty。不一致で消えるのは高さ欄だけで、
+// 元の finality 成分は基底の行がそのまま供給する。
+// 手書き `TimeoutBinding.targetedHeightPair` の写しで、一致判定は matchesEntry(手書き `NamedHeightPair.matchesEntry`)。
 fn targetedHeightPair(st: ChainState, row: NamedAttestation) -> HeightPair {
   if matchesEntry(row.heightPair, st.h, root(st.tH)) { eraseHeightPair(row.heightPair) } else { HeightPair.Empty }
 }
 
-// The targeted binding's view of a row: the erased row with its height pair reinterpreted against the chain state
-// (手書き `TimeoutBinding.view` at `targeted`). The signer, SG projection and finality pair are preserved.
+// targeted binding から見た名前付き行の解釈、つまり高さ対を chain state に照らして解釈し直した結合 attestation を返す。
+// 名前を消した行(eraseAttestation)の高さ対だけを targetedHeightPair の結果に差し替え、
+// 署名者、SG の射影、finality 対はそのまま保つ。
+// 手書き `TimeoutBinding.view` を `targeted`(Row = NamedAttestation、base = 手書き `NamedAttestation.erase`)で具体化したもの。
 fn targetedView(st: ChainState, row: NamedAttestation) -> CombinedAttestation {
   CombinedAttestation { heightPair: targetedHeightPair(st, row), ..eraseAttestation(row) }
 }
 
-// The leaf adapter calls the existing processor once, on the interpreted row.
+// 解釈済みの行に対して既存の processAttestation を一度だけ呼ぶ葉のアダプタで、新しい chain state を返す。
+// finality や高さの処理は複製せず、targetedView で結合 attestation にしてから processAttestation に渡すだけ。
+// 手書き `process_attestation_with` を targeted binding に固定した写し。
 fn processAttestationWith(st: ChainState, row: NamedAttestation) -> ChainState {
   processAttestation(st, targetedView(st, row))
 }
 
-// Row-parametric block folding, at the targeted binding: s ← geometry.slot before the fold, L ← geometry after it.
+// 行を畳み込むブロック処理を返す(targeted binding に固定)。畳み込みの前に s ← geometry.slot とし、後に L ← geometry とする。
+// 引数は開始状態 st、ブロックの形 geometry、名前付き行の列 rows。rows を前から processAttestationWith で畳む。
+// 手書き `fold_rows` の写しで、binding を引数にせず targeted に固定した。
 fn foldRows(st: ChainState, geometry: Block, rows: List<NamedAttestation>) -> ChainState {
   let folded = rows.fold(ChainState { s: slot(geometry), ..st }, |acc, row| processAttestationWith(acc, row));
   ChainState { l: geometry, ..folded }
 }
 
-// The folded rows followed by the height events.
+// 行の畳み込みの後に height event を適用した chain state を返す。
+// foldRows の結果に processHeightEvents を適用するだけの合成。
+// 手書き `transition_rows` の写しで、binding を targeted に固定した。
 fn transitionRows(e: ProtocolEnv, cfg: HeightConfig, st: ChainState, geometry: Block, rows: List<NamedAttestation>) -> ChainState {
   processHeightEvents(e, cfg, foldRows(st, geometry, rows))
 }
 
-// This binding uses exactly the named block's own signed rows.
+// 名前付きブロック b に対する一回の state transition を返す。このブロック自身の署名付き行だけを使う。
+// ブロックの形は名前を消したブロック(eraseBlock)、行はブロックの namedAttestations で、transitionRows に渡す。
+// 手書き `named_transition` の写し(手書き `NamedBlock.erase` に当たる名前消去を eraseBlock で行う)。
 fn namedTransition(e: ProtocolEnv, cfg: HeightConfig, st: ChainState, b: NamedBlock) -> ChainState {
   transitionRows(e, cfg, st, eraseBlock(b), namedAttestations(b))
 }
 
-// Deterministic named derivation from recursively retained full metadata: σ[B] = state_transition(σ[B.parent], B).
+// 再帰的に保持した完全なメタデータから、名前付きブロック b の chain state を決定的に導出する。
+// σ[B] = state_transition(σ[B.parent], B) で、Genesis なら初期状態、Node なら親の導出結果に namedTransition を適用する。
+// 失敗する結果は無い。
+// 手書き `derive_named` の写し。
 fn deriveNamed(e: ProtocolEnv, cfg: HeightConfig, b: NamedBlock) -> ChainState {
   match b {
     NamedBlock.Genesis => initialChainState(),

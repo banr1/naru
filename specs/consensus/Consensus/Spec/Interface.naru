@@ -30,11 +30,19 @@ import Consensus.Execution.Run
 import Consensus.Spec.Execution
 import Consensus.Spec.Accountability
 
-// The three user-facing outputs, as getters on the node state (手書き `Interface.confirmed` / `stable` / `finalized`).
+// 利用者に見える 3 つの出力(Confirmed / Stable / Finalized)を名指しする列挙型である。
+// Confirmed は confirmed チェーン、Stable は stable チェーン、Finalized は finalized なブロックを指す。
+// 手書きの出力は「ノード状態から Block を返す getter」(`Output`)で、naru は値として関数を持てないので、
+// getter が 3 つしか無いことを使い、この列挙型の値で出力を選ぶ。getter の実体は outputAt が対応付ける。
+// SafeFrom / IncludedFrom / LiveFrom などの Properties が出力を引数に取り、AvailableAt など Claims の宣言がその値を指定する。
+// 手書き `Output` / `Interface.confirmed` / `Interface.stable` / `Interface.finalized` に当たる。
 enum Output { Confirmed, Stable, Finalized } derive eq
 
-// The output `g` read at node `v` and time `t` (手書き `readAt P rho g v t` with `interface S`'s getters:
-// `get_confirmed n.st.core` / `get_stable n.st.core` / `n.st.core.F`).
+// run rho でノード v が時刻 t に読む出力 g のブロックを返す。
+// storeAt(s, rho, v, t).core の状態に対し、Confirmed なら getConfirmed、Stable なら getStable、
+// Finalized なら finalized な欄 st.f を返す(手書きの getter `get_confirmed n.st.core` / `get_stable n.st.core` /
+// `n.st.core.F` の対応)。手書き `readAt`(`interface S` の getter を渡した場合)に当たり、
+// 手書き `readAt` の引数 P rho g v t のうち getter g を引数に取るところを、列挙型 Output の分岐に置き換えた。
 fn outputAt(g: Output, s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Block {
   let st = storeAt(s, rho, v, t).core;
   match g {
@@ -44,62 +52,114 @@ fn outputAt(g: Output, s: Setup, rho: NamedRun, v: ValidatorId, t: Time) -> Bloc
   }
 }
 
-// The prepared read of slot `k`'s proposer at the proposal time: strict read, clock staged, and cache prepared.
+// スロット k の proposer が提案時刻に行う準備済みの読みを返す。
+// confirmationReadAt(s, rho, proposer(k), proposalTime(s.e, k)) で、厳密な読み・時計の段階付け・cache の準備を済ませた状態。
+// proposedBlockAt が提案の義務を実行する入力になる。
+// 手書き `proposerReadAt` に当たり、式は手書きと同じ(手書きの Protocol.proposal_time は proposalTime)。
 fn proposerReadAt(s: Setup, rho: NamedRun, k: Slot) -> NamedNodeState {
   confirmationReadAt(s, rho, proposer(k), proposalTime(s.e, k))
 }
 
-// The block the named proposal duty computes, with the full pool-and-carried attestation rows and source label, if the
-// parent body is retained (手書き `proposedBlockAt`; `NamedProfile.gradeContract n.cache` は naru では `n.cache` そのもの).
+// 名前付きの提案義務が計算するブロックを、親の本体が保持されていれば Some で、無ければ None で返す。
+// proposerReadAt(s, rho, k) の状態 n に対し、n.cache・ProposalRowSource.PoolAndCarried・s.e・s.hc・
+// proposer(k) のノード設定・n.st で proposalWith を呼ぶ(attestation の行は pool と carried の全部、source ラベル付き)。
+// proposedBlock が eraseBlock で名前を消した結果を返し、その元になる。
+// 手書き `proposedBlockAt` に当たる。手書きの NamedProfile.gradeContract n.cache は naru では n.cache そのもの。
 fn proposedBlockAt(s: Setup, rho: NamedRun, k: Slot) -> Option<NamedBlock> {
   let n = proposerReadAt(s, rho, k);
   proposalWith(n.cache, ProposalRowSource.PoolAndCarried, s.e, s.hc, setupNode(proposer(k)), n.st)
 }
 
-// The block the proposal duty produces for slot `k` on the prepared read, erased (手書き `interface.proposedBlock`).
+// スロット k で準備済みの読みに対し提案義務が作るブロックを、名前を消して返す。
+// proposedBlockAt(s, rho, k) の結果に eraseBlock を map したもので、親の本体が無ければ None になる。
+// 手書き `Interface.proposedBlock`(`interface S` の欄 `(proposedBlockAt S rho s).map NamedBlock.erase`)に当たる。
 fn proposedBlock(s: Setup, rho: NamedRun, k: Slot) -> Option<Block> {
   proposedBlockAt(s, rho, k).map(|b| eraseBlock(b))
 }
 
-// Round `r` owns the half-open action window [a_r, a_{r+1}); times below a_0 clamp to round 0 (手書き `actionRound`).
-// 手書きの Int の `/` は被除数が非負(t ≥ a_0 = 6Δ)で除数が正なので床除算 `fdiv` と一致する。
+// 時刻 t が属する行動ラウンドを返す。ラウンド r は半開区間 [a_r, a_{r+1}) を持ち、a_0 より前の時刻は 0 に切り詰める。
+// t が a_0 未満なら 0、そうでなければ (t - 6Δ) を a_1 - a_0 で床除算して Nat にする。
+// 手書きの Int の `/` は被除数が非負(t >= a_0 = 6Δ)で除数が正なので、床除算 fdiv と一致する。
+// 公開環境の awake だけがこの値を使う(envAwake)。手書き `actionRound` に当たり、式は手書きと同じ。
 fn actionRound(s: Setup, t: Time) -> Round {
   if t < setupActionTime(s, 0) { 0 }
   else { (t - 6 * s.e.delta).fdiv(setupActionTime(s, 1) - setupActionTime(s, 0)).toNat() }
 }
 
-// Who is awake when, on the public environment (手書き `env.awake`): the node's round participation at the action round.
+// 公開環境で、ノード v が時刻 t に awake かどうかを返す。
+// actionRound(s, t) のラウンドでの Schedule.naru の入力 awake(v, ラウンド)の値で、時刻ではなくラウンド単位の参加を表す。
+// Conditions.naru の awakeAt や AwakeInExactly などの参加人数の前提が、この関数で awake を判定する。
+// 手書き `Env.awake`(`interface` と対の `env S` の欄 `awake := fun v t => (S.node v).awake (actionRound S t)`)に当たる。
 fn envAwake(s: Setup, v: ValidatorId, t: Time) -> Bool { awake(v, actionRound(s, t)) }
 
-// Slots at which a period opens; used only by the recurrence premises (手書き `interface.opening`).
+// スロット k が period の開始スロットであることを表す述語である。
+// あるラウンド r があって k == openingSlot(s.hc, r) となることを意味する(exists r: Round)。
+// 再発(recurrence)の前提だけが使い、proposer が honest な連続スロットの先頭を指すのに Conditions.naru が呼ぶ。
+// 手書き `Interface.opening` の欄(`opening := fun s => ∃ r, s = S.hc.opening_slot r`)に当たる。
+// 手書きの命題の欄を spec 宣言(述語)に写したもので、Statements に現れる。
+// 引数は Setup s とスロット k で、s.hc の開始スロット関数を通してラウンドと結びつく。
 predicate Opening(s: Setup, k: Slot) { exists r: Round { k == openingSlot(s.hc, r) } }
 
-// Certificate `c` finalizes target `target` (手書き `interface.finalizes`).
+// 証明書 c が target を finalize することを表す述語である。
+// ある高さ h があって NamedFinalizedAt(s.e, s.cfg, c, target, h) が成り立つこと(exists h: Height)を意味する。
+// 高さは存在量化されるので、c の派生状態が持つ finalized な高さがどれでもよい。
+// claim certificatesAccountable が、2 つの証明書の finalize を前提にして互換か証拠ありを結論とする。
+// 手書き `Interface.finalizes`(`fun c T => ∃ h, NamedFinalizedAt S.E S.cfg c T h`)に当たる。
+// NamedFinalizedAt は証明書の派生状態が (F, h_F) = (target, h) を持つ内部の述語で、手書き `NamedFinalizedAt` に当たる。
 predicate Finalizes(s: Setup, c: NamedBlock, target: Block) {
   exists h: Height { NamedFinalizedAt(s.e, s.cfg, c, target, h) }
 }
 
-// The certificate roots satisfy the model's collision-free idealization (手書き `interface.collisionFree`).
+// 2 つの証明書の root が、モデルの衝突なしの理想化を満たすことを表す述語である。
+// 2 つの証明書から eraseBlock で名前を消したブロックに RootInjectiveOnAncestors を当てる。
+// つまり祖先の上で root が単射である(異なるブロックが同じ root を持たない)という仮定を指す。
+// claim certificatesAccountable の前提に置かれ、ハッシュが衝突しない場合だけを扱うために必要になる。
+// 手書き `Interface.collisionFree`(`fun c c' => RootInjectiveOnAncestors c.erase c'.erase`)に当たる。
+// 引数に Setup は無く、2 つの証明書 c と c2(どちらも NamedBlock)だけを取る。
 predicate CollisionFree(c: NamedBlock, c2: NamedBlock) { RootInjectiveOnAncestors(eraseBlock(c), eraseBlock(c2)) }
 
-// Two certificates contain slashable evidence (手書き `interface.evidence`).
+// 2 つの証明書が slash 可能な証拠を含むことを表す述語である。
+// 2 つの証明書から eraseBlock で名前を消したブロックの chainAttestations の間に、
+// HasSlashableWeightBetween(s.e, …)が成り立つこと(slash 可能な重みがあること)を意味する。
+// claim certificatesAccountable の結論の選言の片側で、finalize した対象が互換でないときの説明責任を担う。
+// 手書き `Interface.evidence`(`HasSlashableWeightBetween S.E (chain_attestations c.erase) …`)に当たる。
+// 引数は Setup s(選挙人 s.e を通して重みを測る)と 2 つの証明書 c・c2。
 predicate Evidence(s: Setup, c: NamedBlock, c2: NamedBlock) {
   HasSlashableWeightBetween(s.e, chainAttestations(eraseBlock(c)), chainAttestations(eraseBlock(c2)))
 }
 
-// Two node states hold slashable evidence against each other (手書き `interface.slashable`).
+// 2 つのノード状態が互いに対して slash 可能な証拠を持つことを表す述語である。
+// n.st.core と n2.st.core の storeAttestations の間に HasSlashableWeightBetween(s.e, …)が成り立つこと。
+// 証明書ではなくノードの状態に対する版の evidence である。
+// 手書き `Interface.slashable`(`HasSlashableWeightBetween S.E (store_attestations n.st.core) …`)に当たる。
+// Properties.naru の AccountablyConsistentFrom が、読みが互換でないときの証拠としてこの述語を使い、
+// claim finalizedAccountable の結論 AccountablySafeFrom を通じて説明責任の主張に入る。
 predicate SlashableStates(s: Setup, n: NamedNodeState, n2: NamedNodeState) {
   HasSlashableWeightBetween(s.e, storeAttestations(n.st.core), storeAttestations(n2.st.core))
 }
 
-// Certificate `c` is attributable to blocks in the run (手書き `interface.inRun`).
+// 証明書 c が run のブロックに帰属できることを表す述語である。
+// Spec/Execution.naru の BlockInRun(s, rho, c) をそのまま呼ぶ(run の範囲のブロックであること)。
+// Interface の欄として証明書を run に結びつける役で、引数は Setup s・run rho・証明書 c。
+// 手書き `Interface.inRun`(`fun rho c => NamedRun.blockInRun S rho c`)に当たる。
+// Conditions.naru の SlashableBound が、run の中の 2 つの証明書の間に slash 可能な証拠が無いという前提に使う。
+// 証明書は NamedBlock で、run の中のブロックの祖先であれば帰属できる(BlockInRun の定義による)。
 predicate InRun(s: Setup, rho: NamedRun, c: NamedBlock) { BlockInRun(s, rho, c) }
 
-// The hash idealization the protocol assumes on the blocks of a run (手書き `interface.idealization`).
+// プロトコルが run のブロックに仮定するハッシュの理想化を表す述語である。
+// Spec/Execution.naru の NamedRootCollisionFree(s, rho)をそのまま呼ぶ(run のブロックの間で root が衝突しない)。
+// CollisionFree が 2 つの証明書に対する局所の仮定なのに対し、こちらは run 全体に対する仮定である。
+// 手書き `Interface.idealization`(`idealization := NamedRootCollisionFree S`)に当たる。
+// Conditions.naru の run の整形性の条件が、この述語を他の条件と && で束ねて使う。
+// 手書きでは前提 RunWellFormed と ExecutionValid の欄 idealization として現れ、naru でも両者を通して前提に入る。
 predicate Idealization(s: Setup, rho: NamedRun) { NamedRootCollisionFree(s, rho) }
 
-// Two reads of the run, at any nodes and any times, hold evidence attributable to `v`; the evidence-holding nodes need
-// not be honest (手書き `interface.slashes`).
+// run の 2 つの読みが、検証者 v に帰属する証拠を持つことを表す述語である。
+// 任意のノード u・u2 と任意の時刻 t・t2 があり、それぞれの storeAt の core の storeAttestations の間に
+// SlashableBetween(…, v)が成り立つこと(exists u u2 t t2)を意味し、証拠を持つノードが honest である必要は無い。
+// claim honestNeverSlashed が、honest な v について !Slashes(s, rho, v) を結論にする。
+// 手書き `Interface.slashes`(`slashes := fun rho v => ∃ u u' t t', SlashableBetween …`)に当たる。
+// 引数は Setup s・run rho・検証者 v で、Evidence や SlashableStates と違い、証拠が v 個人に帰属する点を述べる。
 predicate Slashes(s: Setup, rho: NamedRun, v: ValidatorId) {
   exists u: ValidatorId { exists u2: ValidatorId { exists t: Time { exists t2: Time {
     SlashableBetween(storeAttestations(storeAt(s, rho, u, t).core), storeAttestations(storeAt(s, rho, u2, t2).core), v)

@@ -21,35 +21,56 @@ import Consensus.Objects.NamedBlocks
 
 // ── §5.3 The anti-slashing record ──
 
-// §5.3 the record Λ: for every height the validator's first target, whether it emitted an empty-target vote, and the
-// target of its first finality pair. Targets are roots. The record carries no validator parameter.
+// §5.3 の anti-slashing 記録 Λ で、各高さの初回 target・空 target 投票の有無・初回 finality pair の target を持つ。
+// 手書き `Record` に対応する。欄 target は高さごとの最初の target の根(未記録の高さは表に無い = ⊥)。
+// 欄 timeout は空 target 投票(timeout)を出した高さの集合で、手書き側の `Height → Bool` を集合で持つ。
+// 欄 lock は高さごとの最初の finality pair の target の根(表に無い = ⊥)で、手書き `Record.lock` に当たる。
+// target は block ではなく根(BlockId)で持ち、記録は 1 人の検証者のものなので検証者の引数は持たない。
+// 手書き側の `Height → …` の全域写像は Table / Set に置き換えたが、読みの結果(既定 (⊥, false, ⊥))は同じになる。
+// 手書き `NamedRecord` の timeoutHistory は含まず、それは下の NamedRecord が別に持つ。
 record Record { target: Table<Height, BlockId>, timeout: Set<Height>, lock: Table<Height, BlockId> } derive eq
 
-// §5.3 the initial record: (⊥, false, ⊥) at every height.
+// §5.3 の初期記録を返し、どの高さでも (⊥, false, ⊥) になる。
+// 3 つの欄をすべて空の表・空の集合にするだけで、手書き `Record.initial` の定数関数に対応する。
+// 検証者ごとの記録の出発点で、initialNamedRecord の legacy 欄にも使う。
 fn initialRecord() -> Record { Record { target: Table.empty(), timeout: Set.empty(), lock: Table.empty() } }
 
-// §5.3 Λ.target[h]
+// §5.3 の Λ.target[h] を読み、高さ h で初めて出した target の根を返す(未記録なら None = ⊥)。
+// 表の get? をそのまま呼ぶ読み取りで、手書き `Record` の欄 target の適用に当たる。
+// finalityPair・heightPair・recordAttestation の判定がこの読みを使う。
 fn recordTarget(rec: Record, h: Height) -> Option<BlockId> { rec.target.get?(h) }
 
-// §5.3 Λ.timeout[h]
+// §5.3 の Λ.timeout[h] を読み、高さ h で空 target 投票を出したかを返す。
+// 集合の contains で判定する読み取りで、手書き `Record` の欄 timeout の適用に当たる。
+// heightPair の最初の分岐(timeout 済みなら timeout を繰り返す)と finalityPair の拒否条件が使う。
 fn recordTimeout(rec: Record, h: Height) -> Bool { rec.timeout.contains(h) }
 
-// §5.3 Λ.lock[h]
+// §5.3 の Λ.lock[h] を読み、高さ h の最初の finality pair の target の根を返す(未記録なら None = ⊥)。
+// 表の get? をそのまま呼ぶ読み取りで、手書き `Record` の欄 lock の適用に当たる。
+// 同じ attestation 自身の lock を重ねて読む ownLock は、この読みを土台にしている。
 fn recordLock(rec: Record, h: Height) -> Option<BlockId> { rec.lock.get?(h) }
 
-// §5.3 Λ.target[h] ← T
+// §5.3 の Λ.target[h] ← T を行い、高さ h の target を t にした記録を返す。
+// 表への insert なので、h 以外の高さは変わらない。手書き `Record.with_target` に対応する。
+// 書き込みの是非(初回のみ)は呼び出し側の recordAttestation が判断し、ここでは上書きの有無を見ない。
 fn withTarget(rec: Record, h: Height, t: BlockId) -> Record { Record { target: rec.target.insert(h, t), ..rec } }
 
-// §5.3 Λ.timeout[h] ← true
+// §5.3 の Λ.timeout[h] ← true を行い、高さ h を timeout 済みにした記録を返す。
+// 集合への insert なので、すでに入っていても結果は同じ(冪等)。手書き `Record.with_timeout` に対応する。
+// 集合は true の高さしか持たないため、false を書く操作は存在しない。
 fn withTimeout(rec: Record, h: Height) -> Record { Record { timeout: rec.timeout.insert(h), ..rec } }
 
-// §5.3 Λ.lock[h] ← J
+// §5.3 の Λ.lock[h] ← J を行い、高さ h の lock を j にした記録を返す。
+// 表への insert なので、h 以外の高さは変わらない。手書き `Record.with_lock` に対応する。
+// finality pair を出した attestation を畳み込むときだけ recordAttestation から呼ばれる。
 fn withLock(rec: Record, h: Height, j: BlockId) -> Record { Record { lock: rec.lock.insert(h, j), ..rec } }
 
 // ── §5.3 The pair rules and the record interface ──
 
-// §5.3 finality_pair(Λ, h_j, J, h_F): (h_j, J) exactly when a justification is not yet finalized and the record allows it
-// (target[h_j] empty or J, no timeout at h_j, lock[h_j] empty or J); otherwise the empty pair. Does not write the lock.
+// §5.3 finality_pair(Λ, h_j, J, h_F) として、出してよいときだけ finality pair (h_j, J) を返す。
+// 条件は h_F < h_j(justification がまだ finalize されていない)かつ、記録で target[h_j] が空か J、
+// h_j に timeout が無く、lock[h_j] が空か J であること。満たさなければ空の pair(None)を返す。
+// 手書き `finality_pair` に対応し、lock は書かない(書くのは recordAttestation だけ)。
 fn finalityPair(rec: Record, hJ: Height, j: BlockId, hF: Height) -> Option<FinalityPair> {
   if hF < hJ {
     let target = recordTarget(rec, hJ);
@@ -64,8 +85,9 @@ fn finalityPair(rec: Record, hJ: Height, j: BlockId, hF: Height) -> Option<Final
   }
 }
 
-// §5.3 the lock height_pair reads: the record's lock at h_c, overridden by this attestation's own finality pair when
-// the two heights agree (so one attestation never forms E1 evidence).
+// §5.3 の height_pair が読む lock を返し、記録の lock[hC] を同じ attestation の finality pair で上書きする。
+// fp があってその高さが hC と等しければ fp の target を、そうでなければ記録の lock[hC] を返す。
+// これで 1 つの attestation が自分自身と E1 の証拠を作らない。手書き `own_lock` に対応する。
 fn ownLock(rec: Record, hC: Height, fp: Option<FinalityPair>) -> Option<BlockId> {
   match fp {
     Some(p) => if p.height == hC { Some(p.target) } else { recordLock(rec, hC) },
@@ -73,10 +95,10 @@ fn ownLock(rec: Record, hC: Height, fp: Option<FinalityPair>) -> Option<BlockId>
   }
 }
 
-// §5.3 height_pair(Λ, h_c, T_c, ν, h_f, T_f): the seven rows of the document's table, in order, with its fall-through.
-// `fields` = (h_c, T_c, ν) as one Option: `None` is the "no fresh quorum" (⊥, ⊥, ⊥) that §6 passes.
-// A validator locked elsewhere returns the empty pair (abstains); a recorded target that disagrees falls through to a
-// timeout at h_c. Both target tests are equalities, not ancestry.
+// §5.3 height_pair(Λ, h_c, T_c, ν, h_f, T_f) として、文書の表の 7 行を順に当てて height pair を返す。
+// fields は (h_c, T_c, ν) を 1 つの Option にしたもので、None は §6 が渡す「新しい quorum なし」(⊥, ⊥, ⊥)で空の pair になる。
+// 別の target に lock 済みなら空の pair(棄権)、記録済み target が食い違えば h_c の timeout に落ちる。
+// target の判定は祖先ではなく等号。手書き `height_pair` に対応し、同じ attestation の lock は ownLock で重ねる。
 fn heightPair(rec: Record, fields: Option<(Height, BlockId, Bool)>, fp: Option<FinalityPair>) -> HeightPair {
   match fields {
     None => HeightPair.Empty,
@@ -98,8 +120,10 @@ fn heightPair(rec: Record, fields: Option<(Height, BlockId, Bool)>, fp: Option<F
   }
 }
 
-// §5.3 record_attestation(Λ, a): the only writer of Λ, folding the attestation about to be released.
-// target[h] is write-once (the guard Λ.target[h] = ⊥); timeout[h] and lock[h_f] are idempotent at the emitted values.
+// §5.3 record_attestation(Λ, a) として、放出する attestation を記録に畳み込んだ新しい記録を返す。
+// 記録 Λ を書く唯一の関数で、finality pair があれば lock、height pair に応じて timeout か target を書く。
+// target[h] は書き込み一度きり(Λ.target[h] = ⊥ の守り)で、timeout[h] と lock[h_f] は同じ値なら冪等。
+// 手書き `record_attestation` に対応する。
 fn recordAttestation(rec: Record, a: CombinedAttestation) -> Record {
   let afterLock = match a.finalityPair { Some(p) => withLock(rec, p.height, p.target), None => rec };
   match a.heightPair {
@@ -109,8 +133,9 @@ fn recordAttestation(rec: Record, a: CombinedAttestation) -> Record {
   }
 }
 
-// §5.3 create_attestation(Λ, r, confirmed, h_c, T_c, ν, h_j, J, h_F): the two pair rules, then the attestation, then the
-// record — "record, then release". No store access. Returns the updated record beside the attestation.
+// §5.3 create_attestation として、2 つの pair 規則から attestation を作り、記録を更新して両方を返す。
+// 順序は finalityPair、heightPair、attestation の組み立て、recordAttestation で、「記録してから放出」を表す。
+// store には触れず、戻り値の組は (更新後の記録, 作った attestation)。手書き `create_attestation` に対応する。
 fn createAttestation(rec: Record, valIndex: ValidatorId, r: Round, confirmed: Option<BlockId>,
                      fields: Option<(Height, BlockId, Bool)>, hJ: Height, j: BlockId, hF: Height) -> (Record, CombinedAttestation) {
   let fp = finalityPair(rec, hJ, j, hF);
@@ -121,11 +146,20 @@ fn createAttestation(rec: Record, valIndex: ValidatorId, r: Round, confirmed: Op
 
 // ── Named-row signing state ──
 
-// `Record` plus the active timeout-history set. The history records timeout annotations; it never suppresses a repeated
-// transmission or replaces a height-wide target/finality lock.
+// named row の署名状態で、既存の記録 Record と、有効な timeout 履歴の集合を持つ。
+// 欄 legacy は従来どおりの Record で、高さ全体の target と finality の lock をここで守る。
+// 欄 timeoutHistory は (高さ, 項目の根) の集合で、timeout の注釈だけを残す。
+// 履歴は繰り返しの送信を抑えず、高さ全体の target / finality lock の代わりにもならない。
+// 手書き `NamedRecord` に対応し、手書きは timeoutHistory を有限集合で持つ。
+// 書き手は namedCreate だけで、初期値は initialNamedRecord が与える。
 record NamedRecord { legacy: Record, timeoutHistory: Set<(Height, BlockId)> } derive eq
 
-// Exact input fields supplied to the existing signing client (手書き `NamedRecord.Input`).
+// 既存の署名クライアントに渡す入力欄一式で、createAttestation の引数とほぼ同じ形をしている。
+// 手書き `NamedRecord.Input` に対応し、`input` が予約語なので RecordInput と改名した。
+// 欄 valIndex は署名する検証者、round は対象の round、confirmed は確認済みの根(無ければ None)。
+// 欄 fields は height pair の元になる (h, 根, NJ ビット) で、None は新しい quorum なしを表す。
+// 欄 hJ / j / hF は finality pair の元になる h_j・J の根・h_F で、head の chain state から呼出し側が取る。
+// 欄の改名は val_index → valIndex、h_j → hJ、J → j、h_F → hF。
 record RecordInput {
   valIndex: ValidatorId,
   round: Round,
@@ -136,9 +170,14 @@ record RecordInput {
   hF: Height
 } derive eq
 
+// named 署名状態の初期値を返し、legacy は初期記録、timeoutHistory は空にする。
+// 手書き `NamedRecord.initial` に対応し、手書きは Record.initial と空の有限集合の組。
+// 履歴が空であることは、まだ 1 度も timeout を出していないことを表す。
 fn initialNamedRecord() -> NamedRecord { NamedRecord { legacy: initialRecord(), timeoutHistory: Set.empty() } }
 
-// A fixed codec: the named height pair carries the source fields' entry; a timeout is the same entry with the flag set.
+// 固定の符号化で、従来の height pair を named height pair に写す。結果は fields の項目を引き継ぐ。
+// 空の pair は空、Target は Vote(h, 項目, false)、Timeout は同じ項目に旗を立てた Vote(h, 項目, true) になる。
+// fields が None のときは pair が何であっても空を返す。手書き `NamedRecord.encodeHeight` に対応する。
 fn encodeHeight(fields: Option<(Height, BlockId, Bool)>, pair: HeightPair) -> NamedHeightPair {
   match (pair, fields) {
     (HeightPair.Empty, _) => NamedHeightPair.Empty,
@@ -148,6 +187,9 @@ fn encodeHeight(fields: Option<(Height, BlockId, Bool)>, pair: HeightPair) -> Na
   }
 }
 
+// 従来の attestation の行を named attestation の行に写す。height pair だけを encodeHeight で符号化する。
+// valIndex・round・confirmed・finalityPair はそのまま引き継ぐ。
+// 手書き `NamedRecord.encodeRow` に対応する。
 fn encodeRow(fields: Option<(Height, BlockId, Bool)>, row: CombinedAttestation) -> NamedAttestation {
   NamedAttestation {
     valIndex: row.valIndex, round: row.round, confirmed: row.confirmed,
@@ -155,7 +197,9 @@ fn encodeRow(fields: Option<(Height, BlockId, Bool)>, row: CombinedAttestation) 
   }
 }
 
-// Set insertion is idempotent; membership is not an emission guard.
+// 出した named height pair が timeout の Vote(h, 項目, true) のときだけ、(h, 項目) を履歴に加えて返す。
+// 集合への挿入は冪等で、履歴に入っているかどうかは送信の可否を決めない。
+// 手書き `NamedRecord.rememberTimeout` に対応する。
 fn rememberTimeout(history: Set<(Height, BlockId)>, p: NamedHeightPair) -> Set<(Height, BlockId)> {
   match p {
     NamedHeightPair.Vote(h, entry, true) => history.insert((h, entry)),
@@ -163,12 +207,17 @@ fn rememberTimeout(history: Set<(Height, BlockId)>, p: NamedHeightPair) -> Set<(
   }
 }
 
+// 従来の署名クライアントを RecordInput で動かし、更新後の Record と従来形の attestation を返す。
+// 中身は createAttestation に入力の各欄を渡すだけ。手書き `NamedRecord.legacyCreate` に対応する。
+// 戻り値の attestation はまだ符号化前で、named 行への変換は namedCreate が encodeRow で行う。
 fn legacyCreate(rec: Record, inp: RecordInput) -> (Record, CombinedAttestation) {
   createAttestation(rec, inp.valIndex, inp.round, inp.confirmed, inp.fields, inp.hJ, inp.j, inp.hF)
 }
 
-// The base client makes all pair decisions and updates its record once. The extra history records exactly the
-// resulting named timeout pair.
+// named 署名状態で attestation を作り、更新後の状態と named attestation の行を返す。
+// pair の判断と記録の更新は従来のクライアント(legacyCreate)が 1 回だけ行い、行は encodeRow で符号化する。
+// 履歴には、結果の行の height pair が timeout のときだけその項目を足す。
+// 手書き `NamedRecord.create` に対応し、改名して namedCreate とした。
 fn namedCreate(rec: NamedRecord, inp: RecordInput) -> (NamedRecord, NamedAttestation) {
   match legacyCreate(rec.legacy, inp) {
     (newLegacy, old) => {

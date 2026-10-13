@@ -126,6 +126,17 @@ fn、`Opening` / `Finalizes` / `CollisionFree` / `Evidence` / `InRun` / `Idealiz
 record に無いので、condition `SetupWellFormed(s)` と `RunDomain(s, rho)` を各 claim の premise に足す(claim の形は
 `SetupWellFormed(s) && RunDomain(s, rho) && <regime> implies <結論>`。`RecoveredBy` が量化する `source` にも `RunDomain`)。
 
+宣言コメント(IDEAL.md 用語「宣言コメント」、C60 / C61): `specs/consensus/` 配下(`scenarios/` を含む)の各宣言(type / record / state / enum /
+input / fn / protocol / observer / scenario / predicate / condition / regime / property / claim / claim bundle。module / import / derive と scenario
+の中の `input` 文は宣言でない)の直上に、空行を挟まず `//` の連続ブロックの日本語の説明を置く。1 行目はその宣言の主張または役割の要旨 1 文、
+2 行目以降が説明(何を表すか、引数と戻り値、プロトコル上の役割と他の宣言との関係、前提がある理由、手書きの対応する定義名と写し方の差)で、
+fn は 2 行以上、それ以外は 5 行以上(上限は 10 行前後の目安)。手書きの対応物は「手書き `名前`」の形で挙げ(ファイル名を添えてよい。
+`/` で並べて複数挙げられる)、名前は `third_party/verified-consensus` の Lean の定義名(`namespace` 付きの完全名のどの後置列でもよい。
+structure の欄・inductive の構築子は `型名.名前`)に限る。式や変数付きの参照(`st.F`、`WithBot Time`)は「手書き側の `…`」「手書きでは `…`」
+と書き、「手書き `…`」/「手書きの `…`」の直後のバッククォートには置かない(`naru_test repo` が名前の実在を検査する)。対応物が無い naru
+側だけの補助は「手書きに直接の対応物は無い」と書く。コメントは字句解析で捨てられ、生成 Lean には写らない(C1 のヘッダの hash だけが変わる)。
+形と名前の実在は `naru_test repo` が検査する([testing.md](testing.md))。
+
 既知の制限: `∀` / `∃` は Lean の型の全要素を回る。`NaruStd.Set` / `NaruStd.Table` は昇順・重複なしのリストだが、その不変条件は型に
 入っていないので、`Set` / `Table` を含む型(`Run` の `honest` など)の量化は正規化されていない表現(重複・未整列)も含み、そこでは `size` や
 `==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、

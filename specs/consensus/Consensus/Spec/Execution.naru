@@ -19,7 +19,9 @@ import Consensus.Execution.Setup
 import Consensus.Execution.Node
 import Consensus.Execution.Run
 
-// The objects the tick of node `v` in state `n` at time `t` emits (手書き `(NamedNode.tick S v n t).2`).
+// ノード `v` が状態 `n` で時刻 `t` に tick したときに出力する object の列を返す。
+// `nodeTick(s, v, n, t)` の組 (次状態, 出力) のうち出力の側だけを取り出す(状態の側は捨てる)。
+// 手書き側の `(NamedNode.tick S v n t).2` に当たる式を fn にしたもので、`handles` 系の述語が参照する。
 fn tickEmits(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> List<NamedObject> {
   match nodeTick(s, v, n, t) {
     (_, out) => out,
@@ -28,23 +30,37 @@ fn tickEmits(s: Setup, v: ValidatorId, n: NamedNodeState, t: Time) -> List<Named
 
 // ── Generic/Run.lean: what a run emits and processes ──
 
-// An object appears in a tick's output (self-emission).
+// run `rho` の中で、ノード `v` が時刻 `t` の tick で object `o` を自分で出力した(自己発行)ことを表す。
+// ある添字 `i` の event が `Tick(v, t)` であり、その tick を再計算した出力 `emittedAt(s, rho, i, v, t)` に `o` が含まれる。
+// `emittedAt` は tick 直前の状態(`stateBefore`)から出力を再計算するので、event 列だけから出力が決まる。
+// 配送(`Deliver`)で届いた object は含まれない。それは `Processes` が別の枝として数える。
+// 手書き `Run.emits` の写しで、`rho.events[i]? = some (.tick v t)` を `get?(i) == Some(NamedEvent.Tick(v, t))` に、
+// `o ∈ emittedAt …` を `contains(o)` に置き換えた以外の差はない。
 predicate Emits(s: Setup, rho: NamedRun, v: ValidatorId, o: NamedObject, t: Time) {
   exists i: Nat {
     rho.events.get?(i) == Some(NamedEvent.Tick(v, t)) && emittedAt(s, rho, i, v, t).contains(o)
   }
 }
 
-// An outer object has a direct processing occurrence when it is emitted or delivered. Delivery records the handler
-// call even when the handler rejects; carried children are covered by `UnforgeableSignatures` (carried) and `HandlesAt`.
+// 外側の object `o` がノード `v` で時刻 `t` に直接の処理の機会を持つ(自己発行されたか、配送された)ことを表す。
+// 自己発行は `Emits(s, rho, v, o, t)`、配送は添字 `i` の event が `Deliver(v, o, t)` であること、の和(`||`)である。
+// 配送は、ハンドラが object を拒否する場合でも handler 呼出しとして記録されるため、受理されたかどうかは問わない。
+// ブロックに運ばれる子 object は、ここではなく `UnforgeableSignatures`(carried)と `HandlesAt` の側で扱う。
+// 手書き `Run.processes` の写しで、定義の形(emits または deliver の存在)は同じである。
+// 引数 `s` は `Emits` が tick の出力を再計算するために使う。
 predicate Processes(s: Setup, rho: NamedRun, v: ValidatorId, o: NamedObject, t: Time) {
   Emits(s, rho, v, o, t) || exists i: Nat { rho.events.get?(i) == Some(NamedEvent.Deliver(v, o, t)) }
 }
 
 // ── Execution/Instance.lean: the handler-call relation and structural containment ──
 
-// A block handler call for `b` at the node of `ev`: a delivery of `b` (the store before the call is the node's store),
-// or a tick that emits `b` (the store before the call is the clock-staged store).
+// event `ev` の node で、ブロック `b` に対する handler 呼出しが起き、その直前の store が `before` であることを表す。
+// 呼出しは 2 通り。`b` の配送(`Deliver`)なら直前の store はノードの store `n.st` そのもの。
+// `b` を出力する tick(`tickEmits` に含まれる)なら、直前の store は時計を `t` に進めた `setClock(s.e, n.st, t)` である。
+// `Handles` が Goldfish 票や attestation を「ブロックが運ぶ子」として数えるとき、そのブロックが呼出しで新たに木や `bodies` に
+// 入るかを判定するための、呼出し直前の store を与える。
+// 手書き `handles` の中の局所定義 `blockCall` を、名前を持つ述語として切り出したもの(本体は同じ二択)。
+// 引数 `ev` は呼出しを起こした event で、その node は `eventNode(ev)` で得る。
 predicate BlockCall(s: Setup, n: NamedNodeState, ev: NamedEvent, b: NamedBlock, before: NamedStore) {
   (exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Block(b), t) && before == n.st })
     || (exists t: Time {
@@ -54,9 +70,12 @@ predicate BlockCall(s: Setup, n: NamedNodeState, ev: NamedEvent, b: NamedBlock, 
        })
 }
 
-// In state `n`, event `ev` makes the node handle object `o`: directly (emitted by the tick, or delivered), or carried
-// inside a block when that block enters the relevant named collection. It records a call, not whether the handler
-// accepts the object.
+// ノード状態 `n` で event `ev` が起きたとき、ノードが object `o` を handler で扱う(呼び出す)ことを表す。
+// 直接の場合(tick が `o` を出力する、または `o` が配送される)と、ブロックに運ばれる場合がある。
+// Block は直接の場合のみ。GfVote はブロック内の `namedGfVotes(b)` の `j` 番目として、そのブロックが木 `core.tree` に新たに入る
+// (呼出し前に無く `postCore` の後にある)場合も含む。Attest は同様に `namedAttestations(b)` の行で、`bodies` に新たに入る場合を含む。
+// 呼出しの記録であり、ハンドラが受理したかどうかは表さない(受理は `AcceptsAt`)。
+// 手書き `handles` の写しで、`blockCall` は `BlockCall` に、`B.erase` は `eraseBlock(b)` に、`(NamedNode.tick …).2` は `tickEmits` に当たる。
 predicate Handles(s: Setup, n: NamedNodeState, ev: NamedEvent, o: NamedObject) {
   match o {
     NamedObject.Block(b) =>
@@ -89,7 +108,12 @@ predicate Handles(s: Setup, n: NamedNodeState, ev: NamedEvent, o: NamedObject) {
   }
 }
 
-// An object structurally contains another object: a block carries its Goldfish votes and attestation rows.
+// object `o` が構造上 object `o2` を運ぶ(含む)ことを表す。
+// ブロックは自分の Goldfish 票(`namedGfVotes`)と attestation の行(`namedAttestations`)を運び、
+// `o2` がそのいずれかを包んだ object(`GfVote(u)` または `Attest(a)`)に等しければ真である。
+// GfVote と Attest は何も運ばないので常に偽である。
+// 手書き `carries`(`Execution.spec` の欄 `carries`)の写しで、手書きの「存在する u ∈ B.gf_votes」を `any` で書いた。
+// 引数の順は「運ぶ側 `o`、運ばれる側 `o2`」で、逆向きには使わない。
 predicate Carries(o: NamedObject, o2: NamedObject) {
   match o {
     NamedObject.Block(b) =>
@@ -99,8 +123,12 @@ predicate Carries(o: NamedObject, o2: NamedObject) {
   }
 }
 
-// The handler call recorded at index `i`. A handler call may reject the object; the false-to-true `processed`
-// transition belongs to `AcceptsAt`.
+// run `rho` の添字 `i` に記録された handler 呼出しが、ノード `v` の時刻 `t` で object `o` を扱ったことを表す。
+// 添字 `i` の event `ev` が存在し、その node が `v`、時刻が `t` で、
+// `i` 番目の event の直前の世界(`stateBefore(s, rho, i)`)での `v` の状態に対して `Handles` が成り立つ。
+// 呼出しは `o` を拒否することもあるので、`processed` が偽から真に変わる遷移はここではなく `AcceptsAt` が表す。
+// 手書き `Run.handlesAt` の写しで、`stateBefore P rho i v` を `worldAt(stateBefore(s, rho, i), v)` と書いた差がある。
+// 引数 `v` と `t` は、記録された event の node と時刻に一致していなければならない。
 predicate HandlesAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObject, t: Time) {
   exists ev: NamedEvent {
     rho.events.get?(i) == Some(ev) && eventNode(ev) == v && eventTime(ev) == t
@@ -108,7 +136,12 @@ predicate HandlesAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObj
   }
 }
 
-// An accepted call is a handler call that flips `processed` from false to true.
+// 受理された呼出し、すなわち `processed` を偽から真に変える handler 呼出しを表す。
+// 添字 `i` で `HandlesAt` が成り立ち、`i` の直前の状態ではノードの store で `o` が未処理(`!processed`)、
+// `i + 1` の直前の状態(つまり `i` の event を畳んだ後)では処理済み(`processed`)であることを要求する。
+// `HandlesAt` だけでは拒否された呼出しも含むので、受理だけを取り出すためにこの前後の比較を加える。
+// 手書き `Run.acceptsAt` の写しで、`processed … = false / true` の Bool 比較を `!processed` / `processed` と書いた。
+// 引数の並びは `HandlesAt` と同じで、`i` は呼出しを起こした event の添字である。
 predicate AcceptsAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObject, t: Time) {
   HandlesAt(s, rho, i, v, o, t)
     && !processed(worldAt(stateBefore(s, rho, i), v).st, o)
@@ -117,7 +150,12 @@ predicate AcceptsAt(s: Setup, rho: NamedRun, i: Nat, v: ValidatorId, o: NamedObj
 
 // ── Execution/Run.lean: the blocks a run puts in play ──
 
-// Full directly delivered or prefix-held bodies, before ancestor closure.
+// ブロック `b` が run に直接現れる(祖先閉包をとる前の)ことを表す。
+// 配送された payload(`runObjects(rho)`)に `Block(b)` が含まれるか、honest なノード `v` のある添字 `i` 直前の状態で
+// `b` の本体が store の `bodies` に保持されているか、のどちらか。完全なブロック本体だけを数える。
+// 祖先まで含める閉包は `BlockInRun` が行う。
+// 手書き `NamedRun.directBlockInRun` の写しで、`objects rho` は `runObjects(rho)` に当たる。
+// 後者の条件が honest に限るのは、手書き側の `v ∈ rho.honest` と同じである。
 predicate DirectBlockInRun(s: Setup, rho: NamedRun, b: NamedBlock) {
   runObjects(rho).contains(NamedObject.Block(b))
     || exists v: ValidatorId {
@@ -125,13 +163,22 @@ predicate DirectBlockInRun(s: Setup, rho: NamedRun, b: NamedBlock) {
        }
 }
 
-// Full ancestors retain their own signed payloads in the run scope.
+// ブロック `a` が run の範囲にある(直接現れるブロックの祖先である)ことを表す。
+// `DirectBlockInRun` を満たすあるブロック `b` について `namedPreceq(a, b)`(`a` が `b` の祖先または `b` 自身)が成り立つ。
+// 祖先も自分の署名つき payload を保つので、ここでの `a` は完全な named ブロックとして扱われる。
+// `NamedRootCollisionFree` が「run の範囲のブロック」を指すのにこの述語を使う。
+// 手書き `NamedRun.blockInRun` の写しで、`NamedBlock.Preceq` は `namedPreceq` に当たる。
+// `namedPreceq` が反射的なら、直接現れるブロック自身もこの述語を満たす。
 predicate BlockInRun(s: Setup, rho: NamedRun, a: NamedBlock) {
   exists b: NamedBlock { DirectBlockInRun(s, rho, b) && namedPreceq(a, b) }
 }
 
-// Root collision freedom across every block the run puts in play: two named blocks below blocks in the run with one
-// root are the same block (the hash idealization; IDEAL.md「理想化」).
+// run が扱うすべてのブロックにわたって root が衝突しない(root 単射である)ことを表す。
+// run の範囲のブロック `b`, `c`(`BlockInRun`)の祖先 `a`, `d` の root が等しければ、`a == d` である。
+// ハッシュの衝突が起きないという理想化(IDEAL.md「理想化」)を、run ごとの前提として明示したもの。
+// 手書きでは構造体の欄 `root_injective` が主張で、ここでは欄が 1 つなのでそのまま命題 1 つに畳んでいる。
+// 手書き `NamedRootCollisionFree` / `NamedRun.blockInRun` の写しで、`Preceq` の選言も同じ形に並べている。
+// 引数 `s` は `BlockInRun` が各ノードの store を再構成するために使う。
 predicate NamedRootCollisionFree(s: Setup, rho: NamedRun) {
   forall b: NamedBlock { forall c: NamedBlock {
     BlockInRun(s, rho, b) && BlockInRun(s, rho, c) implies

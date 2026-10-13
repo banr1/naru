@@ -28,26 +28,52 @@ import Consensus.Execution.Setup
 
 // ── Instantiation/RoundTimes.lean ──
 
-// Natural-number ceiling division (手書き `Nat.ceilDiv`): (a + b − 1) / b.
+// 自然数の切り上げ除算 (a + b - 1) / b を返す補助関数。
+// a が被除数、b が除数で、戻り値は a / b の切り上げ。a = 0 なら 0 を返す。
+// Nat の引き算は 0 で止まり、除数 b = 0 では除算が 0 を返すので、b = 0 のとき結果は 0 になる。
+// Mathlib の `Nat.ceilDiv`(記法 ⌈/⌉)に当たり、手書き `nextRound` の天井除算に使われる。
+// 手書きに直接の対応物は無い(手書きは Mathlib の `Nat.ceilDiv` をそのまま呼ぶ)。
 fn ceilDiv(a: Nat, b: Nat) -> Nat { (a + b - 1) / b }
 
-// `period` is one SG round: R slots of 4Δ, i.e. a_1 − a_0 = 4ΔR (手書き `constants.period`).
+// SG の 1 ラウンドの長さ(行動時刻の間隔)a_1 - a_0 を Time で返す。
+// 引数 s は Setup で、setupActionTime(s, 1) - setupActionTime(s, 0) を計算する。
+// 手書きの doc では R スロット × 4Δ すなわち 4ΔR に等しい(本体は差を取るだけ)。
+// 手書き `Constants.period` の値(手書き `constants` の欄 `period := S.a 1 - S.a 0`)に当たり、
+// roundPeriod・participationWindow・participationLag・各 delay の「期間」の単位として使われる。
 fn period(s: Setup) -> Time { setupActionTime(s, 1) - setupActionTime(s, 0) }
 
-// The positive action period in Nat form (手書き `roundPeriod`).
+// 行動周期 period(s) を Nat に直した値を返す。
+// period(s).toNat() で、負なら 0 に切り詰められる(正であることは SetupWellFormed が保証する)。
+// nextRound の天井除算の除数として使う。
+// 手書き `roundPeriod` に当たり、定義は手書きと同じ(Int.toNat (S.a 1 - S.a 0))。
 fn roundPeriod(s: Setup) -> Nat { period(s).toNat() }
 
-// The first round whose action time is at or after `t`: max 0 ⌈(t − a_0) / period⌉ (手書き `nextRound`).
+// 行動時刻が時刻 t 以後になる最初のラウンドを返す。
+// max 0 ⌈(t - a_0) / period⌉ に相当し、t が a_0 以前なら (t - a_0).toNat() が 0 になるのでラウンド 0 になる。
+// 引数は Setup s と時刻 t、戻り値は Round。天井除算は ceilDiv、除数は roundPeriod(s)。
+// roundAt の本体であり、recoveryRound が基準時刻 t0 を丸めるときに使う。
+// 手書き `nextRound` に当たり、写し方の差は無い(手書きの Nat.ceilDiv を ceilDiv に置いただけ)。
 fn nextRound(s: Setup, t: Time) -> Round { ceilDiv((t - setupActionTime(s, 0)).toNat(), roundPeriod(s)) }
 
-// The public historical name for `nextRound` (手書き `roundAt`).
+// 時刻 t 以後で最初の行動ラウンドを返す。nextRound の公開名である。
+// 引数は Setup s と時刻 t で、戻り値は nextRound(s, t) そのもの。
+// recoveryRound が基準時刻 t0 をラウンドに直すときにこの名前で呼ぶ。
+// 手書き `roundAt` に当たり、手書きも `nextRound S t` を返すだけの別名なので写し方に差は無い。
 fn roundAt(s: Setup, t: Time) -> Round { nextRound(s, t) }
 
-// The bounded phase-start lag in rounds (手書き `boundedPhaseStartLag`).
+// 有界な phase 開始の遅れをラウンド数で返す。
+// gap は再発の間隔(period 単位)、extra は 2 を超える追加の timeout ラウンド数(extraRounds)。
+// (4 gap + 12 + 2 extra) + 3 gap + 10 + 2 extra で、手書きの doc では前半が gap に依る grade の作業、
+// 次の項が 3 回の progress lag、残りが引き継ぎと追加 timeout ラウンドを賄う。
+// recoveryRound が使う。手書き `boundedPhaseStartLag` に当たり、式は手書きと同じ。
 fn boundedPhaseStartLag(gap: Nat, extra: Nat) -> Nat { (4 * gap + 12 + 2 * extra) + 3 * gap + 10 + 2 * extra }
 
-// The recovery round starts after the rounded reference time, the bounded phase-start lag, the two progress lags, the SG
-// lookback, and the recurrence gap (手書き `recoveryRound`).
+// 基準時刻 t0 から回復が始まるラウンドを返す。
+// 丸めた基準時刻 roundAt(s, t0) + 1 に、有界な phase 開始の遅れ(係数 d + k + 5 を掛けた分と 1)、
+// その 2 倍の progress lag、SG の振り返り max(1 + etaSG, gap + 3)、再発の間隔 gap を足す。
+// 引数は Setup s、基準時刻 t0、再発の間隔 gap、追加 timeout ラウンド数 extra。
+// prefixEnd と recoveryEnd がこのラウンドの時刻を取るので、回復の定数 2 つの共通の土台になる。
+// 手書き `recoveryRound` に当たり、手書きの max は naru の Nat の `.max` に写した(noncomputable は不要)。
 fn recoveryRound(s: Setup, t0: Time, gap: Nat, extra: Nat) -> Round {
   roundAt(s, t0) + 1
     + (1 + (s.cfg.d + s.cfg.k + 5) * boundedPhaseStartLag(gap, extra))
@@ -56,100 +82,176 @@ fn recoveryRound(s: Setup, t0: Time, gap: Nat, extra: Nat) -> Round {
     + gap
 }
 
-// The public boundary after the opening slot and its two vote-duty slots (手書き `healingBoundaryTime`).
+// ラウンド q の開始スロットとそれに続く 2 つの投票義務スロットの後の公開境界時刻を返す。
+// openingSlot(s.hc, q) + 2 のスロットの voteTime(手書き `vote_time`)を取る。
+// recoveryEnd(回復完了時刻)と finalityStartup / finalityDeadline の時刻の基準になる。
+// 手書き `healingBoundaryTime` に当たり、式は手書きと同じ。
 fn healingBoundaryTime(s: Setup, q: Round) -> Time { voteTime(s.e, openingSlot(s.hc, q) + 2) }
 
-// The extra timeout rounds beyond two (手書きの `S.cfg.timeoutDelay / S.hc.R - 2`、切り捨て).
+// 2 ラウンドを超える追加の timeout ラウンド数を返す。
+// timeoutDelay / R を Nat の切り捨て除算で割り、2 を引く(Nat の引き算なので 0 で止まる)。
+// recoveryRound・finalityStartupRound・finalityDeadlineRound の extra 引数にここで求めた値を渡す。
+// 手書きに直接の対応物は無い(手書き `constants` の中の式 `S.cfg.timeoutDelay / S.hc.R - 2` を名前にした)。
 fn extraRounds(s: Setup) -> Nat { s.cfg.timeoutDelay / s.hc.r - 2 }
 
 // ── Instantiation/Deadlines.lean ──
 
-// The concrete startup lag for finality liveness, in rounds (手書き `Instantiation.finalityStartup`).
+// finality の liveness に必要な開始遅れを、ラウンド数で返す。
+// gap は再発の間隔、extra は追加 timeout ラウンド数。L = 7 gap + 22 + 4 extra(高さの進みの遅れ)として
+// 1 + (d + k + 5) L + 3 L + gap + 5 を計算する(手書きの doc では最後の 3 L と gap + 5 が引き継ぎ分)。
+// 手書き `finalityStartup`(Deadlines.lean の Round を返す関数)に当たる。naru では欄の finalityStartup
+// (Time を返す)と名前がぶつかるので finalityStartupRound とした。Time への変換は finalityStartup が行う。
 fn finalityStartupRound(s: Setup, gap: Round, extra: Nat) -> Round {
   1 + (s.cfg.d + s.cfg.k + 5) * (7 * gap + 22 + 4 * extra) + 3 * (7 * gap + 22 + 4 * extra) + gap + 5
 }
 
-// The concrete finality deadline after a known common finalized frontier, in rounds (手書き `Instantiation.finalityDeadline`).
+// 共通の finalized な先端が分かった後の finality の期限を、ラウンド数で返す。
+// L = 7 gap + 22 + 4 extra として (d + k + 2) * (4 L + 4 gap + 7 + (d + k + 5) * (gap + 1)) を計算する。
+// 手書きの doc では係数 d + k + 2 が高さの進みを賄い、(d + k + 5)(gap + 1) の項が再発の選択窓を賄う。
+// 手書き `finalityDeadline`(Deadlines.lean の Round を返す関数)に当たる。欄の finalityDeadline(Time)と
+// 名前がぶつかるので finalityDeadlineRound とした。Time への変換は finalityDeadline が行う。
 fn finalityDeadlineRound(s: Setup, gap: Round, extra: Nat) -> Round {
   (s.cfg.d + s.cfg.k + 2) * (4 * (7 * gap + 22 + 4 * extra) + 4 * gap + 7 + (s.cfg.d + s.cfg.k + 5) * (gap + 1))
 }
 
 // ── Instantiation/OutageWindow.lean ──
 
-// The round length of the healing schedule, a_{r+1} − a_r = 4·R·Δ (手書き `roundLength`).
+// healing の日程における 1 ラウンドの長さ a_{r+1} - a_r = 4 R Δ を Time で返す。
+// 4 * Δ(s.e.delta)* R(s.hc.r を Int にしたもの)を計算する。
+// roundAfter の除数になる。period(s) も同じ値を指すが、こちらは行動時刻の差ではなく式から直接求める。
+// 手書き `roundLength` に当たり、式は手書きと同じ。
 fn roundLength(s: Setup) -> Time { 4 * s.e.delta * s.hc.r.toInt() }
 
-// The first round whose action is at or after `tRead`: the least `r` with `tRead ≤ a_r` (手書き `roundAfter`).
+// 行動時刻が tRead 以後になる最初のラウンド(tRead <= a_r を満たす最小の r)を返す。
+// a_r = 6Δ + r * roundLength なので、(tRead - 6Δ + L - 1) を L = roundLength で床除算して Nat にする。
+// 被除数は負になりうるが、除数 L は SetupWellFormed の Δ > 0、R >= 3 で正なので fdiv は手書きの Int.ediv と一致し、
+// 負の商は toNat で 0 に切り詰められる。nextAction がこの結果の行動時刻を取る。
+// 手書き `roundAfter` に当たり、手書きの Int.ediv を fdiv に写した。
 fn roundAfter(s: Setup, tRead: Time) -> Round {
   (tRead - 6 * s.e.delta + roundLength(s) - 1).fdiv(roundLength(s)).toNat()
 }
 
-// The first round action at or after `tRead` (手書き `nextAction`).
+// 時刻 tRead 以後で最初のラウンド行動の時刻を返す。
+// roundAfter(s, tRead) のラウンドの行動時刻 setupActionTime を取る。outageStart と expiry の基準になる。
+// 手書き `nextAction` に当たり、手書きの S.a を setupActionTime に写した。
 fn nextAction(s: Setup, tRead: Time) -> Time { setupActionTime(s, roundAfter(s, tRead)) }
 
 // ── Instantiation.lean: `constants S`, one fn per field of the generic `Constants` ──
 
-// Width of the awake-history window used by `WindowMajority`: η_SG rounds.
+// WindowMajority が見る awake 履歴の窓の幅(η_SG ラウンド分)を Time で返す。
+// etaSG を Int にして period(s) を掛ける。引数は Setup s のみ。
+// 手書き `Constants.participationWindow` の値(手書き `constants` の `(S.hc.η_SG : Time) * (S.a 1 - S.a 0)`)に当たる。
+// 手書きの関数欄を Setup を取る fn に写したもので、ConstantsValid が非負を求める。
 fn participationWindow(s: Setup) -> Time { s.hc.etaSG.toInt() * period(s) }
 
-// Time offset of the sleepy and outage reference sample: one SG action round.
+// sleepy と outage の参照標本を取る時刻のずれ(SG の行動 1 ラウンド分)を Time で返す。
+// 値は period(s) そのもの。引数は Setup s のみ。
+// 手書き `Constants.participationLag` の値(手書き `constants` の `participationLag := S.a 1 - S.a 0`)に当たる。
+// 手書きの doc では、一般の regime は基準時刻が非負で run の範囲内にあることも別に要求する。
 fn participationLag(s: Setup) -> Time { period(s) }
 
-// Number of consecutive proposer slots, including the opening slot.
+// 開始スロットを含む連続した proposer スロットの個数を返す。
+// 定数 3 で、引数は取らない(引数 0 個の fn)。
+// 手書き `Constants.proposerSlots` の値(手書き `constants` の `proposerSlots := 3`)に当たる。
+// ConstantsValid が正であることを求める。
 fn proposerSlots() -> Nat { 3 }
 
-// End time of the source prefix at reference time `t0` and recurrence gap `gap`.
+// 基準時刻 t0 と再発の間隔 gap に対する、source の prefix が終わる時刻を返す。
+// recoveryRound(s, t0, gap, extraRounds(s)) のラウンドの行動時刻 setupActionTime である。
+// recoveryEnd は同じラウンドの healingBoundaryTime なので、ConstantsValid の prefixEnd <= recoveryEnd が成り立つ。
+// 手書き `Constants.prefixEnd` の値(手書き `constants` の `prefixEnd := fun t₀ gap => S.a (recoveryRound …)`)に当たる。
 fn prefixEnd(s: Setup, t0: Time, gap: Nat) -> Time {
   setupActionTime(s, recoveryRound(s, t0, gap, extraRounds(s)))
 }
 
-// Time at which the continuation counts as recovered, from reference time `t0` and recurrence gap `gap`.
+// 基準時刻 t0 と再発の間隔 gap に対する、継続が回復したとみなす時刻を返す。
+// recoveryRound(s, t0, gap, extraRounds(s)) のラウンドの healingBoundaryTime である。
+// prefixEnd と同じラウンドを使い、行動時刻ではなく開始スロット + 2 の投票時刻を取る点だけが違う。
+// 手書き `Constants.recoveryEnd` の値(手書き `constants` の `recoveryEnd := fun t₀ gap => healingBoundaryTime S …`)に当たる。
 fn recoveryEnd(s: Setup, t0: Time, gap: Nat) -> Time {
   healingBoundaryTime(s, recoveryRound(s, t0, gap, extraRounds(s)))
 }
 
-// Maximum recurrence gap, measured in periods.
+// 再発の間隔の最大値を period 単位で返す。
+// 値は s.cfg.k(高さの設定の K)。引数は Setup s のみ。
+// 手書き `Constants.maxGap` の値(手書き `constants` の `maxGap := S.cfg.K`)に当たる。
+// ConstantsValid が 2 以上を求める。finality の前提は 5 以上でないと満たせない。
 fn maxGap(s: Setup) -> Nat { s.cfg.k }
 
-// Delay from a proposal at its proposal time to confirmed inclusion: the confirmed inclusion delay.
+// 提案がその提案時刻から confirmed に取り込まれるまでの遅れ(confirmed の包含遅れ)を返す。
+// 値は 6 * Δ。引数は Setup s のみで、claim available の IncludedFrom(Output.Confirmed)が使う。
+// 手書き `Constants.confirmationDelay` の値(手書き `constants` の `confirmationDelay := 6 * S.E.Δ`)に当たる。
+// growthDelay の定数部分でもある。
 fn confirmationDelay(s: Setup) -> Time { 6 * s.e.delta }
 
-// The confirmed growth delay for recurrence gap `gap`: gap · period + confirmationDelay.
+// 再発の間隔 gap に対する confirmed の成長遅れ gap * period + confirmationDelay を返す。
+// 本体は gap * period(s) + 6 * Δ で、confirmationDelay(s) を展開した形で書いてある。
+// 手書き `Constants.growthDelay` の値(手書き `constants` の `growthDelay := fun gap => …`)に当たる。
+// claim confirmedLive が LiveFrom(Output.Confirmed)の遅れとして使い、ConstantsValid が非負を求める。
 fn growthDelay(s: Setup, gap: Nat) -> Time { gap.toInt() * period(s) + 6 * s.e.delta }
 
-// Delay from a proposal at its proposal time to stable inclusion: the stable inclusion delay.
+// 提案がその提案時刻から stable に取り込まれるまでの遅れ(stable の包含遅れ)を返す。
+// 値は 6Δ + ((1 + etaSG) * period + 2Δ)。引数は Setup s のみ。
+// 手書き `Constants.stableInclusionDelay` の値(手書き `constants` の同名の式)に当たる。
+// claim available の AvailableAt が IncludedFrom(Output.Stable)で使い、stableGrowthDelay の定数部分でもある。
 fn stableInclusionDelay(s: Setup) -> Time {
   6 * s.e.delta + ((1 + s.hc.etaSG).toInt() * period(s) + 2 * s.e.delta)
 }
 
-// The stable growth delay for recurrence gap `gap`: gap · period + stableInclusionDelay.
+// 再発の間隔 gap に対する stable の成長遅れ gap * period + stableInclusionDelay を返す。
+// 本体は stableInclusionDelay(s) を展開せず gap * period(s) + stableInclusionDelay(s) と書いている。
+// 手書き `Constants.stableGrowthDelay` の値(手書き `constants` の `stableGrowthDelay := fun gap => …`)に当たる。
+// claim stableLive が LiveFrom(Output.Stable)の遅れとして使い、ConstantsValid が非負を求める。
 fn stableGrowthDelay(s: Setup, gap: Nat) -> Time { gap.toInt() * period(s) + stableInclusionDelay(s) }
 
-// Delay from a proposal at its proposal time to stable inclusion under a fresh majority: the fast stable inclusion delay.
+// 新しい過半数のもとで提案が stable に取り込まれるまでの遅れ(速い stable の包含遅れ)を返す。
+// 値は 6Δ + (2 * period + 2Δ)で、stableInclusionDelay の (1 + etaSG) * period を 2 * period に置いた形になる。
+// 手書き `Constants.fastStableInclusionDelay` の値(手書き `constants` の同名の式)に当たる。
+// claim stableIncludedFast が IncludedFrom(Output.Stable)の遅れとして使い、ConstantsValid が非負を求める。
 fn fastStableInclusionDelay(s: Setup) -> Time { 6 * s.e.delta + (2 * period(s) + 2 * s.e.delta) }
 
-// Protocol-specific finality startup delay for recurrence gap `gap`: the finalized startup delay.
+// 再発の間隔 gap に対する、finality の開始遅れ(finalized の startup 遅れ)を Time で返す。
+// finalityStartupRound(s, gap, extraRounds(s)) + 1 のラウンドの healingBoundaryTime から a_0 を引く。
+// claim finalized が t0 + finalityStartup(s, gap) を FinalizedAt の開始時刻 t1 にする。
+// 手書き `Constants.finalityStartup` の値(手書き `constants` の欄)に当たる。ラウンド数を返す
+// 手書き `finalityStartup` とは別で、こちらは Time を返すので naru 側のラウンド版は finalityStartupRound という。
 fn finalityStartup(s: Setup, gap: Nat) -> Time {
   healingBoundaryTime(s, finalityStartupRound(s, gap, extraRounds(s)) + 1) - setupActionTime(s, 0)
 }
 
-// Protocol-specific finality inclusion deadline after startup for recurrence gap `gap`: the finalized inclusion delay.
+// 再発の間隔 gap に対する、startup 後の finality の包含期限(finalized の包含遅れ)を Time で返す。
+// finalityDeadlineRound(s, gap, extraRounds(s)) + 1 のラウンドの healingBoundaryTime から a_0 を引き、3Δ を足す。
+// FinalizedAt が IncludedFrom(Output.Finalized)の遅れと、LiveFrom の遅れ gap * period + この値に使う。
+// 手書き `Constants.finalityDeadline` の値(手書き `constants` の欄)に当たる。ラウンド数を返す
+// 手書き `finalityDeadline` とは別で、naru 側のラウンド版は finalityDeadlineRound という。
 fn finalityDeadline(s: Setup, gap: Nat) -> Time {
   healingBoundaryTime(s, finalityDeadlineRound(s, gap, extraRounds(s)) + 1) - setupActionTime(s, 0) + 3 * s.e.delta
 }
 
-// Earliest permitted outage start for the stable output read at time `tRead`.
+// 時刻 tRead に読んだ stable 出力に対し、outage が始まってよい最も早い時刻を返す。
+// nextAction(s, tRead) + period(s) + Δ で、tRead 以後の最初の行動から 1 周期と Δ だけ後になる。
+// Regimes.naru の OutageRegime が outageStart(s, tRead) <= b0 として outage の窓の始点 b0 に課す。
+// 手書き `Constants.outageStart` の値(手書き `constants` の `outageStart := fun T => …`)に当たる。
 fn outageStart(s: Setup, tRead: Time) -> Time { nextAction(s, tRead) + period(s) + s.e.delta }
 
-// The time after which votes formed for the stable output read at `tRead` may expire.
+// 時刻 tRead に読んだ stable 出力のために作られた票が、失効してよくなる時刻を返す。
+// nextAction(s, tRead) のスロットのラウンドに etaSG + 1 を足したラウンドの、GradePhase.G2 の earlyTime を取る。
+// Regimes.naru の OutageRegime が b1 + Δ <= expiry(s, tRead) として outage の窓の終点 b1 に課す。
+// 手書き `Constants.expiry` の値(手書き `constants` の `expiry := fun T => Protocol.early …`)に当たる。
+// earlyTime は手書き `early` の写しで、ConstantsValid が outageStart < expiry を求める。
 fn expiry(s: Setup, tRead: Time) -> Time {
   earlyTime(s.e, s.hc, roundOf(s.hc, slotOf(s.e, nextAction(s, tRead))) + s.hc.etaSG + 1, GradePhase.G2)
 }
 
 // ── Generic/Constants.lean: `Constants.Valid` ──
 
-// The constants are well formed: a positive period, nonnegative windows and delays, a recovery end after the prefix end,
-// and a nonempty outage window. `maxGap ≥ 2` is a sanity bound; the finality premise is satisfiable only for `maxGap ≥ 5`.
+// 定数が整っていること(正の period、非負の窓と遅れ、prefix の終端以後の回復完了、空でない outage の窓)を表す。
+// period が正、participationWindow・participationLag が非負、proposerSlots が正、maxGap が 2 以上、
+// 任意の gap に対し各 delay・finalityStartup・finalityDeadline が非負、
+// 任意の t0・gap に対し prefixEnd <= recoveryEnd、任意の tRead に対し outageStart < expiry を && で束ねる。
+// maxGap >= 2 は妥当性のための下限で、finality の前提が満たせるのは maxGap >= 5 のときだけである。
+// 手書き `Constants.Valid` に当たり、手書きの証明の欄(period_pos … outage_window_nonempty)を 1 つの条件にした。
+// claim constants が SetupWellFormed(s) を前提にこの条件を結論とする。
 condition ConstantsValid(s: Setup) {
   0 < period(s)
     && 0 <= participationWindow(s)
