@@ -39,6 +39,9 @@ structure Ref where
   declName : String
   declKind : DeclKind
   target : Sym
+  /-- ソースに書かれた経路(`Phase.Tick` なら `["Phase", "Tick"]`。`span` はその先頭の位置)。参照先 `target` はその最長の接頭辞で
+  解決した宣言。言語サーバーが位置からこの参照を見つけるときの幅(C30)。 -/
+  path : List String := []
 deriving Inhabited
 
 /-- いま検査している宣言の文脈。 -/
@@ -62,9 +65,9 @@ instance : Inhabited (R (List String)) := ⟨pure []⟩
 def report (file : String) (span : Span) (code msg : String) : R Unit :=
   modify fun s => { s with diags := s.diags.push { file, span, code, msg } }
 
-/-- 解決した参照を索引に足す。 -/
-def record (ctx : Ctx) (span : Span) (sym : Sym) : R Unit :=
-  modify fun s => { s with refs := s.refs.push { file := ctx.file, span, declName := ctx.declName, declKind := ctx.declKind, target := sym } }
+/-- 解決した参照を索引に足す(`path` はソースに書かれた経路)。 -/
+def record (ctx : Ctx) (span : Span) (path : List String) (sym : Sym) : R Unit :=
+  modify fun s => { s with refs := s.refs.push { file := ctx.file, span, declName := ctx.declName, declKind := ctx.declKind, target := sym, path } }
 
 /-- primitive 型(IDEAL.md「言語の意味論」)。 -/
 def builtinTypes : List String :=
@@ -123,7 +126,7 @@ def checkRef (ctx : Ctx) (span : Span) (segs : List String) : R Unit := do
       report ctx.file span Code.unresolved s!"cannot find `{renderPath segs}` in this scope"
     | some none => return
     | some (some sym) =>
-      record ctx span sym
+      record ctx span segs sym
       if ctx.declKind.phase == .runtime && sym.kind.phase == .spec then
         report ctx.file span Code.phaseLeak
           s!"{ctx.declKind.describe} `{ctx.declName}` is a runtime declaration but refers to spec {sym.kind.describe} `{sym.name}`; runtime declarations cannot depend on spec declarations (phase leak)"
@@ -135,7 +138,7 @@ def checkTyPath (ctx : Ctx) (span : Span) (name : List String) : R Unit := do
   let s ← get
   match s.globals.get? (renderPath name) with
   | some sym =>
-    record ctx span sym
+    record ctx span name sym
     if !sym.kind.isType then
       report ctx.file span Code.notAType s!"`{sym.name}` is a {sym.kind.describe}, not a type"
   | none =>
@@ -220,6 +223,9 @@ partial def checkExpr (ctx : Ctx) : Expr → R Unit
           if sym.kind != .input then
             report c.file span Code.typeMismatch
               s!"`{name}` is a {sym.kind.describe}, not an input; only inputs (`input {name}(…) -> …`) can be given a value in a scenario"
+          else
+            -- 束縛する input への参照も索引に残す(定義ジャンプの対象。input への参照はモジュールの辺にならない: `Modules.lean`)
+            record c span [name] sym
         checkExpr (c.bind (params.toList.map (·.1))) val
       | .observeS _ e => checkExpr c e
     if let some t := tail then checkExpr c t

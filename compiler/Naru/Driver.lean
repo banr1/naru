@@ -45,6 +45,9 @@ structure Checked where
   core : Array Core.Module
   /-- 受理した再帰のサイクルと測度(`Totality`)。 -/
   recursions : Array Totality.Recursion
+  /-- 名前解決が集めた参照の索引(値の位置・型の位置の名前 → 宣言。出現順)。名前解決まで進めば診断があっても残る
+  (言語サーバーの定義ジャンプ(C30)がこれを引く)。構文解析や同名モジュール(E017)で止まれば空。 -/
+  refs : Array Resolve.Ref := #[]
 deriving Inhabited
 
 /-- `(パス, 内容)` の列を 1 つのコンパイル単位として検査する。診断の `file` には与えたパスがそのまま入る。
@@ -90,7 +93,7 @@ def compileSources (sources : List (String × String)) : Array Diagnostic × Che
     recs := rs
   if !diags.isEmpty then
     core := #[]
-  return (diags, { mods, core, recursions := recs })
+  return (diags, { mods, core, recursions := recs, refs })
 
 /-- パス列を読んで 1 つのコンパイル単位として検査する(`compileSources`)。 -/
 def compileFiles (paths : List String) : IO (Array Diagnostic × Checked) := do

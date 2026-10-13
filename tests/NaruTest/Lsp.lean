@@ -2,14 +2,18 @@ import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18)
+# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C30)
 
 リポジトリのルートで実行する。`lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と標準入出力で LSP を話し、
 次を確かめる(`ok:` / `FAIL:`)。期待値はコンパイラ(`Naru.compileSources`、CLI の `compile` と同じ検査)から取る。
 
-1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)がある。`initialized` を送る。
-2. 未対応のリクエスト(`textDocument/hover`)には `MethodNotFound`(-32601)が返る。この応答は以後、通知の処理の終わりを
-   待つ barrier にも使う(サーバーはメッセージを順に処理するので、応答が返れば直前の通知の診断は送り終わっている)。
+1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `definitionProvider = true`(C30)がある。`initialized` を送る。
+2. 未対応のリクエスト(`textDocument/signatureHelp`: C29〜C33 に挙げた以外のリクエスト)には `MethodNotFound`(-32601)が返る。この応答は以後、
+   通知の処理の終わりを待つ barrier にも使う(サーバーはメッセージを順に処理するので、応答が返れば直前の通知の診断は送り終わっている)。
+   定義ジャンプ(C30、`textDocument/definition`): 受理例 1 つ(単独の単位)を開き、同じファイルの参照の位置から、その宣言の名前の範囲が返る(3d)。
+   移植ソース(5b): 別ファイルの fn / type への参照(先頭と、先頭の区切りの最後の文字)から、宣言ファイルの URI と宣言の名前のトークンの範囲
+   (`compileSources` の参照の索引 `Checked.refs` の `target` から計算した期待)が返り、コメント行・予約語 `fn` の位置では null、
+   宣言名の上ではその宣言自身が返る(5c)。
 3. `tests/reject/` の各反例を `didOpen` すると、`naru compile` と同じ E 番号・同じ行(・列)の診断がその URI に返り、
    反例の先頭コメントが名指しする E 番号(`期待: … E001`)がその中にある。`didClose` で空になる。
    `tests/accept/` の各受理例(単独の単位)を `didOpen` すると診断 0 件(C35 の正常例 `prop_bool.naru` を含む)、`didClose` で空。
@@ -151,10 +155,13 @@ def barrierParams : Json :=
   Json.mkObj [("textDocument", Json.mkObj [("uri", "file:///nonexistent.naru")]),
     ("position", Json.mkObj [("line", 0), ("character", 0)])]
 
+/-- barrier に使う未対応のリクエスト(C29〜C33 に挙げた以外のもの。実装される予定の hover / completion 等は使わない)。 -/
+def barrierMethod : String := "textDocument/signatureHelp"
+
 /-- 通知の処理の終わりを待つ: 未対応のリクエストを送り、その `MethodNotFound` が返るまでの publish を集める。 -/
 def barrier (env : Env) : M (Option (Array Pub)) := do
   let id ← env.nextId.modifyGet fun n => (n, n + 1)
-  request env.client id "textDocument/hover" barrierParams
+  request env.client id barrierMethod barrierParams
   match ← collectUntil env.client id with
   | none =>
     fail "server closed its output (or sent an unreadable message) before answering the barrier request"
@@ -162,7 +169,7 @@ def barrier (env : Env) : M (Option (Array Pub)) := do
   | some (resp, pubs) =>
     let code := getField resp "error" >>= fun e => (e.getObjVal? "code" >>= Json.getInt?).toOption
     if code != some (-32601) then
-      fail s!"unknown request textDocument/hover: expected error code -32601, got {resp.compress}"
+      fail s!"unknown request {barrierMethod}: expected error code -32601, got {resp.compress}"
     return some (latest pubs)
 
 def textDocument (uri : String) (extra : List (String × Json) := []) : Json :=
@@ -214,6 +221,85 @@ def rel (env : Env) (abs : String) : String :=
 def relOfUri (env : Env) (uri : String) : String :=
   rel env (((System.Uri.fileUriToPath? uri).map (·.toString)).getD uri)
 
+/-! ## 定義ジャンプ(C30) -/
+
+/-- `Location` の要約: (URI, 0 始まりの行, 開始の UTF-16 の列, 終わりの列)。 -/
+abbrev Loc := String × Nat × Nat × Nat
+
+def parseLocation (j : Json) : Except String Loc := do
+  let some uri := getStr j "uri" | throw s!"Location without uri: {j.compress}"
+  let range ← j.getObjVal? "range"
+  let st ← range.getObjVal? "start"
+  let en ← range.getObjVal? "end"
+  let sl ← (st.getObjVal? "line" >>= Json.getNat?)
+  let sc ← (st.getObjVal? "character" >>= Json.getNat?)
+  let el ← (en.getObjVal? "line" >>= Json.getNat?)
+  let ec ← (en.getObjVal? "character" >>= Json.getNat?)
+  if el != sl || ec ≤ sc then throw s!"Location range {sl}:{sc}-{el}:{ec} is not one token on one line"
+  return (uri, sl, sc, ec)
+
+/-- `textDocument/definition` を送り、`result` を読む: null → none、`Location` か 1 要素の配列 → その Location。 -/
+def definitionAt (env : Env) (uri : String) (line ch : Nat) : IO (Except String (Option Loc)) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/definition"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("position", Json.mkObj [("line", line), ("character", ch)])])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/definition"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then return .error s!"textDocument/definition → error {e.compress}"
+    match getField resp "result" with
+    | none => return .error s!"textDocument/definition: response without result: {resp.compress}"
+    | some Json.null => return .ok none
+    | some (Json.arr ls) =>
+      match ls.toList with
+      | [l] => return (parseLocation l).map some
+      | _ => return .error s!"textDocument/definition: expected one Location, got {ls.size}"
+    | some l => return (parseLocation l).map some
+
+/-- 宣言 `s` の期待(名前のトークンの Location。列は UTF-16)。 -/
+def wantLoc (sources : List (String × String)) (s : Naru.Resolve.Sym) : Loc :=
+  let text := (sources.lookup s.file).getD ""
+  let sc := utf16Of text s.span.line s.span.col
+  (System.Uri.pathToUri s.file, s.span.line - 1, sc, sc + s.name.length)
+
+def showLoc (env : Env) : Loc → String
+  | (uri, l, sc, ec) => s!"{relOfUri env uri}:{l + 1}:{sc + 1}-{ec + 1}"
+
+/-- 参照 `r`(ソース `sources` の単位)の位置(先頭と、先頭の区切りの最後の文字)への `definition` が、参照先の宣言の名前の範囲を返す。
+参照の位置が書かれた経路の先頭、宣言の位置がその名前であることも確かめる(期待の計算が成り立つ前提)。 -/
+def checkDefinitionOf (env : Env) (sources : List (String × String)) (r : Naru.Resolve.Ref) : M Bool := do
+  let text := (sources.lookup r.file).getD ""
+  let targetText := (sources.lookup r.target.file).getD ""
+  let want := wantLoc sources r.target
+  let head := r.path.head?.getD ""
+  let mut good := true
+  if tokenAt targetText r.target.span.line r.target.span.col != r.target.name then
+    fail s!"{rel env r.target.file}:{r.target.span.line}:{r.target.span.col}: the declaration's position should be its name `{r.target.name}`, found `{tokenAt targetText r.target.span.line r.target.span.col}`"
+    good := false
+  if tokenAt text r.span.line r.span.col != head then
+    fail s!"{rel env r.file}:{r.span.line}:{r.span.col}: the reference's position should be the head of `{Naru.renderPath r.path}`, found `{tokenAt text r.span.line r.span.col}`"
+    good := false
+  let ch := utf16Of text r.span.line r.span.col
+  for (k, label) in [(0, "head"), (head.length - 1, "last character of the head")] do
+    let at_ := s!"{rel env r.file}:{r.span.line}:{r.span.col + k} ({label})"
+    match ← definitionAt env (System.Uri.pathToUri r.file) (r.span.line - 1) (ch + k) with
+    | .error e => fail s!"{at_}: {e}"; good := false
+    | .ok none => fail s!"{at_}: definition → null, expected {showLoc env want}"; good := false
+    | .ok (some got) =>
+      if got != want then
+        fail s!"{at_}: definition → {showLoc env got}, expected {showLoc env want}"
+        good := false
+  return good
+
+/-- 先頭の参照を、参照先の宣言ごとに 1 つずつ、`n` 個まで。 -/
+def distinctTargets (rs : Array Naru.Resolve.Ref) (n : Nat) : List Naru.Resolve.Ref := Id.run do
+  let mut out : List Naru.Resolve.Ref := []
+  for r in rs do
+    if out.length ≥ n then break
+    if out.any (·.target.qualified == r.target.qualified) then continue
+    out := out ++ [r]
+  return out
+
 def checks (env : Env) : M Unit := do
   let c := env.client
   -- 1. initialize / initialized
@@ -221,17 +307,19 @@ def checks (env : Env) : M Unit := do
     (Json.mkObj [("processId", Json.null), ("rootUri", System.Uri.pathToUri env.root), ("capabilities", Json.mkObj [])])
   let some (resp, _) ← collectUntil c 1
     | fail "no response to initialize"; return
-  let sync := getField resp "result" >>= (getField · "capabilities") >>= (getField · "textDocumentSync")
+  let caps := getField resp "result" >>= (getField · "capabilities")
+  let sync := caps >>= (getField · "textDocumentSync")
   let change := sync >>= fun s => (s.getObjVal? "change" >>= Json.getNat?).toOption
   let openClose := sync >>= fun s => (s.getObjVal? "openClose" >>= Json.getBool?).toOption
-  if change == some 1 && openClose == some true then
-    ok "initialize: textDocumentSync.change = 1 (full), openClose = true"
+  let definitionProvider := caps >>= fun s => (s.getObjVal? "definitionProvider" >>= Json.getBool?).toOption
+  if change == some 1 && openClose == some true && definitionProvider == some true then
+    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, definitionProvider = true"
   else
-    fail s!"initialize: expected textDocumentSync.change = 1 and openClose = true, got {resp.compress}"
+    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true and definitionProvider = true, got {resp.compress}"
   notify c "initialized" (Json.mkObj [])
   -- 2. 未対応のリクエスト
   let some _ ← barrier env | return
-  ok "unknown request textDocument/hover → error -32601 (MethodNotFound)"
+  ok s!"unknown request {barrierMethod} → error -32601 (MethodNotFound)"
   -- 3. 反例
   let rejects ← Naru.listFiles "tests/reject" "naru"
   let mut nRejects := 0
@@ -279,6 +367,24 @@ def checks (env : Env) : M Unit := do
     if opened && closed then nAccepts := nAccepts + 1
   if nAccepts == accepts.length && nAccepts > 0 then
     ok s!"tests/accept/: {nAccepts} files, didOpen → 0 diagnostics (none for other URIs either), didClose → empty"
+  -- 3d. 定義ジャンプ(C30)、単独の文書: 参照のある最初の受理例を開き、その最初の参照の位置から同じファイルの宣言の名前の範囲が返る
+  let mut singleDone := false
+  for p in accepts do
+    if singleDone then break
+    let abs := (env.root / p).toString
+    let text ← IO.FS.readFile abs
+    let (_, checked) := Naru.compileSources [(abs, text)]
+    let some r := checked.refs[0]? | continue
+    singleDone := true
+    let uri := System.Uri.pathToUri abs
+    didOpen env uri text
+    let some _ ← barrier env | return
+    if ← checkDefinitionOf env [(abs, text)] r then
+      ok s!"{p}: textDocument/definition on `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → {r.target.kind.describe} `{r.target.name}` at {showLoc env (wantLoc [(abs, text)] r.target)}"
+    didClose env uri
+    let some got ← barrier env | return
+    let _ ← agrees s!"{p}: didClose" got #[] [uri]
+  if !singleDone then fail "tests/accept/: no accept example with a resolved reference (needed for the single-document definition check)"
   -- 3c. 複数ファイルのコンパイル単位(`tests/units/`。C18): 各検体の `naru.toml` のルート `src/` 配下なので、どのファイルを開いても
   -- 単位全体が検査される。反例は行末の `// E017` の印の行に CLI と同じ行・列・幅の E017、`fix/` の didChange で関係する URI すべてが空、
   -- 戻すと戻る。受理例は 0 件。
@@ -424,6 +530,51 @@ def checks (env : Env) : M Unit := do
     if ← agrees s!"{p}: didOpen" got #[] [uri] then nDsl := nDsl + 1
   if nDsl == dslFiles.length then
     ok s!"{unitRoot}/: {nDsl} files didOpen → 0 diagnostics (none for other URIs either)"
+  -- 5b. 定義ジャンプ(C30): 別ファイルの fn / type への参照(参照先の宣言ごとに 1 つ、fn 8 / type 8 まで)→ 宣言ファイルの URI と宣言の名前の範囲
+  let mut unitSrc : List (String × String) := []
+  for p in dslFiles do
+    let abs := (env.root / p).toString
+    unitSrc := unitSrc ++ [(abs, ← IO.FS.readFile abs)]
+  let (_, unitChecked) := Naru.compileSources unitSrc
+  let cross := unitChecked.refs.filter fun r => r.file != r.target.file
+  let fnRefs := distinctTargets (cross.filter (·.target.kind == .fn)) 8
+  let tyRefs := distinctTargets (cross.filter (·.target.kind.isType)) 8
+  if fnRefs.isEmpty || tyRefs.isEmpty then
+    fail s!"{unitRoot}/: expected cross-file references to fn and type declarations (found {fnRefs.length} fn / {tyRefs.length} type among {cross.size} cross-file references)"
+  let mut nDef := 0
+  let mut shown : List String := []
+  for r in fnRefs ++ tyRefs do
+    if ← checkDefinitionOf env unitSrc r then
+      nDef := nDef + 1
+      shown := shown ++ [s!"{Naru.renderPath r.path}@{rel env r.file}:{r.span.line} → {r.target.kind.describe} {r.target.name}@{showLoc env (wantLoc unitSrc r.target)}"]
+  if nDef == (fnRefs ++ tyRefs).length && nDef > 0 then
+    ok s!"{unitRoot}/: textDocument/definition on {fnRefs.length} cross-file fn reference(s) and {tyRefs.length} cross-file type reference(s) (at the head and at its last character) → the declaring file's URI and the declaration name's range: {shown}"
+  -- 5c. 宣言の無い位置では null、宣言名の上ではその宣言自身
+  let probeRel := unitRoot ++ "/Consensus/Objects/Time.naru"
+  let probePath := (env.root / probeRel).toString
+  let probeText := (unitSrc.lookup probePath).getD ""
+  let probeLines := probeText.splitOn "\n"
+  let commentLine := probeLines.findIdx? fun l => l.trimAscii.toString.startsWith "//"
+  let fnLine := probeLines.findIdx? fun l => l.startsWith "fn "
+  for (what, pos) in [("a comment line", commentLine.map (·, 2)), ("the keyword `fn`", fnLine.map (·, 0))] do
+    match pos with
+    | none => fail s!"{probeRel}: no {what} to probe"
+    | some (l, ch) =>
+      match ← definitionAt env (System.Uri.pathToUri probePath) l ch with
+      | .ok none => ok s!"{probeRel}:{l + 1}:{ch + 1} ({what}): textDocument/definition → null (no declaration there)"
+      | .ok (some got) => fail s!"{probeRel}:{l + 1}:{ch + 1} ({what}): definition → {showLoc env got}, expected null"
+      | .error e => fail s!"{probeRel}:{l + 1}:{ch + 1} ({what}): {e}"
+  match (unitChecked.mods.find? (·.file == probePath)).bind fun m => m.decls.find? (·.kind == .fn) with
+  | none => fail s!"{probeRel}: no fn declaration to probe"
+  | some d =>
+    let self : Naru.Resolve.Sym := { name := d.name, qualified := d.name, kind := d.kind, file := probePath, span := d.span }
+    let want := wantLoc unitSrc self
+    match ← definitionAt env (System.Uri.pathToUri probePath) (d.span.line - 1) (utf16Of probeText d.span.line d.span.col) with
+    | .ok (some got) =>
+      if got == want then ok s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): textDocument/definition → the declaration itself {showLoc env want}"
+      else fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name): definition → {showLoc env got}, expected {showLoc env want}"
+    | .ok none => fail s!"{probeRel}:{d.span.line}:{d.span.col} (declaration name `{d.name}`): definition → null, expected {showLoc env want}"
+    | .error e => fail s!"{probeRel}:{d.span.line}:{d.span.col}: {e}"
   -- 6. didChange(ソースルートの単位: 開いた文書のバッファで検査する)
   let targetRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let target := (env.root / targetRel).toString

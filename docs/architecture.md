@@ -8,7 +8,7 @@
 ```
 Parser → Surface AST
   → 同名のモジュール            (Modules.lean:   E017)
-  → 名前解決・phase 検査        (Resolve.lean:   E001, E011〜E013。解決した参照の索引 `Resolve.Ref` も作る)
+  → 名前解決・phase 検査        (Resolve.lean:   E001, E011〜E013。解決した参照の索引 `Resolve.Ref`(書かれた経路と参照先)も作り、`Checked.refs` に残す: E017 の位置と `naru lsp` の定義ジャンプ(C30)が引く)
   → 型・capability 検査 + Core IR への elaboration
                                 (Typecheck.lean: E003〜E006, E014〜E016, E018, E019)
   → Core の健全性               (Driver.lean:    E014「internal」。C35)

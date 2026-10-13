@@ -57,9 +57,15 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 ## 言語サーバー(`naru lsp`)
 
-Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示する。応じるのは `initialize`(全文同期 `textDocumentSync.change = 1`、
-`openClose`、`save`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`。
-それ以外のリクエストには `MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
+Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、定義ジャンプに応える。応じるのは `initialize`(全文同期 `textDocumentSync.change = 1`、
+`openClose`、`save`、`definitionProvider`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、
+`textDocument/definition`(C30)。それ以外のリクエスト(ホバー・補完・リネーム・整形の C29 / C31〜C33 は未対応)には `MethodNotFound`(-32601)を返し、
+それ以外の通知(`$/…` 等)は無視する。
+
+- 定義ジャンプ(`textDocument/definition`): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` に書かれた経路(`Phase.Tick` のような経路の上なら
+  その最長の接頭辞で解決した宣言。UFCS の `x.f(…)` の `f` も)— または宣言名そのものから、同じコンパイル単位の宣言(別ファイルを含む)の URI と、宣言の名前の
+  トークンの範囲(`Location`)を返す。どちらも無い位置(コメント・予約語・局所変数・欄名・stdlib のメソッド)では null。索引は名前解決が集めた参照
+  (`Checked.refs`、[architecture.md](architecture.md))で、単位ごとに直前の検査(全ファイルが構文解析できたもの)の結果を持ち、検査し直さない。
 
 - 検査の単位: 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下なら `<ルート>/**/*.naru` 全体を 1 つのコンパイル単位にし、
   開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。

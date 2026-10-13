@@ -3,13 +3,18 @@ import Naru.Driver
 import Naru.Config
 
 /-!
-# 言語サーバー(`naru lsp`、IDEAL.md C18)
+# 言語サーバー(`naru lsp`、IDEAL.md C18 / C30)
 
-標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)だけを返す。
-エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
+標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、名前解決の索引から取る
+定義ジャンプ(`textDocument/definition`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
-  `didSave` / `didClose`。それ以外のリクエストには `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+  `didSave` / `didClose`、`textDocument/definition`(C30)。それ以外のリクエスト(ホバー・補完・リネーム・整形の C29 / C31〜C33 は未対応)には
+  `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+- 定義ジャンプ(C30): 文書の位置にある参照(名前解決の索引 `Checked.refs`: 値の位置・型の位置・scenario の input の束縛に書かれた経路。
+  経路 `A.B.c` の上ならその最長の接頭辞で解決した宣言)または宣言名そのものから、同じコンパイル単位の宣言(別ファイルを含む)の URI と、
+  宣言の名前のトークンの範囲(`Location`)を返す。どちらも無い位置では null。索引は単位ごとに直前の検査(全ファイルが構文解析できたもの)
+  のものを持つ。
 - 検査の単位: 開いた文書のパスの祖先で最も近い `naru.toml`(`Naru/Config.lean`)を読み、その `sources` のソースルート配下
   なら、そのルートの `**/*.naru` 全体を 1 つのコンパイル単位にし、開いている文書はディスクではなくバッファの内容で検査する。
   それ以外の文書(`naru.toml` が無い・どのルートの配下でもない)は単独で検査する。どちらも `Driver.compileSources`
@@ -110,8 +115,34 @@ def tokenEnd (line : Array Char) (start : Nat) : Nat := Id.run do
       let two := String.ofList [c, (line[start + 1]?).getD ' ']
       return if symbols2.contains two then start + 2 else start + 1
 
+/-- UTF-16 単位の列 `u` にある文字の添字(`utf16Col` の逆。行末を越えていれば行の長さ)。 -/
+def charIndex (line : Array Char) (u : Nat) : Nat := Id.run do
+  let mut n := 0
+  let mut i := 0
+  while i < line.size do
+    if n ≥ u then break
+    n := n + (if line[i]!.toNat ≥ 0x10000 then 2 else 1)
+    i := i + 1
+  return i
+
+/-- `start`(文字の添字)に書かれた経路 `path` の終わり(排他的): ソースがそこに `A.B.c` と空白なしで書いていればその長さ、
+そうでなければトークン 1 つ分(`tokenEnd`)。 -/
+def pathEnd (line : Array Char) (start : Nat) (path : List String) : Nat :=
+  let cs := (renderPath path).toList
+  if !cs.isEmpty && ((line.toList.drop start).take cs.length) == cs then start + cs.length
+  else tokenEnd line start
+
 def position (line character : Nat) : Json :=
   Json.mkObj [("line", line), ("character", character)]
+
+def rangeJson (line0 startCh endCh : Nat) : Json :=
+  Json.mkObj [("start", position line0 startCh), ("end", position line0 endCh)]
+
+/-- 宣言の名前のトークンの `Location`(`sp` は名前の位置、`lines` はその文書の行)。 -/
+def locationJson (uri : String) (lines : List String) (sp : Span) (name : String) : Json :=
+  let line0 := sp.line - 1
+  let chars := (lines.getD line0 "").toList.toArray
+  Json.mkObj [("uri", uri), ("range", rangeJson line0 (utf16Col chars (sp.col - 1)) (utf16Col chars (sp.col - 1 + name.length)))]
 
 /-- コンパイラの診断を LSP の診断にする。`lines` はその文書の行(`splitOn "\n"`)。 -/
 def diagnosticJson (lines : List String) (d : Diagnostic) : Json :=
@@ -121,7 +152,7 @@ def diagnosticJson (lines : List String) (d : Diagnostic) : Json :=
   let startCh := utf16Col chars col0
   let endCh := utf16Col chars (tokenEnd chars col0)
   Json.mkObj [
-    ("range", Json.mkObj [("start", position line0 startCh), ("end", position line0 endCh)]),
+    ("range", rangeJson line0 startCh endCh),
     ("severity", 1),
     ("code", d.code),
     ("source", "naru"),
@@ -155,12 +186,21 @@ def unitRoot (path : String) : IO (Option String) := do
 /-- 検査の単位の鍵: ソースルート、または単独の文書のパス。 -/
 def unitKey (doc : Doc) : String := doc.root.getD doc.path
 
+/-- 検査の単位ごとの索引(C30): 直前に全ファイルが構文解析できた検査のソース列と結果(名前解決の参照 `Checked.refs` と宣言 `Checked.mods`)。
+定義ジャンプはこれを引くだけで、検査し直さない。 -/
+structure UnitIndex where
+  key : String
+  sources : List (String × String)
+  checked : Checked
+
 structure State where
   out : IO.FS.Stream
   version : String
   docs : Array Doc := #[]
   /-- 単位の鍵 → 直前の検査で空でない診断を送った URI。次の検査で空になったものを消すため。 -/
   published : Array (String × Array String) := #[]
+  /-- 単位の鍵 → 索引(`UnitIndex`)。 -/
+  index : Array UnitIndex := #[]
   shutdownRequested : Bool := false
   exitCode : Option UInt32 := none
 
@@ -209,7 +249,11 @@ def uriOfFile (st : State) (file : String) : String :=
 def check (doc : Doc) (closed : Option String := none) : M Unit := do
   let st ← get
   let sources ← unitSources st doc
-  let (diags, _) := compileSources sources
+  let (diags, checked) := compileSources sources
+  let key := unitKey doc
+  -- 索引(C30): 全ファイルが構文解析できた検査の結果を単位ごとに持つ(構文エラーの途中は前の索引のまま)
+  if checked.mods.size == sources.length then
+    modify fun s => { s with index := (s.index.filter (·.key != key)).push { key, sources, checked } }
   let mut groups : Array (String × Array Json) := #[]
   for d in diags do
     let lines := ((sources.lookup d.file).getD "").splitOn "\n"
@@ -217,7 +261,6 @@ def check (doc : Doc) (closed : Option String := none) : M Unit := do
     match groups.findIdx? (·.1 == d.file) with
     | some i => groups := groups.modify i fun (f, a) => (f, a.push j)
     | none => groups := groups.push (d.file, #[j])
-  let key := unitKey doc
   let prev := ((st.published.find? (·.1 == key)).map (·.2)).getD #[]
   let mut sent : Array String := #[]
   let mut nonEmpty : Array String := #[]
@@ -275,15 +318,48 @@ def closeDoc (uri : String) : M Unit := do
       let prev := ((st.published.find? (·.1 == key)).map (·.2)).getD #[]
       for u in prev do
         if u != uri then publish u #[]
-      set { st with published := st.published.filter (·.1 != key) }
+      set { st with published := st.published.filter (·.1 != key), index := st.index.filter (·.key != key) }
+
+/-! ## 定義ジャンプ(`textDocument/definition`、C30) -/
+
+/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)にある参照または宣言名から、宣言の `Location`。無ければ null。
+位置はトークンの先頭から終わり(終わりの直後の列を含む: カーソルが識別子の末尾にあるときも引ける)まで。 -/
+def definition (uri : String) (line0 ch : Nat) : M Json := do
+  let st ← get
+  let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return Json.null
+  let some idx := st.index.find? (·.key == unitKey doc) | return Json.null
+  let chars := ((doc.text.splitOn "\n").getD line0 "").toList.toArray
+  let i := charIndex chars ch
+  let hit (sp : Span) (endIdx : Nat) : Bool := sp.line == line0 + 1 && sp.col - 1 ≤ i && i ≤ endIdx
+  let fromRef : Option (String × Span × String) :=
+    (idx.checked.refs.find? fun r => r.file == doc.path && hit r.span (pathEnd chars (r.span.col - 1) r.path)).map
+      fun r => (r.target.file, r.target.span, r.target.name)
+  let fromDecl : Option (String × Span × String) :=
+    ((idx.checked.mods.find? (·.file == doc.path)).bind fun m =>
+      m.decls.find? fun d => hit d.span (d.span.col - 1 + d.name.length)).map fun d => (doc.path, d.span, d.name)
+  match fromRef <|> fromDecl with
+  | none => return Json.null
+  | some (file, sp, name) =>
+    let text := match st.docs.find? (fun (d : Doc) => d.path == file) with
+      | some d => d.text
+      | none => (idx.sources.lookup file).getD ""
+    return locationJson (uriOfFile st file) (text.splitOn "\n") sp name
 
 /-! ## メッセージの処理 -/
 
 def initializeResult (version : String) : Json :=
   Json.mkObj [
     ("capabilities", Json.mkObj [
-      ("textDocumentSync", Json.mkObj [("openClose", true), ("change", 1), ("save", true)])]),
+      ("textDocumentSync", Json.mkObj [("openClose", true), ("change", 1), ("save", true)]),
+      ("definitionProvider", true)]),
     ("serverInfo", Json.mkObj [("name", "naru"), ("version", version)])]
+
+/-- `params.position` の (0 始まりの行, UTF-16 の列)。 -/
+def positionOf (params : Json) : Option (Nat × Nat) := do
+  let pos ← getField params "position"
+  let line ← (pos.getObjVal? "line" >>= Json.getNat?).toOption
+  let ch ← (pos.getObjVal? "character" >>= Json.getNat?).toOption
+  return (line, ch)
 
 /-- `params.textDocument.uri`。 -/
 def docUri (params : Json) : Option String := getField params "textDocument" >>= (getStr · "uri")
@@ -326,6 +402,10 @@ def handle (msg : Json) : M Unit := do
     match docUri params with
     | some uri => closeDoc uri
     | none => log "didClose: textDocument.uri missing"
+  | "textDocument/definition", some id =>
+    match docUri params, positionOf params with
+    | some uri, some (line, ch) => respond id (← definition uri line ch)
+    | _, _ => respondError id (-32602) "definition: textDocument.uri / position missing"
   | _, some id => respondError id (-32601) s!"method not found: {method}"
   | _, none => pure ()
 
