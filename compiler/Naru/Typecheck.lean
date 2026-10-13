@@ -78,6 +78,16 @@ structure MemberRef where
   ret : TyV
 deriving Inhabited
 
+/-- 欄 / メソッドのアクセス(`r.name` / `r.name(…)`)1 つの受け手の型。名前が欄 / メソッドとして解決できたかに関わらず、受け手の型が決まった
+時点で記録する(言語サーバーの補完(C31)が `.` の後の候補を受け手の型から作るのに引く: 途中まで書いた名前は解決しないので `members` には
+残らない)。`span` は名前のトークンの位置。型は宣言の終わり(`finishDecl`)に確定したもの。 -/
+structure AccessRef where
+  file : String
+  span : Span
+  name : String
+  recv : TyV
+deriving Inhabited
+
 structure St where
   /-- 単純名と修飾名の両方を鍵にする(`Resolve` と同じ)。 -/
   decls : HashMap String Entry := {}
@@ -97,6 +107,10 @@ structure St where
   members : Array MemberRef := #[]
   /-- `members` のうち型を確定済み(`finishDecl`)の個数。 -/
   membersDone : Nat := 0
+  /-- 欄 / メソッドのアクセスの受け手の型(出現順。C31)。 -/
+  accesses : Array AccessRef := #[]
+  /-- `accesses` のうち型を確定済み(`finishDecl`)の個数。 -/
+  accessesDone : Nat := 0
 
 abbrev M := StateM St
 
@@ -736,6 +750,10 @@ def propValueCheck (ctx : Ctx) (span : Span) (what : String) (t : TyV) (c : CExp
       s!"{what} is a value of type `{tz.render}` that depends on a proposition (a quantifier or a call of a spec declaration decides it), but only a Bool expression can be a proposition; a proposition cannot select a value — move the `if` / `match` on the proposition to the logical structure of the declaration"
     return false
 
+/-- 欄 / メソッドのアクセスの受け手の型を索引に残す(C31。名前が解決できるかに関わらず)。 -/
+def recordAccess (ctx : Ctx) (span : Span) (name : String) (recv : TyV) : M Unit :=
+  modify fun s => { s with accesses := s.accesses.push { file := ctx.file, span, name, recv } }
+
 /-! ## 式 -/
 
 mutual
@@ -1184,6 +1202,7 @@ partial def matchArgs (ctx : Ctx) (span : Span) (what : String)
 partial def inferField (ctx : Ctx) (span : Span) (r : Expr) (name : String) : M (TyV × CExpr) := do
   let (rt0, cr) ← infer (ctx.value s!"the value before `.{name}`") r
   let rt ← zonk rt0
+  recordAccess ctx span name rt
   match rt with
   | .named k d =>
     match (← get).types.get? k with
@@ -1218,6 +1237,7 @@ partial def inferMethod (ctx : Ctx) (span : Span) (r : Expr) (name : String) (ar
     M (TyV × CExpr) := do
   let (rt0, cr) ← infer (ctx.value s!"the receiver of `.{name}()`") r
   let rt ← zonk rt0
+  recordAccess ctx span name rt
   match rt with
   | .unknown =>
     inferArgsLoosely ctx args
@@ -1519,6 +1539,12 @@ def finishDecl (ctx : Ctx) : M Unit := do
     let ret ← zonk m.ret
     ms := ms.set! i { m with recv, params, ret }
   modify fun s => { s with members := ms, membersDone := ms.size }
+  -- 受け手の型の索引(C31)も同じく確定する
+  let mut as := (← get).accesses
+  for i in [(← get).accessesDone:as.size] do
+    let a := as[i]!
+    as := as.set! i { a with recv := ← zonk a.recv }
+  modify fun s => { s with accesses := as, accessesDone := as.size }
 
 /-! ## 宣言 -/
 
@@ -1740,8 +1766,10 @@ def checkScenarioInputs (mods : Array Module) (cmods : Array Core.Module) : M Un
 end Typecheck
 
 /-- コンパイル単位全体の型検査・capability 検査・選択/順序の検査と、Core IR への elaboration。
-診断(空なら合格)と Core のモジュール列、解決した欄・stdlib メソッドの参照の索引(C29)を返す。名前解決(`resolveAll`)が通った後に呼ぶ。 -/
-def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module × Array Typecheck.MemberRef :=
+診断(空なら合格)と Core のモジュール列、解決した欄・stdlib メソッドの参照の索引(C29)、欄 / メソッドのアクセスの受け手の型の索引(C31)を返す。
+名前解決(`resolveAll`)が通った後に呼ぶ。 -/
+def typecheckAll (mods : Array Module) :
+    Array Diagnostic × Array Core.Module × Array Typecheck.MemberRef × Array Typecheck.AccessRef :=
   let run : Typecheck.M (Array Core.Module) := do
     for m in mods do Typecheck.collect m
     for m in mods do
@@ -1757,6 +1785,6 @@ def typecheckAll (mods : Array Module) : Array Diagnostic × Array Core.Module �
     Typecheck.checkScenarioInputs mods out
     return out
   let (cmods, st) := run.run {}
-  (st.diags, cmods, st.members)
+  (st.diags, cmods, st.members, st.accesses)
 
 end Naru

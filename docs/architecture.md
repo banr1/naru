@@ -10,7 +10,7 @@ Parser → Surface AST
   → 同名のモジュール            (Modules.lean:   E017)
   → 名前解決・phase 検査        (Resolve.lean:   E001, E011〜E013。解決した参照の索引 `Resolve.Ref`(書かれた経路と参照先)も作り、`Checked.refs` に残す: E017 の位置と `naru lsp` の定義ジャンプ(C30)・ホバー(C29)が引く)
   → 型・capability 検査 + Core IR への elaboration
-                                (Typecheck.lean: E003〜E006, E014〜E016, E018, E019。解決した欄・stdlib メソッドの参照の索引 `Typecheck.MemberRef`(位置・record / 受け手の型・確定した型)も作り、`Checked.members` に残す: `naru lsp` のホバー(C29)と欄名の定義ジャンプが引く)
+                                (Typecheck.lean: E003〜E006, E014〜E016, E018, E019。解決した欄・stdlib メソッドの参照の索引 `Typecheck.MemberRef`(位置・record / 受け手の型・確定した型)と、欄 / メソッドのアクセスごとの受け手の型の索引 `Typecheck.AccessRef`(名前が解決できなくても残る)も作り、`Checked.members` / `Checked.accesses` に残す: `naru lsp` のホバー(C29)と欄名の定義ジャンプ、`.` の後の補完(C31)が引く)
   → Core の健全性               (Driver.lean:    E014「internal」。C35)
   → モジュールの循環            (Modules.lean:   E017。生成 Model / Statements の import グラフ)
   → 停止性検査                  (Totality.lean:  E002)

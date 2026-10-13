@@ -2,13 +2,20 @@ import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30)
+# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30 / C31)
 
 リポジトリのルートで実行する。`lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と標準入出力で LSP を話し、
 次を確かめる(`ok:` / `FAIL:`)。期待値はコンパイラ(`Naru.compileSources`、CLI の `compile` と同じ検査)から取る。
 
-1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `hoverProvider = true`(C29)・`definitionProvider = true`(C30)が
-   ある。`initialized` を送る。
+1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `hoverProvider = true`(C29)・`definitionProvider = true`(C30)・
+   `completionProvider`(`triggerCharacters` に `.`。C31)がある。`initialized` を送る。
+   補完(C31、`textDocument/completion`): 単独の受理例の参照の途中で参照先の宣言が候補にある(3d)。移植ソース(5b''): 別ファイルの fn の参照の
+   途中(先頭の 2 文字目)で、単位の全 fn 名(参照先は kind Function と `Decl.signature` の detail)・全予約語(kind Keyword)・位置を含む宣言の
+   仮引数(kind Variable、`名前: 型`)が候補にある。コメント行では候補なし(5c)。`Enum.Variant` の `.` の直後では、その enum の全 variant
+   (kind EnumMember、detail `Enum.Variant(型)`)だけ(5c'')。式の中の欄名の位置(`.` の直後)では record の全欄(kind Field、detail
+   `Record.欄: 型`)が候補にあり予約語は無い。Set の式の `.` の直後では stdlib の Set の全メソッド(kind Method、detail `Set<T>.m(…) -> 戻り型`)が
+   候補にあり、常に拒否されるメソッド(E003 / E004)と予約語は無い。メソッド名を消して文書を壊しても(E010)同じ候補が返る(サーバーが仮の名前で
+   単位を探る)(5d)。
 2. 未対応のリクエスト(`textDocument/signatureHelp`: C29〜C33 に挙げた以外のリクエスト)には `MethodNotFound`(-32601)が返る。この応答は以後、
    通知の処理の終わりを待つ barrier にも使う(サーバーはメッセージを順に処理するので、応答が返れば直前の通知の診断は送り終わっている)。
    定義ジャンプ(C30、`textDocument/definition`): 受理例 1 つ(単独の単位)を開き、同じファイルの参照の位置から、その宣言の名前の範囲が返る(3d)。
@@ -400,6 +407,60 @@ def checkHoverNull (env : Env) (file : String) (line0 ch : Nat) (what : String) 
   | .ok (some (value, _)) => fail s!"{at_}: hover → {value.take 80}, expected null"
   | .error e => fail s!"{at_}: {e}"
 
+/-! ## 補完(C31) -/
+
+/-- 補完項目の要約: (label, kind, detail)。 -/
+abbrev Item := String × Nat × String
+
+/-- `textDocument/completion` を送り、`CompletionList`(`isIncomplete = false`、`items`: 各項目に `label` と `kind`)の項目を読む。 -/
+def completionAt (env : Env) (uri : String) (line ch : Nat) : IO (Except String (Array Item)) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/completion"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("position", Json.mkObj [("line", line), ("character", ch)])])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/completion"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then return .error s!"textDocument/completion → error {e.compress}"
+    match getField resp "result" with
+    | none => return .error s!"textDocument/completion: response without result: {resp.compress}"
+    | some res =>
+      let some items := (getField res "items" >>= fun j => j.getArr?.toOption)
+        | return .error s!"textDocument/completion: result without items: {res.compress.take 200}"
+      if (res.getObjVal? "isIncomplete" >>= Json.getBool?).toOption != some false then
+        return .error s!"textDocument/completion: isIncomplete should be false: {res.compress.take 200}"
+      let mut out : Array Item := #[]
+      for it in items do
+        let some label := getStr it "label" | return .error s!"completion item without label: {it.compress}"
+        let some kind := (it.getObjVal? "kind" >>= Json.getNat?).toOption | return .error s!"completion item `{label}` without kind"
+        out := out.push (label, kind, (getStr it "detail").getD "")
+      return .ok out
+
+def labelsOf (items : Array Item) : List String := items.toList.map (·.1)
+
+/-- 項目の中に `label` があり、種類が `kind` で、`detail` が `detailOk` を満たすか。 -/
+def hasItem (items : Array Item) (label : String) (kind : Nat) (detailOk : String → Bool := fun _ => true) : Bool :=
+  items.any fun (l, k, d) => l == label && k == kind && detailOk d
+
+/-- LSP の `CompletionItemKind`(検査が名指しするもの。サーバーの表とは別に書く)。 -/
+def kindFunction : Nat := 3
+def kindMethod : Nat := 2
+def kindField : Nat := 5
+def kindVariable : Nat := 6
+def kindKeyword : Nat := 14
+def kindEnumMember : Nat := 20
+
+/-- 宣言の種類に期待する `CompletionItemKind`(fn / observer は Function 3、input は Variable 6、record / state は Struct 22、enum は Enum 13、
+type は Class 7、spec 宣言は Interface 8、protocol は Module 9、scenario は Event 23)。 -/
+def kindOfDecl : Naru.DeclKind → Nat
+  | .fn | .observer => 3
+  | .input => 6
+  | .record | .state => 22
+  | .enum => 13
+  | .typeAlias => 7
+  | .predicate | .condition | .regime | .property | .claim | .claimBundle => 8
+  | .protocol => 9
+  | .scenario => 23
+
 def checks (env : Env) : M Unit := do
   let c := env.client
   -- 1. initialize / initialized
@@ -413,10 +474,12 @@ def checks (env : Env) : M Unit := do
   let openClose := sync >>= fun s => (s.getObjVal? "openClose" >>= Json.getBool?).toOption
   let definitionProvider := caps >>= fun s => (s.getObjVal? "definitionProvider" >>= Json.getBool?).toOption
   let hoverProvider := caps >>= fun s => (s.getObjVal? "hoverProvider" >>= Json.getBool?).toOption
-  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true then
-    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true"
+  let triggers := caps >>= (getField · "completionProvider") >>= (getField · "triggerCharacters") >>= fun j => j.getArr?.toOption
+  let dotTrigger := (triggers.map fun a => a.any fun j => j.getStr?.toOption == some ".").getD false
+  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true && dotTrigger then
+    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true, completionProvider.triggerCharacters has \".\""
   else
-    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true and definitionProvider = true, got {resp.compress}"
+    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true, definitionProvider = true and completionProvider with trigger \".\", got {resp.compress}"
   notify c "initialized" (Json.mkObj [])
   -- 2. 未対応のリクエスト
   let some _ ← barrier env | return
@@ -484,6 +547,13 @@ def checks (env : Env) : M Unit := do
       ok s!"{p}: textDocument/definition on `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → {r.target.kind.describe} `{r.target.name}` at {showLoc env (wantLoc [(abs, text)] r.target)}"
     if let some sig ← checkHoverOf env [(abs, text)] checked r (needComment := false) then
       ok s!"{p}: textDocument/hover on `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → markdown with `{sig}`"
+    -- 補完(C31)、単独の文書: 参照の 2 文字目(識別子の途中)で、参照先の宣言(その種類)が候補にある
+    match ← completionAt env uri (r.span.line - 1) (utf16Of text r.span.line r.span.col + 1) with
+    | .error e => fail s!"{p}:{r.span.line}:{r.span.col + 1}: {e}"
+    | .ok items =>
+      if hasItem items r.target.name (kindOfDecl r.target.kind) then
+        ok s!"{p}: textDocument/completion inside `{Naru.renderPath r.path}` (line {r.span.line}) in a single-document unit → {items.size} item(s) incl. {r.target.kind.describe} `{r.target.name}` (kind {kindOfDecl r.target.kind})"
+      else fail s!"{p}:{r.span.line}:{r.span.col + 1}: completion lacks {r.target.kind.describe} `{r.target.name}` (kind {kindOfDecl r.target.kind}); got {(labelsOf items).take 10}"
     didClose env uri
     let some got ← barrier env | return
     let _ ← agrees s!"{p}: didClose" got #[] [uri]
@@ -661,6 +731,35 @@ def checks (env : Env) : M Unit := do
       shownHover := shownHover ++ [s!"{Naru.renderPath r.path}@{rel env r.file}:{r.span.line} → `{sig}`"]
   if nHover == (fnRefs ++ tyRefs).length && nHover > 0 then
     ok s!"{unitRoot}/: textDocument/hover on the same {fnRefs.length} cross-file fn reference(s) and {tyRefs.length} cross-file type reference(s) → markdown with the declaration's signature (fn: each parameter and the return type), kind and name, module, and the first line of its declaration comment: {shownHover}"
+  -- 5b''. 補完(C31): 同じ fn の参照の途中(先頭の 2 文字目)で、単位の全 fn 名(参照先は kind Function と署名の detail)・全予約語(kind Keyword)・
+  -- 位置を含む宣言の仮引数(kind Variable、detail `名前: 型`)が候補にある
+  let allFnNames := unitChecked.mods.toList.flatMap fun m => (m.decls.toList.filter (·.kind == .fn)).map (·.name)
+  let mut nComp := 0
+  for r in fnRefs do
+    let text := (unitSrc.lookup r.file).getD ""
+    let head := r.path.head?.getD ""
+    let off := if head.length > 1 then 1 else 0
+    let at_ := s!"{rel env r.file}:{r.span.line}:{r.span.col + off}"
+    let ch := utf16Of text r.span.line r.span.col + off
+    let some td := (unitChecked.mods.find? (·.file == r.target.file)).bind fun m => m.decls.find? (·.name == r.target.name)
+      | fail s!"{at_}: the target declaration `{r.target.name}` is not in the unit"; continue
+    let enclosing := (unitChecked.mods.find? (·.file == r.file)).bind fun m => m.decls.find? (·.name == r.declName)
+    match ← completionAt env (System.Uri.pathToUri r.file) (r.span.line - 1) ch with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok items =>
+      let labels := labelsOf items
+      let missingFns := allFnNames.filter fun n => !labels.contains n
+      let missingKws := Naru.keywords.filter fun k => !(hasItem items k kindKeyword)
+      let missingParams := (enclosing.map fun d => d.params.toList.filter fun p => !(hasItem items p.name kindVariable (· == Naru.Param.render p))).getD []
+      if !missingFns.isEmpty then fail s!"{at_}: completion inside `{head}` lacks fn name(s) {missingFns.take 5} (of {allFnNames.length})"
+      else if !missingKws.isEmpty then fail s!"{at_}: completion inside `{head}` lacks keyword(s) {missingKws}"
+      else if !(hasItem items r.target.name kindFunction (· == td.signature)) then
+        fail s!"{at_}: completion inside `{head}` lacks the item `{r.target.name}` with kind Function and detail `{td.signature}`"
+      else if !missingParams.isEmpty then
+        fail s!"{at_}: completion inside `{head}` lacks parameter(s) {missingParams.map (·.name)} of the enclosing {r.declKind.describe} `{r.declName}`"
+      else nComp := nComp + 1
+  if nComp == fnRefs.length && nComp > 0 then
+    ok s!"{unitRoot}/: textDocument/completion inside the same {fnRefs.length} cross-file fn reference(s) → all {allFnNames.length} fn names of the unit (the target with kind Function and its signature as detail), all {Naru.keywords.length} keywords (kind Keyword) and the parameters of the enclosing declaration (kind Variable, `name: type`)"
   -- 5c. 宣言の無い位置では null、宣言名の上ではその宣言自身(定義ジャンプ)/ その宣言の署名(ホバー)
   let probeRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let probePath := (env.root / probeRel).toString
@@ -683,6 +782,13 @@ def checks (env : Env) : M Unit := do
     match pos with
     | none => fail s!"{probeRel}: no {what} to probe"
     | some (l, ch) => checkHoverNull env probePath l ch what
+  -- 補完(C31): コメントの中では候補なし
+  if let some l := commentLine then
+    match ← completionAt env (System.Uri.pathToUri probePath) l 2 with
+    | .ok items =>
+      if items.isEmpty then ok s!"{probeRel}:{l + 1}:3 (a comment line): textDocument/completion → no items"
+      else fail s!"{probeRel}:{l + 1}:3 (a comment line): completion offers {items.size} item(s) inside a comment: {(labelsOf items).take 5}"
+    | .error e => fail s!"{probeRel}:{l + 1}:3 (a comment line): {e}"
   match (unitChecked.mods.find? (·.file == probePath)).bind fun m => (m.decls.find? (·.kind == .fn)).map fun d => (m, d) with
   | none => fail s!"{probeRel}: no fn declaration to probe"
   | some (pm, d) =>
@@ -744,6 +850,31 @@ def checks (env : Env) : M Unit := do
         else fail s!"{at_}: definition on the declared {what} `{name}` → {showLoc env got}, expected {showLoc env want}"
       | .ok none => fail s!"{at_}: definition on the declared {what} `{name}` → null, expected {showLoc env want}"
       | .error e => fail s!"{at_}: {e}"
+  -- 5c''. 補完(C31)、enum の経路: `Enum.Variant` と空白なしで書かれた参照の `.` の直後の補完は、その enum の全 variant
+  -- (kind EnumMember、detail `Enum.Variant(型)`)で、それ以外の項目は無い(受け手は値ではないので `.` の前の経路から作る)
+  let contiguous (r : Naru.Resolve.Ref) : Bool :=
+    let line := (((unitSrc.lookup r.file).getD "").splitOn "\n").getD (r.span.line - 1) ""
+    let written := (Naru.renderPath r.path).toList
+    ((line.toList.drop (r.span.col - 1)).take written.length) == written
+  let enumRef := unitChecked.refs.find? fun r => r.target.kind == .enum && r.path.length == 2 && contiguous r
+  match enumRef with
+  | none => fail s!"{unitRoot}/: no `Enum.Variant` reference (written without spaces) to probe"
+  | some r =>
+    let head := r.path.head?.getD ""
+    let text := (unitSrc.lookup r.file).getD ""
+    let ch := utf16Of text r.span.line r.span.col + head.length + 1
+    let at_ := s!"{rel env r.file}:{r.span.line}:{r.span.col + head.length + 1}"
+    match (unitChecked.mods.find? (·.file == r.target.file)).bind fun m => m.decls.find? (·.name == r.target.name) with
+    | none => fail s!"{at_}: the enum `{r.target.name}` is not in the unit"
+    | some ed =>
+      match ← completionAt env (System.Uri.pathToUri r.file) (r.span.line - 1) ch with
+      | .error e => fail s!"{at_}: {e}"
+      | .ok items =>
+        let missing := ed.variants.toList.filter fun v => !(hasItem items v.name kindEnumMember (· == s!"{ed.name}.{v.render}"))
+        let extra := items.filter fun (_, k, _) => k != kindEnumMember
+        if !missing.isEmpty then fail s!"{at_}: completion after `{head}.` lacks variant(s) {missing.map (·.name)} of enum `{ed.name}` (kind EnumMember, detail `{ed.name}.<Variant>(…)`)"
+        else if !extra.isEmpty then fail s!"{at_}: completion after `{head}.` offers non-variant item(s) {(labelsOf extra).take 5}"
+        else ok s!"{at_}: textDocument/completion after `{head}.` → the {ed.variants.size} variant(s) of enum `{ed.name}` (kind EnumMember, detail `{ed.name}.<Variant>(…)`), nothing else"
   -- 5d. 欄名と stdlib のメソッド名(型検査の索引 `Checked.members`): 欄名へのホバーは `Record.欄: 型` と record の宣言コメント、定義ジャンプは
   -- record の欄の名前のトークン。Set のメソッド名へのホバーは受け手の型で実体化した署名
   match unitChecked.members.find? (·.kind == .field) with
@@ -778,6 +909,15 @@ def checks (env : Env) : M Unit := do
           else fail s!"{at_}: definition on field `{fm.name}` → {showLoc env got}, expected {showLoc env want}"
         | .ok none => fail s!"{at_}: definition on field `{fm.name}` → null, expected {showLoc env want}"
         | .error e => fail s!"{at_}: {e}"
+      -- 補完(C31): 欄名の位置(`.` の直後)の補完は record の全欄(kind Field、detail `Record.欄: 型`)を含み、予約語を含まない
+      match ← completionAt env (System.Uri.pathToUri fm.file) (fm.span.line - 1) ch with
+      | .error e => fail s!"{at_}: {e}"
+      | .ok items =>
+        let missing := rd.fields.toList.filter fun f => !(hasItem items f.name kindField (· == s!"{rd.name}.{f.name}: {f.ty.render}"))
+        if !missing.isEmpty then
+          fail s!"{at_}: completion after `.` lacks field(s) {missing.map (·.name)} of {rd.kind.describe} `{rd.name}` (kind Field, detail `{rd.name}.<field>: <type>`)"
+        else if items.any (·.2.1 == kindKeyword) then fail s!"{at_}: completion after `.` offers keywords"
+        else ok s!"{at_}: textDocument/completion after `.` → the {rd.fields.size} field(s) of {rd.kind.describe} `{rd.name}` (kind Field, detail `{rd.name}.<field>: <type>`), no keywords ({items.size} item(s))"
   match unitChecked.members.find? fun m => m.kind == .method && (match m.recv with | .set _ => true | _ => false) with
   | none => fail s!"{unitRoot}/: no resolved Set method reference to probe"
   | some mm =>
@@ -796,6 +936,47 @@ def checks (env : Env) : M Unit := do
       else if l != mm.span.line - 1 || sc != ch || ec != ch + mm.name.length then
         fail s!"{at_}: hover range {l + 1}:{sc + 1}-{ec + 1}, expected the method name `{mm.name}`"
       else ok s!"{at_}: textDocument/hover on stdlib method `{mm.name}` → markdown with `{hoverSignature value}`"
+    -- 補完(C31): Set の式の `.` の直後の補完は stdlib の Set の全メソッド(kind Method、detail `Set<T>.m(…) -> 戻り型`)を含み、
+    -- 常に拒否されるメソッド(E003 の選択・E004 の順序)と予約語を含まない
+    let setNames := Naru.Typecheck.setSigs.map (·.1)
+    let checkSetItems (items : Array Item) : Option String :=
+      let missing := setNames.filter fun n => !(hasItem items n kindMethod (·.startsWith s!"{mm.recv.render}.{n}("))
+      let forbidden := (Naru.Typecheck.setChoiceMethods ++ Naru.Typecheck.setOrderMethods).filter fun n => (labelsOf items).contains n
+      -- C31 の検証文が名指しする `contains`(表から消えても検出するよう、固定の名前で)
+      if !(hasItem items "contains" kindMethod (· == s!"{mm.recv.render}.contains({(match mm.recv with | .set t => t | t => t).render}) -> Bool")) then
+        some s!"lacks `contains` (kind Method, detail `{mm.recv.render}.contains(<element>) -> Bool`)"
+      else if !missing.isEmpty then some s!"lacks stdlib method(s) {missing} (kind Method, detail `{mm.recv.render}.<m>(…) -> …`)"
+      else if !forbidden.isEmpty then some s!"offers Set methods that are always rejected (E003 / E004): {forbidden}"
+      else if items.any (·.2.1 == kindKeyword) then some "offers keywords"
+      else none
+    match ← completionAt env (System.Uri.pathToUri mm.file) (mm.span.line - 1) ch with
+    | .error e => fail s!"{at_}: {e}"
+    | .ok items =>
+      match checkSetItems items with
+      | some why => fail s!"{at_}: completion after `.` on `{mm.recv.render}` {why}"
+      | none => ok s!"{at_}: textDocument/completion after `.` on `{mm.recv.render}` → all {setNames.length} stdlib Set methods incl. `contains` (kind Method, detail `{mm.recv.render}.<m>(…) -> …`), none of the E003 / E004 methods, no keywords"
+    -- 壊れた文書でも: メソッド名を消して `….(…)` にすると構文エラー(E010)になるが、`.` の直後の補完は(サーバーが仮の名前で単位を探って)同じ候補を返す
+    let mmLines := text.splitOn "\n"
+    let mmChars := (mmLines.getD (mm.span.line - 1) "").toList
+    let brokenLine := String.ofList (mmChars.take (mm.span.col - 1) ++ mmChars.drop (mm.span.col - 1 + mm.name.length))
+    let brokenText := "\n".intercalate (mmLines.set (mm.span.line - 1) brokenLine)
+    let mmUri := System.Uri.pathToUri mm.file
+    let brokenExpected := expectedOf (unitSrc.map fun (f, t) => if f == mm.file then (f, brokenText) else (f, t))
+    let brokenHere := ((brokenExpected.find? (·.1 == mmUri)).map (·.2)).getD #[]
+    if brokenHere.isEmpty then fail s!"{at_}: deleting `{mm.name}` should make naru compile report a diagnostic in this file"
+    didChange env mmUri 2 brokenText
+    let some got ← barrier env | return
+    if ← agrees s!"{rel env mm.file}: didChange (delete `{mm.name}`)" got brokenExpected [mmUri] then
+      match ← completionAt env mmUri (mm.span.line - 1) ch with
+      | .error e => fail s!"{at_}: {e}"
+      | .ok items =>
+        match checkSetItems items with
+        | some why => fail s!"{at_}: with `{mm.name}` deleted, completion after `.` {why}"
+        | none => ok s!"{at_}: with `{mm.name}` deleted (the document has [{showDiags brokenHere}]), textDocument/completion after `.` still → all {setNames.length} stdlib Set methods of `{mm.recv.render}` (the server probes the unit with a placeholder name)"
+    didChange env mmUri 3 text
+    let some got ← barrier env | return
+    if ← agrees s!"{rel env mm.file}: didChange (restore `{mm.name}`)" got #[] [mmUri] then
+      ok s!"{rel env mm.file}: didChange back to the original → 0 diagnostics"
   -- 6. didChange(ソースルートの単位: 開いた文書のバッファで検査する)
   let targetRel := unitRoot ++ "/Consensus/Objects/Time.naru"
   let target := (env.root / targetRel).toString

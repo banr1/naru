@@ -4,15 +4,21 @@ import Naru.Describe
 import Naru.Config
 
 /-!
-# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30)
+# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30 / C31)
 
 標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、コンパイラの索引から取る
-ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を
-起動し、開いた文書を送ってくる。
+ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)・補完(`textDocument/completion`)を返す。エディタ(Zed 拡張
+`editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
-  `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)。それ以外のリクエスト(補完・リネーム・整形の
-  C31〜C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+  `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)。それ以外の
+  リクエスト(リネーム・整形の C32 / C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+- 補完(C31): `.` の直後(途中まで書いた名前の中を含む)なら受け手の型から — record / state の欄、stdlib の型のメソッド(受け手の型で
+  実体化した署名)、その型を最初の仮引数に取る fn 等(UFCS)。受け手の型は型検査の索引 `Checked.accesses`(欄 / メソッドのアクセスの
+  受け手の型。名前が解決できなくても残る)から取り、索引に無ければ(文書が構文エラーの途中、`x.` まで書いた)位置の名前を仮の識別子に
+  置き換えた本文で単位を検査し直して取る(探り。診断は送らず索引も変えない)。型が決まらなければ `.` の前の経路から: enum なら variant、
+  モジュール名ならその宣言 / 次の区切り、組み込みの型なら静的関数。それ以外の位置なら、位置を含む宣言の仮引数と位置より前の局所名、
+  単位の全宣言(署名と宣言コメントの要旨つき)、予約語、組み込みの型と構築子。コメント(行コメントと同じ行のブロックコメント)・文字列の中は空。
 - 位置にあるもの(`locate`。C29 / C30 の共通): 文書の位置にある参照(名前解決の索引 `Checked.refs`: 値の位置・型の位置・scenario の input の
   束縛に書かれた経路。経路 `A.B.c` の上ならその最長の接頭辞で解決した宣言と、カーソルのある区切り)、宣言名そのもの、型検査の索引
   `Checked.members` の欄名 / stdlib のメソッド名の順に探す。索引は単位ごとに直前の検査(全ファイルが構文解析できたもの)のものを持つ。
@@ -504,6 +510,309 @@ def hover (uri : String) (line0 ch : Nat) : M Json := do
     ("contents", Json.mkObj [("kind", "markdown"), ("value", value)]),
     ("range", rangeJson line0 (utf16Col chars found.startIdx) (utf16Col chars found.endIdx))]
 
+/-! ## 補完(`textDocument/completion`、C31) -/
+
+/-- LSP の `CompletionItemKind`(宣言の種類ごと)。 -/
+def completionKind : DeclKind → Nat
+  | .fn | .observer => 3                                                        -- Function
+  | .input => 6                                                                 -- Variable
+  | .record | .state => 22                                                      -- Struct
+  | .enum => 13                                                                 -- Enum
+  | .typeAlias => 7                                                             -- Class
+  | .predicate | .condition | .regime | .property | .claim | .claimBundle => 8  -- Interface
+  | .protocol => 9                                                              -- Module
+  | .scenario => 23                                                             -- Event
+
+/-- 宣言以外の `CompletionItemKind`: メソッド 2・欄 5・変数(局所名)6・モジュール 9・予約語 14・enum の variant 20。 -/
+def kindMethod : Nat := 2
+def kindField : Nat := 5
+def kindVariable : Nat := 6
+def kindModule : Nat := 9
+def kindKeyword : Nat := 14
+def kindEnumMember : Nat := 20
+
+/-- `CompletionItem`: `label`・`kind`・`detail`(署名など)・`documentation`(Markdown: 宣言コメントの要旨など)。 -/
+def completionItem (label : String) (kind : Nat) (detail : Option String := none) (doc : Option String := none) : Json :=
+  Json.mkObj ([("label", Json.str label), ("kind", kind)]
+    ++ detail.toList.map (fun (d : String) => ("detail", Json.str d))
+    ++ doc.toList.map (fun (d : String) => ("documentation", Json.mkObj [("kind", Json.str "markdown"), ("value", Json.str d)])))
+
+/-- `CompletionList`(候補は揃っている: `isIncomplete = false`。クライアントが入力中の語で絞る)。 -/
+def completionList (items : Array Json) : Json :=
+  Json.mkObj [("isIncomplete", false), ("items", Json.arr items)]
+
+def isIdentChar (c : Char) : Bool := c.isAlphanum || c == '_'
+
+/-- 添字 `i` を含む識別子の始まり(左へ識別子の文字を遡る。直前が末尾の `?` ならそれも識別子の一部)。 -/
+def wordStartAt (chars : Array Char) (i : Nat) : Nat := Id.run do
+  let mut s := if i > 0 && chars[i - 1]! == '?' then i - 1 else i
+  while s > 0 && isIdentChar chars[s - 1]! do s := s - 1
+  return s
+
+/-- 添字 `i` から右へ続く識別子の終わり(排他的。末尾の `?` を含む)。 -/
+def wordEndAt (chars : Array Char) (i : Nat) : Nat := Id.run do
+  let mut e := i
+  while (chars[e]?.map isIdentChar).getD false do e := e + 1
+  if chars[e]? == some '?' then e := e + 1
+  return e
+
+/-- 添字 `i` がコメント(`//` の後、または同じ行で開いて閉じていない `/* … */`)か文字列リテラルの中か(その行の先頭から見る。
+行をまたぐブロックコメントは見ない)。 -/
+def inCommentOrString (chars : Array Char) (i : Nat) : Bool := Id.run do
+  let mut j := 0
+  let mut inStr := false
+  let mut escaped := false
+  let mut block := 0
+  while j < i && j < chars.size do
+    let c := chars[j]!
+    if block > 0 then
+      if c == '*' && chars[j + 1]? == some '/' then
+        block := block - 1
+        j := j + 1
+      else if c == '/' && chars[j + 1]? == some '*' then
+        block := block + 1
+        j := j + 1
+    else if inStr then
+      if escaped then escaped := false
+      else if c == '\\' then escaped := true
+      else if c == '"' then inStr := false
+    else if c == '"' then inStr := true
+    else if c == '/' && chars[j + 1]? == some '/' then return true
+    else if c == '/' && chars[j + 1]? == some '*' then
+      block := 1
+      j := j + 1
+    j := j + 1
+  return inStr || block > 0
+
+/-- `.` の位置 `dotIdx` の直前に空白なしで書かれた経路(`A.B`)の区切り。経路でなければ空。 -/
+def pathBeforeDot (chars : Array Char) (dotIdx : Nat) : List String := Id.run do
+  let mut s := dotIdx
+  while s > 0 && (isIdentChar chars[s - 1]! || chars[s - 1]! == '.') do s := s - 1
+  let text := String.ofList ((chars.toList.drop s).take (dotIdx - s))
+  if text.isEmpty then return []
+  let segs := text.splitOn "."
+  if segs.any (·.isEmpty) then return []
+  return segs
+
+/-- 経路の最長の接頭辞で解決する宣言(単純名か修飾名。名前解決と同じ規則)と、残りの区切り。 -/
+def lookupDeclPath (idx : UnitIndex) (path : List String) : Option (Module × Decl × List String) := Id.run do
+  let mut k := path.length
+  while k > 0 do
+    let p := renderPath (path.take k)
+    for m in idx.checked.mods do
+      for d in m.decls do
+        if d.name == p || renderPath (m.name ++ [d.name]) == p then return some (m, d, path.drop k)
+    k := k - 1
+  return none
+
+/-- Surface の型をソースの表記で正規化する: 型別名を展開し、record / state / enum の経路を表示名にする(`TyV.render` と比べられる形)。 -/
+partial def normTy (idx : UnitIndex) (t : Ty) (depth : Nat := 0) : String :=
+  match t with
+  | .named _ path args =>
+    let argsS := if args.isEmpty then "" else "<" ++ ", ".intercalate (args.toList.map (normTy idx · (depth + 1))) ++ ">"
+    match lookupDeclPath idx path with
+    | some (_, d, []) =>
+      match d.kind, d.aliasOf with
+      | .typeAlias, some t' => if depth < 16 then normTy idx t' (depth + 1) else renderPath path ++ argsS
+      | _, _ => d.name ++ argsS
+    | _ => renderPath path ++ argsS
+  | .tuple _ elems => "(" ++ ", ".intercalate (elems.toList.map (normTy idx · (depth + 1))) ++ ")"
+  | .fn _ ps r => "(" ++ ", ".intercalate (ps.toList.map (normTy idx · (depth + 1))) ++ ") -> " ++ normTy idx r (depth + 1)
+
+/-- 宣言の補完項目: 名前、種類、署名(`detail`)、宣言コメントの要旨と種類・名前・モジュール(`documentation`)。 -/
+def declItem (lines : Array String) (m : Module) (d : Decl) (note : Option String := none) : Json :=
+  let head := match (declComment lines d).head? with
+    | some s => [escapeMarkdown s]
+    | none => []
+  completionItem d.name (completionKind d.kind) (some d.signature)
+    (some ("\n\n".intercalate (head ++ [describeDecl m d] ++ note.toList)))
+
+/-- 単位の全宣言の補完項目(識別子の位置で見える名前: 名前解決はコンパイル単位の 1 つの大域表なので、import の有無に関わらず全宣言)。 -/
+def declItems (st : State) (idx : UnitIndex) : Array Json := Id.run do
+  let mut out : Array Json := #[]
+  for m in idx.checked.mods do
+    let lines := ((textOf st idx m.file).splitOn "\n").toArray
+    for d in m.decls do
+      out := out.push (declItem lines m d)
+  return out
+
+def keywordItems : Array Json :=
+  (keywords.map fun k => completionItem k kindKeyword (some "keyword")).toArray
+
+/-- 組み込みの型と構築子(`Resolve.builtinTypes` / `Some` / `None` / `Ok` / `Err`、`sort(xs, by = …)`)。常に E003 の `choose` / `pick` は出さない。 -/
+def builtinItems : Array Json :=
+  (Resolve.builtinTypes.map fun t => completionItem t 7 (some s!"built-in type `{t}`")).toArray
+    ++ #[completionItem "Some" 3 (some "Some(x)"), completionItem "None" 6 (some "None"),
+         completionItem "Ok" 3 (some "Ok(x)"), completionItem "Err" 3 (some "Err(e)"),
+         completionItem "sort" 3 (some "sort(xs, by = |x| …)")]
+
+/-- パターンが束ねる名前。 -/
+partial def patBinders : Pattern → List (String × Span)
+  | .bind sp n => [(n, sp)]
+  | .ctor _ _ args => args.toList.flatMap patBinders
+  | .tuple _ elems => elems.toList.flatMap patBinders
+  | _ => []
+
+/-- 式の中で束ねられる局所名(`let` / lambda / 量化 / パターン / scenario の `input` の仮引数)とその位置・注釈の型。 -/
+partial def exprBinders : Expr → List (String × Span × Option Ty)
+  | .lit .. | .var .. => []
+  | .call _ f args => exprBinders f ++ args.toList.flatMap argBinders
+  | .field _ r _ => exprBinders r
+  | .method _ r _ args => exprBinders r ++ args.toList.flatMap argBinders
+  | .binop _ _ l r => exprBinders l ++ exprBinders r
+  | .unop _ _ a => exprBinders a
+  | .ite _ c t e => exprBinders c ++ exprBinders t ++ exprBinders e
+  | .matchE _ s arms => exprBinders s ++ arms.toList.flatMap fun arm => match arm with
+      | .mk p g b => (patBinders p).map (fun (n, sp) => (n, sp, none)) ++ g.toList.flatMap exprBinders ++ exprBinders b
+  | .block _ stmts tail => stmts.toList.flatMap stmtBinders ++ tail.toList.flatMap exprBinders
+  | .recordLit _ _ fields base => fields.toList.flatMap (fun (_, e) => exprBinders e) ++ base.toList.flatMap exprBinders
+  | .listLit _ es | .tupleLit _ es => es.toList.flatMap exprBinders
+  | .lambda _ ps body | .quant _ _ ps body => ps.toList.map (fun b => (b.name, b.span, b.ty)) ++ exprBinders body
+where
+  argBinders : Arg → List (String × Span × Option Ty)
+    | .pos e | .named _ e => exprBinders e
+  stmtBinders : Stmt → List (String × Span × Option Ty)
+    | .letS sp n ty v => (n, sp, ty) :: exprBinders v
+    | .exprS e => exprBinders e
+    | .inputS _ _ ps v => ps.toList.map (fun (p, sp) => (p, sp, none)) ++ exprBinders v
+    | .observeS _ e => exprBinders e
+
+/-- 文書の行 `line1`(1 始まり)を含む宣言: その行以前に始まる最後の宣言(protocol の中の宣言はそれ自身)。 -/
+def enclosingDecl (lines : Array String) (m : Module) (line1 : Nat) : Option Decl := Id.run do
+  let start (d : Decl) : Nat := (declLine? lines d).getD d.span.line
+  let mut best : Option Decl := none
+  for d in m.decls do
+    if start d ≤ line1 then
+      match best with
+      | some b => if start d ≥ start b then best := some d
+      | none => best := some d
+  return best
+
+/-- 位置(1 始まりの行、文字の添字)を含む宣言の仮引数と、その位置より前に束ねられた局所名の補完項目(有効範囲は位置の前後で近似する)。 -/
+def localItems (lines : Array String) (m : Module) (line1 i : Nat) : Array Json := Id.run do
+  let some d := enclosingDecl lines m line1 | return #[]
+  let before (sp : Span) : Bool := sp.line < line1 || (sp.line == line1 && sp.col - 1 < i)
+  let mut out : Array Json := #[]
+  let mut seen : List String := []
+  for p in d.params do
+    if !seen.contains p.name then
+      seen := p.name :: seen
+      out := out.push (completionItem p.name kindVariable (some (Param.render p)) (some s!"parameter of {d.kind.describe} `{d.name}`"))
+  for (n, sp, ty) in d.body.toList.flatMap exprBinders do
+    if before sp && !seen.contains n then
+      seen := n :: seen
+      out := out.push (completionItem n kindVariable (ty.map fun t => s!"{n}: {t.render}") (some s!"local name in {d.kind.describe} `{d.name}`"))
+  return out
+
+/-- 受け手の型 `recv` の `.` の後の候補: record / state なら欄(宣言に書かれた型と 1 行の説明)、stdlib の型ならメソッド表
+(受け手の型で実体化した署名)、どの型でもその型を最初の仮引数に取る fn 等(UFCS `x.f(…)`。仮引数の型は Surface の表記を `normTy` で
+正規化して `TyV.render` と文字列で比べる近似: 別モジュールの同じ表示名の record は区別しない)。 -/
+def memberItems (st : State) (idx : UnitIndex) (recv : TyV) : Array Json := Id.run do
+  let mut out : Array Json := #[]
+  if let .named key _ := recv then
+    if let some (m, d) := declByKey idx key then
+      let lines := ((textOf st idx m.file).splitOn "\n").toArray
+      for f in d.fields do
+        let doc := (memberComment lines d f.span.line).head?.map escapeMarkdown
+        out := out.push (completionItem f.name kindField (some s!"{d.name}.{f.name}: {f.ty.render}") doc)
+  if let some (tyName, bound, sigs) := Typecheck.sigsFor recv then
+    for (name, sig) in sigs do
+      let ps := ", ".intercalate (sig.params.map fun (n, t) =>
+        let shown := (Typecheck.substVars bound t).render
+        match n with
+        | some n => s!"{n} = {shown}"
+        | none => shown)
+      let ret := (Typecheck.substVars bound sig.ret).render
+      out := out.push (completionItem name kindMethod (some s!"{recv.render}.{name}({ps}) -> {ret}") (some s!"method of `{tyName}` (stdlib)"))
+  let want := recv.render
+  for m in idx.checked.mods do
+    let lines := ((textOf st idx m.file).splitOn "\n").toArray
+    for d in m.decls do
+      if Typecheck.isFnLike d.kind then
+        if let some p := d.params[0]? then
+          if normTy idx p.ty == want then
+            out := out.push (declItem lines m d (some s!"UFCS: `x.{d.name}(…)` = `{d.name}(x, …)`"))
+  return out
+
+/-- `.` の前に書かれた経路から作る候補(受け手の型が決まらないとき): enum なら variant、モジュール名(とその接頭辞)ならその宣言 / 次の区切り、
+組み込みの型なら静的関数(`Set.empty` …)。 -/
+def pathItems (st : State) (idx : UnitIndex) (path : List String) : Array Json := Id.run do
+  let mut out : Array Json := #[]
+  let statics : List String := match path with
+    | ["Set"] => ["empty", "singleton", "of"]
+    | ["List"] => ["empty", "range"]
+    | ["Table"] => ["empty"]
+    | _ => []
+  for n in statics do
+    out := out.push (completionItem n 3 (some s!"{renderPath path}.{n}(…)") (some "built-in"))
+  if let some (m, d, []) := lookupDeclPath idx path then
+    if d.kind == .enum then
+      let lines := ((textOf st idx m.file).splitOn "\n").toArray
+      for v in d.variants do
+        out := out.push (completionItem v.name kindEnumMember (some s!"{d.name}.{v.render}") ((memberComment lines d v.span.line).head?.map escapeMarkdown))
+  let mut nexts : List String := []
+  for m in idx.checked.mods do
+    if !path.isEmpty && m.name.take path.length == path then
+      if m.name.length == path.length then
+        let lines := ((textOf st idx m.file).splitOn "\n").toArray
+        for d in m.decls do out := out.push (declItem lines m d)
+      else if let some seg := m.name[path.length]? then
+        if !nexts.contains seg then
+          nexts := seg :: nexts
+          out := out.push (completionItem seg kindModule (some s!"module {renderPath (path ++ [seg])}"))
+  return out
+
+/-- 索引から、`.` の直後(文字の添字 `nameStart`)に書かれた欄 / メソッド名の受け手の型(決まっていなければ none)。 -/
+def accessRecv (checked : Checked) (file : String) (line1 nameStart : Nat) : Option TyV :=
+  (checked.accesses.find? fun a => a.file == file && a.span.line == line1 && a.span.col - 1 == nameStart).bind fun a =>
+    match a.recv with
+    | .mvar _ | .unknown => none
+    | t => some t
+
+/-- 補完の探りに使う仮の識別子。 -/
+def probeName : String := "naruCompletionProbe"
+
+/-- `.` の後の受け手の型を探る: 位置の名前(途中まで書いたもの。無ければ空)を仮の識別子に置き換えた本文で単位を検査し直し
+(診断は送らず索引も変えない)、その位置のアクセスの受け手の型を取る。文書が構文エラーの途中(`x.` まで書いた)でも引ける。 -/
+def probeRecv (st : State) (doc : Doc) (lines : List String) (line0 nameStart nameEnd : Nat) : IO (Option TyV) := do
+  let chars := (lines.getD line0 "").toList
+  let line' := String.ofList (chars.take nameStart ++ probeName.toList ++ chars.drop nameEnd)
+  let text' := "\n".intercalate (lines.set line0 line')
+  let sources ← unitSources st doc
+  let (_, checked) := compileSources (sources.map fun (f, t) => if f == doc.path then (f, text') else (f, t))
+  return accessRecv checked doc.path (line0 + 1) nameStart
+
+/-- 文書 `uri` の位置(0 始まりの行、UTF-16 の列)の補完(`CompletionList`)。`.` の直後(途中まで書いた名前の中を含む)なら受け手の型
+(索引、無ければ探り)の欄 / メソッド / UFCS、型が決まらなければ `.` の前の経路(enum の variant・モジュールの宣言・組み込みの静的関数)。
+それ以外の位置なら、位置を含む宣言の仮引数と位置より前の局所名、単位の全宣言、予約語、組み込み。コメント(行コメントと同じ行のブロックコメント)・文字列の中は空。 -/
+def completion (uri : String) (line0 ch : Nat) : M Json := do
+  let st ← get
+  let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return completionList #[]
+  let lines := doc.text.splitOn "\n"
+  let chars := (lines.getD line0 "").toList.toArray
+  let i := charIndex chars ch
+  if inCommentOrString chars i then return completionList #[]
+  let some idx := st.index.find? (·.key == unitKey doc) | return completionList (keywordItems ++ builtinItems)
+  let wordStart := wordStartAt chars i
+  let wordEnd := wordEndAt chars i
+  let line1 := line0 + 1
+  if wordStart > 0 && chars[wordStart - 1]! == '.' && !(wordStart > 1 && chars[wordStart - 2]! == '.') then
+    let current := idx.sources.lookup doc.path == some doc.text
+    let fromIndex := if current then accessRecv idx.checked doc.path line1 wordStart else none
+    let recv? ← match fromIndex with
+      | some t => pure (some t)
+      | none => probeRecv st doc lines line0 wordStart wordEnd
+    let items := match recv? with
+      | some t => memberItems st idx t
+      | none => #[]
+    if !items.isEmpty then return completionList items
+    return completionList (pathItems st idx (pathBeforeDot chars (wordStart - 1)))
+  else
+    let locals := match idx.checked.mods.find? (·.file == doc.path) with
+      | some m => localItems (((textOf st idx m.file).splitOn "\n").toArray) m line1 i
+      | none => #[]
+    return completionList (locals ++ declItems st idx ++ keywordItems ++ builtinItems)
+
 /-! ## メッセージの処理 -/
 
 def initializeResult (version : String) : Json :=
@@ -511,7 +820,8 @@ def initializeResult (version : String) : Json :=
     ("capabilities", Json.mkObj [
       ("textDocumentSync", Json.mkObj [("openClose", true), ("change", 1), ("save", true)]),
       ("hoverProvider", true),
-      ("definitionProvider", true)]),
+      ("definitionProvider", true),
+      ("completionProvider", Json.mkObj [("triggerCharacters", Json.arr #[Json.str "."]), ("resolveProvider", false)])]),
     ("serverInfo", Json.mkObj [("name", "naru"), ("version", version)])]
 
 /-- `params.position` の (0 始まりの行, UTF-16 の列)。 -/
@@ -570,6 +880,10 @@ def handle (msg : Json) : M Unit := do
     match docUri params, positionOf params with
     | some uri, some (line, ch) => respond id (← hover uri line ch)
     | _, _ => respondError id (-32602) "hover: textDocument.uri / position missing"
+  | "textDocument/completion", some id =>
+    match docUri params, positionOf params with
+    | some uri, some (line, ch) => respond id (← completion uri line ch)
+    | _, _ => respondError id (-32602) "completion: textDocument.uri / position missing"
   | _, some id => respondError id (-32601) s!"method not found: {method}"
   | _, none => pure ()
 

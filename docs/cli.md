@@ -57,16 +57,16 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 ## 言語サーバー(`naru lsp`)
 
-Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバーと定義ジャンプに応える。応じるのは `initialize`(全文同期
-`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/
-`didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)。それ以外のリクエスト(補完・リネーム・整形の C31〜C33 は未対応)には
-`MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
+Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバー・定義ジャンプ・補完に応える。応じるのは `initialize`(全文同期
+`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`、`completionProvider`(`triggerCharacters` は `.`))/ `initialized` / `shutdown` / `exit` と
+`textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)。それ以外の
+リクエスト(リネーム・整形の C32 / C33 は未対応)には `MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
 
 - 位置にあるもの(ホバーと定義ジャンプの共通): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` に書かれた経路(`Phase.Tick` のような経路の上なら
   その最長の接頭辞で解決した宣言と、カーソルのある区切り。UFCS の `x.f(…)` の `f` も)—、宣言名そのもの、record / state / enum の宣言の中の欄名 / variant 名、
   型検査が解決した式の中の欄名 / stdlib のメソッド名の順に探す。位置はトークン(経路)の先頭から終わりまでで、終わりの直後の列(識別子の末尾にあるカーソル)も含む。
-  索引は名前解決が集めた参照(`Checked.refs`)と型検査が集めた欄・メソッドの参照(`Checked.members`、[architecture.md](architecture.md))で、単位ごとに
-  直前の検査(全ファイルが構文解析できたもの)の結果を持ち、検査し直さない。
+  索引は名前解決が集めた参照(`Checked.refs`)と型検査が集めた欄・メソッドの参照(`Checked.members`)・アクセスの受け手の型(`Checked.accesses`、
+  [architecture.md](architecture.md))で、単位ごとに直前の検査(全ファイルが構文解析できたもの)の結果を持ち、ホバーと定義ジャンプは検査し直さない。
 - 定義ジャンプ(`textDocument/definition`): 参照・宣言名からは同じコンパイル単位の宣言(別ファイルを含む)の URI と宣言の名前のトークンの範囲(`Location`)、欄名
   (式の中・宣言の中)からはその record / state の欄の名前のトークン、宣言の中の variant 名からはその variant を返す。どれも無い位置(コメント・予約語・局所変数・
   stdlib のメソッド)では null。
@@ -77,6 +77,20 @@ Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開い�
   1 行の説明と enum の宣言コメント、欄名(式の中・宣言の中)なら `Record.欄: 型`(宣言に書かれた型)と欄の直上の 1 行の説明と record の宣言コメント、stdlib の
   メソッド名なら受け手の型で実体化した署名(`Set<ValidatorId>.contains(ValidatorId) -> Bool`)。`range` は参照の経路 / トークンの範囲。識別子でない位置
   (空白・コメント・予約語・局所変数)では null。
+- 補完(`textDocument/completion`): `CompletionList`(`isIncomplete = false`: 候補は揃っていて、入力中の語での絞り込みはエディタが行う)。各項目は `label`・`kind`
+  (fn / observer は Function、record / state は Struct、enum は Enum、type は Class、spec 宣言は Interface、input と局所名は Variable、欄は Field、stdlib の
+  メソッドは Method、variant は EnumMember、予約語は Keyword)・`detail`(宣言の署名 / `Record.欄: 型` / 受け手の型で実体化したメソッドの署名)・
+  `documentation`(宣言コメントの要旨と種類・名前・モジュール、欄 / variant の 1 行の説明)。
+  - `.` の直後(途中まで書いた名前の中を含む): 受け手の型から — record / state なら欄、stdlib の型(Set / List / Option / Result / Table / Nat / Int / String)なら
+    そのメソッド表(常に拒否される Set の選択 E003・順序 E004 のメソッドは表に無いので出ない)、どの型でもその型を最初の仮引数に取る fn 等(UFCS
+    `x.f(…)`)。受け手の型は型検査の索引 `Checked.accesses`(欄 / メソッドのアクセスごとの受け手の型。名前が解決できなくても残る)から取り、索引が
+    現在の本文に無ければ(`x.` まで書いた構文エラーの途中など)位置の名前を仮の識別子に置き換えた本文で単位を検査し直して取る(診断は送らず索引も
+    変えない。移植ソース全体で約 0.06 秒)。型が決まらなければ `.` の前の経路から: enum(`Phase.`)ならその variant、モジュール名(とその接頭辞)なら
+    その宣言 / 次の区切り、組み込みの型(`Set.`)なら静的関数(`empty` / `singleton` / `of` …)。UFCS の候補は仮引数の型の表記を型別名の展開と
+    表示名で正規化して受け手の型の表示と文字列で比べる近似(別モジュールの同じ表示名の record は区別しない)。
+  - それ以外の位置: 位置を含む宣言の仮引数と、その位置より前に束ねられた局所名(`let` / lambda / 量化 / パターン。有効範囲は位置の前後で近似する)、
+    単位の全宣言(名前解決は単位の 1 つの大域表なので import の有無に関わらず見える)、予約語、組み込みの型と構築子(`Some` / `None` / `Ok` / `Err` / `sort`)。
+  - 行コメント・同じ行で開いたブロックコメント・文字列リテラルの中では空(行をまたぐブロックコメントは見ない)。
 
 - 検査の単位: 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下なら `<ルート>/**/*.naru` 全体を 1 つのコンパイル単位にし、
   開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。
