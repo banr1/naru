@@ -29,7 +29,7 @@ GLR で record literal とブロックの両方を試す。
 
 ## Zed 拡張
 
-`editors/zed-naru/`(C17)は、文法を `extension.toml` の `rev`(このリポジトリのコミット SHA)から取り、`naru lsp` を起動して診断を表示する。
+`editors/zed-naru/`(C17)は、文法を `extension.toml` の `rev`(このリポジトリのコミット SHA)から取り、`naru lsp` を起動して診断を表示する(ホバー・定義ジャンプ・補完・リネームも `naru lsp` が返す。Zed は既定で保存時に言語サーバーの整形 `textDocument/formatting`(C33)を呼ぶので、整形済みの `specs/consensus/` と `tests/accept/` のファイルは保存しても本文が変わらない: [cli.md](cli.md)「言語サーバー」の整形の規則)。
 Dev Extension として入れる検査が `lake exe naru_test zed-install`(C19)。
 
 ## `rev` の付け替え

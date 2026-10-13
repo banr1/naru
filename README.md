@@ -90,7 +90,7 @@ scenario basic
 lake exe naru check-reject tests/reject/phase_leak.naru E001   # 反例が期待の診断で拒否される
 lake exe naru_test grammar      # tree-sitter 文法(C16)
 lake exe naru_test zed          # Zed 拡張(C17)
-lake exe naru_test lsp          # 言語サーバー: 診断・ホバー・定義ジャンプ・補完・リネーム(C18 / C29 / C30 / C31 / C32)
+lake exe naru_test lsp          # 言語サーバー: 診断・ホバー・定義ジャンプ・補完・リネーム・整形(C18 / C29 / C30 / C31 / C32 / C33)
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
 lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface の宣言群の意味の対応から実生成 Model / Statements への合成 `sfn_*` / `sstmt_*`(C55 / C57)も検査)。約 1 分

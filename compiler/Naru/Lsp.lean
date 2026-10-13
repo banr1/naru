@@ -1,19 +1,25 @@
 import Lean.Data.Json
 import Naru.Driver
 import Naru.Describe
+import Naru.Format
 import Naru.Config
 
 /-!
-# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30 / C31 / C32)
+# 言語サーバー(`naru lsp`、IDEAL.md C18 / C29 / C30 / C31 / C32 / C33)
 
 標準入出力で LSP(JSON-RPC 2.0、`Content-Length` 枠)を話し、コンパイラの診断(E001〜E019)と、コンパイラの索引から取る
 ホバー(`textDocument/hover`)・定義ジャンプ(`textDocument/definition`)・補完(`textDocument/completion`)・リネーム
-(`textDocument/prepareRename` / `rename`)を返す。エディタ(Zed 拡張 `editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
+(`textDocument/prepareRename` / `rename`)、字句列から印字し直す整形(`textDocument/formatting`)を返す。エディタ(Zed 拡張
+`editors/zed-naru/`)は `naru lsp` を起動し、開いた文書を送ってくる。
 
 - 応じるもの: `initialize` / `initialized` / `shutdown` / `exit`、`textDocument/didOpen` / `didChange`(全文同期)/
   `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、`textDocument/completion`(C31)、
-  `textDocument/prepareRename` / `textDocument/rename`(C32)。それ以外のリクエスト(整形の C33 は未対応)には `MethodNotFound`(-32601)を
-  返し、それ以外の通知は無視する。
+  `textDocument/prepareRename` / `textDocument/rename`(C32)、`textDocument/formatting`(C33)。それ以外のリクエストには
+  `MethodNotFound`(-32601)を返し、それ以外の通知は無視する。
+- 整形(C33): 開いている文書のバッファを `Naru.Format.format`(`Naru/Format.lean`: 字句列から正規形を印字し直す。字句・コメントの
+  内容・字句の間の改行の有無は変えず、字下げ・行の中の空白・空行の数・末尾の改行だけを正規形にする。冪等)に掛け、変わらなければ
+  空の配列、変わるなら文書全体を置き換える `TextEdit` 1 つを返す。`options`(`tabSize` 等)は見ない(常に 2 空白)。字句解析に
+  失敗する本文(E010)は整形できないので null を返す(文書が開いていなければ `RequestFailed` -32803)。
 - リネーム(C32): 位置にあるもの(`locate`)が宣言名(宣言そのもの、または参照の経路の宣言名の区切り)か欄名(record / state の宣言の中・
   式の中の読み `r.f`・record literal の初期化 `R { f: … }`)なら、`prepareRename` はその名前のトークンの範囲と現在の名前を返し、`rename` は
   同じコンパイル単位の全ファイル(開いていないファイルも)のその名前の箇所 — 宣言なら名前解決の索引 `Checked.refs` の全参照の宣言名の区切り、
@@ -1022,6 +1028,25 @@ def rename (uri : String) (line0 ch : Nat) (newName : String) : M (Except String
       (uriOfFile st f, Json.arr (here.map fun ed => textEditJson lines ed).toArray)
     return .ok (Json.mkObj [("changes", Json.mkObj changes)])
 
+/-! ## 整形(`textDocument/formatting`、C33) -/
+
+/-- `textDocument/formatting`: 開いている文書のバッファの正規形(`Format.format`)。変わらなければ `[]`、変わるなら文書全体
+(先頭から最後の行の終わりまで)を置き換える `TextEdit` 1 つ。字句解析に失敗する本文(E010)は null。文書が開いていなければ `.error`。 -/
+def formatting (uri : String) : M (Except String Json) := do
+  let st ← get
+  let some doc := st.docs.find? (fun (d : Doc) => d.uri == uri) | return .error s!"formatting: document not open: {uri}"
+  match Format.format doc.path doc.text with
+  | .error d =>
+    log s!"formatting: cannot format {doc.path}: {d.code} at {d.span.line}:{d.span.col}: {d.msg}"
+    return .ok Json.null
+  | .ok text =>
+    if text == doc.text then return .ok (Json.arr #[])
+    let lines := doc.text.splitOn "\n"
+    let lastIdx := lines.length - 1
+    let lastChars := (lines.getD lastIdx "").toList.toArray
+    let range := Json.mkObj [("start", position 0 0), ("end", position lastIdx (utf16Col lastChars lastChars.size))]
+    return .ok (Json.arr #[Json.mkObj [("range", range), ("newText", Json.str text)]])
+
 /-! ## メッセージの処理 -/
 
 def initializeResult (version : String) : Json :=
@@ -1031,7 +1056,8 @@ def initializeResult (version : String) : Json :=
       ("hoverProvider", true),
       ("definitionProvider", true),
       ("completionProvider", Json.mkObj [("triggerCharacters", Json.arr #[Json.str "."]), ("resolveProvider", false)]),
-      ("renameProvider", Json.mkObj [("prepareProvider", true)])]),
+      ("renameProvider", Json.mkObj [("prepareProvider", true)]),
+      ("documentFormattingProvider", true)]),
     ("serverInfo", Json.mkObj [("name", "naru"), ("version", version)])]
 
 /-- `params.position` の (0 始まりの行, UTF-16 の列)。 -/
@@ -1105,6 +1131,13 @@ def handle (msg : Json) : M Unit := do
       | .ok result => respond id result
       | .error e => respondError id (-32803) e   -- RequestFailed: 新しい名前が不適切、または参照の位置が本文に見つからない
     | _, _, _ => respondError id (-32602) "rename: textDocument.uri / position / newName missing"
+  | "textDocument/formatting", some id =>
+    match docUri params with
+    | some uri =>
+      match ← formatting uri with
+      | .ok result => respond id result
+      | .error e => respondError id (-32803) e
+    | none => respondError id (-32602) "formatting: textDocument.uri missing"
   | _, some id => respondError id (-32601) s!"method not found: {method}"
   | _, none => pure ()
 

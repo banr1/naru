@@ -480,7 +480,7 @@ fn completeOne(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Ti
 // 手書き `completeFrame` に対応する。
 fn completeFrame(e: ProtocolEnv, hc: HealConfig, st: HealingStore, r: Round, t: Time, fr: Frame) -> Frame {
   completeOne(e, hc, st, r, t, GradePhase.G0,
-    completeOne(e, hc, st, r, t, GradePhase.G1, completeOne(e, hc, st, r, t, GradePhase.G2, fr)))
+              completeOne(e, hc, st, r, t, GradePhase.G1, completeOne(e, hc, st, r, t, GradePhase.G2, fr)))
 }
 
 // 保存された 1 つの phase の結果を、ブロック `f` に両立するよう切り詰めて返す。

@@ -5,7 +5,7 @@
 // 実際の戻り値と命題の真偽(真になる入力と、偽になる対照入力の否定)を Lean kernel で照合する。
 module Accept.PropBool
 
-type Count = Nat                                       // 型別名(型の位置での使用はすべて正常)
+type Count = Nat // 型別名(型の位置での使用はすべて正常)
 record Tally { count: Count, limit: Count } derive eq, order
 
 fn within(t: Tally) -> Bool { t.count <= t.limit }

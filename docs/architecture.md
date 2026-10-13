@@ -20,6 +20,8 @@ Parser → Surface AST
 
 前の段に誤りがあれば次の段には進まない。診断が 1 つでもあれば backend には進まず、`generated/` は書き換えない。
 入口は `compiler/Naru/Driver.lean` の `compileFiles`(指定ファイル)/ `compileSources`(ソースルート。`naru lsp` はバッファの内容でこれを呼ぶ)。
+`naru lsp` の整形(C33、`compiler/Naru/Format.lean`)だけは段を通らず、字句解析(`Lexer.lean`)の字句列と字句の間のコメントから正規形を印字し直す
+(字句列を変えないので、整形は生成 Lean の本文に影響しない。規則は [cli.md](cli.md)「言語サーバー」)。
 すべての診断は backend より前の共通の検査が出すので、CLI の `compile`(出力指定あり / なし)と言語サーバーは同じ入力・コンパイル単位に同じ診断を
 同じ行・列に出す(C18)。
 型検査を診断なしに通った Core には、推論用のメタ変数・誤りの波及を抑える「不明」の型・エラー用ノードが残ってはならない(型検査は誤りを診断してから

@@ -2,13 +2,23 @@ import Naru
 import NaruTest.Common
 
 /-!
-# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30 / C31 / C32)
+# `naru_test lsp` — 言語サーバー `naru lsp` の検査(IDEAL.md C18 / C29 / C30 / C31 / C32 / C33)
 
 リポジトリのルートで実行する。`lake build naru` の後、子プロセスの `.lake/build/bin/naru lsp` と標準入出力で LSP を話し、
 次を確かめる(`ok:` / `FAIL:`)。期待値はコンパイラ(`Naru.compileSources`、CLI の `compile` と同じ検査)から取る。
 
 1. `initialize` の応答に全文同期(`textDocumentSync.change = 1`、`openClose`)と `hoverProvider = true`(C29)・`definitionProvider = true`(C30)・
-   `completionProvider`(`triggerCharacters` に `.`。C31)・`renameProvider`(`prepareProvider = true`。C32)がある。`initialized` を送る。
+   `completionProvider`(`triggerCharacters` に `.`。C31)・`renameProvider`(`prepareProvider = true`。C32)・`documentFormattingProvider = true`(C33)
+   がある。`initialized` を送る。
+   整形(C33、`textDocument/formatting`): `tests/accept/` の全受理例(3b)と `specs/consensus/` の移植ソースの全ファイル(5a)への `formatting` が
+   空の配列(整形済み)。各ファイルの崩した複製(`mangle`: 字下げ・行の中の空白・行末の空白・空行・先頭の空行・末尾の改行を崩し、文字列と
+   コメントの中とブロックコメントの中の行は変えない)を単独の文書(`.lake/naru/test/lsp/format/` 配下のディスクに無いパス)として開くと、
+   `formatting` の編集を適用した本文が元と同一で、字句列(`Naru.lexAll`)が同じで、その本文への `formatting` は空(冪等)。元のソースと
+   崩した複製を `.lake/naru/test/lsp/format/{accept/<名前>,unitgen}/{orig,mangled}/` に書いて CLI の `naru compile --out out <同じ相対パス>` を
+   走らせ、生成 Lean の全ファイルの本文が C1 のヘッダ(`-- naru-…`)を除いて同一。`Naru.Format.format` の検体(3b'): 空行の規則(先頭・連続・
+   開き括弧の直後・閉じ括弧の直前・末尾)と宣言コメントの隣接、ブロックコメント・文字列の中の不変、型引数 / lambda / 単項 `-` の空白、
+   続きの行・`forall` の本体・揃えた引数・`if` の条件の続き・`else` の字下げが期待の文面と一致し冪等、未終了の文字列は E010 で整形されず
+   LSP では null。
    リネーム(C32、`textDocument/prepareRename` / `rename`): 単独の受理例の参照の先頭で `prepareRename` が名前の範囲と placeholder を返し、`rename` の
    WorkspaceEdit がその文書の全出現を書き換える(3d)。移植ソース(5e): 別ファイルの fn 8 の参照の先頭で `prepareRename` が経路の宣言名の区切りの範囲と
    placeholder を返し、`rename` の WorkspaceEdit(`changes`: URI → `TextEdit`)が単位の全ファイルのその名前 — 編集の総数がコメントを除いた `grep -w` の
@@ -734,6 +744,287 @@ def checkRenameNull (env : Env) (file : String) (line0 ch : Nat) (what : String)
     | .ok (.refused code msg) => fail s!"{at_}: rename → error {code} {msg}, expected null"
     | .ok (.edits changes) => fail s!"{at_}: rename → {changes.length} file(s) of edits, expected null"
 
+/-! ## 整形(C33) -/
+
+/-- 行をまたぐ `TextEdit`: ((開始の行, 列), (終わりの行, 列), newText)。行は 0 始まり、列は UTF-16。 -/
+abbrev FullEdit := (Nat × Nat) × (Nat × Nat) × String
+
+def parsePos (j : Json) : Except String (Nat × Nat) := do
+  let l ← j.getObjVal? "line" >>= Json.getNat?
+  let c ← j.getObjVal? "character" >>= Json.getNat?
+  return (l, c)
+
+def parseFullEdit (j : Json) : Except String FullEdit := do
+  let some newText := getStr j "newText" | throw s!"TextEdit without newText: {j.compress.take 200}"
+  let range ← j.getObjVal? "range"
+  let s ← parsePos (← range.getObjVal? "start")
+  let e ← parsePos (← range.getObjVal? "end")
+  return (s, e, newText)
+
+/-- `textDocument/formatting` を送り、`result` を読む: null → none(整形できない)、`TextEdit[]` → その列(空なら整形済み)。 -/
+def formattingAt (env : Env) (uri : String) : IO (Except String (Option (List FullEdit))) := do
+  let id ← env.nextId.modifyGet fun n => (n, n + 1)
+  request env.client id "textDocument/formatting"
+    (Json.mkObj [("textDocument", Json.mkObj [("uri", uri)]), ("options", Json.mkObj [("tabSize", 2), ("insertSpaces", true)])])
+  match ← collectUntil env.client id with
+  | none => return .error "server closed its output before answering textDocument/formatting"
+  | some (resp, _) =>
+    if let some e := getField resp "error" then return .error s!"textDocument/formatting → error {e.compress}"
+    match getField resp "result" with
+    | none => return .error s!"textDocument/formatting: response without result: {resp.compress.take 200}"
+    | some Json.null => return .ok none
+    | some r =>
+      let some items := r.getArr?.toOption | return .error s!"textDocument/formatting: result is not an array: {r.compress.take 200}"
+      let mut out : List FullEdit := []
+      for it in items do
+        match parseFullEdit it with
+        | .ok e => out := out ++ [e]
+        | .error e => return .error s!"textDocument/formatting: {e}"
+      return .ok (some out)
+
+/-- 行をまたぐ編集を本文に適用する(後ろから)。 -/
+def applyFullEdits (text : String) (edits : List FullEdit) : String := Id.run do
+  let lines := (text.splitOn "\n").toArray
+  let offsetOf (l ch : Nat) : Nat := Id.run do
+    let mut off := 0
+    for k in [0:min l lines.size] do off := off + (lines[k]!).length + 1
+    return off + charIdxOf (lines.getD l "").toList ch
+  let sorted := edits.mergeSort fun (s1, _, _) (s2, _, _) => s1.1 > s2.1 || (s1.1 == s2.1 && s1.2 ≥ s2.2)
+  let mut cs := text.toList
+  for (s, e, newText) in sorted do
+    cs := cs.take (offsetOf s.1 s.2) ++ newText.toList ++ cs.drop (offsetOf e.1 e.2)
+  return String.ofList cs
+
+/-- 2 つの本文の最初に違う行(1 始まり)とその両方の内容。 -/
+def firstDiff (a b : String) : Option (Nat × String × String) := Id.run do
+  let la := (a.splitOn "\n").toArray
+  let lb := (b.splitOn "\n").toArray
+  for i in [0:max la.size lb.size] do
+    if la[i]? != lb[i]? then return some (i + 1, (la[i]?).getD "<eof>", (lb[i]?).getD "<eof>")
+  return none
+
+def showDiff (a b : String) : String :=
+  match firstDiff a b with
+  | some (n, x, y) => s!"first difference at line {n}: got `{x.take 100}`, expected `{y.take 100}`"
+  | none => "no line differs"
+
+/-- 整形の検体を作る: 字句と字句の間の改行の有無は保ったまま、字下げ(3 空白ずつずらす・タブ・0)・行の中の空白(`, ` / ` = ` / `) {` /
+`(` / `: ` / ` -> ` の周り)・行末の空白・空行(2 つに、開き括弧の直後と閉じ括弧の直前にも)・先頭の空行・末尾の改行を崩す。
+文字列リテラルかコメントを含む行は字下げだけ(その中は変えない)、ブロックコメントの中の行は触らない。 -/
+def mangle (text : String) : String := Id.run do
+  let mut out : Array String := #["", ""]
+  let mut depth := 0
+  let mut k := 0
+  for l in text.splitOn "\n" do
+    let cs := l.toList
+    let body := String.ofList (cs.dropWhile fun c => c == ' ' || c == '\t')
+    let indent := cs.length - body.length
+    let opens := (body.splitOn "/*").length - 1
+    let closes := (body.splitOn "*/").length - 1
+    let hasQuote := body.toList.contains '"'
+    let hasComment := (body.splitOn "//").length > 1 || opens > 0 || closes > 0
+    if depth > 0 then
+      out := out.push l
+    else if body.isEmpty then
+      out := out.push ""
+      out := out.push "  "
+    else
+      let mangled :=
+        if hasQuote || hasComment then body
+        else (((((((body.replace ", " ",  ").replace " = " "  =  ").replace ") {" ")  {").replace "(" "( ").replace ": " " :  ").replace " -> " "->").replace " " "  ")
+      let newIndent := if k % 2 == 0 then indent + 3 else 0
+      let line := String.ofList (List.replicate newIndent ' ') ++ (if k % 4 == 0 then "\t" else "") ++ mangled
+      if body.startsWith "}" || body.startsWith ")" || body.startsWith "]" then out := out.push ""
+      out := out.push (if hasComment then line else line ++ "   \t")
+      if body.endsWith "{" && !hasComment then out := out.push ""
+      k := k + 1
+    depth := depth + opens - closes
+  return "\n".intercalate out.toList ++ "\n\n"
+
+/-- 整形済みであること: 開いている文書への `formatting` が空の配列。 -/
+def checkFormatted (env : Env) (uri what text : String) : M Bool := do
+  match ← formattingAt env uri with
+  | .error e => fail s!"{what}: {e}"; return false
+  | .ok none => fail s!"{what}: textDocument/formatting → null (the server could not lex the document)"; return false
+  | .ok (some []) => return true
+  | .ok (some edits) =>
+    fail s!"{what}: textDocument/formatting → {edits.length} edit(s), expected none (the file is not in canonical form; {showDiff text (applyFullEdits text edits)})"
+    return false
+
+/-- 崩した複製(`mangle`)を単独の文書(ディスクに無い `fakePath`)として開き、`formatting` の編集を適用すると元と同一になり、字句列が
+同じで、その本文への `formatting` は空(冪等)であること。 -/
+def checkMangled (env : Env) (what fakePath text : String) : M Bool := do
+  let uri := System.Uri.pathToUri fakePath
+  let mangled := mangle text
+  if mangled == text then
+    fail s!"{what}: the mangled copy equals the original"
+    return false
+  didOpen env uri mangled
+  let some _ ← barrier env | return false
+  let mut good := true
+  match ← formattingAt env uri with
+  | .error e => fail s!"{what}: {e}"; good := false
+  | .ok none => fail s!"{what}: formatting the mangled copy → null"; good := false
+  | .ok (some edits) =>
+    let formatted := applyFullEdits mangled edits
+    if formatted != text then
+      fail s!"{what}: formatting the mangled copy ({edits.length} edit(s)) does not restore the original ({showDiff formatted text})"
+      good := false
+    else
+      match Naru.lexAll fakePath mangled, Naru.lexAll fakePath formatted with
+      | .ok a, .ok b =>
+        if a.map (·.kind) != b.map (·.kind) then
+          fail s!"{what}: the token sequence changed between the mangled copy and its formatting"
+          good := false
+      | _, _ => fail s!"{what}: the mangled copy or its formatting does not lex"; good := false
+      didChange env uri 2 formatted
+      let some _ ← barrier env | return false
+      match ← formattingAt env uri with
+      | .ok (some []) => pure ()
+      | .ok (some es) => fail s!"{what}: formatting the formatted copy again → {es.length} edit(s), expected none (not idempotent)"; good := false
+      | .ok none => fail s!"{what}: formatting the formatted copy again → null"; good := false
+      | .error e => fail s!"{what}: {e}"; good := false
+  didClose env uri
+  let some _ ← barrier env | return false
+  return good
+
+/-- 生成先の全ファイルの本文(C1 のヘッダ `-- naru-…` 行を除く)。鍵は `dir` からの相対パス。 -/
+def generatedBodies (dir : System.FilePath) : IO (List (String × String)) := do
+  let files ← Naru.listFiles dir "lean"
+  let pre := dir.toString ++ "/"
+  let mut out : List (String × String) := []
+  for f in files do
+    let rel := if f.startsWith pre then (f.drop pre.length).toString else f
+    let body := "\n".intercalate (((← IO.FS.readFile f).splitOn "\n").filter fun l => !l.startsWith "-- naru-")
+    out := out ++ [(rel, body)]
+  return out.mergeSort fun a b => a.1 ≤ b.1
+
+/-- 整形の前後で生成 Lean の本文(ヘッダを除く)が同一であること: `files`(相対パス, 本文)を `dir/orig/` と、崩した複製を `dir/mangled/` に
+書き、それぞれを cwd にして同じ相対パスで CLI の `naru compile --out out <files>` を走らせ(ヘッダのソースのパスも同じになる)、
+`out/` の全ファイルの本文を照合する。 -/
+def checkCompileSame (env : Env) (what : String) (dir : System.FilePath) (files : List (String × String)) : M Bool := do
+  let bin := env.root / ".lake" / "build" / "bin" / "naru"
+  for sub in ["orig", "mangled"] do
+    let base := dir / sub
+    if ← base.pathExists then IO.FS.removeDirAll base
+    for (rel, t) in files do
+      let dst := base / rel
+      if let some parent := dst.parent then IO.FS.createDirAll parent
+      IO.FS.writeFile dst (if sub == "orig" then t else mangle t)
+    let out ← runProc bin.toString (#["compile", "--out", "out"] ++ (files.map (·.1)).toArray) (cwd := some base)
+    if out.exitCode != 0 then
+      fail s!"{what}: naru compile on {base} → exit {out.exitCode}: {tail out.stderr 300}"
+      return false
+  let a ← generatedBodies (dir / "orig" / "out")
+  let b ← generatedBodies (dir / "mangled" / "out")
+  if a.isEmpty then
+    fail s!"{what}: naru compile --out wrote nothing under {dir / "orig" / "out"}"
+    return false
+  if a == b then return true
+  let differing := (a.filter fun (p, body) => b.lookup p != some body).map (·.1)
+  let missing := (b.filter fun (p, _) => (a.lookup p).isNone).map (·.1)
+  fail s!"{what}: generated Lean differs between the original and the mangled copy: differing {differing.take 5}, only in the mangled {missing.take 5}"
+  return false
+
+/-- `Naru.Format.format` の検体: `input` の正規形が `expected` で、`expected` を整形しても変わらない。 -/
+def checkSnippet (what input expected : String) : M Unit := do
+  match Naru.Format.format "<snippet>" input with
+  | .error d => fail s!"{what}: format → {d.code}: {d.msg}"
+  | .ok out =>
+    if out != expected then fail s!"{what}: format → {showDiff out expected}\n--- got\n{out}--- expected\n{expected}"
+    else
+      match Naru.Format.format "<snippet>" out with
+      | .ok again =>
+        if again == out then ok s!"{what}: Naru.Format.format → the expected canonical form ({(expected.splitOn "\n").length - 1} line(s)), idempotent"
+        else fail s!"{what}: formatting the canonical form again changes it ({showDiff again out})"
+      | .error d => fail s!"{what}: formatting the canonical form again → {d.code}: {d.msg}"
+
+/-- 3b'. 整形(C33)の受理例の検査: 各受理例を単独の文書として開いて `formatting` が空(整形済み)、閉じてから崩した複製の復元と冪等
+(`checkMangled`)、元と崩した複製の `naru compile --out` の生成 Lean の本文の一致(`checkCompileSame`)。 -/
+def acceptFormatChecks (env : Env) (accepts : List String) (formatDir : System.FilePath) : M Unit := do
+  let mut nFormatted := 0
+  let mut nMangled := 0
+  let mut nCompileSame := 0
+  for p in accepts do
+    let abs := (env.root / p).toString
+    let uri := System.Uri.pathToUri abs
+    let text ← IO.FS.readFile abs
+    didOpen env uri text
+    let some _ ← barrier env | return
+    if ← checkFormatted env uri p text then nFormatted := nFormatted + 1
+    didClose env uri
+    let some _ ← barrier env | return
+    let name := (System.FilePath.mk p).fileName.getD p
+    if ← checkMangled env s!"{p} (mangled copy)" (formatDir / "single" / name).toString text then nMangled := nMangled + 1
+    if ← checkCompileSame env s!"{p} (naru compile --out of the original and the mangled copy)" (formatDir / "accept" / name) [(name, text)] then
+      nCompileSame := nCompileSame + 1
+  if nFormatted == accepts.length && nFormatted > 0 then
+    ok s!"tests/accept/: {nFormatted} files, textDocument/formatting → [] (every accept example is in canonical form)"
+  if nMangled == accepts.length && nMangled > 0 then
+    ok s!"tests/accept/: {nMangled} mangled copies (indentation, spaces, blank lines, trailing whitespace, final newline), textDocument/formatting restores the original with the same token sequence, and formatting the result again → []"
+  if nCompileSame == accepts.length && nCompileSame > 0 then
+    ok s!"tests/accept/: {nCompileSame} files, naru compile --out of the original and of the mangled copy → identical generated Lean apart from the `-- naru-` header lines ({formatDir / "accept"})"
+
+/-- 3b'. `Naru.Format.format` の検体: 空行(先頭・連続・開き括弧の直後・閉じ括弧の直前・末尾)と宣言コメントの隣接、ブロックコメントと文字列の中の
+不変、型引数・lambda・単項 `-` の空白、続きの行と `forall` の本体・揃えた引数・`if` の条件の続き・`else` の字下げ、字句解析に失敗する本文
+(`format` は E010、LSP は null)。 -/
+def snippetChecks (env : Env) (formatDir : System.FilePath) : M Unit := do
+  checkSnippet "snippet: blank lines and a declaration comment"
+    "\n\nmodule A\n\n\n// c1\n// c2\nfn f(a: Nat) -> Nat {\n\n  a   +  1\n\n}\n\n\n"
+    "module A\n\n// c1\n// c2\nfn f(a: Nat) -> Nat {\n  a + 1\n}\n"
+  checkSnippet "snippet: block comment and string literal kept verbatim"
+    "fn g() -> String {\n    /* a\n       b */  \"x // y\"\n}"
+    "fn g() -> String {\n  /* a\n       b */ \"x // y\"\n}\n"
+  checkSnippet "snippet: type arguments, lambda bars, unary minus, member access"
+    "fn h(xs:List<Nat>,t:Table<Nat,List<Nat>>)->Int{xs.map(|x|-x.toInt()).fold(0,|a,b|a+b)}"
+    "fn h(xs: List<Nat>, t: Table<Nat, List<Nat>>) -> Int { xs.map(|x| -x.toInt()).fold(0, |a, b| a + b) }\n"
+  checkSnippet "snippet: continuation lines and a quantifier body"
+    "fn k(a: Bool, b: Bool) -> Bool {\na\n&& b\n|| (forall n: Nat {\nn >= 0\n})\n}"
+    "fn k(a: Bool, b: Bool) -> Bool {\n  a\n    && b\n    || (forall n: Nat {\n         n >= 0\n       })\n}\n"
+  checkSnippet "snippet: aligned arguments, if condition continuation, else, record update"
+    "fn m(st: S, x: Nat,\n  y: Nat) -> S {\nif x > 0\n&& y > 0 {\nS { x: x, ..st }\n} else {\nst\n}\n}"
+    "fn m(st: S, x: Nat,\n     y: Nat) -> S {\n  if x > 0\n      && y > 0 {\n    S { x: x, ..st }\n  } else {\n    st\n  }\n}\n"
+  checkSnippet "snippet: adjacent symbols that would merge into one token keep a space (`| |`, `x ?`, `. ..`, `! =`)"
+    "fn z() -> Nat { apply( |  |   1) }\nfn w() -> Nat {   x   ?   }\nfn v(s: S) -> S { S {   .   ..s } }\nfn u() -> Bool {  !   =  }"
+    "fn z() -> Nat { apply(| | 1) }\nfn w() -> Nat { x ? }\nfn v(s: S) -> S { S { . ..s } }\nfn u() -> Bool { ! = }\n"
+  checkSnippet "snippet: CRLF line endings become LF"
+    "fn c() -> Nat {\r\n  1\r\n}\r\n"
+    "fn c() -> Nat {\n  1\n}\n"
+  match Naru.Format.format "<snippet>" "fn f() -> String { \"unterminated }\n" with
+  | .error d =>
+    if d.code == "E010" then ok s!"snippet: an unterminated string literal → Naru.Format.format fails with {d.code} (not formatted)"
+    else fail s!"snippet: unterminated string → {d.code}, expected E010"
+  | .ok _ => fail "snippet: an unterminated string literal was formatted, expected a lexer failure"
+  let lexUri := System.Uri.pathToUri (formatDir / "single" / "lexerror.naru").toString
+  didOpen env lexUri "fn f() -> String { \"unterminated }\n"
+  let some _ ← barrier env | return
+  match ← formattingAt env lexUri with
+  | .ok none => ok "lexerror.naru (unterminated string literal): textDocument/formatting → null"
+  | .ok (some es) => fail s!"lexerror.naru: textDocument/formatting → {es.length} edit(s), expected null"
+  | .error e => fail s!"lexerror.naru: {e}"
+  didClose env lexUri
+  let some _ ← barrier env | return
+
+/-- 5a. 整形(C33)の移植ソースの検査: 開いている全ファイルへの `formatting` が空(整形済み)、崩した複製の復元と冪等、単位全体の
+`naru compile --out` の生成 Lean の本文が元と崩した複製で一致。 -/
+def unitFormatChecks (env : Env) (unitRoot : String) (dslFiles : List String) (formatDir : System.FilePath) : M Unit := do
+  let mut nFormatted := 0
+  let mut nMangled := 0
+  let mut unitFiles : List (String × String) := []
+  for p in dslFiles do
+    let abs := (env.root / p).toString
+    let text ← IO.FS.readFile abs
+    if ← checkFormatted env (System.Uri.pathToUri abs) p text then nFormatted := nFormatted + 1
+    let rel := if p.startsWith (unitRoot ++ "/") then (p.drop (unitRoot.length + 1)).toString else p
+    if ← checkMangled env s!"{p} (mangled copy)" (formatDir / "unit" / rel).toString text then nMangled := nMangled + 1
+    unitFiles := unitFiles ++ [(rel, text)]
+  if nFormatted == dslFiles.length && nFormatted > 0 then
+    ok s!"{unitRoot}/: {nFormatted} files, textDocument/formatting → [] (every file of the unit is in canonical form)"
+  if nMangled == dslFiles.length && nMangled > 0 then
+    ok s!"{unitRoot}/: {nMangled} mangled copies, textDocument/formatting restores the original with the same token sequence, and formatting the result again → []"
+  if ← checkCompileSame env s!"{unitRoot}/ (naru compile --out of the unit and of its mangled copy)" (formatDir / "unitgen") unitFiles then
+    ok s!"{unitRoot}/: naru compile --out of the {unitFiles.length} original files and of their mangled copies → identical generated Lean apart from the `-- naru-` header lines ({formatDir / "unitgen"})"
+
 def checks (env : Env) : M Unit := do
   let c := env.client
   -- 1. initialize / initialized
@@ -750,10 +1041,11 @@ def checks (env : Env) : M Unit := do
   let triggers := caps >>= (getField · "completionProvider") >>= (getField · "triggerCharacters") >>= fun j => j.getArr?.toOption
   let dotTrigger := (triggers.map fun a => a.any fun j => j.getStr?.toOption == some ".").getD false
   let prepareProvider := caps >>= (getField · "renameProvider") >>= fun r => (r.getObjVal? "prepareProvider" >>= Json.getBool?).toOption
-  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true && dotTrigger && prepareProvider == some true then
-    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true, completionProvider.triggerCharacters has \".\", renameProvider.prepareProvider = true"
+  let formattingProvider := caps >>= fun s => (s.getObjVal? "documentFormattingProvider" >>= Json.getBool?).toOption
+  if change == some 1 && openClose == some true && definitionProvider == some true && hoverProvider == some true && dotTrigger && prepareProvider == some true && formattingProvider == some true then
+    ok "initialize: textDocumentSync.change = 1 (full), openClose = true, hoverProvider = true, definitionProvider = true, completionProvider.triggerCharacters has \".\", renameProvider.prepareProvider = true, documentFormattingProvider = true"
   else
-    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true, definitionProvider = true, completionProvider with trigger \".\" and renameProvider.prepareProvider = true, got {resp.compress}"
+    fail s!"initialize: expected textDocumentSync.change = 1, openClose = true, hoverProvider = true, definitionProvider = true, completionProvider with trigger \".\", renameProvider.prepareProvider = true and documentFormattingProvider = true, got {resp.compress}"
   notify c "initialized" (Json.mkObj [])
   -- 2. 未対応のリクエスト
   let some _ ← barrier env | return
@@ -805,6 +1097,10 @@ def checks (env : Env) : M Unit := do
     if opened && closed then nAccepts := nAccepts + 1
   if nAccepts == accepts.length && nAccepts > 0 then
     ok s!"tests/accept/: {nAccepts} files, didOpen → 0 diagnostics (none for other URIs either), didClose → empty"
+  -- 3b'. 整形(C33): 受理例が整形済み、崩した複製の復元と冪等、生成 Lean の本文の不変、`Naru.Format.format` の検体
+  let formatDir := env.root / ".lake" / "naru" / "test" / "lsp" / "format"
+  acceptFormatChecks env accepts formatDir
+  snippetChecks env formatDir
   -- 3d. 定義ジャンプ(C30)、単独の文書: 参照のある最初の受理例を開き、その最初の参照の位置から同じファイルの宣言の名前の範囲が返る
   let mut singleDone := false
   for p in accepts do
@@ -995,6 +1291,9 @@ def checks (env : Env) : M Unit := do
     if ← agrees s!"{p}: didOpen" got #[] [uri] then nDsl := nDsl + 1
   if nDsl == dslFiles.length then
     ok s!"{unitRoot}/: {nDsl} files didOpen → 0 diagnostics (none for other URIs either)"
+  -- 5a. 整形(C33): 移植ソースの全ファイルが整形済み(`formatting` が空)、崩した複製への `formatting` は元と同一になり冪等、
+  -- 単位全体の生成 Lean の本文(ヘッダを除く)は整形の前後で同一
+  unitFormatChecks env unitRoot dslFiles formatDir
   -- 5b. 定義ジャンプ(C30): 別ファイルの fn / type への参照(参照先の宣言ごとに 1 つ、fn 8 / type 8 まで)→ 宣言ファイルの URI と宣言の名前の範囲
   let mut unitSrc : List (String × String) := []
   for p in dslFiles do

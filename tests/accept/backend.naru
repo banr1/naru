@@ -140,7 +140,6 @@ fn forestSize(f: Forest) -> Nat {
   }
 }
 
-
 // Lean の予約語を名前に使う
 fn at(from: Nat, end: Nat) -> Nat { from + end }
 record Where { with: Nat, fun: Nat } derive eq
@@ -247,7 +246,7 @@ scenario demo {
   observe demoSum();
   let slot = 3;
   observe currentProposer(slot);
-  let next: Slot = slot - 1;   // `observe` の後の `let`(生成 Lean では `::` の右の括弧の中の `let`)
+  let next: Slot = slot - 1; // `observe` の後の `let`(生成 Lean では `::` の右の括弧の中の `let`)
   observe heavyAt(next);
   observe parsedLabel("quote \" backslash \\ newline \n tab \t");
 }

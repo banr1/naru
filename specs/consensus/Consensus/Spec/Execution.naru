@@ -85,8 +85,8 @@ predicate Handles(s: Setup, n: NamedNodeState, ev: NamedEvent, o: NamedObject) {
         || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Block(b), t) },
     NamedObject.GfVote(u) =>
       ((exists t: Time {
-         ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.GfVote(u))
-       })
+        ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.GfVote(u))
+      })
         || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.GfVote(u), t) })
         || exists b: NamedBlock { exists j: Nat { exists before: NamedStore {
              BlockCall(s, n, ev, b, before)
@@ -96,8 +96,8 @@ predicate Handles(s: Setup, n: NamedNodeState, ev: NamedEvent, o: NamedObject) {
            } } },
     NamedObject.Attest(a) =>
       ((exists t: Time {
-         ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.Attest(a))
-       })
+        ev == NamedEvent.Tick(eventNode(ev), t) && tickEmits(s, eventNode(ev), n, t).contains(NamedObject.Attest(a))
+      })
         || exists t: Time { ev == NamedEvent.Deliver(eventNode(ev), NamedObject.Attest(a), t) })
         || exists b: NamedBlock { exists j: Nat { exists before: NamedStore {
              BlockCall(s, n, ev, b, before)

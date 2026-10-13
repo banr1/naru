@@ -57,11 +57,11 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 
 ## 言語サーバー(`naru lsp`)
 
-Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバー・定義ジャンプ・補完・リネームに応える。応じるのは `initialize`(全文同期
-`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`、`completionProvider`(`triggerCharacters` は `.`)、`renameProvider`(`prepareProvider`))/
-`initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、`textDocument/hover`(C29)、`textDocument/definition`(C30)、
-`textDocument/completion`(C31)、`textDocument/prepareRename` / `textDocument/rename`(C32)。それ以外のリクエスト(整形の C33 は未対応)には `MethodNotFound`(-32601)を
-返し、それ以外の通知(`$/…` 等)は無視する。
+Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開いた `.naru` の診断を表示し、ホバー・定義ジャンプ・補完・リネーム・整形に応える。応じるのは `initialize`(全文同期
+`textDocumentSync.change = 1`、`openClose`、`save`、`hoverProvider`、`definitionProvider`、`completionProvider`(`triggerCharacters` は `.`)、`renameProvider`(`prepareProvider`)、
+`documentFormattingProvider`)/ `initialized` / `shutdown` / `exit` と `textDocument/didOpen` / `didChange`(全文)/ `didSave` / `didClose`、`textDocument/hover`(C29)、
+`textDocument/definition`(C30)、`textDocument/completion`(C31)、`textDocument/prepareRename` / `textDocument/rename`(C32)、`textDocument/formatting`(C33)。それ以外の
+リクエスト(`textDocument/rangeFormatting` 等)には `MethodNotFound`(-32601)を返し、それ以外の通知(`$/…` 等)は無視する。
 
 - 位置にあるもの(ホバー・定義ジャンプ・リネームの共通): 文書の位置にある参照 — 値の位置・型の位置・scenario の `input … = …;` の名前に書かれた経路(`Phase.Tick` のような経路の上なら
   その最長の接頭辞で解決した宣言と、カーソルのある区切り。UFCS の `x.f(…)` の `f` も)—、宣言名そのもの、record / state / enum の宣言の中の欄名 / variant 名、
@@ -105,6 +105,27 @@ Zed 拡張(`editors/zed-naru/`、[editors.md](editors.md))が起動し、開い�
   ない、予約語・組み込みの名前、元の名前と大文字 / 小文字の区分が違う(大文字始まりは型・モジュール・enum・構築子の経路として読まれる)、宣言なら同じ
   単位の他の宣言名と重なる(E012)か、その宣言を参照する宣言の局所名(仮引数・let・lambda・量化・パターン)に捕まる、欄なら同じ record の他の欄名と重なるか
   Lean が生成する予約名(`mk` / `rec` …)。書き換えるのは単位の `.naru` だけで、生成 Lean・手書きの Proofs・golden は変えない(改名後に再生成する)。
+- 整形(`textDocument/formatting`、`compiler/Naru/Format.lean`): 開いている文書のバッファを字句列から正規形に印字し直し、変わらなければ空の配列、変わるなら
+  文書全体を置き換える `TextEdit` 1 つを返す(`options` の `tabSize` 等は見ない。常に 2 空白)。字句(識別子・予約語・数・文字列・記号)とコメントの内容、
+  字句の間の改行の有無(書き手の行分け)は変えず、字下げ・行の中の空白・空行の数・ファイル末尾の改行だけを正規形にするので、字句列(したがって意味と
+  生成 Lean の本文)は変わらず、整形は冪等。Zed は既定で保存時にこの整形を呼ぶ(整形済みのファイルでは空の編集で、本文は変わらない)。`specs/consensus/` と
+  `tests/accept/` の全 `.naru` は整形済み(`naru_test lsp` が確かめる)。正規形:
+  - 字下げは 2 空白。閉じ括弧で始まる行は対応する開き括弧の anchor。二項演算子(`&&` / `||` / `implies` / 比較 / 算術 / `.` / `=` / `=>`)で始まる行
+    (式の続き)は、同じ深さの直前の行が自分より弱い演算子で始まる(`implies …` の次の `|| …`)ならその行 + 2、そうでなければ同じ深さの直前の式の頭の行
+    (演算子でも閉じ括弧でも始まらない行)+ 2(頭が `if` の行なら + 4、`->` で始まる戻り型の続きは + 4)。`else` で始まる行は直前の行と同じ。直前の行が
+    二項演算子(か lambda の `|`)で終わる行はその行 + 2。それ以外は、いちばん内側の開き括弧の内容の列: 行末の開き括弧なら anchor + 2、行の途中の
+    開き括弧なら括弧の次の列(引数の並びを揃える)。行末の開き括弧の anchor は、それを開いた式の行の字下げ(行が演算子で始まり次が `forall` / `exists` /
+    `match` / `if` / `(` ならその字句の列。`->` の行、`if` の条件の続き `&& c {`、`} else {`、別の行で開いた括弧をこの行で閉じた後の `{` は、同じ深さの
+    式の頭の行)。コメントだけの行は内容の列。
+  - 行の中の空白: 二項演算子・`=`・`=>`・`->` の前後に 1 つ、`,` `;` `:` の後に 1 つ(前は無し)、`(` `[` の内側・`.` の前後・`..` の後・`?` の前・
+    `!` と単項 `-` の後・lambda の `|…|` の内側・呼出しの名前と `(` の間は無し、`{` `}` の内側は 1 つ(`{}` は無し)、型引数の `<` `>`(`List<…>` / `Set<…>` /
+    `Option<…>` / `Result<…>` / `Table<…>`)の内側と前後は無し、行末コメントの前に 1 つ。ただし空白を挟まないと 1 つの字句に読まれてしまう組
+    (`-` と `>`、`!` と `=`、`|` と `|`、`.` と `..`、識別子と `?` …)には必ず 1 つ置く。文字列リテラルとコメントの中はそのまま。
+  - 改行: 字句の間の改行の有無は変えない(行を分ける・つなぐことはしない)。連続する空行は 1 つに、開き括弧の直後と閉じ括弧の直前の空行は無し、先頭の
+    空行は無し、末尾は改行 1 つ、行末の空白は無し(改行は LF。CRLF は LF になる)。複数行のブロックコメントの 2 行目以降は行末の空白も含めてそのまま。
+    宣言コメント(C60: 宣言の直上の `//` ブロック)と宣言の間に空行は入れない(空行の挿入はしない)。
+  - 整形は字句列を変えない: 整形後の本文を字句解析し直して字句の列が元と違えば(起きない想定の安全網)整形せず null を返す。字句解析に失敗する本文
+    (未終了の文字列・ブロックコメント、未知の文字: E010)も整形できないので null(編集なし)。文書が開いていなければ `RequestFailed`(-32803)。
 
 - 検査の単位: 文書のパスの祖先で最も近い `naru.toml` を読み、その `sources` のルート配下なら `<ルート>/**/*.naru` 全体を 1 つのコンパイル単位にし、
   開いている文書はディスクではなくバッファの内容で検査する(CLI の `compile` と同じ `Driver.compileSources`)。それ以外の文書は単独。

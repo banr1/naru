@@ -3,7 +3,7 @@
 現時点の naru に無いものの一覧。言語の現状は [language.md](language.md)、実装の構成は [architecture.md](architecture.md)。
 
 - E007(runtime 条件の classical 依存。[diagnostics.md](diagnostics.md))
-- `naru lsp` の編集支援の残り(C33 整形。[cli.md](cli.md)「言語サーバー」。ホバー C29・定義ジャンプ C30・補完 C31・リネーム C32 は実装済みで、未対応のリクエストには `MethodNotFound` を返す)と、それらを人間の Zed で観測する C62。補完の局所名の有効範囲は位置の前後での近似(ブロックの終わりで消えない)。リネームは宣言名と欄名だけ(variant・局所名・モジュール名は対象外)
+- `naru lsp` の編集支援(ホバー C29・定義ジャンプ C30・補完 C31・リネーム C32・整形 C33 は実装済み。[cli.md](cli.md)「言語サーバー」。未対応のリクエストには `MethodNotFound` を返す)を人間の Zed で観測する C62。補完の局所名の有効範囲は位置の前後での近似(ブロックの終わりで消えない)。リネームは宣言名と欄名だけ(variant・局所名・モジュール名は対象外)。整形は字句の間の改行の有無を保つ(行を分ける・つなぐ整形、行の長さの制限、`textDocument/rangeFormatting` は無い)
 - 依存グラフ `naru deps`(C63〜C67: `naru.toml` の `deps`、`docs/deps/deps.json` と閲覧用 `index.html`、`naru_test deps`)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)
