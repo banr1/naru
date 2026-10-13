@@ -8,10 +8,11 @@
 ```toml
 sources = [<ソースルート>, …]   # 各ルート配下の **/*.naru が 1 つのコンパイル単位。モジュール名はルートからの相対パスに対応する
 generated = <生成先>             # `naru compile` が Model / Statements を書くディレクトリ
+deps = <依存グラフの出力先>       # `naru deps` が `deps.json` と `index.html` を書くディレクトリ(任意。無ければ `naru deps --out <dir>` が要る。C63)
 ```
 
 読むのは最小限の TOML(`key = "string"` / `key = ["a", "b"]`、`#` のコメント、1 行 1 項目)。表(`[table]`)や複数行の配列は
-受理しない。`generated` を省くと `generated`。
+受理しない。`generated` を省くと `generated`。`deps` は省ける(`naru deps` は `--out` が無ければ exit 非 0)。
 -/
 
 namespace Naru
@@ -24,6 +25,8 @@ structure Config where
   sources : List String
   /-- 生成先。 -/
   generated : String
+  /-- 依存グラフ(`naru deps`)の出力先。書かれていなければ none(`--out` が要る)。 -/
+  deps : Option String := none
 deriving Repr, Inhabited
 
 def configFileName : String := "naru.toml"
@@ -107,6 +110,7 @@ private def parseStringArray (s : String) : Except String (List String) := do
 def parseConfig (dir : System.FilePath) (text : String) : Except String Config := do
   let mut sources : Option (List String) := none
   let mut generated : Option String := none
+  let mut deps : Option String := none
   let mut lineNo := 0
   for raw in text.splitOn "\n" do
     lineNo := lineNo + 1
@@ -129,7 +133,12 @@ def parseConfig (dir : System.FilePath) (text : String) : Except String Config :
         match parseString value with
         | .ok s => generated := some s
         | .error e => throw s!"line {lineNo}: generated: {e}"
-      | _ => throw s!"line {lineNo}: unknown key `{key}` (known: sources, generated)"
+      | "deps" =>
+        if deps.isSome then throw s!"line {lineNo}: `deps` is given twice"
+        match parseString value with
+        | .ok s => deps := some s
+        | .error e => throw s!"line {lineNo}: deps: {e}"
+      | _ => throw s!"line {lineNo}: unknown key `{key}` (known: sources, generated, deps)"
     | [] => throw s!"line {lineNo}: expected `key = value`, got `{line}`"
   let some srcs := sources | throw s!"`sources = [\"<dir>\", …]` is missing"
   let srcs := srcs.map normalizeRoot
@@ -139,7 +148,8 @@ def parseConfig (dir : System.FilePath) (text : String) : Except String Config :
   if srcs.eraseDups.length != srcs.length then throw "`sources` lists the same root twice"
   let gen := generated.getD "generated"
   if gen.isEmpty then throw "`generated` must not be empty"
-  return { dir, sources := srcs, generated := gen }
+  if deps == some "" then throw "`deps` must not be empty"
+  return { dir, sources := srcs, generated := gen, deps }
 
 /-- `naru.toml` を読む。 -/
 def readConfig (path : System.FilePath) : IO (Except String Config) := do
@@ -155,6 +165,9 @@ def Config.rootPaths (cfg : Config) : List System.FilePath := cfg.sources.map cf
 
 /-- 生成先の実際のパス。 -/
 def Config.generatedPath (cfg : Config) : System.FilePath := cfg.resolve cfg.generated
+
+/-- 依存グラフの出力先の実際のパス(`deps` が書かれていれば)。 -/
+def Config.depsPath (cfg : Config) : Option System.FilePath := cfg.deps.map cfg.resolve
 
 /-- `path` の祖先(自分自身を含まない)で最も近い `naru.toml`。無ければ none。 -/
 partial def findConfigFrom (path : System.FilePath) : IO (Option System.FilePath) := do

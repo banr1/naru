@@ -1,0 +1,14 @@
+// 依存グラフの検体(C64): observer と scenario(input の束縛と observer の参照)。
+module Sample.Run
+
+import Sample.Base
+import Sample.Inputs
+import Sample.Mid
+
+observer current() -> Nat { useNamed() + withBias() }
+
+scenario run {
+  input seed() = 1;
+  input bias() = 2;
+  observe current();
+}

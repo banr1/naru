@@ -1,0 +1,4 @@
+// 依存グラフの検体(C63): 未解決の名前(E011)で検査に落ちる。`naru deps` は何も書かない。
+module Broken
+
+fn f() -> Nat { missing() } // E011

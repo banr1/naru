@@ -1,0 +1,21 @@
+// 依存グラフの検体(C64): 依存の根。型別名・record の欄・enum の variant の引数・input・自己再帰。
+module Sample.Base
+
+type Id = Nat
+
+record Point { x: Nat, y: Id } derive eq
+
+type Pair = (Point, Point)
+
+enum Shape { Dot, Line(Point, Point) } derive eq
+
+input seed() -> Nat
+
+// 1 を足す。
+fn bump(n: Nat) -> Nat { n + 1 }
+
+fn countdown(n: Nat) -> Nat {
+  if n == 0 { 0 } else { countdown(n - 1) }
+}
+
+fn idOf(p: Point) -> Id { p.y }

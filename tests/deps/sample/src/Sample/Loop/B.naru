@@ -1,0 +1,6 @@
+// 依存グラフの検体(C64): 循環の相手。A の runtime 宣言を使う spec 宣言。
+module Sample.Loop.B
+
+import Sample.Loop.A
+
+predicate Positive(b: Box) { unbox(b) > 0 }

@@ -4,7 +4,12 @@
 
 - E007(runtime 条件の classical 依存。[diagnostics.md](diagnostics.md))
 - `naru lsp` の編集支援(ホバー C29・定義ジャンプ C30・補完 C31・リネーム C32・整形 C33 は実装済み。[cli.md](cli.md)「言語サーバー」。未対応のリクエストには `MethodNotFound` を返す)を人間の Zed で観測する C62。補完の局所名の有効範囲は位置の前後での近似(ブロックの終わりで消えない)。リネームは宣言名と欄名だけ(variant・局所名・モジュール名は対象外)。整形は字句の間の改行の有無を保つ(行を分ける・つなぐ整形、行の長さの制限、`textDocument/rangeFormatting` は無い)
-- 依存グラフ `naru deps`(C63〜C67: `naru.toml` の `deps`、`docs/deps/deps.json` と閲覧用 `index.html`、`naru_test deps`)
+- 依存グラフ `naru deps`(C63〜C66: `naru.toml` の `deps`、`docs/deps/deps.json` と閲覧用 `index.html`、`naru_test deps`)は実装済み([cli.md](cli.md)「依存グラフ」、
+  [architecture.md](architecture.md)「依存グラフ」)。残るのはブラウザでの実画面観測 C67。推論された依存(欄アクセスの record、呼出し結果の型、input の署名を通したもの)を
+  グラフに含めること、生成 Lean や Lean 側(compiler / semantics / stdlib / naru_test)の依存グラフ、グラフからのソース編集やエディタ統合、import 行を実際の参照に合わせて
+  書き直すこと(差は報告するだけ)は対象外(IDEAL.md「対象外」)
+- プロトコル証明の分離基盤(C68〜C72: Lake ライブラリ `Proofs`(`proofs/`)、`naru compile` が書く証明義務の一覧 `obligations.json`、束縛 hash と失効、`naru proofs` の
+  証明状況、consensus の 14 件の証明、書き手の案内 `proofs/README.md`)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)
 - 型引数付きのユーザ宣言(`record R<T>`)

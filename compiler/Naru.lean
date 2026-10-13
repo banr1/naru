@@ -15,3 +15,5 @@ import Naru.Sha256
 import Naru.Backend.Model
 import Naru.Backend.Statements
 import Naru.Lsp
+import Naru.Deps
+import Naru.DepsTemplate

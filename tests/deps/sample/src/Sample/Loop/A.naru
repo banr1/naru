@@ -1,0 +1,10 @@
+// 依存グラフの検体(C64): ファイル間の循環(A の spec → B の spec、B の spec → A の runtime)。生成 Lean の import は循環しない。
+module Sample.Loop.A
+
+import Sample.Loop.B
+
+record Box { v: Nat } derive eq
+
+fn unbox(b: Box) -> Nat { b.v }
+
+predicate BoxOk(b: Box) { Positive(b) }

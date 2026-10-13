@@ -1,6 +1,6 @@
 # naru CLI と naru.toml
 
-`lake exe naru` のコマンド(`compile` / `simulate` / `check-reject` / `lsp`)、コンパイル単位を決める `naru.toml`、言語サーバーの仕様。
+`lake exe naru` のコマンド(`compile` / `simulate` / `check-reject` / `lsp` / `deps`)、コンパイル単位を決める `naru.toml`、言語サーバーの仕様、依存グラフ。
 診断の番号は [diagnostics.md](diagnostics.md)、検査ドライバは [testing.md](testing.md)。
 
 ## naru.toml
@@ -10,10 +10,12 @@
 ```toml
 sources = ["specs/consensus"]
 generated = "generated"
+deps = "docs/deps"
 ```
 
 - `sources`: ソースルートのディレクトリの一覧。各ルートの `**/*.naru` 全体を 1 つのコンパイル単位として検査する。
 - `generated`: `naru compile` の出力先(既定 `generated`)。そこには `naru compile` の決定的な出力(`Model` と `Statements`)だけを置く。
+- `deps`: `naru deps` が依存グラフ(`deps.json` と閲覧用 `index.html`)を書く出力先(任意。無ければ `naru deps --out <dir>` が要る。下の「依存グラフ」)。
 - `generated` は Lake にも反映される(C24): `naru compile` / `naru simulate` は書き終えた生成先への symlink を `<ルート>/.lake/naru/generated`
   (追跡対象外)に置き、`lakefile.toml` の lean_lib `Model` / `Statements` の `srcDir` はそこを向く。`lake build Model` / `lake build Statements` /
   `naru_simulate` はこの link 経由で現在の設定の生成先を読むので、`generated` を変えても lakefile を手で直さない。`lake build Model` の前に
@@ -36,6 +38,7 @@ generated = "generated"
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
 | `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`compiler/Naru/Lsp.lean`)。下の「言語サーバー」 |
 | `simulate <specs/consensus/scenarios/basic.naru>` | ソースルート全体を検査して `generated/` を作り直し、そのファイルの scenario を native 実行して observer の値を表示する(C7)。診断があれば exit 1、`naru.toml` のソースルートの外・scenario 無しは exit 2、`lake build naru_simulate` の失敗は exit 1、それ以外は実行ファイルの exit code |
+| `deps [--out <dir>]` | ソースルート全体を `compile` と同じ共通の検査に通してから、依存グラフ(宣言単位・ファイル単位の参照のグラフ)の `deps.json` と閲覧用の単一ファイル `index.html` を `naru.toml` の `deps`(`--out` で上書き)に書く(C63〜C65)。診断があれば exit 1 で何も書かない、出力先が決まらなければ exit 2。下の「依存グラフ」 |
 
 出力の形と `check-reject` の説明は [diagnostics.md](diagnostics.md)。
 
@@ -54,6 +57,25 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
   `naru.toml` と現在のソースに対応する(C7)。
 - 出力: `scenario <name>`、scalar は `  <label> = <Repr>`、List は `  <label>:` の下に 1 要素 1 行。値の表示は Lean の `Repr`
   (record は `{ time := 4, node := { value := 0 }, … }`)。
+
+## 依存グラフ(`naru deps`)
+
+`lake exe naru deps [--out <dir>]` は、`naru.toml` のソースルートを `compile` と同じ共通の検査(構文解析・同名モジュール・名前解決・型検査・Core の健全性・
+循環・停止性と、ルートをまたぐ同名モジュール)に通してから、依存グラフ — 宣言単位とファイル単位の参照のグラフ — の `deps.json`(正規形の JSON)と閲覧用の
+`index.html` を書く(C63〜C65。グラフの定義・JSON の内容・テンプレートは [architecture.md](architecture.md)「依存グラフ」)。
+
+- 出力先: `--out <dir>` があればそれ、無ければ `naru.toml` の `deps`(`naru.toml` のディレクトリからの相対。このリポジトリでは `docs/deps`)。どちらも無ければ
+  exit 2(出力先のディレクトリ名はコンパイラに直書きしない)。
+- 診断が 1 つでもあれば標準エラーに `compile` と同じ形(`file:line:col: error[E0xx]: …`)で出して exit 1。出力先には触れない(古いグラフを残したまま成功にはしない:
+  書くのは両方の本文が揃ってから)。
+- 書くのは `<dir>/deps.json` と `<dir>/index.html` の 2 つだけ(ディレクトリは作る)。有効な生成先(`generated`)と Lake の link には何も書かず、`naru lsp` はグラフを書かない。
+- 出力は決定的(同じソースと同じコンパイラから byte 単位で同一)。先頭にコンパイラ版と `compiler/**/*.lean` の hash、ソースルートからの相対パス(ルートのディレクトリ名を
+  含まない)と sha256 の一覧(JSON はフィールド、HTML はコメント)。
+- 閲覧: `docs/deps/index.html` をブラウザで開く(単一ファイルで自己完結。`file://` で動き、外部への読み込みは無い)。URL の `#file=<モジュール名>` /
+  `#decl=<修飾名>` / `#tab=decls` / `#all=1` / `#transitive=1`(`&` 区切り)で選択状態を開ける。
+- 出力先が有効な生成先(`generated`)かその配下なら exit 2 で拒否する(生成先は `naru compile` のもの)。
+- 追跡対象の `docs/deps/` は機械生成専用で手では編集しない。移植ソース(宣言コメントを含む: 要旨が JSON に入る)・コンパイラ・閲覧用テンプレートを変えたら
+  `lake exe naru deps` で再生成する(`naru_test deps` が再生成との一致 — 鮮度 — を検査する。[testing.md](testing.md))。
 
 ## 言語サーバー(`naru lsp`)
 

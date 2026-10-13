@@ -1,0 +1,25 @@
+// 依存グラフの検体(C64): record literal・UFCS・修飾名・名前付き引数・パターンの構築子・input の参照。Empty は参照の無い import。
+module Sample.Mid
+
+import Sample.Base
+import Sample.Empty
+import Sample.Inputs
+
+fn shifted(p: Point) -> Point { Point { x: bump(p.x), y: p.y } }
+
+fn twice(p: Point) -> Point { p.shifted().shifted() }
+
+fn named(a: Nat, b: Nat) -> Nat { a + b }
+
+fn useNamed() -> Nat { named(b = bump(1), a = seed()) }
+
+fn classify(s: Shape) -> Nat {
+  match s {
+    Shape.Dot => 0,
+    Shape.Line(a, b) => a.x + b.x,
+  }
+}
+
+fn qualified() -> Nat { Sample.Base.bump(2) }
+
+fn withBias() -> Nat { bias() + seed() }

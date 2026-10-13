@@ -15,6 +15,9 @@ import Naru
   そのファイルの scenario を実行する `.lake/naru/simulate/Simulate.lean`(`main`)を書いて `lake build naru_simulate` →
   `.lake/build/bin/naru_simulate` を実行する(C7。「naru を実行する」= 生成 Lean を native 実行する。C26: 生成先には
   `compile` の決定的な出力だけを置く)。出力は scenario の `observe` の行(observer の値を `Repr` で表示)。
+- `naru deps [--out <dir>]` — `naru.toml` のソースルートを `compile` と同じ共通の検査に通してから、依存グラフ(宣言単位・ファイル単位の参照の
+  グラフ。`Naru/Deps.lean`)の `deps.json` と閲覧用の単一ファイル `index.html`(`Naru/DepsTemplate.lean`)を、`naru.toml` の `deps`(`--out` で
+  上書き)に書く(C63〜C65)。診断があれば exit 1 で何も書かない。`deps` も `--out` も無ければ exit 2。生成先には触れない。
 
 出力は決定的: 同じソースと stdlib から同じバイト列を生成する。各生成ファイルの先頭コメントに
 コンパイラ版(と `compiler/**/*.lean` の sha256)・stdlib 版(と `stdlib/Model/**/*.lean` の sha256)・ソースの sha256 を入れる。
@@ -81,7 +84,7 @@ def Home.display (h : Home) (p : String) : String :=
   if p.startsWith pre then (p.drop pre.length).toString else p
 
 def usage : String :=
-  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru under a source root of naru.toml>"
+  "usage: naru compile [--out <dir>] [files...]\n       naru check-reject <file.naru> <Exxx>\n       naru lsp\n       naru simulate <scenario.naru under a source root of naru.toml>\n       naru deps [--out <dir>]"
 
 -- `listFiles`(ディレクトリ配下の `.naru` / `.lean` の列挙)は `Naru.Driver`(言語サーバーも使う)。
 
@@ -135,6 +138,13 @@ def writeGenerated (outDir : System.FilePath) (files : Array (String × String))
     if let some parent := path.parent then IO.FS.createDirAll parent
     IO.FS.writeFile path content
 
+/-- コンパイラのソース(`compiler/**/*.lean`、パス順)の hash。ホーム相対のパスで計算する(cwd に依らない)。 -/
+def hashCompiler (home : Home) : IO String := do
+  let compilerFiles ← listFiles (home.path compilerDir) "lean"
+  let mut compilerHashes : List (String × String) := []
+  for f in compilerFiles do compilerHashes := compilerHashes ++ [(home.display f, ← hashFile f)]
+  return hashUnit compilerHashes
+
 /-- 生成ファイルのヘッダに入れる版と hash(ソースは与えられた順、stdlib とコンパイラはパス順)。単位の hash はソースルートからの
 相対パス(`sourcePrefix` を落としたもの)で計算するので、ルートのディレクトリ名に依らない(C24)。stdlib とコンパイラはホームのもので、
 その hash もホーム相対のパスで計算する(cwd に依らない)。stdlib が見つからなければ `none`。 -/
@@ -149,11 +159,8 @@ def buildMeta (who : String) (home : Home) (files : List String) (sourcePrefix :
     return none
   let mut stdlibHashes : List (String × String) := []
   for f in stdlibFiles do stdlibHashes := stdlibHashes ++ [(home.display f, ← hashFile f)]
-  let compilerFiles ← listFiles (home.path compilerDir) "lean"
-  let mut compilerHashes : List (String × String) := []
-  for f in compilerFiles do compilerHashes := compilerHashes ++ [(home.display f, ← hashFile f)]
   return some
-    { compilerVersion := naruVersion, compilerHash := hashUnit compilerHashes, stdlibVersion,
+    { compilerVersion := naruVersion, compilerHash := ← hashCompiler home, stdlibVersion,
       stdlibHash := hashUnit stdlibHashes, unitHash := hashUnit (fileHashes.map fun (p, h) => (display p, h)),
       fileHashes, sourcePrefix }
 
@@ -380,12 +387,101 @@ def runCheckReject (file code : String) : IO UInt32 := do
   IO.println s!"PASS: {file} rejected (compile exit {compileExit}) with {code}"
   return 0
 
+/-- パスの絶対形: 実在すれば `realPath`、無ければ実在する親の `realPath` + 名前(出力先の比較に使う)。 -/
+def absoluteOf (p : System.FilePath) : IO String := do
+  if ← p.pathExists then return (← IO.FS.realPath p).toString
+  match p.parent, p.fileName with
+  | some parent, some name =>
+    if ← parent.pathExists then return ((← IO.FS.realPath parent) / name).toString
+    return p.toString
+  | _, _ => return p.toString
+
+/-- 依存グラフ(C63〜C65)。`naru.toml` の各ソースルートを `compile` と同じ共通の検査(`compileFiles`: 構文解析・同名モジュール・名前解決・型検査・
+Core の健全性・循環・停止性)と、ルートをまたぐ同名モジュールの検査に通してから、`Deps.build` で宣言単位・ファイル単位の参照のグラフを作り、
+`deps.json`(正規形の JSON)と `index.html`(JSON を埋め込んだ単一ファイル)を出力先に書く。
+- 出力先: `--out <dir>` があればそれ、無ければ `naru.toml` の `deps`(`naru.toml` のディレクトリからの相対)。どちらも無ければ exit 2。有効な生成先
+  (`generated`)やその配下を出力先にすることは拒否する(exit 2)。
+- 診断が 1 つでもあれば標準エラーに出して exit 1。出力先には触れない(古いグラフを残したまま成功にしない: 書くのは両方の本文が揃ってから)。
+- 生成先(`generated`)と Lake の link には何も書かない。 -/
+def runDeps (args : List String) : IO UInt32 := do
+  let who := "naru deps"
+  let mut outArg : Option String := none
+  match args with
+  | [] => pure ()
+  | ["--out", dir] => outArg := some dir
+  | ["--out"] =>
+    IO.eprintln s!"{who}: `--out` needs a directory"
+    return 2
+  | _ =>
+    IO.eprintln "usage: naru deps [--out <dir>]"
+    return 2
+  let some home ← findHome who | return 2
+  let some cfg ← loadConfig who | return 2
+  let outDir : System.FilePath ← match outArg, cfg.depsPath with
+    | some d, _ => pure (System.FilePath.mk d)
+    | none, some d => pure d
+    | none, none =>
+      IO.eprintln s!"{who}: {configFileName} has no `deps = \"<dir>\"` and no `--out <dir>` was given (the dependency graph needs an output directory)"
+      return 2
+  -- 有効な生成先(とその配下)には何も書かない(C63 / C26)
+  let outAbs ← absoluteOf outDir
+  let genAbs ← absoluteOf cfg.generatedPath
+  if outAbs == genAbs || outAbs.startsWith (genAbs ++ "/") then
+    IO.eprintln s!"{who}: the output directory {outDir} is the generated directory {cfg.generatedPath} (or inside it); `naru compile` owns that directory, choose another"
+    return 2
+  let units ← unitsOf cfg
+  if units.all (·.files.isEmpty) then
+    IO.eprintln s!"{who}: no .naru sources under the source roots of {configFileName} ({", ".intercalate (cfg.rootPaths.map (·.toString))})"
+    return 1
+  let mut inputs : List Deps.UnitInput := []
+  let mut sources : List (String × String) := []
+  let mut allMods : Array Module := #[]
+  for u in units do
+    if u.files.isEmpty then continue
+    let (diags, checked) ← compileFiles u.files
+    if !diags.isEmpty then
+      for d in diags do IO.eprintln d.render
+      IO.eprintln s!"{who}: {diags.size} error(s); the dependency graph is not written"
+      return 1
+    let pre := prefixOf u.root
+    let mut texts : List (String × String) := []
+    for f in u.files do
+      texts := texts ++ [(f, ← IO.FS.readFile f)]
+      sources := sources ++ [(Deps.stripPrefix pre f, ← hashFile f)]
+    allMods := allMods ++ checked.mods
+    inputs := inputs ++ [{ prefix_ := pre, mods := checked.mods, refs := checked.refs, sources := texts }]
+  -- ルートをまたぐ同名のモジュール(`compile` の compile-all と同じ共通検査)
+  let dups := Modules.duplicates allMods
+  if !dups.isEmpty then
+    for d in dups do IO.eprintln d.render
+    IO.eprintln s!"{who}: {dups.size} error(s); the dependency graph is not written"
+    return 1
+  let info : Deps.Meta :=
+    { compilerVersion := naruVersion, compilerHash := ← hashCompiler home, sources := sources.mergeSort fun a b => a.1 ≤ b.1 }
+  let g := Deps.build inputs
+  if g.dropped > 0 then
+    IO.eprintln s!"{who}: internal: {g.dropped} reference(s) could not be attributed to a declaration although name resolution passed; this is a compiler bug, so the dependency graph is not written"
+    return 1
+  let json := Deps.renderJson info g
+  let html := Deps.renderHtml (Deps.htmlHeader info) json
+  -- 両方の本文が揃ってから書く。一時ファイルに書いて改名する(途中で失敗しても片方だけ新しい状態を残しにくい)
+  IO.FS.createDirAll outDir
+  IO.FS.writeFile (outDir / "deps.json.tmp") json
+  IO.FS.writeFile (outDir / "index.html.tmp") html
+  IO.FS.rename (outDir / "deps.json.tmp") (outDir / "deps.json")
+  IO.FS.rename (outDir / "index.html.tmp") (outDir / "index.html")
+  let stats := g.stats
+  let stat (k : String) : Nat := (stats.lookup k).getD 0
+  IO.println s!"{who}: wrote {outDir / "deps.json"} and {outDir / "index.html"} ({stat "files"} file(s), {stat "decls"} declaration(s), {stat "declEdges"} declaration edge(s), {stat "fileEdges"} file edge(s), {stat "reducedEdges"} after transitive reduction, {stat "layers"} layer(s))"
+  return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | "compile" :: rest => runCompile rest
   | ["check-reject", file, code] => runCheckReject file code
   | ["lsp"] => Lsp.serve naruVersion
   | ["simulate", file] => runSimulate file
+  | "deps" :: rest => runDeps rest
   | _ =>
     IO.eprintln usage
     return 2

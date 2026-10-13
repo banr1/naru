@@ -1,0 +1,4 @@
+// 依存グラフの検体(C64): input だけのモジュール。
+module Sample.Inputs
+
+input bias() -> Nat

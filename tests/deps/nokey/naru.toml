@@ -1,0 +1,3 @@
+# 依存グラフの検体(IDEAL.md C63): `deps` キーの無い naru.toml。このディレクトリを cwd にした `naru deps` は `--out <dir>` が無ければ exit 非 0
+# (出力先が決まらない)、`--out` があれば書ける。
+sources = ["src"]

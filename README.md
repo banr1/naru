@@ -65,24 +65,33 @@ scenario basic
 | `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
 | `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`。Model は runtime 宣言を出力するモジュールにつき 1 ファイル、Statements は spec 宣言のあるモジュールにつき 1 ファイル)。機械生成専用で手では編集しない |
 | `tests/` | 受理例 `accept/`、反例 `reject/`、複数ファイルのコンパイル単位の検体 `units/`、設定変更プロジェクト `config_change/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
-| `docs/` | 文書(下の案内) |
+| `docs/` | 文書(下の案内)と、機械生成の依存グラフ `docs/deps/`(`naru deps` の出力。手では編集しない。下の「依存グラフの見方」) |
 | `editors/` | エディタ対応: tree-sitter 文法 `tree-sitter-naru/` と Zed 拡張 `zed-naru/` |
 | `third_party/` | 同梱する外部の参照物。git submodule `verified-consensus/`(基準コミットと約束は `third_party/README.md`) |
 | `.idd/` | Ideal-Driven Development の台帳(`progress.md`)・知見(`knowledge.md`)・周回記録(`cycles/`) |
 
-ルート直下のファイル: `README.md`(この入口)、[IDEAL.md](IDEAL.md)(正本)、`LICENSE`(CC0 1.0)、`naru.toml`(ソースルートと生成先)、
+ルート直下のファイル: `README.md`(この入口)、[IDEAL.md](IDEAL.md)(正本)、`LICENSE`(CC0 1.0)、`naru.toml`(ソースルート・生成先・依存グラフの出力先)、
 `lakefile.toml` / `lake-manifest.json` / `lean-toolchain`(Lake のワークスペース)、`.gitattributes`(linguist の区分)、`.gitmodules`(submodule)。
 
 ## 文書
 
 - [docs/language.md](docs/language.md) — 言語リファレンス(字句・宣言・capability・phase・型・式・パターン・stdlib のメソッド表・Set の規則・量化・再帰・scenario / observer)
 - [docs/diagnostics.md](docs/diagnostics.md) — 診断 E001〜E019 の一覧と例
-- [docs/cli.md](docs/cli.md) — `naru compile` / `simulate` / `check-reject` / `lsp` と `naru.toml`
-- [docs/architecture.md](docs/architecture.md) — パイプライン・Core IR・Model backend・Statements backend・生成物のヘッダと決定性・コンパイラ意味論保存(`semantics/`)
+- [docs/cli.md](docs/cli.md) — `naru compile` / `simulate` / `check-reject` / `lsp` / `deps` と `naru.toml`
+- [docs/architecture.md](docs/architecture.md) — パイプライン・Core IR・Model backend・Statements backend・生成物のヘッダと決定性・依存グラフ・コンパイラ意味論保存(`semantics/`)
 - [docs/testing.md](docs/testing.md) — 検査ドライバ `naru_test` の各群と golden test の走らせ方
 - [docs/editors.md](docs/editors.md) — tree-sitter 文法と Zed 拡張、`rev` の付け替えの運び
 - [docs/roadmap.md](docs/roadmap.md) — まだ無いもの
-- [IDEAL.md](IDEAL.md) — 実現する状態(条件 C1〜C62)・不変条件・前提・対象外・用語
+- [IDEAL.md](IDEAL.md) — 実現する状態(条件 C1〜C72)・不変条件・前提・対象外・用語
+
+## 依存グラフの見方
+
+移植ソースのどのファイルとどの宣言がどれに依存しているかは、`naru deps` がソースから決定的に生成する依存グラフで辿れます。
+[docs/deps/index.html](docs/deps/index.html) をブラウザで開く(単一ファイルで、外部への読み込みはありません)と、ファイル単位タブに縦向きの層状グラフ
+(層 0 = 他のファイルに依存しないものが最上段。既定は推移簡約した辺だけ、切替で全辺。ファイルを選ぶと使う側 / 使われる側の辺を色分けし、横のパネルに宣言数・
+使う / 使われるファイルと「宣言 → 宣言」の内訳・import 行との差)、宣言単位タブに宣言名と種類で絞れる一覧と、選んだ宣言の要旨・使う / 使われる宣言(直接 / 推移的)が出ます。
+データは [docs/deps/deps.json](docs/deps/deps.json)(import 行ではなく実際の参照に基づく宣言単位・ファイル単位の辺、層、強連結成分、推移簡約、import との差)。
+`docs/deps/` は機械生成で、ソース・コンパイラ・テンプレートを変えたら `lake exe naru deps` で作り直します(`docs/cli.md`「依存グラフ」、`docs/architecture.md`「依存グラフ」)。
 
 ## 検査の走らせ方
 
@@ -93,9 +102,10 @@ lake exe naru_test zed          # Zed 拡張(C17)
 lake exe naru_test lsp          # 言語サーバー: 診断・ホバー・定義ジャンプ・補完・リネーム・整形(C18 / C29 / C30 / C31 / C32 / C33)
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
+lake exe naru_test deps         # 依存グラフ `naru deps`: 生成・決定性・手書きの期待 JSON の検体・移植ソースの独立検査・HTML の自己完結・docs/deps/ の鮮度(C63 / C64 / C65 / C66)。約 10 秒
 lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface の宣言群の意味の対応から実生成 Model / Statements への合成 `sfn_*` / `sstmt_*`(C55 / C57)も検査)。約 1 分
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
-lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 12 分
+lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 13 分
 ```
 
 `naru_test golden` は verified-consensus の手書き Model(mathlib)を interpreter で走らせるので、引数なし(FinalityLiveness の horizon 100)で約 9 分かかります。

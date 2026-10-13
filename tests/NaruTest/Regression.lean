@@ -7,6 +7,7 @@ import NaruTest.Golden
 import NaruTest.Statements
 import NaruTest.Repo
 import NaruTest.Semantics
+import NaruTest.Deps
 
 /-!
 # `naru_test regression` — 非対話の回帰・最終検証の入口(IDEAL.md C36)
@@ -86,7 +87,7 @@ import NaruTest.Semantics
     `checkOmission` で Model は `Counter` だけ・Statements は `Counter` と `Rules`・ルートの import と全 import の実在・全宣言の出現を照合し、
     ルートの `lake build Model Statements` と実行ファイルがその生成先で通る。
 11. C24: `compiler/` にソースルートのディレクトリ名の直書きが無い、`naru.toml` の `sources` を別名のコピーに向けても生成先の sha256 が一致
-    (`naru.toml` は必ず元に戻し、`git diff --exit-code` で確かめる)。
+    (`naru.toml` は必ず元に戻し、元の内容と byte 単位で一致することを確かめる)。
 12. `repo` 群(C21 / C23 / C25 / C37 の旧名検索)、C28 / C22 / C27。
 13. C10: `golden`(引数なし = horizon 100、全 16 ケース)。
 
@@ -1163,7 +1164,10 @@ def checkConfig (roots : List System.FilePath) (generated : System.FilePath) : M
     else fail s!"C24: generated files differ with the alias root ({(before.zip after).filter (fun (a, b) => a != b) |>.map (·.1.1) |>.take 5})"
   finally
     IO.FS.writeFile cfgPath original
-  let _ ← step "C24: naru.toml restored" "git" #["diff", "--exit-code", "--stat", cfgPath.toString]
+  -- 復元は元の内容との一致で確かめる(HEAD との `git diff` は、naru.toml を正当に変えた周回の作業木では通らない)
+  let restored ← IO.FS.readFile cfgPath
+  if restored == original then ok s!"C24: {cfgPath} restored (byte-identical to the content read before the alias run)"
+  else fail s!"C24: {cfgPath} differs from the original content after the alias run"
   let _ ← step "C24: compile with the restored naru.toml" "lake" #["exe", "naru", "compile"]
   let restored ← shaSnapshot generated
   if restored == before then ok "C24: generated files restored (sha256 identical)" else fail "C24: generated files differ after restoring naru.toml"
@@ -1209,6 +1213,8 @@ def checks : M Unit := do
   subgroup "naru_test grammar (C16)" NaruTest.Grammar.run
   subgroup "naru_test zed (C17)" NaruTest.Zed.run
   subgroup "naru_test lsp (C18)" NaruTest.Lsp.run
+  heading "dependency graph"
+  subgroup "naru_test deps (C63 / C64 / C65 / C66)" NaruTest.Deps.run
   heading "golden rehearsal"
   subgroup "naru_test golden --finality-horizon 40 (rehearsal, not the C10 evidence)" (NaruTest.Golden.run 40)
   heading "C10 comparator regression"

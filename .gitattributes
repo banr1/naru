@@ -1,4 +1,5 @@
-# IDEAL.md C27: GitHub の linguist に、機械生成物と同梱の外部参照物を本体のコードと区別させる。
+# IDEAL.md C27 / C66: GitHub の linguist に、機械生成物と同梱の外部参照物を本体のコードと区別させる。
 generated/** linguist-generated
 editors/tree-sitter-naru/src/** linguist-generated
+docs/deps/** linguist-generated
 third_party/** linguist-vendored

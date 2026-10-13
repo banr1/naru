@@ -144,6 +144,48 @@ structure の欄・inductive の構築子は `型名.名前`)に限る。式や�
 `==` が naru の集合の意味からずれる(手書き Model の `Finset` は不変条件を型に持つ)。移植の claim が集合の濃度や等しさに依存するなら、
 stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に整形性の前提を付ける(どちらも naru の表現力は変えない)。
 
+## 依存グラフ(`naru deps`、`compiler/Naru/Deps.lean`・`DepsTemplate.lean`。C63〜C67)
+
+`lake exe naru deps` は `naru.toml` のソースルートを `naru compile` と同じ共通の検査(`Driver.compileFiles`: 構文解析・同名モジュール・名前解決・型検査・Core の健全性・
+循環・停止性と、ルートをまたぐ同名モジュール)に通してから、宣言単位とファイル単位の参照のグラフを `deps.json`(正規形の JSON)と閲覧用の単一ファイル `index.html` に
+書く(出力先は `naru.toml` の `deps`、`--out <dir>` で上書き。[cli.md](cli.md)「依存グラフ」)。閲覧と理解のための派生物で、検証の根拠にはしない(IDEAL.md「不変条件」:
+生成 Model / Statements の import の正しさ(C8 / C18 / C38)や意味保存(C39〜C59)の証拠に流用しない)。
+
+- **依存の定義**: 宣言の依存は、名前解決の参照の索引 `Resolve.Ref`(値の位置の名前・修飾名・record literal の型名・パターンの構築子・UFCS のメソッド名・型の位置の名前
+  — 仮引数・戻り型・欄・variant の引数・型別名の右辺 —・claim bundle の項目・scenario の `input … = …;` の束縛。定義ジャンプ C30 と同じ索引)に記録された、宣言の本体・
+  署名から他の宣言への**構文上の**参照。推論された依存(欄アクセスの record、呼出し結果の型、input の署名を通したもの)は含めない。自己参照は辺にせず宣言の属性 `selfRef`。
+  ファイルの依存はファイルを跨ぐ宣言の依存の集約(辺ごとに宣言の辺の本数と、参照元の `import` 行に参照先があるか)。
+- **import 行・生成 Lean の import グラフとの違い**: `import` 行は受理されるだけで意味を持たない(名前解決は単位の 1 つの大域表)ので、import 行に無い参照と参照の無い import
+  がありうる。グラフはそれを差として報告する(`fileEdges[].imported` / `unusedImports`)が、import 行を書き換えることはしない。生成 Model の import グラフ
+  (`Backend.Model.modelGraph`: 出力される runtime 宣言の参照だけ。input への参照は辺にならない)と生成 Statements の import グラフ(`specGraph`: spec → spec だけ)は生成の
+  都合で引いた別のグラフで、E017 の循環検査はそちら(上の「パイプライン」)。参照のグラフには、spec → runtime と spec → spec の参照が 2 つのファイルの間で逆向きに走る循環
+  (強連結成分)がありうるが、生成 Lean の import は循環しないので生成は失敗しない(検体 `tests/deps/sample/` の `Sample.Loop.A` / `Sample.Loop.B`)。
+- **層と強連結成分**: ファイルの辺のグラフの強連結成分(Kosaraju)を 1 つの節点に縮約した DAG で、他の成分に依存しない成分が層 0、各成分は依存先の最大の層 + 1。同じ成分
+  (循環)のファイルは同じ層。consensus では `Consensus.Objects.Identifiers` が層 0(最上段)、`Consensus.Spec.Claims` が最大の層(最下段)。
+- **推移簡約**: 縮約した DAG で到達関係を変えない最小の辺集合。成分の辺 `A → B` は、`A` の他の依存先から `B` へ到達できなければ残す(DAG の推移簡約は一意)。残す成分の辺は
+  それを作るファイルの辺のうち並びで最初の 1 つで代表し、成分の中(循環)の辺はすべて残す。
+- **決定性**(C64): 並び順はすべてソースから決まる — モジュールはソースルートからの相対パス順、宣言はソース中の出現順、辺は(参照元, 参照先)の宣言 / モジュールの順、
+  出現位置は(ファイル, 行, 列)の順。ハッシュ表の走査順・時刻・絶対パス・環境変数・乱数に依存しない。JSON は独自の印字(`Deps.J.render`)で正規形: キーは書いた順で固定、
+  2 空白の字下げ(スカラーだけの配列 / オブジェクトは 1 行)、UTF-8、LF、末尾改行あり、浮動小数なし。`<` `>` `&` は `<` 等(バックスラッシュ + `u003c`)に逃がすので、同じバイト列を HTML の
+  `<script type="application/json">` にそのまま埋め込める。先頭のフィールド `naru-compiler` / `naru-compiler-sha256`(`compiler/**/*.lean` の hash。C1 のヘッダと同じ計算)と
+  `sources`(ソースルートからの相対パスと sha256。パス順)。HTML は先頭のコメントに同じ値を書く。
+- **JSON の内容**: `modules`(名前・相対パス・グループ = 名前から最後の要素を除いた経路(要素が 1 つなら空)・import 行・層・成分の添字)、`decls`(修飾名・モジュール・種類
+  (`DeclKind.describe`)・phase・protocol の中なら `owner`・行・列(名前のトークン)・`Naru.declComment` と同じ規則で読んだ宣言コメントの 1 行目 `summary`・`selfRef`)、
+  `declEdges`(`from` → `to` と `sites`: 出現位置ごとの相対パス・行・列・書かれた経路。重複なし)、`fileEdges`(`from` → `to`、`count`、`imported`)、`unusedImports`
+  (モジュールと import 行のモジュール名)、`components`(全成分。各成分はモジュール名の列)、`reducedEdges`、`stats`(ファイル数・宣言数・宣言間の辺・うちファイルを跨ぐもの・
+  ファイル間の辺・推移簡約後の辺・層の数)。
+- **閲覧用 HTML**(C65 / C67): `compiler/Naru/DepsTemplate.lean` の固定のテンプレート(HTML / CSS / JavaScript。IDEAL.md「前提」の技術スタックの例外)に JSON を埋め込んだ
+  単一ファイル。外部への読み込み(CDN・Web フォント・`fetch`)を持たず `file://` で開ける。乱数・時刻を使わない。`prefers-color-scheme` でライトとダーク。データ(宣言・辺・
+  層・推移簡約・import との差・統計)はすべて Lean の生成側が作り、テンプレートは描画(層の中の並び = モジュールの順、座標)だけを決定的に行う。ファイル単位タブは縦向きの
+  層状グラフ(上ほど層の番号が小さい。既定は推移簡約の辺、切替で全辺、ファイルを選ぶと使う側 / 使われる側の辺を色分けで強調して横のパネルに宣言数(種類別)・使う / 使われる
+  ファイルと辺の本数・辺ごとの「宣言 → 宣言」・import 行に無い参照の印・参照の無い import を出す。色はグループ別)、宣言単位タブは名前・種類で絞る一覧(ファイルごと)と、
+  選んだ宣言の種類・モジュール・`ファイル:行`・要旨、使う / 使われる(直接 / 推移的。推移的は距離 2 以上を区別)。URL の `#file=<モジュール名>` /
+  `#decl=<修飾名>` / `#tab=decls` / `#all=1` / `#transitive=1`(`&` 区切り)で選択状態を開ける(共有と観測のため)。索引に無い参照は捨てず数え(`Graph.dropped`)、
+  0 でなければ `naru deps` は内部エラー(exit 1)にする。出力先が有効な生成先かその配下なら拒否する(exit 2)。
+- **鮮度**(C66): 追跡対象の `docs/deps/` は機械生成専用(`.gitattributes` で `linguist-generated`)。移植ソース(宣言コメントを含む: 要旨が JSON に入る)・コンパイラ・
+  テンプレートを変えたら `lake exe naru deps` で再生成する。`naru_test deps` が一時ディレクトリへの再生成と byte 単位で照合する(古ければ FAIL)。検査の全体は
+  [testing.md](testing.md) の `deps` 群。
+
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 
 生成 Lean が Core の意味を保つことを、backend から独立した意味論と Lean の定理で保証する(限定範囲)。lean_lib `NaruSem`(`semantics/`)。

@@ -1,0 +1,4 @@
+# 依存グラフの検体(IDEAL.md C63): 診断の出るプロジェクト(`src/Broken.naru` は E011)。`naru_test deps` が複製の `out/` に古いファイルを置いてから
+# `naru deps` を走らせ、exit 非 0 で出力先のファイルが増減・変更しないことを確かめる。
+sources = ["src"]
+deps = "out"

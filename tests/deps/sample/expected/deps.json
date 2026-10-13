@@ -1,0 +1,432 @@
+{
+  "naru-compiler": "0.1.0",
+  "naru-compiler-sha256": "{{compiler-sha256}}",
+  "sources": [
+    { "path": "Sample/Base.naru", "sha256": "4671b0113c33c86acdfe5e44eecf733246a570aaecc5c74d4a03e7cb58114e3c" },
+    { "path": "Sample/Empty.naru", "sha256": "74b4155ea0f3676b69294c9c5c26386d93ed6122a87a447863fd450d2fb76a9b" },
+    { "path": "Sample/Inputs.naru", "sha256": "ea15824ab21ca431596e2991a13f1a7e15d02bc725c64c2b7929cf60ddf75481" },
+    { "path": "Sample/Loop/A.naru", "sha256": "7169d00fb3ee5d0d43c60e29fed26fbb6ec02c2a7b62487f4327d54411f222b7" },
+    { "path": "Sample/Loop/B.naru", "sha256": "3f4d17642005b5efdbb96cf833317b3cc75eaf7c1dab3c88200a1c4d54b21860" },
+    { "path": "Sample/Mid.naru", "sha256": "73c1b1c32ba805eaae304b22159f8891c886e809e920089712b803b2662cc3ea" },
+    { "path": "Sample/Proto.naru", "sha256": "a26504212b00932cfebeb7278de28338adc87ecfb77e0769c78feb3a3acc20bd" },
+    { "path": "Sample/Run.naru", "sha256": "26cf5adf2616cd296f73b743bcfdce64c4f1176457add08e4a026f3ffabee6af" },
+    { "path": "Sample/Spec.naru", "sha256": "d479df455f7c9fcc32dd8335d0f46be39eb6375fe2641faf73132ea4be3edb4f" }
+  ],
+  "modules": [
+    {
+      "name": "Sample.Base",
+      "path": "Sample/Base.naru",
+      "group": "Sample",
+      "imports": [],
+      "layer": 0,
+      "component": 0
+    },
+    {
+      "name": "Sample.Empty",
+      "path": "Sample/Empty.naru",
+      "group": "Sample",
+      "imports": [],
+      "layer": 0,
+      "component": 1
+    },
+    {
+      "name": "Sample.Inputs",
+      "path": "Sample/Inputs.naru",
+      "group": "Sample",
+      "imports": [],
+      "layer": 0,
+      "component": 2
+    },
+    {
+      "name": "Sample.Loop.A",
+      "path": "Sample/Loop/A.naru",
+      "group": "Sample.Loop",
+      "imports": ["Sample.Loop.B"],
+      "layer": 0,
+      "component": 3
+    },
+    {
+      "name": "Sample.Loop.B",
+      "path": "Sample/Loop/B.naru",
+      "group": "Sample.Loop",
+      "imports": ["Sample.Loop.A"],
+      "layer": 0,
+      "component": 3
+    },
+    {
+      "name": "Sample.Mid",
+      "path": "Sample/Mid.naru",
+      "group": "Sample",
+      "imports": ["Sample.Base", "Sample.Empty", "Sample.Inputs"],
+      "layer": 1,
+      "component": 4
+    },
+    {
+      "name": "Sample.Proto",
+      "path": "Sample/Proto.naru",
+      "group": "Sample",
+      "imports": ["Sample.Base"],
+      "layer": 1,
+      "component": 5
+    },
+    {
+      "name": "Sample.Run",
+      "path": "Sample/Run.naru",
+      "group": "Sample",
+      "imports": ["Sample.Base", "Sample.Inputs", "Sample.Mid"],
+      "layer": 2,
+      "component": 6
+    },
+    {
+      "name": "Sample.Spec",
+      "path": "Sample/Spec.naru",
+      "group": "Sample",
+      "imports": ["Sample.Base"],
+      "layer": 2,
+      "component": 7
+    }
+  ],
+  "decls": [
+    { "name": "Sample.Base.Id", "module": "Sample.Base", "kind": "type", "phase": "runtime", "owner": null, "line": 4, "col": 6, "summary": "", "selfRef": false },
+    { "name": "Sample.Base.Point", "module": "Sample.Base", "kind": "record", "phase": "runtime", "owner": null, "line": 6, "col": 8, "summary": "", "selfRef": false },
+    { "name": "Sample.Base.Pair", "module": "Sample.Base", "kind": "type", "phase": "runtime", "owner": null, "line": 8, "col": 6, "summary": "", "selfRef": false },
+    { "name": "Sample.Base.Shape", "module": "Sample.Base", "kind": "enum", "phase": "runtime", "owner": null, "line": 10, "col": 6, "summary": "", "selfRef": false },
+    { "name": "Sample.Base.seed", "module": "Sample.Base", "kind": "input", "phase": "runtime", "owner": null, "line": 12, "col": 7, "summary": "", "selfRef": false },
+    { "name": "Sample.Base.bump", "module": "Sample.Base", "kind": "fn", "phase": "runtime", "owner": null, "line": 15, "col": 4, "summary": "1 を足す。", "selfRef": false },
+    { "name": "Sample.Base.countdown", "module": "Sample.Base", "kind": "fn", "phase": "runtime", "owner": null, "line": 17, "col": 4, "summary": "", "selfRef": true },
+    { "name": "Sample.Base.idOf", "module": "Sample.Base", "kind": "fn", "phase": "runtime", "owner": null, "line": 21, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Inputs.bias", "module": "Sample.Inputs", "kind": "input", "phase": "runtime", "owner": null, "line": 4, "col": 7, "summary": "", "selfRef": false },
+    { "name": "Sample.Loop.A.Box", "module": "Sample.Loop.A", "kind": "record", "phase": "runtime", "owner": null, "line": 6, "col": 8, "summary": "", "selfRef": false },
+    { "name": "Sample.Loop.A.unbox", "module": "Sample.Loop.A", "kind": "fn", "phase": "runtime", "owner": null, "line": 8, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Loop.A.BoxOk", "module": "Sample.Loop.A", "kind": "predicate", "phase": "spec", "owner": null, "line": 10, "col": 11, "summary": "", "selfRef": false },
+    { "name": "Sample.Loop.B.Positive", "module": "Sample.Loop.B", "kind": "predicate", "phase": "spec", "owner": null, "line": 6, "col": 11, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.shifted", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 8, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.twice", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 10, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.named", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 12, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.useNamed", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 14, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.classify", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 16, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.qualified", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 23, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Mid.withBias", "module": "Sample.Mid", "kind": "fn", "phase": "runtime", "owner": null, "line": 25, "col": 4, "summary": "", "selfRef": false },
+    { "name": "Sample.Proto.Node", "module": "Sample.Proto", "kind": "protocol", "phase": "runtime", "owner": null, "line": 6, "col": 10, "summary": "", "selfRef": false },
+    { "name": "Sample.Proto.step", "module": "Sample.Proto", "kind": "fn", "phase": "runtime", "owner": "Node", "line": 7, "col": 6, "summary": "", "selfRef": false },
+    { "name": "Sample.Run.current", "module": "Sample.Run", "kind": "observer", "phase": "runtime", "owner": null, "line": 8, "col": 10, "summary": "", "selfRef": false },
+    { "name": "Sample.Run.run", "module": "Sample.Run", "kind": "scenario", "phase": "runtime", "owner": null, "line": 10, "col": 10, "summary": "", "selfRef": false },
+    { "name": "Sample.Spec.Small", "module": "Sample.Spec", "kind": "predicate", "phase": "spec", "owner": null, "line": 7, "col": 11, "summary": "x が 10 未満。", "selfRef": false },
+    { "name": "Sample.Spec.Shifted", "module": "Sample.Spec", "kind": "predicate", "phase": "spec", "owner": null, "line": 9, "col": 11, "summary": "", "selfRef": false },
+    { "name": "Sample.Spec.Pos", "module": "Sample.Spec", "kind": "condition", "phase": "spec", "owner": null, "line": 11, "col": 11, "summary": "", "selfRef": false },
+    { "name": "Sample.Spec.grows", "module": "Sample.Spec", "kind": "claim", "phase": "spec", "owner": null, "line": 13, "col": 7, "summary": "", "selfRef": false },
+    { "name": "Sample.Spec.positive", "module": "Sample.Spec", "kind": "claim", "phase": "spec", "owner": null, "line": 15, "col": 7, "summary": "", "selfRef": false },
+    { "name": "Sample.Spec.All", "module": "Sample.Spec", "kind": "claim bundle", "phase": "spec", "owner": null, "line": 17, "col": 14, "summary": "", "selfRef": false }
+  ],
+  "declEdges": [
+    {
+      "from": "Sample.Base.Point",
+      "to": "Sample.Base.Id",
+      "sites": [
+        { "path": "Sample/Base.naru", "line": 6, "col": 27, "written": "Id" }
+      ]
+    },
+    {
+      "from": "Sample.Base.Pair",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Base.naru", "line": 8, "col": 14, "written": "Point" },
+        { "path": "Sample/Base.naru", "line": 8, "col": 21, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Base.Shape",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Base.naru", "line": 10, "col": 24, "written": "Point" },
+        { "path": "Sample/Base.naru", "line": 10, "col": 31, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Base.idOf",
+      "to": "Sample.Base.Id",
+      "sites": [
+        { "path": "Sample/Base.naru", "line": 21, "col": 22, "written": "Id" }
+      ]
+    },
+    {
+      "from": "Sample.Base.idOf",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Base.naru", "line": 21, "col": 12, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Loop.A.unbox",
+      "to": "Sample.Loop.A.Box",
+      "sites": [
+        { "path": "Sample/Loop/A.naru", "line": 8, "col": 13, "written": "Box" }
+      ]
+    },
+    {
+      "from": "Sample.Loop.A.BoxOk",
+      "to": "Sample.Loop.A.Box",
+      "sites": [
+        { "path": "Sample/Loop/A.naru", "line": 10, "col": 20, "written": "Box" }
+      ]
+    },
+    {
+      "from": "Sample.Loop.A.BoxOk",
+      "to": "Sample.Loop.B.Positive",
+      "sites": [
+        { "path": "Sample/Loop/A.naru", "line": 10, "col": 27, "written": "Positive" }
+      ]
+    },
+    {
+      "from": "Sample.Loop.B.Positive",
+      "to": "Sample.Loop.A.Box",
+      "sites": [
+        { "path": "Sample/Loop/B.naru", "line": 6, "col": 23, "written": "Box" }
+      ]
+    },
+    {
+      "from": "Sample.Loop.B.Positive",
+      "to": "Sample.Loop.A.unbox",
+      "sites": [
+        { "path": "Sample/Loop/B.naru", "line": 6, "col": 30, "written": "unbox" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.shifted",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 8, "col": 15, "written": "Point" },
+        { "path": "Sample/Mid.naru", "line": 8, "col": 25, "written": "Point" },
+        { "path": "Sample/Mid.naru", "line": 8, "col": 33, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.shifted",
+      "to": "Sample.Base.bump",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 8, "col": 44, "written": "bump" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.twice",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 10, "col": 13, "written": "Point" },
+        { "path": "Sample/Mid.naru", "line": 10, "col": 23, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.twice",
+      "to": "Sample.Mid.shifted",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 10, "col": 33, "written": "shifted" },
+        { "path": "Sample/Mid.naru", "line": 10, "col": 43, "written": "shifted" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.useNamed",
+      "to": "Sample.Base.seed",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 14, "col": 47, "written": "seed" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.useNamed",
+      "to": "Sample.Base.bump",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 14, "col": 34, "written": "bump" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.useNamed",
+      "to": "Sample.Mid.named",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 14, "col": 24, "written": "named" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.classify",
+      "to": "Sample.Base.Shape",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 16, "col": 16, "written": "Shape" },
+        { "path": "Sample/Mid.naru", "line": 18, "col": 5, "written": "Shape.Dot" },
+        { "path": "Sample/Mid.naru", "line": 19, "col": 5, "written": "Shape.Line" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.qualified",
+      "to": "Sample.Base.bump",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 23, "col": 25, "written": "Sample.Base.bump" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.withBias",
+      "to": "Sample.Base.seed",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 25, "col": 33, "written": "seed" }
+      ]
+    },
+    {
+      "from": "Sample.Mid.withBias",
+      "to": "Sample.Inputs.bias",
+      "sites": [
+        { "path": "Sample/Mid.naru", "line": 25, "col": 24, "written": "bias" }
+      ]
+    },
+    {
+      "from": "Sample.Proto.step",
+      "to": "Sample.Base.bump",
+      "sites": [
+        { "path": "Sample/Proto.naru", "line": 7, "col": 28, "written": "bump" }
+      ]
+    },
+    {
+      "from": "Sample.Run.current",
+      "to": "Sample.Mid.useNamed",
+      "sites": [
+        { "path": "Sample/Run.naru", "line": 8, "col": 29, "written": "useNamed" }
+      ]
+    },
+    {
+      "from": "Sample.Run.current",
+      "to": "Sample.Mid.withBias",
+      "sites": [
+        { "path": "Sample/Run.naru", "line": 8, "col": 42, "written": "withBias" }
+      ]
+    },
+    {
+      "from": "Sample.Run.run",
+      "to": "Sample.Base.seed",
+      "sites": [
+        { "path": "Sample/Run.naru", "line": 11, "col": 9, "written": "seed" }
+      ]
+    },
+    {
+      "from": "Sample.Run.run",
+      "to": "Sample.Inputs.bias",
+      "sites": [
+        { "path": "Sample/Run.naru", "line": 12, "col": 9, "written": "bias" }
+      ]
+    },
+    {
+      "from": "Sample.Run.run",
+      "to": "Sample.Run.current",
+      "sites": [
+        { "path": "Sample/Run.naru", "line": 13, "col": 11, "written": "current" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.Small",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 7, "col": 20, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.Shifted",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 9, "col": 22, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.Shifted",
+      "to": "Sample.Mid.shifted",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 9, "col": 37, "written": "shifted" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.Shifted",
+      "to": "Sample.Spec.Small",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 9, "col": 31, "written": "Small" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.grows",
+      "to": "Sample.Base.Point",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 13, "col": 16, "written": "Point" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.grows",
+      "to": "Sample.Spec.Small",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 13, "col": 25, "written": "Small" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.grows",
+      "to": "Sample.Spec.Shifted",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 13, "col": 42, "written": "Shifted" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.positive",
+      "to": "Sample.Base.bump",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 15, "col": 41, "written": "bump" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.positive",
+      "to": "Sample.Spec.Pos",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 15, "col": 26, "written": "Pos" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.All",
+      "to": "Sample.Spec.grows",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 17, "col": 20, "written": "grows" }
+      ]
+    },
+    {
+      "from": "Sample.Spec.All",
+      "to": "Sample.Spec.positive",
+      "sites": [
+        { "path": "Sample/Spec.naru", "line": 17, "col": 35, "written": "positive" }
+      ]
+    }
+  ],
+  "fileEdges": [
+    { "from": "Sample.Loop.A", "to": "Sample.Loop.B", "count": 1, "imported": true },
+    { "from": "Sample.Loop.B", "to": "Sample.Loop.A", "count": 2, "imported": true },
+    { "from": "Sample.Mid", "to": "Sample.Base", "count": 8, "imported": true },
+    { "from": "Sample.Mid", "to": "Sample.Inputs", "count": 1, "imported": true },
+    { "from": "Sample.Proto", "to": "Sample.Base", "count": 1, "imported": true },
+    { "from": "Sample.Run", "to": "Sample.Base", "count": 1, "imported": true },
+    { "from": "Sample.Run", "to": "Sample.Inputs", "count": 1, "imported": true },
+    { "from": "Sample.Run", "to": "Sample.Mid", "count": 2, "imported": true },
+    { "from": "Sample.Spec", "to": "Sample.Base", "count": 4, "imported": true },
+    { "from": "Sample.Spec", "to": "Sample.Mid", "count": 1, "imported": false }
+  ],
+  "unusedImports": [
+    { "module": "Sample.Mid", "import": "Sample.Empty" }
+  ],
+  "components": [
+    ["Sample.Base"],
+    ["Sample.Empty"],
+    ["Sample.Inputs"],
+    ["Sample.Loop.A", "Sample.Loop.B"],
+    ["Sample.Mid"],
+    ["Sample.Proto"],
+    ["Sample.Run"],
+    ["Sample.Spec"]
+  ],
+  "reducedEdges": [
+    { "from": "Sample.Loop.A", "to": "Sample.Loop.B" },
+    { "from": "Sample.Loop.B", "to": "Sample.Loop.A" },
+    { "from": "Sample.Mid", "to": "Sample.Base" },
+    { "from": "Sample.Mid", "to": "Sample.Inputs" },
+    { "from": "Sample.Proto", "to": "Sample.Base" },
+    { "from": "Sample.Run", "to": "Sample.Mid" },
+    { "from": "Sample.Spec", "to": "Sample.Mid" }
+  ],
+  "stats": { "files": 9, "decls": 30, "declEdges": 38, "declEdgesAcrossFiles": 22, "fileEdges": 10, "reducedEdges": 7, "layers": 3 }
+}

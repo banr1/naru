@@ -1,0 +1,7 @@
+# 依存グラフの検体プロジェクト(IDEAL.md C64)。`naru_test deps` が `<ルート>/.lake/build/bin/naru deps --out <一時ディレクトリ>` をこのディレクトリを cwd にして
+# 走らせ、`deps.json` が手で書いた `expected/deps.json`(`naru-compiler-sha256` の値だけは実際の値に置き換える)と byte 単位で一致することを確かめる。
+# 検体に含むもの: 値の位置・型の位置(仮引数・戻り型・欄・variant の引数・型別名)・UFCS・修飾名・名前付き引数の参照、claim bundle の項目、protocol の中の宣言、
+# scenario / observer、spec から runtime への参照、import 行に無い参照、参照の無い import、自己再帰、ファイル間の循環(強連結成分)、宣言の無いモジュール、
+# input だけのモジュール。
+sources = ["src"]
+deps = "deps"

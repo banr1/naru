@@ -1,0 +1,2 @@
+// 依存グラフの検体(C64): 宣言の無いモジュール(Mid が import するが参照は無い)。
+module Sample.Empty

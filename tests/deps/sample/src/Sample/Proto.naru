@@ -1,0 +1,8 @@
+// 依存グラフの検体(C64): protocol の中の宣言(owner を持つ)。
+module Sample.Proto
+
+import Sample.Base
+
+protocol Node {
+  fn step(n: Nat) -> Nat { bump(n) }
+}

@@ -1,0 +1,17 @@
+// 依存グラフの検体(C64): spec から runtime への参照(Mid は import 行に無い)と claim bundle の項目。
+module Sample.Spec
+
+import Sample.Base
+
+// x が 10 未満。
+predicate Small(p: Point) { p.x < 10 }
+
+predicate Shifted(p: Point) { Small(shifted(p)) }
+
+condition Pos(n: Nat) { n > 0 }
+
+claim grows(p: Point) { Small(p) implies Shifted(p) }
+
+claim positive(n: Nat) { Pos(n) implies bump(n) > 1 }
+
+claim bundle All { grows, second: positive }

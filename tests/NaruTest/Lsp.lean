@@ -1957,11 +1957,13 @@ def run : IO UInt32 := runGroup "naru_test lsp" do
   if !(← bin.pathExists) then
     fail s!"{bin} not found"
     return
-  -- 言語サーバーの検査はファイルを生成しない(C18): 生成先と `tests/units/` の全ファイルをセッションの前後で照合する
-  let generated ← match ← Naru.readConfig Naru.configFileName with
-    | .ok cfg => pure cfg.generatedPath
+  -- 言語サーバーの検査はファイルを生成しない(C18 / C63): 生成先・依存グラフの出力先(`naru.toml` の `deps`)・`tests/units/` の全ファイルを
+  -- セッションの前後で照合する
+  let (generated, depsDir) ← match ← Naru.readConfig Naru.configFileName with
+    | .ok cfg => pure (cfg.generatedPath, cfg.depsPath)
     | .error e => fail s!"{Naru.configFileName}: {e}"; return
-  let before ← snapshotTree [generated, unitsDir]
+  let watched := [generated] ++ (match depsDir with | some d => [d] | none => []) ++ [unitsDir]
+  let before ← snapshotTree watched
   let child ← IO.Process.spawn
     { cmd := bin.toString, args := #["lsp"], cwd := some root, stdin := .piped, stdout := .piped, stderr := .inherit }
   let client : Client := { child, stdin := IO.FS.Stream.ofHandle child.stdin, stdout := IO.FS.Stream.ofHandle child.stdout }
@@ -1973,9 +1975,9 @@ def run : IO UInt32 := runGroup "naru_test lsp" do
   if !(← exited.get) then
     child.kill
     let _ ← child.wait
-  let after ← snapshotTree [generated, unitsDir]
+  let after ← snapshotTree watched
   if before == after && !before.isEmpty then
-    ok s!"the LSP session generated nothing: {before.length} files under {generated}/ and {unitsDir}/ have the same paths and sha256 before and after"
+    ok s!"the LSP session generated nothing: {before.length} files under {watched} have the same paths and sha256 before and after"
   else
     let onlyAfter := after.filter fun (p, _) => (before.lookup p).isNone
     let changed := after.filter fun (p, h) => (before.lookup p).isSome && before.lookup p != some h
