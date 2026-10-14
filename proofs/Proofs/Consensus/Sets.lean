@@ -185,6 +185,10 @@ theorem Sorted.inter {s : VSet} (hs : Sorted s) (t : VSet) : Sorted (s.inter t) 
   show (s.elems.filter t.contains).Pairwise _
   exact List.Pairwise.filter t.contains hs
 
+/-- `filter` は狭義昇順を保つ(周回 136。`Majority.lean` が `rawSupporters` / `rawParticipants` の整列に使う)。 -/
+theorem Sorted.filter {s : VSet} (hs : Sorted s) (p : ValidatorId → Bool) : Sorted (s.filter p) :=
+  List.Pairwise.filter p hs
+
 /-- `union` の `toFinset` は `toFinset` の和。 -/
 theorem toFinset_union (s t : VSet) : (s.union t).elems.toFinset = s.elems.toFinset ∪ t.elems.toFinset := by
   ext z

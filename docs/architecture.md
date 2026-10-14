@@ -309,8 +309,24 @@ anchor そのものか適格な tree の要素 `ghost_eligible`。降下補題 `
 無い `ghost_terminal`。Goldfish の得点は祖先ほど大きく `goldfishScore_mono`、支持者は投票の参加者 `rawSupporters_size_le`。`updateConfirmationWith` の `let` を
 名前つきの定義(`supportVotes` / `lateCount` / `score` / `eligible` / `sgRoot` / `head` / `candidate` …)に開いて `updateConfirmationWith_eq`(`rfl`)で結び、
 新しい確認の記録は 元の記録 / stable の記録 / 過半の支持 `lateCount < 2 · score` を持ち SG root を延ばす head / grade の候補 `frameSgCandidate` のどれか
-`latestConfirmed_shape`。残るのは `SleepyRegime` の下で過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(正準性。
-stable の記録と grade の候補の分岐についても同じ)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること(包含))。
+`latestConfirmed_shape`)、`Votes.lean`(投票の pool `storePool` に投票を入れるのは `onGoldfishVote` だけで、必ず `onGoldfishVoteChecked` の守り
+`vote.valIndex ∈ committee' vote.slot` を通る。pool の不変条件 `PoolInv`(鍵 `k` の投票は slot `k` で committee の投票)と拡張 `PoolExt`(元の投票は残り、
+増えた投票は適格)を全ハンドラ → tick / deliver → world → run の読みに積み上げ、`storeAt_pool` / `stateBefore_pool`(前提なし)と `storeAt_poolExt`
+(`EventsSorted` の下で同じノードの pool は時刻について増えるだけ)。自分の投票の形 `goldfishVoteWith_some`)、`Majority.lean`(確認の門
+`lateCount < 2 · score` と honest 過半。手書き `Confirmation.lean` の `Numerator` / `HonestSupport` の筋: 支持の投票は遅い投票 `supportVotes_sub_lateVotes`
+なので `noSecondVoteIn` の絞り込みから支持の投票は投票者ごとに 1 つ `supportVotes_unique`、equivocator は無く `supportVotes_no_equivocation`(`NaruStd.Set` の
+整列 `SortedLt` と `GoldfishVote` の辞書式順序から重複なし)、得点は支持者の数 `score_eq_supporters`。参加者は committee の要素 `participants_sub_committee`
+(`PoolInv`)。数え上げの核 `exists_honest_of_majority`(`Finset`: equivocator と支持者は遅い投票の参加者に含まれ互いに素、参加者は committee に含まれ、
+honest な committee の要素はすべて参加者、`HonestCommittees` の不等式、門から honest な要素)から、門を通るブロックには honest な支持者がいる
+`exists_honest_supporter`(honest な支持者とその投票(slot `s`、`b` 以下を指す))/ `_of_head` / `_of_run`(`SetupWellFormed` と `HonestCommittees` から
+run の読みについて)。`HonestSupport`(手書きの形から `vote` を「`B` 以下を指す」に弱めたもの: committee は honest 過半、honest な committee の要素はみな
+支持の投票に `B` 以下を指す投票を持つ)から `B` とその祖先は門を通る `HonestSupport.eligible` / `eligible_of_preceq`、門を通るどのブロックも `B` と互換
+`HonestSupport.compatible_of_eligible`。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な tick は `voteTime` に自分の fork choice の head
+へ投票し、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
+届く)を示すことと、2 つの honest なノードの読みの間の正準性(手書きの
+`eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の一致・finalized との
+交差の互換・GST-zero の枝の finalized の一致(stable の記録と grade の候補の分岐についても同じ)を結ぶこと、honest な提案が適格な子の一意な最大になって
+`ghost_reaches` で選ばれること(包含))。
 検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)

@@ -16,8 +16,13 @@
   還元する足場(`ConfirmationRecords.lean` / `RecordGrowth.lean` / `Outputs.lean`。stable の記録 ⪯ 確認の記録は store の不変条件として `RecordOrder.lean` が前提なしに示す)と、
   `AvailableAt` を残る 5 つの事実から組み立て、`t0 ≠ 0` の finalized の一致を `finalizedSafe` から出す `Available.lean`、確認の候補を書く fork choice と得点の
   最初の層(`ghost` の降下補題 `ghost_reaches`・結果は anchor を延ばし適格・得点は祖先ほど大きい・`updateConfirmationWith` が書く確認の記録の形 `latestConfirmed_shape`)の
-  `Goldfish.lean` は既にあり、残るのは `SleepyRegime` の下で過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(正準性: 確認の記録の
-  一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致。stable の記録と grade の候補の分岐についても同じ)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること
+  `Goldfish.lean`、投票の pool の不変条件(pool の投票は committee の投票で、増えるだけ)の `Votes.lean`、確認の門 `lateCount < 2 · score` の honest 過半の数え上げ
+  (支持の投票は投票者ごとに 1 つで equivocator は無い。honest な committee の要素がすべて遅い投票の参加者なら門を通るブロックには honest な支持者がいる。honest な
+  committee の要素がみな `B` 以下に投票していれば(`HonestSupport`)`B` とその祖先は門を通り、門を通るどのブロックも `B` と互換)の `Majority.lean` は既にあり、残るのは
+  `SleepyRegime` の下で `HonestSupport` の前提(honest な tick は `voteTime` に自分の fork choice の head へ投票し、その head が honest な提案 `B` を延ばして slot が `s` 以下で、
+  `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
+  正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の
+  一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致(stable の記録と grade の候補の分岐についても同じ)を結ぶことと、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること
   (`IncludedFrom`)を示す `available` の本体、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
   義務の雛形の生成、レビュー面 / エディタへの証明状況の表示は対象外
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)

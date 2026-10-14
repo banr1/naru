@@ -17,6 +17,8 @@ import Proofs.Consensus.Outputs
 import Proofs.Consensus.RecordOrder
 import Proofs.Consensus.Available
 import Proofs.Consensus.Goldfish
+import Proofs.Consensus.Votes
+import Proofs.Consensus.Majority
 import Mathlib.Tactic
 
 /-!
@@ -81,10 +83,26 @@ anchor から適格な子のうち得点最大の一意なものへ降りる歩�
 `rawSupporters_size_le`。`updateConfirmationWith` の `let` を名前つきの定義(`supportVotes` / `lateCount` / `score` / `eligible` / `sgRoot` /
 `head` / `candidate` …)に開いて `updateConfirmationWith_eq`(`rfl`)で結び、新しい確認の記録は 元の記録 / stable の記録 / 過半の支持
 `lateCount < 2 · score` を持ち SG root を延ばす head / grade の候補 `frameSgCandidate` のどれか `latestConfirmed_shape`)。
-残るのは `SleepyRegime` の下で、過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(確認の記録の
-一致・finalized との交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致。stable の記録と grade の候補 `frameSgCandidate` の分岐についても
-同じ正準性)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること(`IncludedFrom` ×2)を Goldfish の投票と確認の
-本体から示すこと。
+周回 136 の足場(claim の theorem はまだ無い): `Votes.lean`(投票の pool `storePool` に投票を入れるのは `onGoldfishVote` だけで、必ず
+`onGoldfishVoteChecked` の守り `vote.valIndex ∈ committee' vote.slot` を通る。pool の不変条件 `PoolInv`(鍵 `k` の投票は slot `k` で committee の
+投票)と拡張 `PoolExt`(元の投票は残り、増えた投票は適格)を全ハンドラ → tick / deliver → world → run の読みに積み上げ、`storeAt_pool` /
+`stateBefore_pool`(前提なし)と `storeAt_poolExt`(`EventsSorted` の下で同じノードの pool は時刻について増えるだけ)。自分の投票の形
+`goldfishVoteWith_some`: 投票者は自分、slot は store の `s`、head は `getHeadInTreeWith` の結果の root)、`Majority.lean`(確認の門
+`lateCount < 2 · score` と honest 過半。支持の投票は遅い投票 `supportVotes_sub_lateVotes`(解決の印 ≥ 受信の印、`supportCutoff ≤ confirmationTime`)
+なので `noSecondVoteIn` の絞り込みから支持の投票は投票者ごとに 1 つ `supportVotes_unique`、equivocator は無く `supportVotes_no_equivocation`
+(`NaruStd.Set` の整列 `SortedLt` と `GoldfishVote` の辞書式順序から重複なし)、得点は支持者の数 `score_eq_supporters`。参加者は committee の要素
+`participants_sub_committee`(`PoolInv`)。数え上げの核 `exists_honest_of_majority`(`Finset`)から、門を通るブロックには honest な支持者がいる
+`exists_honest_supporter`(前提: `0 ≤ Δ`・`PoolInv`・committee の整列・`HonestCommittees` の不等式・honest な committee の要素がみな遅い投票の
+参加者)/ `_of_head` / `_of_run`。手書き `Confirmation.lean` の `HonestSupport` から `vote` を「`B` 以下を指す」に弱めた `HonestSupport`
+(committee は honest 過半、honest な committee の要素はみな支持の投票に `B` 以下を指す投票を持つ)から `B` とその祖先は門を通る
+`HonestSupport.eligible` / `eligible_of_preceq` と門を通るどのブロックも `B` と互換 `HonestSupport.compatible_of_eligible`)。
+残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な tick は `voteTime` に自分の fork choice の head への投票を発行し、
+その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
+`supportCutoff` までに届く — 解決の印は投票とブロックの受信の印の大きい方)、2 つの honest なノードの読みの間の正準性
+(手書きの安全の核 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で、同じ slot に両ノードで門を通る 2 ブロックは
+互換)で確認の記録の一致・finalized との交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致(stable の記録と grade の候補 `frameSgCandidate`
+の分岐についても同じ)を結ぶこと、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること(`IncludedFrom` ×2)を
+Goldfish の投票と確認の本体から示すこと。
 -/
 
 /-- claim `constants`: `SetupWellFormed` の数値の前提の下で定数が `ConstantsValid` を満たす。
