@@ -263,6 +263,15 @@ tick を horizon まで run に入れるので honest な committee の要素は
 時計を合わせただけ `voteStore_of_voteTime`(手書き `vote_time_ne_proposal_time` の筋で `voteTime_ne_proposalTime`)、tick が出す投票の head は tick の前の store に時計を
 合わせたもの `clocked` の fork choice の head `voteHead`(`tick_gfVote_head`)、run では `Emits` の添字 `i` の `stateBefore i` の発行者の store と `onPhaseTick` で進めた
 cache で読む `emits_gfVote_head` / `honest_emits_gfVote_head`)。
+`Delivery.lean`(投票の配送の層の入口。投票は `excludes` が偽なので `PartialSynchrony` の第 1 連言から、honest な `v` が時刻 `t` に発行した投票を
+honest な `w` が締切 `max t tGST + Δ`(horizon 以内)より前のある添字で扱う `partialSynchrony_gfVote`。`HandlesAt` の投票の経路は `w` 自身の tick の発行
+(= `Emits` の添字。投票者は `w`)・`w` への配送・投票を運ぶブロックの新しい受理の 3 つ `handlesAt_gfVote_cases` / `partialSynchrony_gfVote_cases` /
+`handlesAt_gfVote_tick_self`。配送された投票が pool に入るのは無条件ではなく、投票者が committee の要素(`voteWellFormed`)・受信者の slot が `u.slot` か
+`u.slot + 1`(`InWindow`)・pool の slot `u.slot` に同じ投票者の投票がまだ 2 つ無い(`equivocates` が偽)ときで(`mem_onGoldfishVote` /
+`mem_onGoldfishVoteChecked` / `mem_receiptProcess_gfVote`。手書き `on_goldfish_vote_insert` の窓と equivocation の守りに当たる。配送は時計を進めないので、
+受信者の slot は受信の前の受信者自身の最後の tick で決まる)、run では配送の添字 `j` の後の
+`stateBefore (j + 1)` 以降の受信者の pool に残る `deliver_gfVote_mem` / `gfVote_mem_of_le` / `deliver_gfVote_mem_of_lt`。受信済みの判定は pool の所属
+`processed_gfVote_iff`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

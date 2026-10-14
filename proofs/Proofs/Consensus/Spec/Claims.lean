@@ -20,6 +20,7 @@ import Proofs.Consensus.Goldfish
 import Proofs.Consensus.Votes
 import Proofs.Consensus.Majority
 import Proofs.Consensus.Voting
+import Proofs.Consensus.Delivery
 import Mathlib.Tactic
 
 /-!
@@ -105,6 +106,11 @@ slot ごとに発行する投票は 1 つ `emits_gfVote_unique`、`ScheduleWellF
 時計を合わせただけ `voteStore_of_voteTime`、tick が出す投票の head は tick の前の store に時計を合わせたもの(`clocked`)の fork choice の head `voteHead`
 (`tick_gfVote_head`)、run では `Emits` の添字 `i` の `stateBefore i` の発行者の store と `onPhaseTick` で進めた cache で読む `emits_gfVote_head` /
 `honest_emits_gfVote_head`)。
+周回 141 の足場: `Delivery.lean`(投票の配送の層の入口。投票は `excludes` が偽なので `PartialSynchrony` から締切 `max t tGST + Δ` より前に
+honest な受信者が扱う `partialSynchrony_gfVote`、`HandlesAt` の投票の経路は自分の tick の発行・配送・運ぶブロックの受理の 3 つ `handlesAt_gfVote_cases`、
+配送された投票が受信者の pool に入るのは投票者が committee の要素・受信者の slot が `u.slot` か `u.slot + 1`(`InWindow`)・同じ投票者の投票が
+pool にまだ 2 つ無いときで(`mem_onGoldfishVote` / `mem_receiptProcess_gfVote`。手書き `on_goldfish_vote_insert` の窓と equivocation の守りに当たる)、run では配送の後の
+どの添字でも pool に残る `deliver_gfVote_mem` / `deliver_gfVote_mem_of_lt`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

@@ -329,7 +329,10 @@ store `voteStore` を読む。tick が出す投票は投票の時刻の tick の
 tick を horizon まで run に入れるので honest な committee の要素は各 slot `k > 0`(`voteTime e k ≤ horizon`)で投票を発行する `honest_emits_gfVote`
 (`slotOf_voteTime`(手書き `slotOf_vote_time`)/ `publicTime_voteTime`)、投票の時刻は提案の時刻と違う(Δ > 0)ので投票の務めが読む store は時計を合わせただけ
 `voteStore_of_voteTime` で、発行された投票の head は `Emits` の添字 `i` の `stateBefore i` の発行者の store に時計を合わせたもの `clocked` の fork choice の head `voteHead`(cache は `onPhaseTick` で進めたもの。
-`tick_gfVote_head` / `emits_gfVote_head` / `honest_emits_gfVote_head`))。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
+`tick_gfVote_head` / `emits_gfVote_head` / `honest_emits_gfVote_head`))。`Delivery.lean`(投票の配送の層の入口。投票は `excludes` が偽なので
+`PartialSynchrony` から honest な受信者が締切 `max t tGST + Δ` より前に扱う `partialSynchrony_gfVote`、`HandlesAt` の投票の経路は自分の tick の発行・配送・
+運ぶブロックの受理の 3 つ `handlesAt_gfVote_cases`、配送された投票は投票者が committee の要素・受信者の slot が `u.slot` か `u.slot + 1`(`InWindow`)・
+同じ投票者の投票が pool にまだ 2 つ無いときに受信者の pool に入り以後も残る `mem_receiptProcess_gfVote` / `deliver_gfVote_mem` / `deliver_gfVote_mem_of_lt`)。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(済み)、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
 届く)を示すことと、2 つの honest なノードの読みの間の正準性(手書きの
 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の一致・finalized との
