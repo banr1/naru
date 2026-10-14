@@ -248,8 +248,12 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`。claim surface の順)と claim bundle `Consensus.Spec.Claims.Consensus`。
 theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statements.Consensus.Spec.Claims` と `import Mathlib.Tactic`)、補題は `proofs/Proofs/Consensus/` 配下に分ける。
 いまは `constants`(補題 `proofs/Proofs/Consensus/Constants.lean`: 定数を Δ・R・η_SG の多項式に開く。`outageStart < expiry` だけ `Int.fdiv` と Nat の除算を通る)と
-`nested`(補題 `Nested.lean` / `Blocks.lean`: `getStable` / `getConfirmed` の分岐と `preceq` の反射律。run への前提は使わない)の 2 件が証明済みで、
-`naru proofs` は残り 12 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
+`nested`(補題 `Nested.lean` / `Blocks.lean`: `getStable` / `getConfirmed` の分岐と `preceq` の反射律。run への前提は使わない)、
+`finalizedMonotone`(補題 `FinalizedMonotone.lean`: `RunWellFormed` の中の `EventsSorted` だけを使う。`Stores.lean` が「`f` を変えるのは `updateFinality` の
+`prec st.f σ.f` を条件にした分岐だけ」から全ハンドラ(`nodeTick` / `nodeProcess`)が store の `f` を縮めないことを、`Runs.lean` が時刻で非減少な event 列の
+`filter (≤ t)` が `filter (≤ t2)` の接頭辞であることと `worldAt (Table.insert …)` の読みを、`Tables.lean` が stdlib の `Table.getOr` / `insert` と `ValidatorId` の
+派生 `Ord` の補題を、`Blocks.lean` が `preceq` の推移律を与え、`List.foldl_append` で結ぶ)の 3 件が証明済みで、
+`naru proofs` は残り 11 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 
