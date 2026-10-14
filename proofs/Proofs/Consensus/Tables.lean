@@ -83,6 +83,45 @@ theorem getOr_insert
   · exact Or.inl ⟨hk, by simp [NaruStd.Table.getOr, NaruStd.Table.get?, NaruStd.Table.insert, hf]⟩
   · exact Or.inr (by simp [NaruStd.Table.getOr, NaruStd.Table.get?, NaruStd.Table.insert, hf])
 
+/-- 鍵の `compare` が `.eq ↔ =` の表では、挿入した鍵 `k` 自身を `find?` すると挿入した項目 `(k, v)`。 -/
+theorem find?_insertSorted_self (heq : ∀ a b : κ, compare a b = .eq ↔ a = b) (k : κ) (v : ν) :
+    ∀ es : List (κ × ν),
+      (NaruStd.Table.insertSorted k v es).find? (fun e => compare e.1 k == .eq) = some (k, v)
+  | [] => by simp [NaruStd.Table.insertSorted, (heq k k).mpr rfl]
+  | e :: es => by
+    have hkk : compare k k = .eq := (heq k k).mpr rfl
+    cases hc : compare k e.1 with
+    | lt =>
+      simp only [NaruStd.Table.insertSorted, hc]
+      exact List.find?_cons_of_pos (by simp [hkk])
+    | eq =>
+      simp only [NaruStd.Table.insertSorted, hc]
+      exact List.find?_cons_of_pos (by simp [hkk])
+    | gt =>
+      simp only [NaruStd.Table.insertSorted, hc]
+      have he : ¬ compare e.1 k = .eq := by
+        intro h
+        rw [heq] at h
+        rw [h, hkk] at hc
+        exact Ordering.noConfusion hc
+      rw [List.find?_cons_of_neg (by simp [he])]
+      exact find?_insertSorted_self heq k v es
+
+/-- `(t.insert k v).getOr k d = v`(鍵の `compare` が `.eq ↔ =`)。 -/
+theorem getOr_insert_self (heq : ∀ a b : κ, compare a b = .eq ↔ a = b) (t : NaruStd.Table κ ν) (k : κ) (v : ν)
+    (d : ν) : (t.insert k v).getOr k d = v := by
+  simp [NaruStd.Table.getOr, NaruStd.Table.get?, NaruStd.Table.insert, find?_insertSorted_self heq k v t.entries]
+
+/-- `k ≠ k'` なら `(t.insert k v).getOr k' d = t.getOr k' d`(鍵の `compare` が `.eq ↔ =`)。 -/
+theorem getOr_insert_ne (heq : ∀ a b : κ, compare a b = .eq ↔ a = b) (t : NaruStd.Table κ ν) (k : κ) (v : ν)
+    (k' : κ) (d : ν) (hne : k ≠ k') : (t.insert k v).getOr k' d = t.getOr k' d := by
+  have htr : ∀ a b c : κ, compare a b = .eq → compare b c = .eq → compare a c = .eq := fun a b c hab hbc => by
+    rw [heq] at hab hbc ⊢
+    exact hab.trans hbc
+  rcases getOr_insert htr t k v k' d with ⟨hk, _⟩ | h
+  · exact absurd ((heq k k').mp hk) hne
+  · exact h
+
 end Table
 
 end Proofs.Consensus.Tables

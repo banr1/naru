@@ -57,6 +57,28 @@ theorem eraseBlock_node_preceq (p : NamedBlock) (s : Nat) (r : Model.Consensus.O
   simp only [eraseBlock]
   exact preceq_node _ _ _ _ _ _ _
 
+/-- 消去は root を保つ。 -/
+theorem root_eraseBlock (B : NamedBlock) : root (eraseBlock B) = namedRoot B := by
+  cases B <;> rfl
+
+/-- 消去は親を保つ(`parent (eraseBlock B) = eraseBlock (namedParent B)`。genesis は自分が親)。 -/
+theorem parent_eraseBlock (B : NamedBlock) : parent (eraseBlock B) = eraseBlock (namedParent B) := by
+  cases B <;> rfl
+
+/-- 消去したブロックの祖先は名前付きの祖先の消去(`B` の構造帰納法)。手書き `erased_ancestor_lift`
+(`DecoupledConsensusProofs/Execution/NamedAncestry.lean`)。 -/
+theorem erased_ancestor_lift {a : Block} : ∀ {B : NamedBlock}, preceq a (eraseBlock B) = true →
+    ∃ A : NamedBlock, namedPreceq A B = true ∧ eraseBlock A = a
+  | NamedBlock.Genesis, h => by
+    simp only [eraseBlock, preceq, beq_iff_eq] at h
+    exact ⟨NamedBlock.Genesis, namedPreceq_self _, h.symm⟩
+  | NamedBlock.Node p s r v sup rows i, h => by
+    simp only [eraseBlock, preceq, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with h | h
+    · exact ⟨NamedBlock.Node p s r v sup rows i, namedPreceq_self _, by simp only [eraseBlock]; exact h.symm⟩
+    · obtain ⟨A, hA, rfl⟩ := erased_ancestor_lift h
+      exact ⟨A, namedPreceq_node hA s r v sup rows i, rfl⟩
+
 /-- 名前付き祖先 `c` の行 `row` の消去は、消去した tip の `chainAttestations` に入る。手書き `named_row_erase_mem`。 -/
 theorem contains_chainAttestations_of_row {c : NamedBlock} {row : NamedAttestation}
     (hrow : row ∈ namedAttestations c) :

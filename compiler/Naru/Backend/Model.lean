@@ -23,6 +23,12 @@ spec 宣言(predicate / … / claim bundle)は Statements backend の仕事で�
   tuple → `×`。型別名は展開済み(`abbrev` も出すが参照は展開した型で書く)。
 - `derive eq` → `DecidableEq` と `Ord`(`Set` / `Table` の正規化に使う隠れた全順序。宣言の欄・variant の順の辞書式)、
   `derive order` → `Ord`。`Repr` は常に生成する(simulate の表示用)。`finite` はまだ何も生成しない。
+  再帰する型(variant の引数に自分を直接持つ enum と、`mutual` の成分)の `Ord` だけは Lean の `deriving Ord` を使わず、
+  同じ辞書式順序(構築子の宣言順、同じ構築子なら引数の宣言順の `.then` の連鎖)を構造的再帰で明示的に定義した
+  `<型>.naruCompare` を `instance <型>.naruOrd : Ord <型>` で与える(`emitCompare`)。Lean 4.34 の派生 handler は再帰型の
+  `compare` を `partial` で定義するので、`deriving Ord` のままでは `compare` が証明から見て不透明(`rfl` / `decide` /
+  等式補題のどれも効かない)になり、`Set` / `Table` の所属(tree / bodies / sigma)に関わるプロトコル証明(`proofs/`)が
+  原理的に閉じないため(IDEAL.md C71)。値の順序は派生と同じなので実行の挙動は変わらない。
 - `input` は Lean の宣言にならない。それを(推移的に)使う fn / observer / scenario の先頭の引数
   `name'`(naru の名前 + `'`)になり、呼出しで引き回す。
 - 再帰(`Totality` が受理したもの): 明示 fuel は `termination_by n` と `decreasing_by`、構造的再帰は
@@ -464,10 +470,19 @@ partial def emitScenarioStmts (env : Env) (c : ECtx) (ind : Nat) : List Core.Sce
 
 /-! ## 宣言 -/
 
-def derivingList (derives : List String) : List String :=
+/-- `derive` から `Ord` を出すか(`derive eq` も `Set` / `Table` の正規化のために `Ord` を要る)。 -/
+def needsOrd (derives : List String) : Bool := derives.contains "order" || derives.contains "eq"
+
+/-- deriving 句に並べる型クラス。`explicitOrd` なら `Ord` を外す(再帰する型: `emitCompare` が明示的な `compare` を出す)。 -/
+def derivingList (derives : List String) (explicitOrd : Bool := false) : List String :=
   let eq := derives.contains "eq"
-  let ord := derives.contains "order" || eq
+  let ord := needsOrd derives && !explicitOrd
   (if eq then ["DecidableEq"] else []) ++ (if ord then ["Ord"] else []) ++ ["Repr"]
+
+/-- record / enum の `derive` の一覧(他は空)。 -/
+def derivesOf : Core.Decl → List String
+  | .record _ _ _ _ derives | .enum _ _ _ derives => derives
+  | _ => []
 
 def isInput : Core.Decl → Bool
   | .fn _ _ .input .. => true
@@ -534,21 +549,22 @@ def terminationClause (env : Env) (key : String) (params : List Core.Param) : St
 
 def isRecursive (env : Env) (key : String) : Bool := (env.recs.get? key).isSome
 
-/-- 1 つの宣言。`standaloneDeriving` は `mutual` の中(deriving 句を後に出す)。 -/
-def emitDecl (env : Env) (d : Core.Decl) (standaloneDeriving : Bool := false) : String :=
+/-- 1 つの宣言。`standaloneDeriving` は `mutual` の中(deriving 句を後に出す)。`explicitOrd` は再帰する型(deriving 句から `Ord` を外し、
+`emitCompare` の明示的な `compare` と `instance` を別に出す)。 -/
+def emitDecl (env : Env) (d : Core.Decl) (standaloneDeriving : Bool := false) (explicitOrd : Bool := false) : String :=
   match d with
   | .typeAlias k _ t => s!"abbrev {leanName k} : Type := {ty t}"
   | .record k _ isState fields derives =>
     let head := if isState then "state" else "record"
     let fs := fields.map fun (f, t) => s!"\n  {escLocal f} : {ty t}"
     let body := if fields.isEmpty then s!"structure {leanName k}" else s!"structure {leanName k} where" ++ "".intercalate fs
-    let dv := ", ".intercalate (derivingList derives)
+    let dv := ", ".intercalate (derivingList derives explicitOrd)
     s!"-- naru {head}\n" ++ body ++ (if standaloneDeriving then "" else s!"\nderiving {dv}")
   | .enum k _ variants derives =>
     let vs := variants.map fun (v, ts) =>
       let args := (ts.zipIdx).map fun (t, i) => s!" (a{i} : {ty t})"
       s!"\n  | {escSeg v}" ++ "".intercalate args
-    let dv := ", ".intercalate (derivingList derives)
+    let dv := ", ".intercalate (derivingList derives explicitOrd)
     s!"inductive {leanName k} where" ++ "".intercalate vs ++ (if standaloneDeriving then "" else s!"\nderiving {dv}")
   | .fn k _ kind params ret body =>
     let binders := inputBinders env k ++ params.map fun p => s!"({localName p.name} : {ty p.ty})"
@@ -571,11 +587,68 @@ def emitDecl (env : Env) (d : Core.Decl) (standaloneDeriving : Bool := false) : 
     s!"-- naru scenario\n{sig}\n  " ++ "".intercalate bindLines ++ emitScenarioStmts env c 2 stmts
   | .claimBundle .. => ""
 
-/-- deriving 句を `mutual` の後に出す形。 -/
-def standaloneDerivingOf : Core.Decl → Option String
+/-- deriving 句を `mutual` の後に出す形(`explicitOrd` なら `Ord` を外す)。 -/
+def standaloneDerivingOf (d : Core.Decl) (explicitOrd : Bool := false) : Option String :=
+  match d with
   | .record k _ _ _ derives | .enum k _ _ derives =>
-    some s!"deriving instance {", ".intercalate (derivingList derives)} for {leanName k}"
+    some s!"deriving instance {", ".intercalate (derivingList derives explicitOrd)} for {leanName k}"
   | _ => none
+
+/-! ### 再帰する型の明示的な `compare`
+
+Lean 4.34 の `deriving Ord` は再帰する型(自分を直接参照する enum、`mutual` の成分)の `compare` を `partial` で定義するので、
+生成 Model の `compare` が証明から見て不透明になる(`rfl` / `decide` / 等式補題のどれも効かず、`Set` / `Table` の所属を論じられない)。
+再帰する型には、派生と同じ辞書式順序 — 異なる構築子は宣言順(前の構築子が `.lt`)、同じ構築子は引数の宣言順の `(compare a b).then (…)` の
+連鎖で末尾が `Ordering.eq`、record は欄の宣言順 — を構造的再帰(`termination_by structural «x»`)で明示的に定義した
+`<型>.naruCompare` を出し、`instance <型>.naruOrd : Ord <型> := ⟨<型>.naruCompare⟩` で与える。成分の中の型の引数は `naruCompare` を
+直接呼び(構造的に小さい引数)、それ以外は `Ord.compare`。コンテナ越しの再帰は E019 が退けるので、再帰はこの直接の形だけ。 -/
+
+/-- 型が自分自身を直接参照するか(variant の引数・欄の型に自分の修飾名がある)。 -/
+def selfRecursiveType (d : Core.Decl) : Bool :=
+  isTypeDecl d && d.refs.contains d.key
+
+def compareName (k : String) : String := s!"{leanName k}.naruCompare"
+
+/-- 型 `t` の値 `a` `b` の比較: 成分 `scc`(明示的な `compare` を持つ型の鍵)の型なら `naruCompare`、それ以外は `Ord.compare`。 -/
+def cmpOf (scc : List String) (t : TyV) (a b : String) : String :=
+  match t with
+  | .named k _ => if scc.contains k then s!"{compareName k} {a} {b}" else s!"Ord.compare {a} {b}"
+  | _ => s!"Ord.compare {a} {b}"
+
+/-- 引数 `a0 … / b0 …` の辞書式比較 `(cmp a0 b0).then ((cmp a1 b1).then (… Ordering.eq))`。 -/
+def lexCompare (scc : List String) (ts : List TyV) : String :=
+  (ts.zipIdx).foldr (init := "Ordering.eq") fun (t, i) acc => s!"({cmpOf scc t s!"a{i}" s!"b{i}"}).then ({acc})"
+
+/-- 再帰する型の `compare` の明示的な定義(`Ord` を要る record / enum だけ。`scc` は同じ成分の中で明示的な `compare` を持つ型の鍵)。 -/
+def emitCompare (scc : List String) (d : Core.Decl) : Option String :=
+  let header (k : String) : String :=
+    s!"-- naru derive order ({leanName k}: 再帰する型なので `deriving Ord` ではなく構造的再帰で定義する。順序は派生と同じ辞書式)\n" ++
+    s!"def {compareName k} («x» : {leanName k}) («y» : {leanName k}) : Ordering :=\n  match «x», «y» with"
+  let footer := "\ntermination_by structural «x»"
+  let pats (ctor : String) (n : Nat) (pre : String) : String :=
+    app ctor ((List.range n).map fun j => s!"{pre}{j}")
+  match d with
+  | .enum k _ variants derives =>
+    if !(needsOrd derives) then none else
+    let n := variants.length
+    let arms := (variants.zipIdx).flatMap fun ((v, ts), i) =>
+      let ctor := s!"{leanName k}.{escSeg v}"
+      let same := s!"\n  | {pats ctor ts.length "a"}, {pats ctor ts.length "b"} =>\n    {lexCompare scc ts}"
+      if i + 1 < n then
+        let wild := pats ctor ts.length "_"
+        [same, s!"\n  | {wild}, _ =>\n    Ordering.lt", s!"\n  | _, {wild} =>\n    Ordering.gt"]
+      else [same]
+    some (header k ++ "".intercalate arms ++ footer)
+  | .record k _ _ fields derives =>
+    if !(needsOrd derives) then none else
+    let ts := fields.map (·.2)
+    let ctor := s!"{leanName k}.mk"
+    some (header k ++ s!"\n  | {pats ctor ts.length "a"}, {pats ctor ts.length "b"} =>\n    {lexCompare scc ts}" ++ footer)
+  | _ => none
+
+/-- 明示的な `compare` を `Ord` の instance にする。 -/
+def ordInstance (k : String) : String :=
+  s!"instance {leanName k}.naruOrd : Ord {leanName k} := ⟨{compareName k}⟩"
 
 /-! ## 依存順 -/
 
@@ -638,14 +711,23 @@ def orderGroups (env : Env) (decls : List Core.Decl) : List (List Core.Decl) := 
       remaining := []
   return ordered.map fun g => g.filterMap fun k => decls.find? (·.key == k)
 
-/-- 成分を出力する。複数なら `mutual … end`(型なら deriving 句を後に)。 -/
+/-- 成分を出力する。複数なら `mutual … end`(型なら deriving 句を後に)。再帰する型(自分を直接参照する enum / record と、型の成分)で
+`Ord` を要るものは、deriving 句から `Ord` を外し、明示的な `compare`(`emitCompare`。成分なら `mutual … end`)と `instance` を続けて出す。 -/
 def emitGroup (env : Env) (g : List Core.Decl) : String :=
   match g with
-  | [d] => emitDecl env d
+  | [d] =>
+    if selfRecursiveType d && needsOrd (derivesOf d) then
+      emitDecl env d (explicitOrd := true) ++ "\n\n" ++ (emitCompare [d.key] d).getD "" ++ "\n\n" ++ ordInstance d.key
+    else emitDecl env d
   | ds =>
-    let inner := "\n\n".intercalate (ds.map (emitDecl env · true))
-    let derivs := ds.filterMap standaloneDerivingOf
-    s!"mutual\n\n{inner}\n\nend" ++ (if derivs.isEmpty then "" else "\n" ++ "\n".intercalate derivs)
+    let scc := (ds.filter fun d => isTypeDecl d && needsOrd (derivesOf d)).map (·.key)
+    let explicitOrd := !scc.isEmpty
+    let inner := "\n\n".intercalate (ds.map (emitDecl env · true explicitOrd))
+    let derivs := ds.filterMap (standaloneDerivingOf · explicitOrd)
+    let cmps := ds.filterMap (emitCompare scc)
+    s!"mutual\n\n{inner}\n\nend" ++ (if derivs.isEmpty then "" else "\n" ++ "\n".intercalate derivs) ++
+      (if cmps.isEmpty then "" else
+        "\n\nmutual\n\n" ++ "\n\n".intercalate cmps ++ "\n\nend\n" ++ "\n".intercalate (scc.map ordInstance))
 
 /-! ## モジュールとヘッダ -/
 

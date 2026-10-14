@@ -87,7 +87,27 @@ theorem mem_inter_iff (s t : NaruStd.Set α) (z : α) : z ∈ (s.inter t).elems 
   show z ∈ s.elems.filter t.contains ↔ _
   rw [List.mem_filter, contains_iff_mem heq]
 
+/-- `foldl (fun acc x => acc.union (f x))` の所属(`flatMap` の内側)。 -/
+theorem mem_foldl_union_iff {γ : Type} (f : γ → NaruStd.Set α) : ∀ (l : List γ) (s : NaruStd.Set α) (z : α),
+    z ∈ (l.foldl (fun acc x => acc.union (f x)) s).elems ↔ z ∈ s.elems ∨ ∃ x ∈ l, z ∈ (f x).elems
+  | [], _, _ => by simp
+  | y :: ys, s, z => by
+    rw [List.foldl_cons, mem_foldl_union_iff f ys, mem_union_iff heq]
+    simp only [List.exists_mem_cons_iff]
+    tauto
+
+/-- `flatMap` の所属(各要素の集合の和集合。走査する側の型 `γ` の `compare` には何も要らない)。 -/
+theorem mem_flatMap_iff {γ : Type} [Ord γ] (s : NaruStd.Set γ) (f : γ → NaruStd.Set α) (z : α) :
+    z ∈ (s.flatMap f).elems ↔ ∃ x ∈ s.elems, z ∈ (f x).elems := by
+  show z ∈ (s.elems.foldl (fun acc x => acc.union (f x)) NaruStd.Set.empty).elems ↔ _
+  rw [mem_foldl_union_iff heq]
+  simp [NaruStd.Set.empty]
+
 end Generic
+
+/-- `singleton` の所属(`compare` の前提は要らない)。 -/
+theorem mem_singleton_iff {α : Type} [Ord α] (x z : α) : z ∈ (NaruStd.Set.singleton x).elems ↔ z = x :=
+  List.mem_singleton
 
 /-! ## `ValidatorId` の集合: 整列と `Finset` への橋 -/
 

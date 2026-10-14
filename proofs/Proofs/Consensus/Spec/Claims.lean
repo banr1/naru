@@ -1,12 +1,15 @@
--- naru-obligation: Consensus.Spec.Claims.constants sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
--- naru-obligation: Consensus.Spec.Claims.nested sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
--- naru-obligation: Consensus.Spec.Claims.finalizedMonotone sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
--- naru-obligation: Consensus.Spec.Claims.certificatesAccountable sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
+-- naru-obligation: Consensus.Spec.Claims.constants sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.nested sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.finalizedMonotone sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.certificatesAccountable sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.finalizedAccountable sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.finalizedSafe sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Constants
 import Proofs.Consensus.Nested
 import Proofs.Consensus.FinalizedMonotone
 import Proofs.Consensus.CertificatesAccountable
+import Proofs.Consensus.FinalizedAccountable
 import Mathlib.Tactic
 
 /-!
@@ -25,8 +28,15 @@ import Mathlib.Tactic
 `certificatesAccountable`(補題 `Proofs/Consensus/CertificatesAccountable.lean`: 名前付き導出 `deriveNamed` の不変条件
 (`Derivation.lean`: finality の証明書と高さの横断の定足数)、定足数の交わりの重み `2q − W`(`Weights.lean` / `Sets.lean`)、
 E1 の slashable(`Slashing.lean`)、消去と `chainAttestations` の所属(`NamedBlocks.lean` / `Orders.lean`)から、手書きの
-`namedChainAccountableSafety` の筋で結ぶ)。
-残りの 9 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
+`namedChainAccountableSafety` の筋で結ぶ)、
+`finalizedAccountable` / `finalizedSafe`(補題 `Proofs/Consensus/FinalizedAccountable.lean`: store の不変条件(`Carrier.lean`: bodies の各
+名前付きブロックの消去が tree にあり chain 状態の表 `sigma` の値がその名前付き導出で、finalized `f` はどれかの bodies の導出の `f`)から
+2 つの読みの finality carrier `D₁` / `D₂` を取り、`EventsSorted` の下で `readAt t` が `stateBefore i` であることから run の中のブロックにし、
+`Idealization = NamedRootCollisionFree` を消去した祖先の持ち上げで `RootInjectiveOnAncestors` にして `certificatesAccountable` の本体 `oriented` を
+両向きに当て、`Evidence` を `chainAttestations ⊆ storeAttestations` で `SlashableStates` に持ち上げる(`finalizedAccountable`)か
+`SlashableBound` で退ける(`finalizedSafe`)。`Set Block` / `Set NamedBlock` / `Table Block _` の所属は `Orders.lean` の
+`block_compare_eq_iff` / `nb_compare_eq_iff`(backend が再帰する型に出す明示的な `naruCompare` の `.eq ↔ =`)で言い換える)。
+残りの 7 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
 -/
 
@@ -64,3 +74,17 @@ theorem Proofs.Consensus.Spec.Claims.finalizedMonotone : ∀ (committee' : (Nat 
 手書き `Consensus.certificatesAccountable`(`unconditional_pureFinality` → `pureAccountableFinalitySafety` → `namedChainAccountableSafety`)に当たる。 -/
 theorem Proofs.Consensus.Spec.Claims.certificatesAccountable : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) («s» : Model.Consensus.Execution.Setup.Setup) («c» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («c2» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («target» : Model.Consensus.Objects.Blocks.Block) («target2» : Model.Consensus.Objects.Blocks.Block), Statements.Consensus.Spec.Claims.certificatesAccountable committee' proposer' «s» «c» «c2» «target» «target2» :=
   Proofs.Consensus.CertificatesAccountable.certificatesAccountable
+
+/-- claim `finalizedAccountable`: `SetupWellFormed ∧ RunDomain ∧ RunWellFormed` の下で、honest な 2 ノードの finalized の読みは互換か、
+2 つの store の attestation の間に重み `2q − W` 以上の slashable な署名者集合がある(`AccountablySafeFrom … Finalized 0`)。
+前提のうち `RunDomain` は使わず、`SetupWellFormed` からは `normalizedValidators` だけを、`RunWellFormed` からは `EventsSorted` と
+`Idealization`(`NamedRootCollisionFree`)を使う。
+手書き `Consensus.finalizedAccountable`(`wholeRunAccountableFinalitySafety` → `storeAccountableSafety_stateBefore`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.finalizedAccountable : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedAccountable committee' proposer' awake' newRoot' «s» «rho» :=
+  Proofs.Consensus.FinalizedAccountable.finalizedAccountable
+
+/-- claim `finalizedSafe`: `SetupWellFormed ∧ RunDomain ∧ AccountableRegime`(`RunWellFormed ∧ SlashableBound`)の下で、honest な 2 ノードの
+finalized の読みは常に互換(`AgreeFrom … Finalized 0`)。`finalizedAccountable` の本体の `Evidence` の分岐を `SlashableBound` で退ける。
+手書き `Consensus.finalizedSafe`(`wholeRunFinalitySafety`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.finalizedSafe : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedSafe committee' proposer' awake' newRoot' «s» «rho» :=
+  Proofs.Consensus.FinalizedAccountable.finalizedSafe

@@ -49,6 +49,7 @@ Model backend(`Backend/Model.lean`)は runtime 宣言だけを Lean に落とす
 | `type T = U` | `abbrev Model.A.B.T : Type := U`(参照は展開した型で書く) |
 | `record` / `state` | `structure … deriving DecidableEq, Ord, Repr`(`derive eq` → `DecidableEq` + `Ord`、`derive order` → `Ord`。`Repr` は常に。`finite` はまだ何も生成しない。`Ord` は `Set` / `Table` の正規化に使う隠れた全順序で、欄・variant の宣言順の辞書式)。欄名と局所名は常に `«»` で囲む(予約語の一覧に頼らない) |
 | `enum` | `inductive`(variant の引数は `a0 a1 …`) |
+| 再帰する型の `Ord` | variant の引数に自分を直接持つ enum(`Block` / `NamedBlock` / `Tree`)と `mutual` の成分(`Rose` / `Forest`)は、deriving 句から `Ord` を外し、派生と同じ辞書式順序(異なる構築子は宣言順で前が `.lt`、同じ構築子は引数の宣言順の `(compare a b).then (…)` の連鎖で末尾が `Ordering.eq`)を構造的再帰で明示的に定義した `def <型>.naruCompare («x» «y» : <型>) : Ordering … termination_by structural «x»`(成分なら `mutual … end`)と `instance <型>.naruOrd : Ord <型> := ⟨<型>.naruCompare⟩` を出す。Lean 4.34 の `deriving Ord` は再帰型の `compare` を `partial` で定義するので、そのままでは `compare` が証明から見て不透明(`rfl` / `decide` / 等式補題のどれも効かない)になり、`Set` / `Table` の所属(store の tree / bodies / sigma)に関わるプロトコル証明(`proofs/`、C71)が原理的に閉じない。値の順序は派生と同じなので実行の挙動(golden)は変わらない。コンテナ越しの再帰は E019 が退けるので、再帰はこの直接の形だけ |
 | `fn` / `observer` | `def`。再帰は `Totality` の測度で `termination_by n` + `decreasing_by`(fuel)/ `termination_by structural p`(構造的)。相互再帰は `mutual … end` |
 | `scenario` | `def … : List NaruStd.Observation`。先頭の input 束縛は `let f' : (T → U) := fun («x» : T) => …`、`let` は `let`、`observe e;` は `NaruStd.observe "<ソースの式>" e ::`(observer の戻り型が `List` なら `observeList`)、末尾は `[]`([language.md](language.md)「scenario と observer」) |
 | `input f(x: T) -> U` | Lean の宣言にならない。それを(推移的に)使う fn / observer の先頭の引数 `f'`(名前 + `'`)になり、呼出しで引き回す。scenario は束縛した input を同名の `let f'` で与える(束縛していない input は E015 で退ける) |
@@ -261,8 +262,18 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statemen
 定足数の交わりの重み `2q ≤ W + weight (QF ∩ QP)`(mathlib `Finset.sum_union_inter`)を、`NamedBlocks.lean` が消去と `chainAttestations` の所属を、
 `Slashing.lean` が E1 の slashable と `slashable` の対称性を与え、手書き `namedChainAccountableSafety` の筋 — 低い方の高さ `h₁` が 0 なら genesis で互換、
 さもなければ証明書 `QF` と横断 `QP` を取り、`root X = root target` なら `CollisionFree` から `X = target` で互換、さもなければ `QF ∩ QP` の各署名者の
-2 つの行が E1 で slashable — で結ぶ)の 4 件が証明済みで、
-`naru proofs` は残り 10 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
+2 つの行が E1 で slashable — で結ぶ)、
+`finalizedAccountable` / `finalizedSafe`(補題 `FinalizedAccountable.lean` / `Carrier.lean`: store の不変条件 — bodies の各名前付きブロック `D` の消去が
+`tree` にあり、chain 状態の表 `sigma` のその鍵の値が名前付き導出 `deriveNamed D` に等しく、finalized `f` はどれかの bodies の `D` の導出の `f`(finality carrier)—
+を `Store` → `NamedStore` → `nodeTick` / `nodeProcess` → world の順に全ハンドラで保ち(`f` / `tree` / `sigma` / `bodies` を書くのは `onBlockUsing` の受理の経路だけで、
+そこで書く `post` は親の不変条件から `deriveNamed B`)、`readAt t` が `EventsSorted` の下で `stateBefore i` であることから carrier を run の中のブロック(`BlockInRun`)にし、
+`Idealization = NamedRootCollisionFree` を消去した祖先の持ち上げ(`erased_ancestor_lift`)で `RootInjectiveOnAncestors` にして `certificatesAccountable` の本体 `oriented` を
+両向きに当て、`Evidence`(2 本の chain の attestation の間の slashable な重み)を `chainAttestations (eraseBlock D) ⊆ storeAttestations core`
+(`storeAttestations = flatMap tree chainAttestations`)で `SlashableStates` に持ち上げる(`finalizedAccountable`)か `SlashableBound` で退ける(`finalizedSafe`)。
+`Set Block` / `Set NamedBlock` / `Table Block _`(tree / bodies / sigma)の所属の言い換えには `Orders.lean` の `block_compare_eq_iff` / `nb_compare_eq_iff` が要り、
+これは backend が再帰する型に `deriving Ord` の代わりに出す明示的な `naruCompare`(上の「再帰する型の `Ord`」)で初めて書ける。手書き
+`storeAccountableSafety_stateBefore` / `wholeRunAccountableFinalitySafety` / `wholeRunFinalitySafety` の筋)の 6 件が証明済みで、
+`naru proofs` は残り 8 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 

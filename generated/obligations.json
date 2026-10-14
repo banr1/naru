@@ -1,6 +1,6 @@
 {
   "naru-compiler": "0.1.0",
-  "naru-compiler-sha256": "6075148df41f32c3096f1fceb4589016a1e960cb7dd3cfe659c1e6309e881d2c",
+  "naru-compiler-sha256": "660efdb6427db332998b6c35d2a5b5174f8c85ad030ae22a2fdfa7db3187d3c1",
   "naru-stdlib": "0.1.0",
   "naru-stdlib-sha256": "d105d21d75d5dc219546dea33f657a5842f12b3230decc1b053b779bc2829194",
   "sources": [
@@ -51,7 +51,7 @@
       "lean": "Statements.Consensus.Spec.Claims.constants",
       "theorem": "Proofs.Consensus.Spec.Claims.constants",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) («s» : Model.Consensus.Execution.Setup.Setup), Statements.Consensus.Spec.Claims.constants committee' proposer' «s»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "定数が、述べられた時間と上下限の制約を満たす。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -62,7 +62,7 @@
       "lean": "Statements.Consensus.Spec.Claims.nested",
       "theorem": "Proofs.Consensus.Spec.Claims.nested",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.nested committee' proposer' awake' newRoot' «s» «rho»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "どの run でも、finalized・stable・confirmed の出力は接頭辞の順に並ぶ。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -73,7 +73,7 @@
       "lean": "Statements.Consensus.Spec.Claims.certificatesAccountable",
       "theorem": "Proofs.Consensus.Spec.Claims.certificatesAccountable",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) («s» : Model.Consensus.Execution.Setup.Setup) («c» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («c2» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («target» : Model.Consensus.Objects.Blocks.Block) («target2» : Model.Consensus.Objects.Blocks.Block), Statements.Consensus.Spec.Claims.certificatesAccountable committee' proposer' «s» «c» «c2» «target» «target2»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "run の前提なしに、衝突のない 2 つの証明書は互換な対象を finalize するか、slash 可能な証拠を含む。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -84,7 +84,7 @@
       "lean": "Statements.Consensus.Spec.Claims.finalizedAccountable",
       "theorem": "Proofs.Consensus.Spec.Claims.finalizedAccountable",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedAccountable committee' proposer' awake' newRoot' «s» «rho»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "整形式の run では、finalized の読みは互換であるか、読んだ 2 つの状態に slash 可能な証拠がある。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -95,7 +95,7 @@
       "lean": "Statements.Consensus.Spec.Claims.finalizedMonotone",
       "theorem": "Proofs.Consensus.Spec.Claims.finalizedMonotone",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedMonotone committee' proposer' awake' newRoot' «s» «rho»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "整形式の run では、honest な各ノードの finalized の読みは伸びるだけで後退しない。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -106,7 +106,7 @@
       "lean": "Statements.Consensus.Spec.Claims.honestNeverSlashed",
       "theorem": "Proofs.Consensus.Spec.Claims.honestNeverSlashed",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.honestNeverSlashed committee' proposer' awake' newRoot' «s» «rho»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "偽造できない run では、honest な検証者が slash されることは決して無い。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -117,7 +117,7 @@
       "lean": "Statements.Consensus.Spec.Claims.finalizedSafe",
       "theorem": "Proofs.Consensus.Spec.Claims.finalizedSafe",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedSafe committee' proposer' awake' newRoot' «s» «rho»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "説明責任つきの regime では、finalized の読みはすべて合意する。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -128,7 +128,7 @@
       "lean": "Statements.Consensus.Spec.Claims.available",
       "theorem": "Proofs.Consensus.Spec.Claims.available",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int), Statements.Consensus.Spec.Claims.available committee' proposer' awake' newRoot' «s» «rho» «t0»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "sleepy regime では、confirmed と stable の出力が安全で、honest の提案を包含する。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -139,7 +139,7 @@
       "lean": "Statements.Consensus.Spec.Claims.confirmedLive",
       "theorem": "Proofs.Consensus.Spec.Claims.confirmedLive",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.confirmedLive committee' proposer' awake' newRoot' «s» «rho» «t0» «gap»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "活性のある sleepy regime では、confirmed の出力が増え続ける。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -150,7 +150,7 @@
       "lean": "Statements.Consensus.Spec.Claims.stableLive",
       "theorem": "Proofs.Consensus.Spec.Claims.stableLive",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.stableLive committee' proposer' awake' newRoot' «s» «rho» «t0» «gap»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "活性のある sleepy regime では、stable の出力が増え続ける。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -161,7 +161,7 @@
       "lean": "Statements.Consensus.Spec.Claims.stableIncludedFast",
       "theorem": "Proofs.Consensus.Spec.Claims.stableIncludedFast",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int), Statements.Consensus.Spec.Claims.stableIncludedFast committee' proposer' awake' newRoot' «s» «rho» «t0»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "fresh な sleepy regime では、窓の遅れ無しで stable に包含される。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -172,7 +172,7 @@
       "lean": "Statements.Consensus.Spec.Claims.finalized",
       "theorem": "Proofs.Consensus.Spec.Claims.finalized",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.finalized committee' proposer' awake' newRoot' «s» «rho» «t0» «gap»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "finality regime では、起動の後に finalized の出力が honest の提案を包含し、増え続ける。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -183,7 +183,7 @@
       "lean": "Statements.Consensus.Spec.Claims.stableAsynchronyResilient",
       "theorem": "Proofs.Consensus.Spec.Claims.stableAsynchronyResilient",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («tRead» : Int) («b0» : Int) («b1» : Int), Statements.Consensus.Spec.Claims.stableAsynchronyResilient committee' proposer' awake' newRoot' «s» «rho» «tRead» «b0» «b1»",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "outage regime では、時刻 tRead に読んだ stable の出力が outage の窓の間も残り続ける。",
       "bundles": ["Consensus.Spec.Claims.Consensus"]
     },
@@ -194,7 +194,7 @@
       "lean": "Statements.Consensus.Spec.Claims.Consensus",
       "theorem": "Proofs.Consensus.Spec.Claims.Consensus",
       "type": "∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)), Statements.Consensus.Spec.Claims.Consensus committee' proposer' awake' newRoot'",
-      "sha256": "773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c",
+      "sha256": "9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66",
       "summary": "公開する保証の一覧である consensus の claim bundle で、13 個の claim を項目として列挙する。",
       "bundles": []
     }
