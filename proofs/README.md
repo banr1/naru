@@ -253,8 +253,15 @@ equivocator `E` と支持者 `S` は遅い投票の参加者 `P` に含まれ互
 `HonestSupport.eligible` / `eligible_of_preceq`(`2 · score B ≥ 2 |C ∩ H| > |C| ≥ lateCount`、得点は祖先ほど大きい)、門を通るどのブロック `C` も `B` と互換
 `HonestSupport.compatible_of_eligible`(`C` の honest な支持者の投票は投票者ごとに 1 つなので `B` 以下も指す。手書き `not_eligible`(`B` と競合するブロックは門を
 通らない)より弱い形で、`vote` を弱めたので結論は互換まで)。生成 Model の得点と `HonestCommittees` は個数(`Set.size`)なので重みではなく個数で数える)。
-残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な tick は `voteTime` に自分の fork choice の head への投票を発行し
-(`goldfishVoteWith_some`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
+`Voting.lean`(honest な投票の発行。tick の投票の務め `namedGoldfishVoteWith` は `voting`(`0 < s`、`t = voteTime e s`)のときだけ走り、提案の務めの後の
+store `voteStore` を読む。tick が出す投票は投票の時刻の tick の務めの出力で、投票者は自分・slot は `slotOf e t`・投票者は committee の要素
+`tick_gfVote_shape` / `tick_gfVote_fields` / `emits_gfVote_shape`(手書き `gfVote_emitted_shape` / `emits_gfVote_shape`)、1 つの tick が出す投票は 1 つ
+`tick_gfVote_unique`、どの投票者も slot ごとに発行する投票は 1 つ `emits_gfVote_unique`(`ScheduleWellFormed` の event の重複なし。手書き `emits_gfVote_unique`)、
+投票の時刻の tick で committee の要素なら必ず投票を出す `tick_gfVote_of_duty`(務めは `awake'` を見ない)、`ScheduleWellFormed` は honest なノードの公開時刻の
+tick を horizon まで run に入れるので honest な committee の要素は各 slot `k > 0`(`voteTime e k ≤ horizon`)で投票を発行する `honest_emits_gfVote`
+(`slotOf_voteTime`(手書き `slotOf_vote_time`)/ `publicTime_voteTime`))。
+残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
+その tick の store の fork choice の head で(`Voting.tick_gfVote_shape` と `goldfishVoteWith_some`。run の読みへの接続は未)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
 (解決の印 `storeTau` は投票の受信の印と head のブロックの受信の印の大きい方))、2 つの honest なノードの読みの間の正準性(手書きの安全の核 `eligible_compatible`: 一方の
 支持の投票が他方の遅い投票に入る `CrossView` の下で、同じ slot に両ノードで門を通る 2 ブロックは互換 — 2 つの支持者の集合は `noSecondVoteIn` で互いに素でどちらも

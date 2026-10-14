@@ -321,8 +321,14 @@ honest な committee の要素はすべて参加者、`HonestCommittees` の不�
 `exists_honest_supporter`(honest な支持者とその投票(slot `s`、`b` 以下を指す))/ `_of_head` / `_of_run`(`SetupWellFormed` と `HonestCommittees` から
 run の読みについて)。`HonestSupport`(手書きの形から `vote` を「`B` 以下を指す」に弱めたもの: committee は honest 過半、honest な committee の要素はみな
 支持の投票に `B` 以下を指す投票を持つ)から `B` とその祖先は門を通る `HonestSupport.eligible` / `eligible_of_preceq`、門を通るどのブロックも `B` と互換
-`HonestSupport.compatible_of_eligible`。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な tick は `voteTime` に自分の fork choice の head
-へ投票し、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
+`HonestSupport.compatible_of_eligible`。`Voting.lean`(honest な投票の発行。tick の投票の務め `namedGoldfishVoteWith` は `voting`(`0 < s`、`t = voteTime e s`)のときだけ走り、提案の務めの後の
+store `voteStore` を読む。tick が出す投票は投票の時刻の tick の務めの出力で、投票者は自分・slot は `slotOf e t`・投票者は committee の要素
+`tick_gfVote_shape` / `tick_gfVote_fields` / `emits_gfVote_shape`(手書き `gfVote_emitted_shape` / `emits_gfVote_shape`)、1 つの tick が出す投票は 1 つ
+`tick_gfVote_unique`、どの投票者も slot ごとに発行する投票は 1 つ `emits_gfVote_unique`(`ScheduleWellFormed` の event の重複なし。手書き `emits_gfVote_unique`)、
+投票の時刻の tick で committee の要素なら必ず投票を出す `tick_gfVote_of_duty`(務めは `awake'` を見ない)、`ScheduleWellFormed` は honest なノードの公開時刻の
+tick を horizon まで run に入れるので honest な committee の要素は各 slot `k > 0`(`voteTime e k ≤ horizon`)で投票を発行する `honest_emits_gfVote`
+(`slotOf_voteTime`(手書き `slotOf_vote_time`)/ `publicTime_voteTime`))。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
+その tick の store の fork choice の head で、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
 届く)を示すことと、2 つの honest なノードの読みの間の正準性(手書きの
 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の一致・finalized との
 交差の互換・GST-zero の枝の finalized の一致(stable の記録と grade の候補の分岐についても同じ)を結ぶこと、honest な提案が適格な子の一意な最大になって

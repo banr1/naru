@@ -19,6 +19,7 @@ import Proofs.Consensus.Available
 import Proofs.Consensus.Goldfish
 import Proofs.Consensus.Votes
 import Proofs.Consensus.Majority
+import Proofs.Consensus.Voting
 import Mathlib.Tactic
 
 /-!
@@ -96,7 +97,12 @@ anchor から適格な子のうち得点最大の一意なものへ降りる歩�
 参加者)/ `_of_head` / `_of_run`。手書き `Confirmation.lean` の `HonestSupport` から `vote` を「`B` 以下を指す」に弱めた `HonestSupport`
 (committee は honest 過半、honest な committee の要素はみな支持の投票に `B` 以下を指す投票を持つ)から `B` とその祖先は門を通る
 `HonestSupport.eligible` / `eligible_of_preceq` と門を通るどのブロックも `B` と互換 `HonestSupport.compatible_of_eligible`)。
-残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な tick は `voteTime` に自分の fork choice の head への投票を発行し、
+周回 139 の足場: `Voting.lean`(honest な投票の発行。tick が出す投票は投票の時刻 `voteTime` の tick の投票の務めの出力で、投票者は自分・slot は
+`slotOf e t`・投票者は committee の要素 `tick_gfVote_shape` / `emits_gfVote_shape`、1 つの tick が出す投票は 1 つ `tick_gfVote_unique`、どの投票者も
+slot ごとに発行する投票は 1 つ `emits_gfVote_unique`、`ScheduleWellFormed` の下で honest な committee の要素は horizon までの各 slot `k > 0` の `voteTime` に投票を発行する
+`honest_emits_gfVote`。手書き `Alignment.lean` の `emits_gfVote_shape` / `emits_gfVote_unique`)。
+残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
+その tick の store の fork choice の head で(`Voting.tick_gfVote_shape` と `Votes.goldfishVoteWith_some`。run の読みへの接続は未)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
 `supportCutoff` までに届く — 解決の印は投票とブロックの受信の印の大きい方)、2 つの honest なノードの読みの間の正準性
 (手書きの安全の核 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で、同じ slot に両ノードで門を通る 2 ブロックは
