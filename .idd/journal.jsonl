@@ -157,3 +157,4 @@
 {"at":"2026-10-14T16:22:36Z","kind":"cycle","cycle":134,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-14T16:23:18Z","kind":"cycle","cycle":135,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-14T16:23:18Z","kind":"loop","stop":"failed","cycle":135,"limit":2}
+{"at":"2026-10-14T17:04:31Z","kind":"human","action":"resume","note":"上限に達していたのでClaudeのアカウントを切り替えた","released":"failed","ideal_sha":"b8fd395d6022c9be5f2677035b9a86b35fb58617e691b12edbc72a7265dc487f"}
