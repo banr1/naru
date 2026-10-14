@@ -15,10 +15,12 @@ claim `available` の結論 `SafeFrom g t0 = AgreeFrom g t0 ∧ MonotoneFrom g t
 - stable の出力: `f` の単調性(`FinalizedMonotone.lean`、`EventsSorted` だけ)、`latestStable` の単調性(`RecordGrowth.lean`、
   時刻をまたぐ記録の一致から)、`latestStable` と後の `f` の互換(`getStable_mono`)。一致は 4 つの欄の組の互換から
   (`getStable_compatible`)。
-- 確認の出力: 上に加えて regime の事実 `StableBelowConfirmed`(stable の記録は確認の記録の接頭辞。`updateConfirmationWith` の
-  不変条件ではなく、honest な Goldfish head の SG root に対する正準性が安全性の regime の下で与える — 手書きの注記)が、
-  読みの `getStable` を `latestConfirmed` の下に置く(`getConfirmed_mono` / `getConfirmed_compatible`)。
-残るのは、`SleepyRegime` の下でこれらの欄の事実(記録の一致・交差の互換・`StableBelowConfirmed`・finalized の一致)を
+- 確認の出力: 上に加えて `StableBelowConfirmed`(stable の記録は確認の記録の接頭辞)が、読みの `getStable` を `latestConfirmed` の
+  下に置く(`getConfirmed_mono` / `getConfirmed_compatible`)。ここでは仮定として受け取るが、生成 Model では `updateConfirmationWith` が
+  `latestConfirmed := floorOnStable stable …` と書くので store の不変条件であり、`RecordOrder.lean` が run のどの読みでも前提なしに
+  成り立つことを示して仮定を外す(`safeFrom_confirmed_of_records`)。手書き `ConfirmedOutput.lean` の注記は「regime の事実」と
+  言うが、手書き自身の `ConfirmationRecordOrigin.lean`(`stableBelowConfirmed_storeAt`)が不変条件として示している。
+残るのは、`SleepyRegime` の下でこれらの欄の事実(記録の一致・交差の互換・finalized の一致)を
 Goldfish の投票と確認の本体から示すことで、それはまだ証明していない。
 手書き `DecoupledConsensusProofs/Protocol/Handlers/ConfirmedOutput.lean`(`finalized_preceq_get_confirmed` /
 `get_stable_eq_finalized_of_not_preceq` / `get_confirmed_mono` / `confirmedOutputCompatibleFrom_of_fields` /
@@ -35,7 +37,8 @@ open Proofs.Consensus.Blocks Proofs.Consensus.Nested Proofs.Consensus.Runs Proof
 
 /-! ## store の出力 -/
 
-/-- regime の事実: stable の記録は確認の記録の接頭辞。手書き `Protocol.StableBelowConfirmed`。 -/
+/-- stable の記録は確認の記録の接頭辞。このモジュールでは仮定として受け取る(`RecordOrder.lean` が store の不変条件として示す)。
+手書き `Protocol.StableBelowConfirmed`。 -/
 def StableBelowConfirmed (st : Store) : Prop := preceq st.latestStable st.latestConfirmed = true
 
 /-- finalized は確認の出力の接頭辞(任意の store)。 -/
@@ -60,28 +63,28 @@ theorem getConfirmed_eq (st : Store) :
   · exact Or.inl ⟨h, rfl⟩
   · exact Or.inr ⟨h, rfl⟩
 
-/-- stable の出力は確認の記録の下にある(regime の事実と `f ⪯ latestConfirmed` の下で)。手書き `get_stable_preceq_latest`。 -/
+/-- stable の出力は確認の記録の下にある(`StableBelowConfirmed` と `f ⪯ latestConfirmed` の下で)。手書き `get_stable_preceq_latest`。 -/
 theorem getStable_preceq_latestConfirmed {st : Store} (hs : StableBelowConfirmed st)
     (h : preceq st.f st.latestConfirmed = true) : preceq (getStable st) st.latestConfirmed = true := by
   rcases getStable_eq st with ⟨-, he⟩ | ⟨-, he⟩ <;> rw [he]
   · exact hs
   · exact h
 
-/-- 確認の記録に届かない stable の出力は finalized そのもの(regime の事実の下で)。手書き `get_stable_eq_finalized_of_not_preceq`。 -/
+/-- 確認の記録に届かない stable の出力は finalized そのもの(`StableBelowConfirmed` の下で)。手書き `get_stable_eq_finalized_of_not_preceq`。 -/
 theorem getStable_eq_f_of_not_preceq {st : Store} (hs : StableBelowConfirmed st)
     (hnot : ¬ preceq (getStable st) st.latestConfirmed = true) : getStable st = st.f := by
   rcases getStable_eq st with ⟨-, he⟩ | ⟨-, he⟩
   · exact absurd (he ▸ hs) hnot
   · exact he
 
-/-- finalized を延ばす確認の記録はそのまま出力される(regime の事実の下で)。手書き `get_confirmed_eq_latest`。 -/
+/-- finalized を延ばす確認の記録はそのまま出力される(`StableBelowConfirmed` の下で)。手書き `get_confirmed_eq_latest`。 -/
 theorem getConfirmed_eq_latest {st : Store} (hs : StableBelowConfirmed st)
     (h : preceq st.f st.latestConfirmed = true) : getConfirmed st = st.latestConfirmed := by
   rcases getConfirmed_eq st with ⟨-, he⟩ | ⟨hn, -⟩
   · exact he
   · exact absurd (getStable_preceq_latestConfirmed hs h) hn
 
-/-- 確認の記録と finalized の共通の上界は出力の上界(regime の事実の下で)。手書き `get_confirmed_preceq`。 -/
+/-- 確認の記録と finalized の共通の上界は出力の上界(`StableBelowConfirmed` の下で)。手書き `get_confirmed_preceq`。 -/
 theorem getConfirmed_preceq {st : Store} {B : Block} (hs : StableBelowConfirmed st)
     (hF : preceq st.f B = true) (hL : preceq st.latestConfirmed B = true) : preceq (getConfirmed st) B = true := by
   rcases getConfirmed_eq st with ⟨-, he⟩ | ⟨-, he⟩ <;> rw [he]
@@ -90,7 +93,7 @@ theorem getConfirmed_preceq {st : Store} {B : Block} (hs : StableBelowConfirmed 
     · exact preceq_trans hs hL
     · exact hF
 
-/-- 確認の記録の接頭辞は、finalized と互換なら出力の接頭辞(regime の事実の下で)。手書き `preceq_get_confirmed_of_latest`。 -/
+/-- 確認の記録の接頭辞は、finalized と互換なら出力の接頭辞(`StableBelowConfirmed` の下で)。手書き `preceq_get_confirmed_of_latest`。 -/
 theorem preceq_getConfirmed_of_latest {st : Store} {B : Block} (hs : StableBelowConfirmed st)
     (hL : preceq B st.latestConfirmed = true) (hF : compatible B st.f = true) : preceq B (getConfirmed st) = true := by
   rcases getConfirmed_eq st with ⟨-, he⟩ | ⟨hn, he⟩ <;> rw [he]
@@ -102,7 +105,7 @@ theorem preceq_getConfirmed_of_latest {st : Store} {B : Block} (hs : StableBelow
     · exact h
     · exact absurd (getStable_preceq_latestConfirmed hs (preceq_trans h hL)) hn
 
-/-- 確認の出力の単調性: `f` と確認の記録が進み、古い記録が新しい finalized と互換で、両方の store で regime の事実が成り立つとき。
+/-- 確認の出力の単調性: `f` と確認の記録が進み、古い記録が新しい finalized と互換で、両方の store で `StableBelowConfirmed` が成り立つとき。
 手書き `get_confirmed_mono`。 -/
 theorem getConfirmed_mono {old new : Store} (hsold : StableBelowConfirmed old) (hsnew : StableBelowConfirmed new)
     (hF : preceq old.f new.f = true) (hL : preceq old.latestConfirmed new.latestConfirmed = true)
@@ -136,7 +139,7 @@ theorem getStable_compatible {st1 st2 : Store} (hLL : compatible st1.latestStabl
   · exact hFL
   · exact hFF
 
-/-- 確認の出力の一致: 2 つの store の `f` / `latestConfirmed` の 4 つの組がすべて互換で、両方で regime の事実が成り立つなら。
+/-- 確認の出力の一致: 2 つの store の `f` / `latestConfirmed` の 4 つの組がすべて互換で、両方で `StableBelowConfirmed` が成り立つなら。
 手書き `confirmedOutputCompatibleFrom_of_fields` の store の部分。 -/
 theorem getConfirmed_compatible {st1 st2 : Store} (hs1 : StableBelowConfirmed st1) (hs2 : StableBelowConfirmed st2)
     (hLL : compatible st1.latestConfirmed st2.latestConfirmed = true) (hFF : compatible st1.f st2.f = true)
@@ -185,7 +188,8 @@ def CrossAgreeFrom (R : Store → Block) (t0 : Int) : Prop :=
     t0 ≤ t → t ≤ rho.horizon → t0 ≤ t2 → t2 ≤ rho.horizon →
     compatible (R (storeAt c p a nr s rho u t).core) (storeAt c p a nr s rho v t2).core.f = true
 
-/-- regime の事実 `StableBelowConfirmed` が honest なノードの `t0` 以後のすべての読みで成り立つ。 -/
+/-- `StableBelowConfirmed` が honest なノードの `t0` 以後のすべての読みで成り立つ(ここでは仮定として受け取る。`RecordOrder.lean` が
+前提なしに示す)。 -/
 def StableBelowConfirmedFrom (t0 : Int) : Prop :=
   ∀ v t, rho.honest.contains v = true → t0 ≤ t → t ≤ rho.horizon → StableBelowConfirmed (storeAt c p a nr s rho v t).core
 
@@ -220,7 +224,7 @@ theorem monotoneFrom_stable_of_fields (hs : EventsSorted rho) (hnd : EventsNodup
   exact stable_mono_of_compatible c p a nr s rho hs (nodup_of_eventsNodup rho hnd) v htt2
     (fun τ hτ hτ2 => hL v t τ hv ht0 hτ (hτ2.trans hhor))
 
-/-- 確認の出力の単調性(property `MonotoneFrom … Confirmed t0`): regime の事実と、同じノードでの `latestConfirmed` の一致・後の finalized との互換から。
+/-- 確認の出力の単調性(property `MonotoneFrom … Confirmed t0`): `StableBelowConfirmedFrom` と、同じノードでの `latestConfirmed` の一致・後の finalized との互換から。
 手書き `confirmedOutputMonotoneFrom_of_cross`。 -/
 theorem monotoneFrom_confirmed_of_fields (hs : EventsSorted rho) (hnd : EventsNodup rho) (t0 : Int)
     (hsbc : StableBelowConfirmedFrom c p a nr s rho t0)
@@ -253,7 +257,7 @@ theorem agreeFrom_stable_of_fields (t0 : Int)
   · rw [compatible_comm]
     exact hX v u t2 t hv hu ht02 hhor2 ht0 hhor
 
-/-- 確認の出力の一致(property `AgreeFrom … Confirmed t0`): regime の事実、`latestConfirmed` の一致、finalized の一致、交差の互換から。
+/-- 確認の出力の一致(property `AgreeFrom … Confirmed t0`): `StableBelowConfirmedFrom`、`latestConfirmed` の一致、finalized の一致、交差の互換から。
 手書き `confirmedOutputCompatibleFrom_of_fields`。 -/
 theorem agreeFrom_confirmed_of_fields (t0 : Int) (hsbc : StableBelowConfirmedFrom c p a nr s rho t0)
     (hL : RecordAgreeFrom c p a nr s rho (fun st => st.latestConfirmed) t0)
@@ -281,7 +285,7 @@ theorem safeFrom_stable_of_fields (hs : EventsSorted rho) (hnd : EventsNodup rho
   ⟨agreeFrom_stable_of_fields c p a nr s rho t0 hL hF hX,
    monotoneFrom_stable_of_fields c p a nr s rho hs hnd t0 hL.self hX.self⟩
 
-/-- 確認の出力の `SafeFrom`(claim `available` の結論の一部)を store の欄の事実と regime の事実に還元する。 -/
+/-- 確認の出力の `SafeFrom`(claim `available` の結論の一部)を store の欄の事実と `StableBelowConfirmedFrom` に還元する。 -/
 theorem safeFrom_confirmed_of_fields (hs : EventsSorted rho) (hnd : EventsNodup rho) (t0 : Int)
     (hsbc : StableBelowConfirmedFrom c p a nr s rho t0)
     (hL : RecordAgreeFrom c p a nr s rho (fun st => st.latestConfirmed) t0)

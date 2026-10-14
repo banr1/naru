@@ -14,6 +14,8 @@ import Proofs.Consensus.FinalizedAccountable
 import Proofs.Consensus.HonestNeverSlashed
 import Proofs.Consensus.Liveness
 import Proofs.Consensus.Outputs
+import Proofs.Consensus.RecordOrder
+import Proofs.Consensus.Available
 import Mathlib.Tactic
 
 /-!
@@ -59,9 +61,19 @@ claim `available` の結論 `SafeFrom`(一致 `AgreeFrom` ∧ 単調 `MonotoneFr
 記録を変えず、1 tick は記録を変えない務めに高々 1 回の更新を掛けた形 `tick_rec_shape`)、`RecordGrowth.lean`(run に沿って: ノードの記録が
 変わるのは自分の tick の添字だけ `recAt_succ`、添字の区間の接頭辞保存 `prefix_preserved`、時刻 `t` の読みは `filter (≤ t)` の長さ `idx t` の
 `stateBefore`、tick の直後の記録は同じ時刻の読みの記録 `recAt_tick_eq_storeAt`、記録の時刻をまたぐ一致 → 単調 `record_mono_of_compatible`)、
-`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を欄 `f` / 記録の事実と regime の事実 `StableBelowConfirmed`
-(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)。残るのは `SleepyRegime` の下で
-記録の一致・記録と finalized の交差の互換・`StableBelowConfirmed`・finalized の一致(と `IncludedFrom`)を Goldfish の投票と確認の本体から示すこと。
+`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を欄 `f` / 記録の事実と、確認の出力では `StableBelowConfirmed`
+(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)。
+周回 132 の足場(claim の theorem はまだ無い): `RecordOrder.lean`(`StableBelowConfirmed` は regime の事実ではなく store の不変条件:
+`updateConfirmationWith` は `latestConfirmed := floorOnStable stable …` と書き、`floorOnStable` はどの分岐でも `stable` を延ばすので、
+run のどの読みでも前提なしに成り立つ `stableBelowConfirmedFrom`。stable の記録についての欄の事実(一致・finalized との交差の互換)は
+確認の記録のそれから従う `recordAgreeFrom_stable_of_confirmed` / `crossAgreeFrom_stable_of_confirmed` ので、2 つの出力の `SafeFrom` は
+どちらも確認の記録の一致・交差の互換・finalized の一致の 3 つだけに還元される `safeFrom_confirmed_of_records` / `safeFrom_stable_of_records`。
+`AgreeFrom` / `MonotoneFrom` / `SafeFrom` の開始時刻についての単調性 `*.mono`)、`Available.lean`(`AvailableAt t0` を残る 5 つの事実 —
+確認の記録の一致と finalized との交差の互換、finalized の一致、2 つの包含 — から組み立てる `availableAt_of_records`(前提は `EventsSorted` /
+`EventsNodup` だけ)と `SleepyRegime` 版 `availableAt_of_fields`。`t0 ≠ 0` なら `RecoveredBy` は回復の枝に限られ `SlashableBound` を持つので、
+finalized の一致は `finalizedSafe` の本体から従う `agreeFrom_finalized_of_recovered`(残る事実は 4 つ `availableAt_of_fields_recovered`))。
+残るのは `SleepyRegime` の下で確認の記録の一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致・
+`IncludedFrom` ×2 を Goldfish の投票と確認の本体から示すこと。
 -/
 
 /-- claim `constants`: `SetupWellFormed` の数値の前提の下で定数が `ConstantsValid` を満たす。

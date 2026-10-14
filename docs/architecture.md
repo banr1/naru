@@ -293,8 +293,16 @@ claim `available` の結論 `SafeFrom`(一致 ∧ 単調)に向けた足場(theo
 `latestConfirmed` / `latestStable` を書くのは `updateConfirmationWith` だけで、`advanceConfirmed` / `floorOnStable` は古い記録の接頭辞を、新しい記録と互換なら
 新しい記録の接頭辞のまま保つ(`Keeps`)。他のハンドラは記録を変えず、1 tick は高々 1 回の更新)、`RecordGrowth.lean`(run に沿って: 記録が変わるのは自分の
 tick の添字だけ、時刻 `t` の読みは `filter (≤ t)` の長さの `stateBefore`、tick の直後の記録は同じ時刻の読みの記録、記録の時刻をまたぐ一致 → 単調
-`record_mono_of_compatible`)、`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を、欄 `f` / 記録の事実と、確認の出力では regime の事実
-`StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)。
+`record_mono_of_compatible`)、`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を、欄 `f` / 記録の事実と、確認の出力では
+`StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)、
+`RecordOrder.lean`(`StableBelowConfirmed` は regime の事実ではなく store の不変条件: `updateConfirmationWith` は `latestConfirmed := floorOnStable stable …`
+と書き、`floorOnStable` はどの分岐でも `stable` を延ばす。他のハンドラは記録を変えないので、run のどの読みでも前提なしに成り立つ `stableBelowConfirmedFrom`。
+stable の記録についての欄の事実(一致・finalized との交差の互換)は確認の記録のそれから従う `recordAgreeFrom_stable_of_confirmed` /
+`crossAgreeFrom_stable_of_confirmed` ので、2 つの出力の `SafeFrom` はどちらも確認の記録の一致・交差の互換・finalized の一致の 3 つだけに還元される
+`safeFrom_confirmed_of_records` / `safeFrom_stable_of_records`)、`Available.lean`(`AvailableAt t0` を残る 5 つの事実 — 確認の記録の一致と finalized との
+交差の互換、finalized の一致、2 つの包含 — から組み立てる `availableAt_of_records`(前提は `EventsSorted` / `EventsNodup` だけ)と `SleepyRegime` 版
+`availableAt_of_fields`。`t0 ≠ 0` なら `RecoveredBy` は回復の枝に限られ `SlashableBound` を持つので、finalized の一致は `finalizedSafe` の本体から従う
+`agreeFrom_finalized_of_recovered`。GST-zero の枝(`t0 = 0`)の finalized の一致と `IncludedFrom` は未証明)。
 検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)

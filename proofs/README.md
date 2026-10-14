@@ -197,10 +197,24 @@ claim `available` の結論 `SafeFrom g t0 = AgreeFrom g t0 ∧ MonotoneFrom g t
 互換なら時刻 `t2 ≥ t` の値の接頭辞(`record_mono_of_compatible`。手書き `latest_confirmed_mono_of_agreement`))、`Outputs.lean`(出力
 `getStable st = if f ⪯ latestStable then latestStable else f`、`getConfirmed st = if getStable ⪯ latestConfirmed then latestConfirmed else getStable` の
 単調性と一致を、欄の事実 — `f` の単調性(`EventsSorted`)、記録の時刻をまたぐ一致 `RecordAgreeFrom`、記録と finalized の交差の互換 `CrossAgreeFrom`、
-finalized の一致 `AgreeFrom … Finalized` — と、確認の出力では regime の事実 `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録。`updateConfirmationWith` の
-不変条件ではなく、honest な Goldfish head の SG root に対する正準性が安全性の regime の下で与える)に還元する `safeFrom_stable_of_fields` /
-`safeFrom_confirmed_of_fields`。手書き `ConfirmedOutput.lean` の筋)。残るのは `SleepyRegime` の下でこれらの欄の事実と `IncludedFrom` を Goldfish の投票と
-確認の本体から示すこと。
+finalized の一致 `AgreeFrom … Finalized` — と、確認の出力では `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する
+`safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`。手書き `ConfirmedOutput.lean` の筋)、`RecordOrder.lean`(`StableBelowConfirmed` は regime の事実ではなく
+store の不変条件: `updateConfirmationWith` は `latestStable := stable`、`latestConfirmed := floorOnStable stable candidate old` と書き、`floorOnStable` はどの分岐でも
+`stable` を延ばす(`stable_preceq_floorOnStable`)。初期 store は両方 `Genesis`、他のハンドラは記録を変えない(`SameRec`)ので、tick / deliver / world / `readAt` /
+`stateBefore` / `storeAt` のどの store でも前提なしに成り立つ(`storeAt_sbc` / `stableBelowConfirmedFrom`。手書き `ConfirmationRecordOrigin.lean` の
+`update_confirmation_stable_le_confirmed` / `stableBelowConfirmed_storeAt`。手書き `ConfirmedOutput.lean` の「regime の事実」という注記は古い)。
+stable の記録についての欄の事実(2 ノードの一致 `RecordAgreeFrom`・finalized との交差の互換 `CrossAgreeFrom`)は、`S ⪯ C` から確認の記録のそれに
+従う(`recordAgreeFrom_stable_of_confirmed`: 2 つの確認の記録が互換なら一方が他方の接頭辞で、2 つの stable の記録はともに大きい方の接頭辞 /
+`crossAgreeFrom_stable_of_confirmed`: `C ⪯ F` なら `S ⪯ F`、`F ⪯ C` なら `S` と `F` はともに `C` の接頭辞)ので、2 つの出力の `SafeFrom` はどちらも
+確認の記録の一致・交差の互換・finalized の一致の 3 つだけに還元される(`safeFrom_confirmed_of_records` / `safeFrom_stable_of_records`)。
+`AgreeFrom` / `MonotoneFrom` / `SafeFrom` の開始時刻についての単調性 `*.mono` も置く)、`Available.lean`(claim `available` の結論 `AvailableAt t0` を
+残る 5 つの事実 — `latestConfirmed` の `RecordAgreeFrom` と `CrossAgreeFrom`、`AgreeFrom … Finalized t0`、`IncludedFrom … Confirmed t0 confirmationDelay`、
+`IncludedFrom … Stable t0 stableInclusionDelay` — から組み立てる `availableAt_of_records`(前提は `EventsSorted` / `EventsNodup` だけで regime に依らない)と
+`SleepyRegime` 版 `availableAt_of_fields`。finalized の一致は、`t0 ≠ 0` なら `SleepyRegime` の `RecoveredBy` は回復の枝(`t0 = recoveryEnd …`)に限られ、
+その枝は `SlashableBound` を持つので、`ExecutionValid` → `RunWellFormed`(`runWellFormed_of_executionValid`)と `finalizedSafe` の本体を `t0 ≥ 0` の窓に
+絞って従う(`agreeFrom_finalized_of_slashableBound` / `agreeFrom_finalized_of_recovered`。残る事実は 4 つ `availableAt_of_fields_recovered`))。
+残るのは `SleepyRegime` の下で確認の記録の一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致・`IncludedFrom` ×2 を
+Goldfish の投票と確認の本体から示すこと。
 
 生成 Model の定義に対して補題を書くときの運び(`finalizedMonotone` で使った形): `unfold <関数>` → `dsimp only`(`let` を展開し、pair の `match` を
 射影 `.1` / `.2` に落とす)→ `split_ifs`(すべての `if` を割る)→ 各分岐を `rfl` / 既存の補題で閉じる。`exact` の単一化が左辺の `st.f` から先に
