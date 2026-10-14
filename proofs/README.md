@@ -128,3 +128,9 @@ lake exe naru_test proofs          # 証明基盤の検査(C68 / C69 / C70 / C72
 theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`、補題は `proofs/Proofs/Consensus/` 配下のモジュールに分けて置きます。
 基準の verified-consensus の手書き証明(`third_party/verified-consensus/`)は **読んで参照してよい** ですが、import はしません(上の禁止事項)。
 生成 Model / Statements に対して、必要な補題を `Proofs` の側で書き直します。
+
+証明済み(2 件): `constants`(補題 `Proofs/Consensus/Constants.lean`。`period = 4Δ·R` などの時刻の式を Δ・R・η_SG の多項式に開き、
+`SetupWellFormed` の数値の前提から `ConstantsValid` の各項を閉じる。手書き `constants_valid` の筋)と `nested`(補題 `Proofs/Consensus/Nested.lean` と
+`Blocks.lean`。`getStable` / `getConfirmed` の `if preceq … then … else …` の分岐と `preceq` の反射律だけで閉じ、run への前提は使わない。手書き
+`nestedOutputs_holds` の筋)。残り 11 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+(`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。

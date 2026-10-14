@@ -28,7 +28,9 @@ import NaruTest.Statements
   `naru compile` し直していない複製(一覧が古い)とルート `Proofs.lean` の無い複製では exit 2。consensus の現在の一覧に対して invalid 0 件。
 - C72(文書): `proofs/README.md` が義務・束縛行・失効・`sorry`・mathlib・禁止・`naru proofs`・`naru_test proofs` の語を含み、`git grep -l --untracked 'naru proofs'` が
   README と docs 3 本と `proofs/README.md` の 5 件。
-- C71(consensus の 14 件すべて証明済み)の検査は、証明が揃った周回でここに加える(いまは 0 件なので入れていない: 未実装の検査を PASS にしない)。
+- C71(進捗): 証明済みの consensus の義務の一覧 `consensusProved`(いまは `constants` / `nested` の 2 件)が、ホームの `naru proofs --json` で `proved`
+  であることを確かめる(`stale` / `sorry` / `invalid` に退行したら FAIL)。14 件すべて証明済みの検査は、証明が揃った周回でこの一覧を全件にして加える
+  (未実装の検査を PASS にしない)。
 - 最後にホームで `lake exe naru compile` と `lake exe naru proofs` を走らせ、Lake が読む link を元に戻す。
 -/
 
@@ -58,6 +60,10 @@ def expectedCounts : List (String × Nat) := [("invalid", 5), ("missing", 3), ("
 /-- 不正の検体 `Proofs/Invalid.lean` を除いた複製の件数(名前順)。 -/
 def expectedCountsValid : List (String × Nat) := [("invalid", 0), ("missing", 7), ("proved", 2), ("sorry", 1), ("stale", 2)]
 def expectedCountsLine : String := "proved 2 / missing 3 / sorry 1 / stale 2 / invalid 5 (of 12 obligation(s); 1 line(s) counted as invalid)"
+/-- consensus の義務のうち証明済みのもの(C71 の進捗。`proofs/Proofs/Consensus/Spec/Claims.lean` の theorem と束縛行)。証明が増えたらここに足し、
+14 件揃ったら C71 の「全件 proved」の検査になる。 -/
+def consensusProved : List String := ["Consensus.Spec.Claims.constants", "Consensus.Spec.Claims.nested"]
+def consensusObligations : Nat := 14
 
 structure Env where
   root : System.FilePath
@@ -481,9 +487,15 @@ def checkHome (proofsDir generated : System.FilePath) (consensus : Option Parsed
   | .error e => fail s!"C70 home: lake exe naru proofs --json (exit {p.exitCode}) does not parse: {e}\n{tail (p.stdout ++ p.stderr) 800}"
   | .ok (counts, results, build) =>
     let invalid := (counts.lookup "invalid").getD 99
-    if p.exitCode == 0 && invalid == 0 && build == "ok" && results.length == 14 then
-      ok s!"C70 home: lake exe naru proofs --json exits 0 for the 14 consensus obligations with invalid 0 (counts {counts})"
+    if p.exitCode == 0 && invalid == 0 && build == "ok" && results.length == consensusObligations then
+      ok s!"C70 home: lake exe naru proofs --json exits 0 for the {consensusObligations} consensus obligations with invalid 0 (counts {counts})"
     else fail s!"C70 home: exit {p.exitCode}, counts {counts}, build {build}, {results.length} results"
+    -- C71 の進捗: 証明済みの一覧が proved のまま(退行していない)
+    let notProved := consensusProved.filter fun n => results.lookup n != some "proved"
+    let proved := (counts.lookup "proved").getD 0
+    if notProved.isEmpty && proved == consensusProved.length then
+      ok s!"C71 progress: {consensusProved.length} of {consensusObligations} consensus obligations are proved ({consensusProved}); the other {consensusObligations - consensusProved.length} are not yet proved"
+    else fail s!"C71 progress: expected exactly {consensusProved} to be proved, but not proved {notProved} and counts.proved = {proved}: {results.filter fun (_, s) => s == "proved"}"
   let b ← runProc "lake" #["build", "Proofs"]
   if b.exitCode == 0 then ok "C68: lake build Proofs exit 0" else fail s!"C68: lake build Proofs exit {b.exitCode}\n{tail b.stderr}"
   if let some c := consensus then checkHashRecomputation "C69 consensus" generated c

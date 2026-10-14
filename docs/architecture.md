@@ -247,7 +247,9 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
 **consensus の 14 件**: 13 claims(`constants` / `nested` / `certificatesAccountable` / `finalizedAccountable` / `finalizedMonotone` / `honestNeverSlashed` / `finalizedSafe` / `available` /
 `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`。claim surface の順)と claim bundle `Consensus.Spec.Claims.Consensus`。
 theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statements.Consensus.Spec.Claims` と `import Mathlib.Tactic`)、補題は `proofs/Proofs/Consensus/` 配下に分ける。
-いまは theorem が 1 つも無く、`naru proofs` は 14 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
+いまは `constants`(補題 `proofs/Proofs/Consensus/Constants.lean`: 定数を Δ・R・η_SG の多項式に開く。`outageStart < expiry` だけ `Int.fdiv` と Nat の除算を通る)と
+`nested`(補題 `Nested.lean` / `Blocks.lean`: `getStable` / `getConfirmed` の分岐と `preceq` の反射律。run への前提は使わない)の 2 件が証明済みで、
+`naru proofs` は残り 12 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 
