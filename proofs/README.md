@@ -272,6 +272,13 @@ honest な `w` が締切 `max t tGST + Δ`(horizon 以内)より前のある添�
 受信者の slot は受信の前の受信者自身の最後の tick で決まる)、run では配送の添字 `j` の後の
 `stateBefore (j + 1)` 以降の受信者の pool に残る `deliver_gfVote_mem` / `gfVote_mem_of_le` / `deliver_gfVote_mem_of_lt`。受信済みの判定は pool の所属
 `processed_gfVote_iff`)。
+`Window.lean`(受信の直前の slot の窓。配送は時計を進めないので、時計は添字について単調 `clock_succ_ge` / `clock_mono`(手書き `stateBefore_clock_mono`)で、
+添字 `j < i` の自分の tick の時刻は `stateBefore i` の時計以下 `tick_le_clock`。event が整列していれば時刻が狭義に早い event は添字も前 `lt_of_time_lt`。
+slot の開始時刻 `proposalTime k`(Δ の `4k` 倍)は公開時刻 `publicTime_proposalTime` なので `ScheduleWellFormed` が honest な受信者の tick を run に入れ
+(`honest_tick_index`)、honest な `w` への時刻 `t2` の配送の直前の slot は `proposalTime k < t2` なら `k` 以上 `slot_ge_of_deliver`、`t2 < proposalTime (k + 1)` なら
+`k` 以下 `slot_le_of_deliver`。`proposalTime u.slot < t2 < proposalTime (u.slot + 2)` なら `InWindow` `inWindow_of_deliver`。投票の時刻は `proposalTime k + Δ`、
+slot の長さは `4Δ` なので、GST 以後(`tGST ≤ t`)に時刻 `t` に発行された投票の、発行の時刻 `t` 以後で締切 `t + Δ` より前の配送の直前の slot はちょうど `u.slot` で `InWindow`
+`slot_eq_of_deliver_gfVote` / `inWindow_of_deliver_gfVote` — `Delivery.deliver_gfVote_mem` の窓の仮定を満たす)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

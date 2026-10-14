@@ -28,7 +28,8 @@ pool の slot `u.slot` に同じ投票者の投票がまだ 2 つ無い(`equivoc
 これは `Majority.lean` の `HonestSupport.vote`(honest な committee の要素の投票が `supportCutoff` までに honest な全ノードの pool に
 あること)に向けた配送の層の入口で、残りは経路 (1)(自分の投票: `goldfishVoteWith_some` の `onGoldfishVoteChecked`)と経路 (3)
 (運ばれた投票)の pool への到達、受信の直前に `InWindow` が成り立つこと(配送は時計 `st.s` を進めないので、受信者の slot は
-受信の前の受信者自身の最後の tick で決まる。`ScheduleWellFormed` の honest な tick の網羅と時刻の順から示す)、`UnforgeableSignatures` から
+受信の前の受信者自身の最後の tick で決まる。`ScheduleWellFormed` の honest な tick の網羅と時刻の順から示す — GST 以後に発行された投票の
+締切より前の配送は `Window.inWindow_of_deliver_gfVote`)、`UnforgeableSignatures` から
 honest な投票者の偽の投票が pool に無い(`equivocates` が偽)こと。
 受信の処理の条件は手書き `on_goldfish_vote_insert`(`DecoupledConsensusProofs/Protocol/Handlers/Pool.lean`)の窓と equivocation の
 守りに当たる(手書きは「まだ pool に無い」も仮定して末尾に足す式を結論にし、ここは既にあってもよい所属を結論にする)。
