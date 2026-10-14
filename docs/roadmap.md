@@ -14,8 +14,11 @@
   共有の足場 — 包含から活性への generic な還元、未来の提案の不在、時計と tree の不変条件(`proofs/Proofs/Consensus/Liveness.lean` / `NoFutureRead.lean` /
   `Clocks.lean` / `TreeInv.lean`)と、`available` の結論 `SafeFrom` を欄の事実(記録の時刻をまたぐ一致・記録と finalized の交差の互換・finalized の一致)に
   還元する足場(`ConfirmationRecords.lean` / `RecordGrowth.lean` / `Outputs.lean`。stable の記録 ⪯ 確認の記録は store の不変条件として `RecordOrder.lean` が前提なしに示す)と、
-  `AvailableAt` を残る 5 つの事実から組み立て、`t0 ≠ 0` の finalized の一致を `finalizedSafe` から出す `Available.lean` は既にあり、残るのは `SleepyRegime` の下で
-  確認の記録の一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致・`IncludedFrom` を示す `available` の本体、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
+  `AvailableAt` を残る 5 つの事実から組み立て、`t0 ≠ 0` の finalized の一致を `finalizedSafe` から出す `Available.lean`、確認の候補を書く fork choice と得点の
+  最初の層(`ghost` の降下補題 `ghost_reaches`・結果は anchor を延ばし適格・得点は祖先ほど大きい・`updateConfirmationWith` が書く確認の記録の形 `latestConfirmed_shape`)の
+  `Goldfish.lean` は既にあり、残るのは `SleepyRegime` の下で過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(正準性: 確認の記録の
+  一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致。stable の記録と grade の候補の分岐についても同じ)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること
+  (`IncludedFrom`)を示す `available` の本体、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
   義務の雛形の生成、レビュー面 / エディタへの証明状況の表示は対象外
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)

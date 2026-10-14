@@ -16,6 +16,7 @@ import Proofs.Consensus.Liveness
 import Proofs.Consensus.Outputs
 import Proofs.Consensus.RecordOrder
 import Proofs.Consensus.Available
+import Proofs.Consensus.Goldfish
 import Mathlib.Tactic
 
 /-!
@@ -72,8 +73,18 @@ run のどの読みでも前提なしに成り立つ `stableBelowConfirmedFrom`�
 確認の記録の一致と finalized との交差の互換、finalized の一致、2 つの包含 — から組み立てる `availableAt_of_records`(前提は `EventsSorted` /
 `EventsNodup` だけ)と `SleepyRegime` 版 `availableAt_of_fields`。`t0 ≠ 0` なら `RecoveredBy` は回復の枝に限られ `SlashableBound` を持つので、
 finalized の一致は `finalizedSafe` の本体から従う `agreeFrom_finalized_of_recovered`(残る事実は 4 つ `availableAt_of_fields_recovered`))。
-残るのは `SleepyRegime` の下で確認の記録の一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致・
-`IncludedFrom` ×2 を Goldfish の投票と確認の本体から示すこと。
+周回 133 の足場(claim の theorem はまだ無い): `Goldfish.lean`(確認の候補を書く fork choice と得点の最初の層。`ghost anchor tree score eligible` は
+anchor から適格な子のうち得点最大の一意なものへ降りる歩みで、結果は anchor を延ばし `ghost_preceq`、anchor そのものか適格な tree の要素
+`ghost_eligible`。降下補題 `ghost_reaches`: anchor から `target` までの途中のブロックが tree にあり、各ブロックで次の一歩が `target` の祖先で、
+`target` に適格な子が無ければ結果は `target`(燃料 `size tree` が足りること `path_card` は途中のブロックの深さが相異なることから)。
+親について閉じた tree では結果に適格な子は無い `ghost_terminal`。Goldfish の得点は祖先ほど大きく `goldfishScore_mono`、支持者は投票の参加者
+`rawSupporters_size_le`。`updateConfirmationWith` の `let` を名前つきの定義(`supportVotes` / `lateCount` / `score` / `eligible` / `sgRoot` /
+`head` / `candidate` …)に開いて `updateConfirmationWith_eq`(`rfl`)で結び、新しい確認の記録は 元の記録 / stable の記録 / 過半の支持
+`lateCount < 2 · score` を持ち SG root を延ばす head / grade の候補 `frameSgCandidate` のどれか `latestConfirmed_shape`)。
+残るのは `SleepyRegime` の下で、過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(確認の記録の
+一致・finalized との交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致。stable の記録と grade の候補 `frameSgCandidate` の分岐についても
+同じ正準性)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること(`IncludedFrom` ×2)を Goldfish の投票と確認の
+本体から示すこと。
 -/
 
 /-- claim `constants`: `SetupWellFormed` の数値の前提の下で定数が `ConstantsValid` を満たす。

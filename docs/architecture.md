@@ -302,7 +302,15 @@ stable の記録についての欄の事実(一致・finalized との交差の�
 `safeFrom_confirmed_of_records` / `safeFrom_stable_of_records`)、`Available.lean`(`AvailableAt t0` を残る 5 つの事実 — 確認の記録の一致と finalized との
 交差の互換、finalized の一致、2 つの包含 — から組み立てる `availableAt_of_records`(前提は `EventsSorted` / `EventsNodup` だけ)と `SleepyRegime` 版
 `availableAt_of_fields`。`t0 ≠ 0` なら `RecoveredBy` は回復の枝に限られ `SlashableBound` を持つので、finalized の一致は `finalizedSafe` の本体から従う
-`agreeFrom_finalized_of_recovered`。GST-zero の枝(`t0 = 0`)の finalized の一致と `IncludedFrom` は未証明)。
+`agreeFrom_finalized_of_recovered`。GST-zero の枝(`t0 = 0`)の finalized の一致と `IncludedFrom` は未証明)、`Goldfish.lean`(確認の候補を書く fork choice と
+得点の最初の層: `ghost anchor tree score eligible` は anchor から適格な子のうち得点最大の一意なものへ降りる歩みで、結果は anchor を延ばし `ghost_preceq`、
+anchor そのものか適格な tree の要素 `ghost_eligible`。降下補題 `ghost_reaches`(途中のブロックが tree にあり、各ブロックで次の一歩が `target` の祖先で、`target` に
+適格な子が無ければ結果は `target`。燃料 `size tree` が足りることは途中のブロックの深さが相異なることから `path_card`)、親について閉じた tree では結果に適格な子は
+無い `ghost_terminal`。Goldfish の得点は祖先ほど大きく `goldfishScore_mono`、支持者は投票の参加者 `rawSupporters_size_le`。`updateConfirmationWith` の `let` を
+名前つきの定義(`supportVotes` / `lateCount` / `score` / `eligible` / `sgRoot` / `head` / `candidate` …)に開いて `updateConfirmationWith_eq`(`rfl`)で結び、
+新しい確認の記録は 元の記録 / stable の記録 / 過半の支持 `lateCount < 2 · score` を持ち SG root を延ばす head / grade の候補 `frameSgCandidate` のどれか
+`latestConfirmed_shape`。残るのは `SleepyRegime` の下で過半の支持に honest な投票者が含まれその head が honest な投票者の head の接頭辞であること(正準性。
+stable の記録と grade の候補の分岐についても同じ)と、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること(包含))。
 検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
