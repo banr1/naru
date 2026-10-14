@@ -184,6 +184,24 @@ claim `finalized` の活性の半分。単調性は `finalizedMonotone` の補�
 (回復と GST-zero の保証)、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体で、手書きでは `StableCoverageConsumer` 等の
 数千行の下流に当たる。
 
+claim `available` の結論 `SafeFrom g t0 = AgreeFrom g t0 ∧ MonotoneFrom g t0`(`g` は Confirmed / Stable)に向けた足場(theorem はまだ無い):
+`ConfirmationRecords.lean`(利用者向けの 2 つの記録 `latestConfirmed` / `latestStable` を書くのは `updateConfirmationWith` だけ。その書き方
+`advanceConfirmed old cand`(`cand ⪯ old` なら `old`、でなければ `cand`)と `floorOnStable stable cand old` は「古い記録の接頭辞 `B` は、新しい記録と
+互換なら新しい記録の接頭辞のまま」(`Keeps`)を満たす(手書き `preceq_floor` / `update_confirmation_with_latest_preserves`)。投票・attestation・ブロックの
+受理・finality の更新は記録を変えず(`SameRec`)、1 tick の結果は記録を変えない務めで得た store に更新を高々 1 回掛けた形(`tick_rec_shape`、
+`Carrier.tick_inv` と同じ 16 経路))、`RecordGrowth.lean`(run に沿って: ノード `v` の記録 `recAt R v i` が変わるのは `v` 自身の tick の添字だけ
+(`recAt_succ`)、添字 `m` の記録の接頭辞は `[m, n)` の各 tick の直後の記録と互換なら添字 `n` でも接頭辞(`prefix_preserved`)、時刻 `t` の読み
+`storeAt v t` は `filter (eventTime ≤ t)` の長さ `idx t` の `stateBefore`(`EventsSorted`)、`idx` より前の event の時刻は `t` 以下・以降は `t` より後、
+`v` の tick の直後の記録は同じ時刻の読みの記録(`recAt_tick_eq_storeAt`。同じ時刻の後続の event に `v` の tick が無いことに event の重複の無さ
+`EventsNodup` が要る)、よって記録の時刻 `t` の値が `t` 以後のどの時刻の値とも
+互換なら時刻 `t2 ≥ t` の値の接頭辞(`record_mono_of_compatible`。手書き `latest_confirmed_mono_of_agreement`))、`Outputs.lean`(出力
+`getStable st = if f ⪯ latestStable then latestStable else f`、`getConfirmed st = if getStable ⪯ latestConfirmed then latestConfirmed else getStable` の
+単調性と一致を、欄の事実 — `f` の単調性(`EventsSorted`)、記録の時刻をまたぐ一致 `RecordAgreeFrom`、記録と finalized の交差の互換 `CrossAgreeFrom`、
+finalized の一致 `AgreeFrom … Finalized` — と、確認の出力では regime の事実 `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録。`updateConfirmationWith` の
+不変条件ではなく、honest な Goldfish head の SG root に対する正準性が安全性の regime の下で与える)に還元する `safeFrom_stable_of_fields` /
+`safeFrom_confirmed_of_fields`。手書き `ConfirmedOutput.lean` の筋)。残るのは `SleepyRegime` の下でこれらの欄の事実と `IncludedFrom` を Goldfish の投票と
+確認の本体から示すこと。
+
 生成 Model の定義に対して補題を書くときの運び(`finalizedMonotone` で使った形): `unfold <関数>` → `dsimp only`(`let` を展開し、pair の `match` を
 射影 `.1` / `.2` に落とす)→ `split_ifs`(すべての `if` を割る)→ 各分岐を `rfl` / 既存の補題で閉じる。`exact` の単一化が左辺の `st.f` から先に
 `?st := st` と決めて失敗するときは、始点を等式 `hf : st0.f = f0` で与える形の補題(`updateFinality_f'` / `proposeBlockWith_f'`)を使う。

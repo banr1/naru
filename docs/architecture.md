@@ -289,6 +289,12 @@ bodies が親について閉じていることを足し、bodies の genesis で
 還元する補題)、`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の honest な提案は入らない。`ExecutionValid` と Δ > 0 だけから
 3 出力すべてについて)、`Clocks.lean`(store の時計 `t` / `s` を書くのは tick の冒頭だけで `s = slotOf e t`、時計は event の時刻以下)、
 `TreeInv.lean`(`f` / `j` / `latestConfirmed` / `latestStable` は常に tree の要素なので、どの出力の読みも tree の要素)。
+claim `available` の結論 `SafeFrom`(一致 ∧ 単調)に向けた足場(theorem はまだ無い): `ConfirmationRecords.lean`(確認・stable の記録
+`latestConfirmed` / `latestStable` を書くのは `updateConfirmationWith` だけで、`advanceConfirmed` / `floorOnStable` は古い記録の接頭辞を、新しい記録と互換なら
+新しい記録の接頭辞のまま保つ(`Keeps`)。他のハンドラは記録を変えず、1 tick は高々 1 回の更新)、`RecordGrowth.lean`(run に沿って: 記録が変わるのは自分の
+tick の添字だけ、時刻 `t` の読みは `filter (≤ t)` の長さの `stateBefore`、tick の直後の記録は同じ時刻の読みの記録、記録の時刻をまたぐ一致 → 単調
+`record_mono_of_compatible`)、`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を、欄 `f` / 記録の事実と、確認の出力では regime の事実
+`StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)。
 検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)

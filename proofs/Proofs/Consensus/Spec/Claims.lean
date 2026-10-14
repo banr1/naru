@@ -13,6 +13,7 @@ import Proofs.Consensus.CertificatesAccountable
 import Proofs.Consensus.FinalizedAccountable
 import Proofs.Consensus.HonestNeverSlashed
 import Proofs.Consensus.Liveness
+import Proofs.Consensus.Outputs
 import Mathlib.Tactic
 
 /-!
@@ -52,6 +53,15 @@ liveness 系の claim の共有の足場(周回 127。theorem はまだ無い): 
 `finalizedLive_of_included`(finalized の包含から `finalized` の活性)。`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の
 honest な提案は入らない: `Clocks.lean` の時計の不変条件 `s = slotOf e t`・時計は event の時刻以下、`TreeInv.lean` の出力のブロックが tree にあること、
 受理の守り `¬ (st.s < slot b)`)は `ExecutionValid` と Δ > 0 だけから 3 出力すべてについて成り立つ。
+claim `available` の結論 `SafeFrom`(一致 `AgreeFrom` ∧ 単調 `MonotoneFrom`)に向けた足場(周回 130。theorem はまだ無い):
+`ConfirmationRecords.lean`(確認・stable の記録 `latestConfirmed` / `latestStable` を書くのは `updateConfirmationWith` だけで、
+`advanceConfirmed` / `floorOnStable` は「古い記録の接頭辞は、新しい記録と互換なら新しい記録の接頭辞」(`Keeps`)を満たし、他のハンドラは
+記録を変えず、1 tick は記録を変えない務めに高々 1 回の更新を掛けた形 `tick_rec_shape`)、`RecordGrowth.lean`(run に沿って: ノードの記録が
+変わるのは自分の tick の添字だけ `recAt_succ`、添字の区間の接頭辞保存 `prefix_preserved`、時刻 `t` の読みは `filter (≤ t)` の長さ `idx t` の
+`stateBefore`、tick の直後の記録は同じ時刻の読みの記録 `recAt_tick_eq_storeAt`、記録の時刻をまたぐ一致 → 単調 `record_mono_of_compatible`)、
+`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を欄 `f` / 記録の事実と regime の事実 `StableBelowConfirmed`
+(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)。残るのは `SleepyRegime` の下で
+記録の一致・記録と finalized の交差の互換・`StableBelowConfirmed`・finalized の一致(と `IncludedFrom`)を Goldfish の投票と確認の本体から示すこと。
 -/
 
 /-- claim `constants`: `SetupWellFormed` の数値の前提の下で定数が `ConstantsValid` を満たす。
