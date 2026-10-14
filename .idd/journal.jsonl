@@ -162,3 +162,4 @@
 {"at":"2026-10-14T18:32:32Z","kind":"cycle","cycle":137,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-14T18:33:12Z","kind":"cycle","cycle":138,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-14T18:33:13Z","kind":"loop","stop":"failed","cycle":138,"limit":2}
+{"at":"2026-10-14T21:14:13Z","kind":"human","action":"resume","note":"リミットになったのでモデルを変更した","released":"failed","ideal_sha":"b8fd395d6022c9be5f2677035b9a86b35fb58617e691b12edbc72a7265dc487f"}
