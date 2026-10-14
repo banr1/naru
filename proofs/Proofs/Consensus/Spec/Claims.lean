@@ -101,8 +101,12 @@ anchor から適格な子のうち得点最大の一意なものへ降りる歩�
 `slotOf e t`・投票者は committee の要素 `tick_gfVote_shape` / `emits_gfVote_shape`、1 つの tick が出す投票は 1 つ `tick_gfVote_unique`、どの投票者も
 slot ごとに発行する投票は 1 つ `emits_gfVote_unique`、`ScheduleWellFormed` の下で honest な committee の要素は horizon までの各 slot `k > 0` の `voteTime` に投票を発行する
 `honest_emits_gfVote`。手書き `Alignment.lean` の `emits_gfVote_shape` / `emits_gfVote_unique`)。
+周回 140 の足場: 同じ `Voting.lean` に投票の head(投票の時刻は提案の時刻と違うので(Δ > 0。`voteTime_ne_proposalTime`)投票の務めが読む store は
+時計を合わせただけ `voteStore_of_voteTime`、tick が出す投票の head は tick の前の store に時計を合わせたもの(`clocked`)の fork choice の head `voteHead`
+(`tick_gfVote_head`)、run では `Emits` の添字 `i` の `stateBefore i` の発行者の store と `onPhaseTick` で進めた cache で読む `emits_gfVote_head` /
+`honest_emits_gfVote_head`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
-その tick の store の fork choice の head で(`Voting.tick_gfVote_shape` と `Votes.goldfishVoteWith_some`。run の読みへの接続は未)、
+`stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
 `supportCutoff` までに届く — 解決の印は投票とブロックの受信の印の大きい方)、2 つの honest なノードの読みの間の正準性
 (手書きの安全の核 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で、同じ slot に両ノードで門を通る 2 ブロックは

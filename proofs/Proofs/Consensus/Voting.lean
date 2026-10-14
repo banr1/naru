@@ -20,8 +20,12 @@ import Mathlib.Tactic
   (`emits_gfVote_unique`。`ScheduleWellFormed` の event の重複なしから tick の添字が 1 つ)。
 - `ScheduleWellFormed` は honest なノードの公開時刻(`PublicTime`: Δ の倍数)の tick を horizon まで run に入れるので、
   honest な committee の要素は `voteTime e k ≤ horizon` の slot `k > 0` でそれぞれ投票を発行する(`honest_emits_gfVote`)。
+- 投票の時刻は提案の時刻と違う(Δ > 0。`voteTime_ne_proposalTime`)ので、投票の時刻の tick では提案の分岐は走らず、`voteStore` は
+  時計を合わせただけの `clocked`(`voteStore_of_voteTime`)。したがって投票の head は tick の前の store に時計を合わせたものの
+  fork choice の head `voteHead`(`tick_gfVote_head`)で、run では `Emits` の添字 `i` の `stateBefore i` の発行者の store と、
+  `nodeTick` が `onPhaseTick` で進めた cache で読む(`emits_gfVote_head` / `honest_emits_gfVote_head`)。
 これは `Majority.lean` の `HonestSupport.vote`(honest な committee の要素はみな支持の投票を持つ)を `SleepyRegime` から出すための
-最初の層(発行)で、残りは発行した投票と head のブロックが `supportCutoff` までに honest な全ノードの pool に届くこと
+最初の層(発行と head)で、残りは発行した投票と head のブロックが `supportCutoff` までに honest な全ノードの pool に届くこと
 (`PartialSynchrony`)と、head が honest な提案を延ばすこと。
 手書き `gfVote_emitted_shape` / `gfVote_emitted_unique` / `emits_gfVote_shape` / `emits_gfVote_unique`
 (`DecoupledConsensusProofs/Protocol/Schedule/Alignment.lean`)と `slotOf_vote_time`
@@ -63,7 +67,26 @@ theorem voteTime_nonneg (e : ProtocolEnv) (hδ : 0 ≤ e.delta) (k : Nat) : 0 �
   have : (0 : Int) ≤ Int.ofNat k := Int.natCast_nonneg k
   positivity
 
+/-- 投票の時刻は提案の時刻と違う(Δ > 0)。手書き `vote_time_ne_proposal_time`。 -/
+theorem voteTime_ne_proposalTime (e : ProtocolEnv) (hδ : 0 < e.delta) (k : Nat) : voteTime e k ≠ proposalTime e k := by
+  unfold voteTime proposalTime
+  intro h
+  linarith
+
 /-! ## 投票の務め -/
+
+/-- tick の冒頭で時計を `(t, slotOf e t)` に合わせた store(tree・pool・記録は元のまま)。 -/
+def clocked (e : ProtocolEnv) (st : NamedStore) (t : Int) : NamedStore :=
+  { st with core := { st.core with t := t, s := slotOf e t } }
+
+/-- store `st` の投票の務めが出す投票の head: `st.s` の voter view の fork choice の head の root(`goldfishVoteWith` と同じ式)。 -/
+def voteHead (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (st : Store) : BlockId :=
+  root (getHeadInTreeWith cache e hc st (voterFilteredBlockTree e st st.s)
+    (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (storeToHealing st)) st.s)
+    (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (storeToHealing st)) st.s)
+    (st.s - 1))
 
 /-- tick の投票の務めが読む store: 冒頭で時計を `(t, slotOf e t)` に合わせ、提案の時刻で自分が proposer なら提案の務めを済ませたもの。 -/
 def voteStore (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
@@ -196,6 +219,27 @@ theorem tick_gfVote_of_duty (hs : 0 < slotOf e t) (ht : t = voteTime e (slotOf e
          (by first | exact proposeBlockWith_clockIs c p nr cache hc nd h0 | exact h0) hv
        exact ⟨v, by simp, h1, h2⟩)
 
+/-! ### 投票の head -/
+
+/-- 投票の時刻の tick では提案の分岐は走らず、投票の務めが読む store は時計を合わせただけのもの(Δ > 0)。 -/
+theorem voteStore_of_voteTime (hδ : 0 < e.delta) (ht : t = voteTime e (slotOf e t)) :
+    voteStore c p nr cache e hc cfg nd st t = clocked e st t := by
+  have hne : t ≠ proposalTime e (slotOf e t) :=
+    fun h => voteTime_ne_proposalTime e hδ (slotOf e t) (ht.symm.trans h)
+  unfold voteStore clocked
+  simp [hne]
+
+/-- **tick が出す投票の head**: tick の前の store に時計を合わせたものの fork choice の head(Δ > 0)。
+手書き `gfVote_emitted_shape` の head の欄。 -/
+theorem tick_gfVote_head (hδ : 0 < e.delta) {u : GoldfishVote}
+    (h : NamedObject.GfVote u ∈ (tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    0 < slotOf e t ∧ t = voteTime e (slotOf e t) ∧ u.valIndex = nd.valIndex ∧ u.slot = slotOf e t ∧
+      u.head = voteHead cache e hc (clocked e st t).core := by
+  obtain ⟨h1, h2, h3⟩ := tick_gfVote_shape c p a nr cache e hc cfg nd st rec t h
+  rw [voteStore_of_voteTime c p nr cache e hc cfg nd st t hδ h2] at h3
+  obtain ⟨h4, h5, h6, -, -⟩ := Proofs.Consensus.Votes.goldfishVoteWith_some c cache e hc nd _ h3
+  exact ⟨h1, h2, h4, h5, h6⟩
+
 end Tick
 
 /-! ## run -/
@@ -241,6 +285,23 @@ theorem emits_gfVote_unique (hsch : ScheduleWellFormed s rho) {v : ValidatorId} 
   rw [Proofs.Consensus.Signing.nodeTick_out] at ho₁ ho₂
   exact tick_gfVote_unique c p a nr _ s.e s.hc s.cfg _ _ _ t₁ ho₁ ho₂
 
+/-- **発行された投票の head は、その tick の前の発行者の store に時計を合わせたものの fork choice の head**(Δ > 0)。
+`Emits` の添字 `i` の event は発行者のその時刻の tick で、tick は `stateBefore i` の発行者の状態を読む。cache は tick の前に
+`onPhaseTick` で進めたもの(`nodeTick`)。 -/
+theorem emits_gfVote_head (hδ : 0 < s.e.delta) {v : ValidatorId} {u : GoldfishVote} {t : Int}
+    (h : Emits c p a nr s rho v (NamedObject.GfVote u) t) :
+    ∃ i, rho.events[i]? = some (NamedEvent.Tick v t) ∧
+      0 < slotOf s.e t ∧ t = voteTime s.e (slotOf s.e t) ∧ u.valIndex = v ∧ u.slot = slotOf s.e t ∧
+      u.head = voteHead
+        (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (storeToHealing (worldAt (stateBefore c p a nr s rho i) v).st.core) t
+          (worldAt (stateBefore c p a nr s rho i) v).cache)
+        s.e s.hc (clocked s.e (worldAt (stateBefore c p a nr s rho i) v).st t).core := by
+  obtain ⟨i, hi, ho⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho v _ t).mp h
+  rw [Proofs.Consensus.Signing.nodeTick_out] at ho
+  obtain ⟨h1, h2, h3, h4, h5⟩ := tick_gfVote_head c p a nr _ s.e s.hc s.cfg _ _ _ t hδ ho
+  exact ⟨i, hi, h1, h2, h3, h4, h5⟩
+
 /-- **honest な committee の要素は各 slot の投票の時刻に投票を発行する**: `ScheduleWellFormed` は honest なノードの公開時刻の tick を
 horizon まで run に入れ、投票の時刻は公開時刻で、その tick の投票の務めは committee の要素に投票を出させる。 -/
 theorem honest_emits_gfVote (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e.delta) {v : ValidatorId}
@@ -260,6 +321,21 @@ theorem honest_emits_gfVote (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e.del
   refine ⟨u, (Proofs.Consensus.Signing.emits_iff c p a nr s rho v _ _).mpr ⟨i, hi, ?_⟩, hval, hslot.trans hsl⟩
   rw [Proofs.Consensus.Signing.nodeTick_out]
   exact hu
+
+/-- honest な committee の要素が slot `k` の投票の時刻に発行する投票と、その head(`emits_gfVote_head` の形)。 -/
+theorem honest_emits_gfVote_head (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e.delta) {v : ValidatorId}
+    (hv : rho.honest.contains v = true) {k : Nat} (hk : 0 < k) (hm : (c k).contains v = true)
+    (hhor : voteTime s.e k ≤ rho.horizon) :
+    ∃ u i, Emits c p a nr s rho v (NamedObject.GfVote u) (voteTime s.e k) ∧ u.valIndex = v ∧ u.slot = k ∧
+      rho.events[i]? = some (NamedEvent.Tick v (voteTime s.e k)) ∧
+      u.head = voteHead
+        (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (storeToHealing (worldAt (stateBefore c p a nr s rho i) v).st.core) (voteTime s.e k)
+          (worldAt (stateBefore c p a nr s rho i) v).cache)
+        s.e s.hc (clocked s.e (worldAt (stateBefore c p a nr s rho i) v).st (voteTime s.e k)).core := by
+  obtain ⟨u, he, hval, hslot⟩ := honest_emits_gfVote c p a nr s rho hsch hδ hv hk hm hhor
+  obtain ⟨i, hi, -, -, -, -, hhead⟩ := emits_gfVote_head c p a nr s rho hδ he
+  exact ⟨u, i, he, hval, hslot, hi, hhead⟩
 
 end Run
 

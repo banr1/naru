@@ -259,9 +259,12 @@ store `voteStore` を読む。tick が出す投票は投票の時刻の tick の
 `tick_gfVote_unique`、どの投票者も slot ごとに発行する投票は 1 つ `emits_gfVote_unique`(`ScheduleWellFormed` の event の重複なし。手書き `emits_gfVote_unique`)、
 投票の時刻の tick で committee の要素なら必ず投票を出す `tick_gfVote_of_duty`(務めは `awake'` を見ない)、`ScheduleWellFormed` は honest なノードの公開時刻の
 tick を horizon まで run に入れるので honest な committee の要素は各 slot `k > 0`(`voteTime e k ≤ horizon`)で投票を発行する `honest_emits_gfVote`
-(`slotOf_voteTime`(手書き `slotOf_vote_time`)/ `publicTime_voteTime`))。
+(`slotOf_voteTime`(手書き `slotOf_vote_time`)/ `publicTime_voteTime`)。投票の head: 投票の時刻は提案の時刻と違う(Δ > 0)ので投票の務めが読む store は
+時計を合わせただけ `voteStore_of_voteTime`(手書き `vote_time_ne_proposal_time` の筋で `voteTime_ne_proposalTime`)、tick が出す投票の head は tick の前の store に時計を
+合わせたもの `clocked` の fork choice の head `voteHead`(`tick_gfVote_head`)、run では `Emits` の添字 `i` の `stateBefore i` の発行者の store と `onPhaseTick` で進めた
+cache で読む `emits_gfVote_head` / `honest_emits_gfVote_head`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
-その tick の store の fork choice の head で(`Voting.tick_gfVote_shape` と `goldfishVoteWith_some`。run の読みへの接続は未)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
+`stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
 (解決の印 `storeTau` は投票の受信の印と head のブロックの受信の印の大きい方))、2 つの honest なノードの読みの間の正準性(手書きの安全の核 `eligible_compatible`: 一方の
 支持の投票が他方の遅い投票に入る `CrossView` の下で、同じ slot に両ノードで門を通る 2 ブロックは互換 — 2 つの支持者の集合は `noSecondVoteIn` で互いに素でどちらも

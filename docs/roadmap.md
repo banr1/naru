@@ -19,7 +19,7 @@
   `Goldfish.lean`、投票の pool の不変条件(pool の投票は committee の投票で、増えるだけ)の `Votes.lean`、確認の門 `lateCount < 2 · score` の honest 過半の数え上げ
   (支持の投票は投票者ごとに 1 つで equivocator は無い。honest な committee の要素がすべて遅い投票の参加者なら門を通るブロックには honest な支持者がいる。honest な
   committee の要素がみな `B` 以下に投票していれば(`HonestSupport`)`B` とその祖先は門を通り、門を通るどのブロックも `B` と互換)の `Majority.lean`、honest な投票の発行(投票は投票の時刻の tick の務めが出し、投票者ごと・slot ごとに 1 つで、honest な committee の要素は horizon までの各 slot で
-  投票を発行する)の `Voting.lean` は既にあり、残るのは
+  投票を発行し、Δ > 0 なら投票の head は発行の tick の前の発行者の store に時計を合わせたものの fork choice の head(cache は `onPhaseTick` で進めたもの))の `Voting.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の
