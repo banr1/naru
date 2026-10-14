@@ -12,6 +12,7 @@ import Proofs.Consensus.FinalizedMonotone
 import Proofs.Consensus.CertificatesAccountable
 import Proofs.Consensus.FinalizedAccountable
 import Proofs.Consensus.HonestNeverSlashed
+import Proofs.Consensus.Liveness
 import Mathlib.Tactic
 
 /-!
@@ -45,6 +46,12 @@ carried)で、`v` の 2 つの発行の消去は slashable でない(`EmissionSa
 `namedCreate` だけであること(`Signing.lean`)から、同じ高さに名指す target は等しく finality pair と timeout は両立しない))。
 残りの 6 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
+liveness 系の claim の共有の足場(周回 127。theorem はまだ無い): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`
+(包含 `IncludedFrom` + 単調 `MonotoneFrom` + 未来の提案の不在 `NoFutureRead` + 再発 → 活性 `LiveFrom`)と、
+`confirmedLive_of_available` / `stableLive_of_available`(claim `available` の結論 `AvailableAt` から `confirmedLive` / `stableLive` の結論)、
+`finalizedLive_of_included`(finalized の包含から `finalized` の活性)。`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の
+honest な提案は入らない: `Clocks.lean` の時計の不変条件 `s = slotOf e t`・時計は event の時刻以下、`TreeInv.lean` の出力のブロックが tree にあること、
+受理の守り `¬ (st.s < slot b)`)は `ExecutionValid` と Δ > 0 だけから 3 出力すべてについて成り立つ。
 -/
 
 /-- claim `constants`: `SetupWellFormed` の数値の前提の下で定数が `ConstantsValid` を満たす。

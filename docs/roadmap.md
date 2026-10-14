@@ -10,7 +10,9 @@
   書き直すこと(差は報告するだけ)は対象外(IDEAL.md「対象外」)
 - プロトコル証明の分離基盤(C68〜C72)の基盤(C68〜C70: Lake ライブラリ `Proofs`、`obligations.json`、束縛 hash と失効、`naru proofs`)と書き手の案内(C72: `proofs/README.md`)は
   実装済み([cli.md](cli.md)「証明状況」、[architecture.md](architecture.md)「Proofs」)。残るのは C71: consensus の 14 件の証明(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件が証明済みで、`naru proofs` は残り 7 件を `missing` と表示する。
-  `naru_test proofs` は証明済みの件名が `proved` のままであることを検査し、証明が揃った周回で 14 件すべて証明済みの検査にする)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
+  `naru_test proofs` は証明済みの件名が `proved` のままであることを検査し、証明が揃った周回で 14 件すべて証明済みの検査にする。残りの liveness 系の claim の
+  共有の足場 — 包含から活性への generic な還元、未来の提案の不在、時計と tree の不変条件(`proofs/Proofs/Consensus/Liveness.lean` / `NoFutureRead.lean` /
+  `Clocks.lean` / `TreeInv.lean`)— は既にあり、残るのは `available`(回復と GST-zero)、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
   義務の雛形の生成、レビュー面 / エディタへの証明状況の表示は対象外
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)

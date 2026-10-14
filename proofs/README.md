@@ -169,6 +169,21 @@ attestation は bodies の名前付き祖先の行の消去で、bodies の gene
 残り 6 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
+残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
+共有の足場は既にある(theorem はまだ無い): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`(property `IncludedFrom`(honest な提案が
+期限 `D` 以内に包含される)と `MonotoneFrom`・`NoFutureRead`・`SingleProposerRecurrence` から `LiveFrom … (gap · period + D)`。手書き
+`Generic.liveFrom_of_includedFrom` の筋)、`confirmedLive_of_available` / `stableLive_of_available`(claim `available` の結論 `AvailableAt` から
+`confirmedLive` / `stableLive` の結論)、`finalizedLive_of_included`(finalized の `IncludedFrom … (t0 + finalityStartup) finalityDeadline` から
+claim `finalized` の活性の半分。単調性は `finalizedMonotone` の補題、再発は `StrongMultiProposerRecurrence`)。`NoFutureRead.lean` は
+「時刻 `t` の読みに提案時刻が `t` より後の honest な提案は入らない」を `ExecutionValid`(`EventsSorted`・event の時刻が非負)と Δ > 0 だけから
+3 出力すべてについて示す: `Clocks.lean`(store の時計 `t` / `s` を書くのは tick の冒頭だけで `s = slotOf e t`、時計は event の時刻以下で非負)、
+`TreeInv.lean`(`f` / `j` / `latestConfirmed` / `latestStable` は常に tree の要素。`updateFinality` が書く `σ.f` / `σ.j` は受理したブロックの祖先、
+`updateConfirmationWith` が書く値は grade の読み `activePrefix` = filtered tree の `deepest?`・fork choice `ghost`(anchor か tree の子)・
+`getFgRoot`(`j` / `f`)か元の値)、受理の守り `¬ (st.s < slot b)`(`onBlockUsing_slot_le`)から tree のブロックの提案時刻は読みの時刻以下
+(`tree_block_slot`)、honest な提案 `proposedBlockAt k` は slot `k` のブロック(提案の時計は `proposalTime k`)。残るのは `available`
+(回復と GST-zero の保証)、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体で、手書きでは `StableCoverageConsumer` 等の
+数千行の下流に当たる。
+
 生成 Model の定義に対して補題を書くときの運び(`finalizedMonotone` で使った形): `unfold <関数>` → `dsimp only`(`let` を展開し、pair の `match` を
 射影 `.1` / `.2` に落とす)→ `split_ifs`(すべての `if` を割る)→ 各分岐を `rfl` / 既存の補題で閉じる。`exact` の単一化が左辺の `st.f` から先に
 `?st := st` と決めて失敗するときは、始点を等式 `hf : st0.f = f0` で与える形の補題(`updateFinality_f'` / `proposeBlockWith_f'`)を使う。
