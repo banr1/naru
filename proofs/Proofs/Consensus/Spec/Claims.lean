@@ -4,12 +4,14 @@
 -- naru-obligation: Consensus.Spec.Claims.certificatesAccountable sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.finalizedAccountable sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.finalizedSafe sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.honestNeverSlashed sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Constants
 import Proofs.Consensus.Nested
 import Proofs.Consensus.FinalizedMonotone
 import Proofs.Consensus.CertificatesAccountable
 import Proofs.Consensus.FinalizedAccountable
+import Proofs.Consensus.HonestNeverSlashed
 import Mathlib.Tactic
 
 /-!
@@ -35,8 +37,13 @@ E1 の slashable(`Slashing.lean`)、消去と `chainAttestations` の所属(`Nam
 `Idealization = NamedRootCollisionFree` を消去した祖先の持ち上げで `RootInjectiveOnAncestors` にして `certificatesAccountable` の本体 `oriented` を
 両向きに当て、`Evidence` を `chainAttestations ⊆ storeAttestations` で `SlashableStates` に持ち上げる(`finalizedAccountable`)か
 `SlashableBound` で退ける(`finalizedSafe`)。`Set Block` / `Set NamedBlock` / `Table Block _` の所属は `Orders.lean` の
-`block_compare_eq_iff` / `nb_compare_eq_iff`(backend が再帰する型に出す明示的な `naruCompare` の `.eq ↔ =`)で言い換える)。
-残りの 7 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
+`block_compare_eq_iff` / `nb_compare_eq_iff`(backend が再帰する型に出す明示的な `naruCompare` の `.eq ↔ =`)で言い換える)、
+`honestNeverSlashed`(補題 `Proofs/Consensus/HonestNeverSlashed.lean`: store の `v` の署名の attestation は `v` の tick が実際に出した
+行の消去(`Attribution.lean`: store の不変条件の `named` / `closed`、bodies のブロックは処理されたブロック、`UnforgeableSignatures` の
+carried)で、`v` の 2 つの発行の消去は slashable でない(`EmissionSafety.lean`: validator client の記録 `Record` の性質
+(`Records.lean`: target は書き込み 1 回、lock / timeout は増えるだけ、`LockCompatible` / `FinalitySafeAt`)と、記録を書くのは自分の tick の
+`namedCreate` だけであること(`Signing.lean`)から、同じ高さに名指す target は等しく finality pair と timeout は両立しない))。
+残りの 6 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
 -/
 
@@ -88,3 +95,10 @@ finalized の読みは常に互換(`AgreeFrom … Finalized 0`)。`finalizedAcco
 手書き `Consensus.finalizedSafe`(`wholeRunFinalitySafety`)に当たる。 -/
 theorem Proofs.Consensus.Spec.Claims.finalizedSafe : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.finalizedSafe committee' proposer' awake' newRoot' «s» «rho» :=
   Proofs.Consensus.FinalizedAccountable.finalizedSafe
+
+/-- claim `honestNeverSlashed`: `SetupWellFormed ∧ RunDomain ∧ UnforgeableRun` の下で、honest な validator は slash されない
+(どの 2 ノードのどの時刻の store の attestation の間にも、その validator の署名の slashable な組は無い)。前提のうち使うのは
+`UnforgeableRun` の `UnforgeableSignatures`(carried)と `EventsSorted` だけ。
+手書き `Consensus.honestNeverSlashed`(`validatorVoteSafety.attributed`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.honestNeverSlashed : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.honestNeverSlashed committee' proposer' awake' newRoot' «s» «rho» :=
+  Proofs.Consensus.HonestNeverSlashed.honestNeverSlashed

@@ -272,8 +272,18 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statemen
 (`storeAttestations = flatMap tree chainAttestations`)で `SlashableStates` に持ち上げる(`finalizedAccountable`)か `SlashableBound` で退ける(`finalizedSafe`)。
 `Set Block` / `Set NamedBlock` / `Table Block _`(tree / bodies / sigma)の所属の言い換えには `Orders.lean` の `block_compare_eq_iff` / `nb_compare_eq_iff` が要り、
 これは backend が再帰する型に `deriving Ord` の代わりに出す明示的な `naruCompare`(上の「再帰する型の `Ord`」)で初めて書ける。手書き
-`storeAccountableSafety_stateBefore` / `wholeRunAccountableFinalitySafety` / `wholeRunFinalitySafety` の筋)の 6 件が証明済みで、
-`naru proofs` は残り 8 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
+`storeAccountableSafety_stateBefore` / `wholeRunAccountableFinalitySafety` / `wholeRunFinalitySafety` の筋)、
+`honestNeverSlashed`(補題 `HonestNeverSlashed.lean` / `Attribution.lean` / `EmissionSafety.lean` / `Signing.lean` / `Records.lean`: 前提のうち使うのは
+`UnforgeableRun` の `UnforgeableSignatures`(carried)と `EventsSorted` だけ。`Records.lean` が validator client の記録 `Record` の性質 — `target` は書き込み 1 回、
+`lock` は finality pair の高さに書かれて既にある値は変わらない、`timeout` は増えるだけ、`LockCompatible`(lock のある高さは timeout でなく target は空かその lock)と
+`FinalitySafeAt`(finality pair を出した高さは timeout でなく lock がその target)が `createAttestation` で保たれ、既に target / lock のある高さに出す target はその値 — を、
+`Signing.lean` が記録を書くのは自分の tick の `namedCreate` だけで tick は attestation を高々 1 つ出すこと(`stateBefore (i + 1)` は添字 `i` の event だけを畳んだもの)を、
+`EmissionSafety.lean` が同じ validator の 2 つの発行は同じ高さに同じ target を名指し finality pair と timeout は両立しないので `slashable` でないことを、
+`Attribution.lean` が store の honest な署名の attestation は署名者の tick が実際に出した行の消去であること(store の不変条件に tree の各ブロックが bodies の消去であることと
+bodies が親について閉じていることを足し、bodies の genesis でないブロックはそのノードが処理したブロックで、`UnforgeableSignatures` の carried で発行に帰着)を与え、
+手書き `validatorVoteSafety`(`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` /
+`carriedByHonest_of_storeAt`)の筋)の 7 件が証明済みで、
+`naru proofs` は残り 7 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 

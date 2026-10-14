@@ -9,7 +9,7 @@
   グラフに含めること、生成 Lean や Lean 側(compiler / semantics / stdlib / naru_test)の依存グラフ、グラフからのソース編集やエディタ統合、import 行を実際の参照に合わせて
   書き直すこと(差は報告するだけ)は対象外(IDEAL.md「対象外」)
 - プロトコル証明の分離基盤(C68〜C72)の基盤(C68〜C70: Lake ライブラリ `Proofs`、`obligations.json`、束縛 hash と失効、`naru proofs`)と書き手の案内(C72: `proofs/README.md`)は
-  実装済み([cli.md](cli.md)「証明状況」、[architecture.md](architecture.md)「Proofs」)。残るのは C71: consensus の 14 件の証明(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` の 6 件が証明済みで、`naru proofs` は残り 8 件を `missing` と表示する。
+  実装済み([cli.md](cli.md)「証明状況」、[architecture.md](architecture.md)「Proofs」)。残るのは C71: consensus の 14 件の証明(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件が証明済みで、`naru proofs` は残り 7 件を `missing` と表示する。
   `naru_test proofs` は証明済みの件名が `proved` のままであることを検査し、証明が揃った周回で 14 件すべて証明済みの検査にする)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
   義務の雛形の生成、レビュー面 / エディタへの証明状況の表示は対象外
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)

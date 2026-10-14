@@ -51,11 +51,14 @@ theorem SameCore.refl (a : Store) : SameCore a a := ⟨rfl, rfl, rfl⟩
 theorem SameCore.trans {a b c : Store} (h1 : SameCore a b) (h2 : SameCore b c) : SameCore a c :=
   ⟨h1.tree.trans h2.tree, h1.sigma.trans h2.sigma, h1.f.trans h2.f⟩
 
-/-- store の不変条件(finality carrier)。 -/
+/-- store の不変条件(finality carrier)。`named` / `closed`(周回 126): tree の各ブロックは bodies のどれかの消去で、
+bodies は名前付きの親について閉じている(手書き `T = bodies.image erase` と `NamedParentClosed`)。 -/
 structure StoreInv (e : ProtocolEnv) (cfg : HeightConfig) (st : NamedStore) : Prop where
   tree : ∀ D, D ∈ st.bodies.elems → eraseBlock D ∈ st.core.tree.elems
   sigma : ∀ D, D ∈ st.bodies.elems → chainStateOf st.core.sigma (eraseBlock D) = deriveNamed e cfg D
   carrier : ∃ D, D ∈ st.bodies.elems ∧ (deriveNamed e cfg D).f = st.core.f
+  named : ∀ B, B ∈ st.core.tree.elems → ∃ D, D ∈ st.bodies.elems ∧ eraseBlock D = B
+  closed : ∀ D, D ∈ st.bodies.elems → namedParent D ∈ st.bodies.elems
 
 /-- bodies と tree / sigma / f が等しい別の store へ移す。 -/
 theorem StoreInv.congr {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (h : StoreInv e cfg st)
@@ -63,6 +66,8 @@ theorem StoreInv.congr {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} 
   tree := by rw [hb, hc.tree]; exact h.tree
   sigma := by rw [hb, hc.sigma]; exact h.sigma
   carrier := by rw [hb, hc.f]; exact h.carrier
+  named := by rw [hb, hc.tree]; exact h.named
+  closed := by rw [hb]; exact h.closed
 
 /-- 初期 store は不変条件を満たす。 -/
 theorem initial_inv (e : ProtocolEnv) (cfg : HeightConfig) : StoreInv e cfg initialNamedStore where
@@ -78,6 +83,16 @@ theorem initial_inv (e : ProtocolEnv) (cfg : HeightConfig) : StoreInv e cfg init
     subst hD'
     rfl
   carrier := ⟨NamedBlock.Genesis, (mem_singleton_iff _ _).mpr rfl, rfl⟩
+  named := fun B hB => by
+    have hB' : B ∈ (NaruStd.Set.singleton Block.Genesis).elems := hB
+    rw [mem_singleton_iff] at hB'
+    subst hB'
+    exact ⟨NamedBlock.Genesis, (mem_singleton_iff _ _).mpr rfl, rfl⟩
+  closed := fun D hD => by
+    have hD' : D ∈ (NaruStd.Set.singleton NamedBlock.Genesis).elems := hD
+    rw [mem_singleton_iff] at hD'
+    subst hD'
+    exact (mem_singleton_iff _ _).mpr rfl
 
 /-! ## `Store` のハンドラ -/
 
@@ -255,7 +270,7 @@ theorem processBlockCore_inv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat →
           rw [contains_iff_mem block_compare_eq_iff, acceptBody_tree, mem_insert_iff block_compare_eq_iff]
           exact Or.inl rfl
         rw [commitBlock_accept hnotin hin]
-        refine ⟨?_, ?_, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_⟩
         · intro D hD
           have hD' : D ∈ (st.bodies.insert B).elems := hD
           rw [mem_insert_iff nb_compare_eq_iff] at hD'
@@ -283,6 +298,21 @@ theorem processBlockCore_inv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat →
             rw [hf]
             exact hDf
           · exact ⟨B, (mem_insert_iff nb_compare_eq_iff _ _ _).mpr (Or.inl rfl), hf.symm⟩
+        · intro X hX
+          have hX' : X ∈ (acceptBody c st.core (eraseBlock B) (deriveNamed e cfg B)).tree.elems := hX
+          rw [acceptBody_tree, mem_insert_iff block_compare_eq_iff] at hX'
+          rcases hX' with rfl | hX'
+          · exact ⟨B, (mem_insert_iff nb_compare_eq_iff _ _ _).mpr (Or.inl rfl), rfl⟩
+          · obtain ⟨D, hD, hDX⟩ := h.named X hX'
+            exact ⟨D, (mem_insert_iff nb_compare_eq_iff _ _ _).mpr (Or.inr hD), hDX⟩
+        · intro D hD
+          have hD' : D ∈ (st.bodies.insert B).elems := hD
+          rw [mem_insert_iff nb_compare_eq_iff] at hD'
+          show namedParent D ∈ (st.bodies.insert B).elems
+          rw [mem_insert_iff nb_compare_eq_iff]
+          rcases hD' with rfl | hD'
+          · exact Or.inr hparent
+          · exact Or.inr (h.closed D hD')
     · rw [hafter, commitBlock_self]
       exact h
 

@@ -98,7 +98,7 @@ scenario basic
 ## 証明状況の見方
 
 `lake exe naru proofs`(先に `lake exe naru compile`)は、14 件の証明義務(consensus の 13 claims と claim bundle)それぞれの状況 — 証明済み / 未証明(theorem が無い・`sorry`)/ 失効 / 不正 — を
-表示します(`--json` で正規形 JSON)。いまは 14 件のうち 6 件(`constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe`)が証明済みで、残り 8 件は `missing`(未証明)です。義務の一覧は `generated/obligations.json`(`naru compile` が書く)、
+表示します(`--json` で正規形 JSON)。いまは 14 件のうち 7 件(`constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed`)が証明済みで、残り 7 件は `missing`(未証明)です。義務の一覧は `generated/obligations.json`(`naru compile` が書く)、
 証明の書き方は [proofs/README.md](proofs/README.md)、判定の定義は [docs/cli.md](docs/cli.md)「証明状況」と [docs/architecture.md](docs/architecture.md)「Proofs」にあります。
 これはプロトコルの保証の層で、コンパイラの意味保存(`lake build NaruSem`)とは別の層です。
 

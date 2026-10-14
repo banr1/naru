@@ -29,7 +29,7 @@ import NaruTest.Statements
 - C72(文書): `proofs/README.md` が義務・束縛行・失効・`sorry`・mathlib・禁止・`naru proofs`・`naru_test proofs` の語を含み、`git grep -l --untracked 'naru proofs'` が
   README と docs 3 本と `proofs/README.md` の 5 件。
 - C71(進捗): 証明済みの consensus の義務の一覧 `consensusProved`(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` /
-  `finalizedAccountable` / `finalizedSafe` の 6 件)が、ホームの `naru proofs --json` で `proved`
+  `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件)が、ホームの `naru proofs --json` で `proved`
   であることを確かめる(`stale` / `sorry` / `invalid` に退行したら FAIL)。14 件すべて証明済みの検査は、証明が揃った周回でこの一覧を全件にして加える
   (未実装の検査を PASS にしない)。
 - 最後にホームで `lake exe naru compile` と `lake exe naru proofs` を走らせ、Lake が読む link を元に戻す。
@@ -66,7 +66,7 @@ def expectedCountsLine : String := "proved 2 / missing 3 / sorry 1 / stale 2 / i
 def consensusProved : List String :=
   ["Consensus.Spec.Claims.constants", "Consensus.Spec.Claims.nested", "Consensus.Spec.Claims.finalizedMonotone",
    "Consensus.Spec.Claims.certificatesAccountable", "Consensus.Spec.Claims.finalizedAccountable",
-   "Consensus.Spec.Claims.finalizedSafe"]
+   "Consensus.Spec.Claims.finalizedSafe", "Consensus.Spec.Claims.honestNeverSlashed"]
 def consensusObligations : Nat := 14
 
 structure Env where

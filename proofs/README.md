@@ -129,7 +129,7 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`、補題は `pro
 基準の verified-consensus の手書き証明(`third_party/verified-consensus/`)は **読んで参照してよい** ですが、import はしません(上の禁止事項)。
 生成 Model / Statements に対して、必要な補題を `Proofs` の側で書き直します。
 
-証明済み(6 件): `constants`(補題 `Proofs/Consensus/Constants.lean`。`period = 4Δ·R` などの時刻の式を Δ・R・η_SG の多項式に開き、
+証明済み(7 件): `constants`(補題 `Proofs/Consensus/Constants.lean`。`period = 4Δ·R` などの時刻の式を Δ・R・η_SG の多項式に開き、
 `SetupWellFormed` の数値の前提から `ConstantsValid` の各項を閉じる。手書き `constants_valid` の筋)、`nested`(補題 `Proofs/Consensus/Nested.lean` と
 `Blocks.lean`。`getStable` / `getConfirmed` の `if preceq … then … else …` の分岐と `preceq` の反射律だけで閉じ、run への前提は使わない。手書き
 `nestedOutputs_holds` の筋)、`finalizedMonotone`(補題 `Proofs/Consensus/FinalizedMonotone.lean`。`Stores.lean`: 生成 Model のハンドラで store の `f` を変えるのは
@@ -153,8 +153,20 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 `RootInjectiveOnAncestors` にして `certificatesAccountable` の `oriented` を両向きに当て、`Evidence` を `chainAttestations ⊆ storeAttestations`
 で `SlashableStates` に持ち上げる / `SlashableBound` で退ける。`Orders.lean` の `block_compare_eq_iff` / `nb_compare_eq_iff`(`Block` / `NamedBlock` の
 `compare` の `.eq ↔ =`)が tree / bodies / sigma の所属の言い換えに要る。手書き `storeAccountableSafety_stateBefore` /
-`wholeRunAccountableFinalitySafety` / `wholeRunFinalitySafety` の筋)。
-残り 7 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+`wholeRunAccountableFinalitySafety` / `wholeRunFinalitySafety` の筋)、
+`honestNeverSlashed`(補題 `Proofs/Consensus/HonestNeverSlashed.lean`。前提のうち使うのは `UnforgeableRun` の `UnforgeableSignatures`(carried)と
+`EventsSorted` だけ。`Records.lean`: validator client の記録 `Record`(高さごとの `target` / `timeout` / `lock`)について、`createAttestation` が
+`target` を書くのは空のときだけ、`lock` は finality pair の高さに書かれて `finalityPair` の検査で既にある値は変わらない、`timeout` は増えるだけ、
+`LockCompatible`(lock のある高さは timeout でなく target は空かその lock)と `FinalitySafeAt`(finality pair を出した高さは timeout でなく lock がその target)が
+保たれ、既に target / lock のある高さに出す target はその値に等しい。`Signing.lean`: tick が記録を書くのは `attestWith` → `namedCreate` だけで attestation を
+高々 1 つ出し、配送の処理は記録に触れず、`stateBefore (i + 1)` は添字 `i` の event だけを `stateBefore i` に畳んだものなので、記録の性質は run のどの添字でも
+成り立ち以後も保たれる。`EmissionSafety.lean`: 同じ validator の 2 つの発行は同じ高さに同じ target を名指し(先の発行の target が記録に残り、後の発行はそれに従う。
+同じ tick なら同じ行)、finality pair と timeout は両立しないので、消去は `e1Fields` / `e2Fields` とも偽で `slashable` でない。`Attribution.lean`: store の
+不変条件(`Carrier.lean` に tree の各ブロックが bodies の消去であること `named` と bodies が親について閉じていること `closed` を足した)から、store の
+attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
+配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
+(`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
+残り 6 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 生成 Model の定義に対して補題を書くときの運び(`finalizedMonotone` で使った形): `unfold <関数>` → `dsimp only`(`let` を展開し、pair の `match` を
@@ -164,3 +176,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 `with_reducible exact …` にして照合を reducible な展開だけにする(`Carrier.lean` の `tick_inv`: 16 の経路を 16 の候補で閉じる)。
 再帰する型(`Block` / `NamedBlock`)の `compare` は backend が構造的再帰で明示的に定義する(`docs/architecture.md`「再帰する型の `Ord`」)ので
 `rfl` / 等式補題が効く。Lean の `deriving Ord` のままでは `partial`(不透明)で、`Set` / `Table` の所属の補題が書けない。
+tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lean` の `tick_attest_shape`、`Attribution.lean` の `tick_bodies`)は、
+`unfold tick` → `dsimp only` → `split_ifs`(仮説と goal の両方なら `split_ifs at hD ⊢`)の後に、全経路を同じ tactic 列
+(`all_goals first | exact … | …`。出力の `match blockOut with …` に attestation が無いことは `(try split at h) <;> simp at h`)で閉じる。
+`cases hm : e with` は goal の `e` だけを置き換え仮説は置き換えないので、仮説には `rw [hm] at h` を足す。
