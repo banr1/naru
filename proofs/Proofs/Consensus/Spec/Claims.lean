@@ -1,10 +1,12 @@
 -- naru-obligation: Consensus.Spec.Claims.constants sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
 -- naru-obligation: Consensus.Spec.Claims.nested sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
 -- naru-obligation: Consensus.Spec.Claims.finalizedMonotone sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
+-- naru-obligation: Consensus.Spec.Claims.certificatesAccountable sha256:773e687f0e7a8283a366dd44125735d9960ff100daecb3c31b6c0e8018f5da6c
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Constants
 import Proofs.Consensus.Nested
 import Proofs.Consensus.FinalizedMonotone
+import Proofs.Consensus.CertificatesAccountable
 import Mathlib.Tactic
 
 /-!
@@ -19,8 +21,12 @@ import Mathlib.Tactic
 証明済み(束縛行あり): `constants`(補題 `Proofs/Consensus/Constants.lean`: 定数を Δ・R・η_SG の多項式に開く)、
 `nested`(補題 `Proofs/Consensus/Nested.lean`: `getStable` / `getConfirmed` の分岐と `preceq` の反射律。run への前提は要らない)、
 `finalizedMonotone`(補題 `Proofs/Consensus/FinalizedMonotone.lean`: 全ハンドラが store の `f` を縮めないこと(`Stores.lean`)と、
-`EventsSorted` の下で `filter (≤ t)` が `filter (≤ t2)` の接頭辞であること(`Runs.lean` / `Tables.lean`)から、`preceq` の推移律(`Blocks.lean`)で結ぶ)。
-残りの 10 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
+`EventsSorted` の下で `filter (≤ t)` が `filter (≤ t2)` の接頭辞であること(`Runs.lean` / `Tables.lean`)から、`preceq` の推移律(`Blocks.lean`)で結ぶ)、
+`certificatesAccountable`(補題 `Proofs/Consensus/CertificatesAccountable.lean`: 名前付き導出 `deriveNamed` の不変条件
+(`Derivation.lean`: finality の証明書と高さの横断の定足数)、定足数の交わりの重み `2q − W`(`Weights.lean` / `Sets.lean`)、
+E1 の slashable(`Slashing.lean`)、消去と `chainAttestations` の所属(`NamedBlocks.lean` / `Orders.lean`)から、手書きの
+`namedChainAccountableSafety` の筋で結ぶ)。
+残りの 9 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
 -/
 
@@ -51,3 +57,10 @@ theorem Proofs.Consensus.Spec.Claims.finalizedMonotone : ∀ (committee' : (Nat 
   unfold Statements.Consensus.Spec.Conditions.RunWellFormed at hwf
   obtain ⟨⟨_, hsorted⟩, _⟩ := hwf
   exact Proofs.Consensus.FinalizedMonotone.monotoneFrom_finalized committee' proposer' awake' newRoot' s rho hsorted
+
+/-- claim `certificatesAccountable`: run の前提なしに、root が衝突しない 2 つの名前付きブロックの導出状態が finalize した対象は
+互換(`compatible`)か、2 本の chain の attestation の間に重み `2q − W` 以上の slashable な署名者集合がある(`Evidence`)。
+前提のうち `SetupWellFormed` からは `normalizedValidators`(電子集団が正規集合であること)だけを使う。
+手書き `Consensus.certificatesAccountable`(`unconditional_pureFinality` → `pureAccountableFinalitySafety` → `namedChainAccountableSafety`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.certificatesAccountable : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) («s» : Model.Consensus.Execution.Setup.Setup) («c» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («c2» : Model.Consensus.Objects.NamedBlocks.NamedBlock) («target» : Model.Consensus.Objects.Blocks.Block) («target2» : Model.Consensus.Objects.Blocks.Block), Statements.Consensus.Spec.Claims.certificatesAccountable committee' proposer' «s» «c» «c2» «target» «target2» :=
+  Proofs.Consensus.CertificatesAccountable.certificatesAccountable

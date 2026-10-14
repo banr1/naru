@@ -252,8 +252,17 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statemen
 `finalizedMonotone`(補題 `FinalizedMonotone.lean`: `RunWellFormed` の中の `EventsSorted` だけを使う。`Stores.lean` が「`f` を変えるのは `updateFinality` の
 `prec st.f σ.f` を条件にした分岐だけ」から全ハンドラ(`nodeTick` / `nodeProcess`)が store の `f` を縮めないことを、`Runs.lean` が時刻で非減少な event 列の
 `filter (≤ t)` が `filter (≤ t2)` の接頭辞であることと `worldAt (Table.insert …)` の読みを、`Tables.lean` が stdlib の `Table.getOr` / `insert` と `ValidatorId` の
-派生 `Ord` の補題を、`Blocks.lean` が `preceq` の推移律を与え、`List.foldl_append` で結ぶ)の 3 件が証明済みで、
-`naru proofs` は残り 11 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
+派生 `Ord` の補題を、`Blocks.lean` が `preceq` の推移律を与え、`List.foldl_append` で結ぶ)、
+`certificatesAccountable`(補題 `CertificatesAccountable.lean`: run の前提は無く、`SetupWellFormed` からは `normalizedValidators` だけを使う。
+`Derivation.lean` が名前付き導出 `deriveNamed` の不変条件 — 高さの順序 `hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、
+`hF = 0 → f = Genesis`、3 つの署名者集合が chain 上の行で裏付けられること、finality の証明書(`hF ≠ 0` なら `finalityPair = some ⟨hF, root f⟩` の
+定足数)、高さの横断(`1 ≤ h₀ < h` なら祖先 `X` と `matchesEntry … h₀ (root X)` の定足数)— を 1 つの構造体 `Inv` にまとめて `B` の構造帰納法で示し、
+`Sets.lean` / `Orders.lean` が stdlib `Set` の所属(`compare` が `.eq ↔ =` の型)と `ValidatorId` の集合の整列・`Finset.sum` への橋を、`Weights.lean` が
+定足数の交わりの重み `2q ≤ W + weight (QF ∩ QP)`(mathlib `Finset.sum_union_inter`)を、`NamedBlocks.lean` が消去と `chainAttestations` の所属を、
+`Slashing.lean` が E1 の slashable と `slashable` の対称性を与え、手書き `namedChainAccountableSafety` の筋 — 低い方の高さ `h₁` が 0 なら genesis で互換、
+さもなければ証明書 `QF` と横断 `QP` を取り、`root X = root target` なら `CollisionFree` から `X = target` で互換、さもなければ `QF ∩ QP` の各署名者の
+2 つの行が E1 で slashable — で結ぶ)の 4 件が証明済みで、
+`naru proofs` は残り 10 件を `missing` と表示する(C71 が残る。[roadmap.md](roadmap.md))。検査は [testing.md](testing.md) の `proofs` 群。
 
 ## コンパイラ意味論保存(`semantics/NaruSem`、C39〜C47、C48〜C53、C54〜C59)
 

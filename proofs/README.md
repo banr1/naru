@@ -129,14 +129,23 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`、補題は `pro
 基準の verified-consensus の手書き証明(`third_party/verified-consensus/`)は **読んで参照してよい** ですが、import はしません(上の禁止事項)。
 生成 Model / Statements に対して、必要な補題を `Proofs` の側で書き直します。
 
-証明済み(3 件): `constants`(補題 `Proofs/Consensus/Constants.lean`。`period = 4Δ·R` などの時刻の式を Δ・R・η_SG の多項式に開き、
+証明済み(4 件): `constants`(補題 `Proofs/Consensus/Constants.lean`。`period = 4Δ·R` などの時刻の式を Δ・R・η_SG の多項式に開き、
 `SetupWellFormed` の数値の前提から `ConstantsValid` の各項を閉じる。手書き `constants_valid` の筋)、`nested`(補題 `Proofs/Consensus/Nested.lean` と
 `Blocks.lean`。`getStable` / `getConfirmed` の `if preceq … then … else …` の分岐と `preceq` の反射律だけで閉じ、run への前提は使わない。手書き
 `nestedOutputs_holds` の筋)、`finalizedMonotone`(補題 `Proofs/Consensus/FinalizedMonotone.lean`。`Stores.lean`: 生成 Model のハンドラで store の `f` を変えるのは
 `updateFinality` の `prec st.f σ.f` を条件にした分岐だけなので、`nodeTick` / `nodeProcess` は `f` を縮めない。`Runs.lean`: `EventsSorted` から event の時刻は非減少で、
 `t ≤ t2` なら `readAt` の `filter (≤ t)` は `filter (≤ t2)` の接頭辞。`Tables.lean`: stdlib の `Table.getOr (insert …)` の読みと `ValidatorId` の派生 `Ord` の `.eq`。
-`Blocks.lean`: `preceq` の推移律。前提のうち使うのは `RunWellFormed` の `EventsSorted` だけ。手書き `finalized_readAt_mono_of_sorted` の筋)。
-残り 10 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+`Blocks.lean`: `preceq` の推移律。前提のうち使うのは `RunWellFormed` の `EventsSorted` だけ。手書き `finalized_readAt_mono_of_sorted` の筋)、
+`certificatesAccountable`(補題 `Proofs/Consensus/CertificatesAccountable.lean`。run の前提は無く、`SetupWellFormed` からは
+`normalizedValidators`(電子集団が正規集合であること)だけを使う。`Derivation.lean`: 名前付き導出 `deriveNamed` の不変条件 `Inv` — 高さの順序
+`hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、`hF = 0 → f = Genesis`、`finalize` / `targetParticipation` / `progress` が整列していて各署名者に
+chain 上の行があること、finality の証明書(`hF ≠ 0` なら `finalityPair = some ⟨hF, root f⟩` の行を持つ定足数)、高さの横断(`1 ≤ h₀ < h` なら祖先 `X` と
+`matchesEntry … h₀ (root X)` の行を持つ定足数)— を `B` の構造帰納法で示す(`processAttestation` → `foldRows` → `processHeightEvents` の順)。
+`Orders.lean` / `Sets.lean`: 派生 `Ord` の `.eq ↔ =` と stdlib `Set` の所属の言い換え、`ValidatorId` の集合の整列(`Sorted`)と `Finset.sum` への橋。
+`Weights.lean`: どの集合の重みも総重み `W` 以下、`weight (s ∪ t) + weight (s ∩ t) = weight s + weight t`、定足数の交わり `2q ≤ W + weight (s ∩ t)`。
+`NamedBlocks.lean`: 名前付き祖先の行の消去が `chainAttestations (eraseBlock B)` に入ること。`Slashing.lean`: 同じ署名者の finality pair と衝突する
+height pair は E1 で `slashable`、`slashable` の対称性。手書き `namedAccountableSafety_oriented` / `namedChainAccountableSafety` の筋)。
+残り 9 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 生成 Model の定義に対して補題を書くときの運び(`finalizedMonotone` で使った形): `unfold <関数>` → `dsimp only`(`let` を展開し、pair の `match` を
