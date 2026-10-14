@@ -1,0 +1,11 @@
+// 証明基盤の検体(C69): 義務が依存する runtime の fn と input。
+module Sample.Base
+
+// ゼロ引数の input(値の解釈)。
+input seed() -> Nat
+
+// 引数のある input(関数の解釈)。
+input bias(n: Nat) -> Nat
+
+// 1 を足す。claim `incPositive` / `seeded` が依存する(本体を変えると Sample.Rules の義務の束縛 hash が変わる)。
+fn inc(n: Nat) -> Nat { n + 1 }

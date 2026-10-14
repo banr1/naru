@@ -31,6 +31,7 @@ claim surface の基準になっています。移植ソースの各宣言には
 |---|---|
 | [elan](https://github.com/leanprover/elan) / Lean 4 | `lean-toolchain` の `leanprover/lean4:v4.34.1`(`lake` も同梱)。naru 本体は mathlib に依存しない |
 | verified-consensus(golden test に要る) | mathlib v4.34.1。`third_party/verified-consensus/` の submodule を取得して `lake build DecoupledConsensusModel`(mathlib のビルドを含む。初回は約 1 時間) |
+| mathlib(証明を書くときだけ import する) | `Proofs` が使う mathlib は上の submodule のビルド済みのもの(`lakefile.toml` の path 依存 `third_party/verified-consensus/.lake/packages/…`)なので追加の取得は要らない。ただし Lake のワークスペースはこの path を常に読むので、**`lake build` の前に submodule 側のビルド(上の行。`.lake/packages/` ができる)が要る**。`lake update` は走らせない |
 | エディタ対応(任意) | tree-sitter CLI 0.27 と node 24(`tree-sitter generate`)、rustup の cargo / rustc と `wasm32-wasip2` ターゲット(Zed 拡張のビルド)、Zed 1.23 |
 
 ## クイックスタート
@@ -63,21 +64,22 @@ scenario basic
 | `stdlib/` | Model 用 stdlib(`stdlib/Model`、Lean の `NaruStd`)。生成 Model が import する |
 | `semantics/` | コンパイラ意味論保存(Lean の `NaruSem`): naru の Core IR と Surface AST の独立した意味論と適格性、一般定理、検体、公理監査(関数・input の呼出しを含む宣言群の意味論は `Call.lean` / `SurfaceCall.lean`、呼出しを含む Model の保存と宣言群の意味と実生成定数の一致は `CallDenote.lean`、呼出しを含む spec 式の一般同値は `CallDenoteProp.lean`、Surface / Core の宣言群の意味の対応と実生成 Model / Statements への合成は `SurfaceCallProg.lean`)。`lake build NaruSem` が検査入口(`docs/architecture.md`「コンパイラ意味論保存」) |
 | `specs/` | naru ソース。`specs/consensus/` は verified-consensus の Model と Statements の移植(`Consensus/**`。spec 側は `Consensus/Spec/`)と実行 fixture(`scenarios/`)。`naru.toml` のソースルート |
-| `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`。Model は runtime 宣言を出力するモジュールにつき 1 ファイル、Statements は spec 宣言のあるモジュールにつき 1 ファイル)。機械生成専用で手では編集しない |
+| `generated/` | `naru compile` の決定的な出力(`Model` / `Statements`。Model は runtime 宣言を出力するモジュールにつき 1 ファイル、Statements は spec 宣言のあるモジュールにつき 1 ファイル。証明義務の一覧 `obligations.json` も)。機械生成専用で手では編集しない |
+| `proofs/` | プロトコル証明(Lake ライブラリ `Proofs`)。各義務の theorem と補題(`Proofs.lean` / `Proofs/**`)。書き手の案内は `proofs/README.md` |
 | `tests/` | 受理例 `accept/`、反例 `reject/`、複数ファイルのコンパイル単位の検体 `units/`、設定変更プロジェクト `config_change/`、golden test `golden/`、検査ドライバ `naru_test`(`NaruTest/`) |
 | `docs/` | 文書(下の案内)と、機械生成の依存グラフ `docs/deps/`(`naru deps` の出力。手では編集しない。下の「依存グラフの見方」) |
 | `editors/` | エディタ対応: tree-sitter 文法 `tree-sitter-naru/` と Zed 拡張 `zed-naru/` |
 | `third_party/` | 同梱する外部の参照物。git submodule `verified-consensus/`(基準コミットと約束は `third_party/README.md`) |
 | `.idd/` | Ideal-Driven Development の台帳(`progress.md`)・知見(`knowledge.md`)・周回記録(`cycles/`) |
 
-ルート直下のファイル: `README.md`(この入口)、[IDEAL.md](IDEAL.md)(正本)、`LICENSE`(CC0 1.0)、`naru.toml`(ソースルート・生成先・依存グラフの出力先)、
-`lakefile.toml` / `lake-manifest.json` / `lean-toolchain`(Lake のワークスペース)、`.gitattributes`(linguist の区分)、`.gitmodules`(submodule)。
+ルート直下のファイル: `README.md`(この入口)、[IDEAL.md](IDEAL.md)(正本)、`LICENSE`(CC0 1.0)、`naru.toml`(ソースルート・生成先・依存グラフの出力先・証明ディレクトリ)、
+`lakefile.toml` / `lake-manifest.json` / `lean-toolchain`(Lake のワークスペース。`Proofs` の mathlib は submodule のビルド済みのものへの path 依存)、`.gitattributes`(linguist の区分)、`.gitmodules`(submodule)。
 
 ## 文書
 
 - [docs/language.md](docs/language.md) — 言語リファレンス(字句・宣言・capability・phase・型・式・パターン・stdlib のメソッド表・Set の規則・量化・再帰・scenario / observer)
 - [docs/diagnostics.md](docs/diagnostics.md) — 診断 E001〜E019 の一覧と例
-- [docs/cli.md](docs/cli.md) — `naru compile` / `simulate` / `check-reject` / `lsp` / `deps` と `naru.toml`
+- [docs/cli.md](docs/cli.md) — `naru compile` / `simulate` / `check-reject` / `lsp` / `deps` / `proofs` と `naru.toml`
 - [docs/architecture.md](docs/architecture.md) — パイプライン・Core IR・Model backend・Statements backend・生成物のヘッダと決定性・依存グラフ・コンパイラ意味論保存(`semantics/`)
 - [docs/testing.md](docs/testing.md) — 検査ドライバ `naru_test` の各群と golden test の走らせ方
 - [docs/editors.md](docs/editors.md) — tree-sitter 文法と Zed 拡張、`rev` の付け替えの運び
@@ -93,6 +95,13 @@ scenario basic
 データは [docs/deps/deps.json](docs/deps/deps.json)(import 行ではなく実際の参照に基づく宣言単位・ファイル単位の辺、層、強連結成分、推移簡約、import との差)。
 `docs/deps/` は機械生成で、ソース・コンパイラ・テンプレートを変えたら `lake exe naru deps` で作り直します(`docs/cli.md`「依存グラフ」、`docs/architecture.md`「依存グラフ」)。
 
+## 証明状況の見方
+
+`lake exe naru proofs`(先に `lake exe naru compile`)は、14 件の証明義務(consensus の 13 claims と claim bundle)それぞれの状況 — 証明済み / 未証明(theorem が無い・`sorry`)/ 失効 / 不正 — を
+表示します(`--json` で正規形 JSON)。いまは theorem がまだ無く、14 件とも `missing`(未証明)です。義務の一覧は `generated/obligations.json`(`naru compile` が書く)、
+証明の書き方は [proofs/README.md](proofs/README.md)、判定の定義は [docs/cli.md](docs/cli.md)「証明状況」と [docs/architecture.md](docs/architecture.md)「Proofs」にあります。
+これはプロトコルの保証の層で、コンパイラの意味保存(`lake build NaruSem`)とは別の層です。
+
 ## 検査の走らせ方
 
 ```sh
@@ -103,9 +112,10 @@ lake exe naru_test lsp          # 言語サーバー: 診断・ホバー・定�
 lake exe naru_test statements   # 生成 Statements の import 閉包と claim surface、移植ソースの所在とモジュール名(C8 / C9 / C37)
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
 lake exe naru_test deps         # 依存グラフ `naru deps`: 生成・決定性・手書きの期待 JSON の検体・移植ソースの独立検査・HTML の自己完結・docs/deps/ の鮮度(C63 / C64 / C65 / C66)。約 10 秒
+lake exe naru_test proofs       # 証明基盤: obligations.json・束縛 hash・依存方向・naru proofs の状況・書き手の案内(C68 / C69 / C70 / C72)。約 1 分
 lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface の宣言群の意味の対応から実生成 Model / Statements への合成 `sfn_*` / `sstmt_*`(C55 / C57)も検査)。約 1 分
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
-lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36)。約 13 分
+lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36。`deps` の次に `proofs` 群も走らせる)。約 14 分
 ```
 
 `naru_test golden` は verified-consensus の手書き Model(mathlib)を interpreter で走らせるので、引数なし(FinalityLiveness の horizon 100)で約 9 分かかります。

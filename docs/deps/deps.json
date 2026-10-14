@@ -1,6 +1,6 @@
 {
   "naru-compiler": "0.1.0",
-  "naru-compiler-sha256": "c464698301f7f96f30f3ca261c1b40e8f094fec3592125e12caa80e05ac3df4f",
+  "naru-compiler-sha256": "6075148df41f32c3096f1fceb4589016a1e960cb7dd3cfe659c1e6309e881d2c",
   "sources": [
     { "path": "Consensus/Execution/Node.naru", "sha256": "92e8105860c5c523ae3723418ebaab02a2d6a118b677688cff0306c86697c168" },
     { "path": "Consensus/Execution/Objects.naru", "sha256": "ade1d229605a6e1461df1800a62c97ab5d782990f4e34dc4e508db0ea3c065be" },

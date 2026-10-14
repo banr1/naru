@@ -48,6 +48,17 @@ srcDir = ".lake/naru/simulate"
 name = "NaruSem"
 srcDir = "semantics"
 
+# プロトコル証明(C68〜C71): `proofs/` の各義務の theorem と補題(書き手の案内は `proofs/README.md`)。`naru.toml` の `proofs` が指す証明
+# ディレクトリへの symlink `.lake/naru/proofs-src`(追跡対象外。`naru proofs` が置く)を `srcDir` にするので、Model / Statements と同じく
+# lakefile を手で直さずに Lake が現在の設定の証明ディレクトリを読む。`globs` は `Proofs` とその配下の全モジュール(`Proofs.lean` と
+# `Proofs/**.lean`。ルートが import しないモジュールもビルドする)。import してよいのは生成 Model / Statements・NaruStd・Lean 本体・mathlib だけ
+# (不変条件の依存方向 Model ← Statements ← Proofs。手書きの `DecoupledConsensus*`・NaruSem・コンパイラ・NaruTest は不可)。
+# `lake build Proofs` の前に一度 `lake exe naru proofs` が要る(link はそのとき作られる)。
+[[lean_lib]]
+name = "Proofs"
+srcDir = ".lake/naru/proofs-src"
+globs = ["Proofs.*"]
+
 # 検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)/ `golden`(C10)/ `statements`(C8 / C9)/
 # `repo`(C21 / C23 / C25)/ `regression`(C36。zed-install を除く上の全群と受理例・反例・C34 の意味・C1 / C6 / C7 / C8 / C24 / C26 を
 # 1 コマンドで走らせる非対話の回帰一式)。Lean で書く(前提)。
@@ -60,3 +71,45 @@ srcDir = "tests"
 name = "naru_test"
 root = "NaruTestMain"
 srcDir = "tests"
+
+# mathlib(前提「技術スタック」: v4.34.1。基準コミットの verified-consensus と同じ版)とその依存パッケージ。submodule `third_party/verified-consensus/`
+# のビルド済みの `.lake/packages/` を path 依存で使い回す(複製も取得もしない。ネットワークは要らない)。使うのは `Proofs`(`proofs/`)だけで、
+# 生成 Model / Statements・NaruStd・NaruSem・コンパイラ・`naru_test` の `proofs` 以外の群は mathlib を import しない。
+# mathlib の依存パッケージを mathlib より先に書く(Lake は同名の依存を最初に解決したもので揃える: mathlib の lakefile が git で要求する
+# 同名のパッケージも、この path のものが使われる)。版は submodule の `lake-manifest.json` が固定する。`lake update` は走らせない
+# (mathlib の `post_update` がネットワークのキャッシュ取得を試みる): `lake-manifest.json` は手で同じ path の項目にしてある。
+[[require]]
+name = "batteries"
+path = "third_party/verified-consensus/.lake/packages/batteries"
+
+[[require]]
+name = "Qq"
+path = "third_party/verified-consensus/.lake/packages/Qq"
+
+[[require]]
+name = "aesop"
+path = "third_party/verified-consensus/.lake/packages/aesop"
+
+[[require]]
+name = "proofwidgets"
+path = "third_party/verified-consensus/.lake/packages/proofwidgets"
+
+[[require]]
+name = "Cli"
+path = "third_party/verified-consensus/.lake/packages/Cli"
+
+[[require]]
+name = "importGraph"
+path = "third_party/verified-consensus/.lake/packages/importGraph"
+
+[[require]]
+name = "LeanSearchClient"
+path = "third_party/verified-consensus/.lake/packages/LeanSearchClient"
+
+[[require]]
+name = "plausible"
+path = "third_party/verified-consensus/.lake/packages/plausible"
+
+[[require]]
+name = "mathlib"
+path = "third_party/verified-consensus/.lake/packages/mathlib"

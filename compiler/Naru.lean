@@ -17,3 +17,4 @@ import Naru.Backend.Statements
 import Naru.Lsp
 import Naru.Deps
 import Naru.DepsTemplate
+import Naru.Obligations

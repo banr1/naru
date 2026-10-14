@@ -1,0 +1,7 @@
+// 証明基盤の検体(C69): Sample.Far だけに依存する claim(束縛 hash が Sample.Rules と独立に変わる)。
+module Sample.FarRules
+
+import Sample.Far
+
+// far(n) は n 以上。
+claim farClaim(n: Nat) { far(n) >= n }

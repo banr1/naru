@@ -1,6 +1,6 @@
 # naru CLI と naru.toml
 
-`lake exe naru` のコマンド(`compile` / `simulate` / `check-reject` / `lsp` / `deps`)、コンパイル単位を決める `naru.toml`、言語サーバーの仕様、依存グラフ。
+`lake exe naru` のコマンド(`compile` / `simulate` / `check-reject` / `lsp` / `deps` / `proofs`)、コンパイル単位を決める `naru.toml`、言語サーバーの仕様、依存グラフ、証明状況。
 診断の番号は [diagnostics.md](diagnostics.md)、検査ドライバは [testing.md](testing.md)。
 
 ## naru.toml
@@ -11,11 +11,14 @@
 sources = ["specs/consensus"]
 generated = "generated"
 deps = "docs/deps"
+proofs = "proofs"
 ```
 
 - `sources`: ソースルートのディレクトリの一覧。各ルートの `**/*.naru` 全体を 1 つのコンパイル単位として検査する。
 - `generated`: `naru compile` の出力先(既定 `generated`)。そこには `naru compile` の決定的な出力(`Model` と `Statements`)だけを置く。
 - `deps`: `naru deps` が依存グラフ(`deps.json` と閲覧用 `index.html`)を書く出力先(任意。無ければ `naru deps --out <dir>` が要る。下の「依存グラフ」)。
+- `proofs`: プロトコル証明(Lake ライブラリ `Proofs`)のディレクトリ(任意。このリポジトリでは `proofs`)。`naru proofs` だけが読み、無ければ `naru proofs` は exit 2
+  (`compile` / `simulate` / `lsp` / `deps` は読まない)。下の「証明状況」。
 - `generated` は Lake にも反映される(C24): `naru compile` / `naru simulate` は書き終えた生成先への symlink を `<ルート>/.lake/naru/generated`
   (追跡対象外)に置き、`lakefile.toml` の lean_lib `Model` / `Statements` の `srcDir` はそこを向く。`lake build Model` / `lake build Statements` /
   `naru_simulate` はこの link 経由で現在の設定の生成先を読むので、`generated` を変えても lakefile を手で直さない。`lake build Model` の前に
@@ -33,12 +36,13 @@ deps = "docs/deps"
 
 | コマンド | 意味 |
 |---|---|
-| `compile` | `naru.toml` の各ソースルートを 1 単位として検査し(パス順)、Model と Statements を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean`、`generated/Statements.lean` と `generated/Statements/**.lean` を丸ごと作り直す: 旧パスの生成物や以前の規則の不要なファイルは残らない)。Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけでき、ルートの `Model.lean` / `Statements.lean` は存在するものだけを import する(C38。[architecture.md](architecture.md))。ソースルートが複数のとき、ルートをまたぐ同名のモジュールは全ルートの module を束ねた共通検査が各 `module` 行に E017 を出して exit 1(生成先に触れない)。C1 の検証コマンド |
+| `compile` | `naru.toml` の各ソースルートを 1 単位として検査し(パス順)、Model と Statements を `generated/` に出力する(`generated/Model.lean` と `generated/Model/**.lean`、`generated/Statements.lean` と `generated/Statements/**.lean` を丸ごと作り直す: 旧パスの生成物や以前の規則の不要なファイルは残らない)。Model ファイルは Lean の runtime 宣言を実際に出力するモジュールにだけ、Statements ファイルは spec 宣言のあるモジュールにだけでき、ルートの `Model.lean` / `Statements.lean` は存在するものだけを import する(C38。[architecture.md](architecture.md))。ソースルートが複数のとき、ルートをまたぐ同名のモジュールは全ルートの module を束ねた共通検査が各 `module` 行に E017 を出して exit 1(生成先に触れない)。C1 の検証コマンド。同じ生成先に証明義務の一覧 `obligations.json` も書く(C69。`--out <dir> <files>` なら `<dir>/obligations.json`。[architecture.md](architecture.md)「Proofs」) |
 | `compile [--out <dir>] <files...>` | 指定ファイルを検査する。`--out` があればそこに Model と Statements を出力し、無ければ検査だけ(`checked N module(s)`) |
 | `check-reject <file.naru> <Exxx>` | 反例が `Exxx` で拒否されることを検査(PASS で exit 0) |
 | `lsp` | 標準入出力で言語サーバー(LSP、JSON-RPC 2.0 の `Content-Length` 枠)として動く(C18。`compiler/Naru/Lsp.lean`)。下の「言語サーバー」 |
 | `simulate <specs/consensus/scenarios/basic.naru>` | ソースルート全体を検査して `generated/` を作り直し、そのファイルの scenario を native 実行して observer の値を表示する(C7)。診断があれば exit 1、`naru.toml` のソースルートの外・scenario 無しは exit 2、`lake build naru_simulate` の失敗は exit 1、それ以外は実行ファイルの exit code |
 | `deps [--out <dir>]` | ソースルート全体を `compile` と同じ共通の検査に通してから、依存グラフ(宣言単位・ファイル単位の参照のグラフ)の `deps.json` と閲覧用の単一ファイル `index.html` を `naru.toml` の `deps`(`--out` で上書き)に書く(C63〜C65)。診断があれば exit 1 で何も書かない、出力先が決まらなければ exit 2。下の「依存グラフ」 |
+| `proofs [--json]` | `naru compile` が書いた `obligations.json` の義務ごとに、`naru.toml` の `proofs` の証明の状況(proved / missing / sorry / stale / invalid)を `lake build Statements Proofs` と Lean の検査で判定して表示する(C70)。`invalid` があれば exit 1、`proofs` が無い・`obligations.json` が無いなら exit 2。下の「証明状況」 |
 
 出力の形と `check-reject` の説明は [diagnostics.md](diagnostics.md)。
 
@@ -76,6 +80,59 @@ scenario は定理ではなく実行 fixture(言語の側は [language.md](langu
 - 出力先が有効な生成先(`generated`)かその配下なら exit 2 で拒否する(生成先は `naru compile` のもの)。
 - 追跡対象の `docs/deps/` は機械生成専用で手では編集しない。移植ソース(宣言コメントを含む: 要旨が JSON に入る)・コンパイラ・閲覧用テンプレートを変えたら
   `lake exe naru deps` で再生成する(`naru_test deps` が再生成との一致 — 鮮度 — を検査する。[testing.md](testing.md))。
+
+## 証明状況(`naru proofs`)
+
+`lake exe naru proofs [--json]` は、`naru compile` が書いた証明義務の一覧 `obligations.json` の義務ごとに、プロトコル証明(Lake ライブラリ `Proofs`、`proofs/`)の
+状況を判定して表示する(C70。`compiler/Main.lean` の `runProofs`。義務・束縛 hash・判定の定義は [architecture.md](architecture.md)「Proofs」、書き手の案内は `proofs/README.md`)。
+
+1. 読むもの: cwd の `naru.toml` の `proofs`(無ければ exit 2。ディレクトリが無くても exit 2)と、有効な生成先の `obligations.json`(無ければ exit 2。先に `naru compile`)。
+   一覧の `sources`(相対パスと sha256)を現在のソースルートのファイルと照合し、古ければ(ソースを変えて `naru compile` し直していない)exit 2 で `naru compile` を促す。
+   証明ディレクトリにルート `Proofs.lean` が無ければ exit 2(Lake ライブラリ `Proofs` のルート。何も import しなくてよい)。
+2. Lake が読む link を置く: `.lake/naru/generated` → 有効な生成先、`.lake/naru/proofs-src` → 証明ディレクトリ(どちらも追跡対象外。lean_lib `Proofs` の `srcDir` は後者)。
+   `lake build Proofs` の前に一度 `lake exe naru proofs` が要る。
+3. 証明ディレクトリの `Proofs.lean` と `Proofs/**/*.lean`(Lake ライブラリに入るものだけ)を列挙し、束縛行 `-- naru-obligation: <naru の修飾名> sha256:<束縛 hash(64 桁の 16 進)>`
+   を集める(ファイルのどこにあっても読む。1 ファイルに複数可)。`set_option debug.skipKernelTC`(kernel の検査を飛ばす)を書いた行も探す。
+4. `lake build Statements Proofs`(ホームで)。失敗なら出力を出して exit 1。
+5. 検査ファイル `.lake/naru/proofs/Check.lean`(追跡対象外。`set_option autoImplicit false`)に `import Statements` と証明の全モジュールの import、義務ごとに 4 行を書き、
+   `lake env lean --json` で走らせて行ごとの結果を読む: `example : <義務の型> := sorry`(型が elaboration できることの検査。失敗なら生成先が古いとして exit 1)、
+   `#check @Proofs.<名>`(theorem の存在)、`theorem NaruProofsCheck.obligation<i> : <義務の型> := Proofs.<名>`(型の一致を kernel が検査)、
+   `#print axioms NaruProofsCheck.obligation<i>`(公理監査。検査用の theorem に対して行うので、elaboration が補った coercion の公理も閉包に入る)。
+6. 状況は 5 値で、次の順に判定する: `missing`(未証明: theorem が無い)→ `invalid`(不正: theorem の型が義務の型と違う、または `propext` / `Classical.choice` / `Quot.sound` 以外の
+   公理に依存する。`sorryAx` より先に見るので、`sorry` の下書きが独自の公理を隠さない)→ `sorry`(未証明: `sorryAx` に依存する)→ `stale`(失効: 束縛行が無い、束縛行の hash が
+   現在の一覧と違う、同じ義務の束縛行が食い違う)→ `proved`(証明済み: 上のすべてを通り、束縛行の hash が現在と一致する)。一覧に無い修飾名の束縛行・形の崩れた束縛行・
+   `debug.skipKernelTC` の行も `invalid` として数える(表示では別の行)。失効した証明は Lean で通っていても証明済みにせず、現在の hash を表示して書き手の再束縛に委ねる。
+7. 表示: 1 行目 `naru proofs: <N> obligation(s) in <generated>/obligations.json; proofs in <dir>/ (Lake library Proofs, <M> module(s)); lake build Statements Proofs ok`、
+   義務ごとに 1 行 `<修飾名>  <状況>  <理由>`(2 空白区切り)、一覧に無い束縛行の行、件数の行
+   `proved n / missing n / sorry n / stale n / invalid n (of N obligation(s); k binding line(s) counted as invalid)`、最後に層を示す 1 行
+   `layer: protocol guarantees (the theorems under the proofs directory against the generated Statements). The compiler's semantics preservation (lake build NaruSem / naru_test semantics, C45) is a separate layer and is not reported here.`
+   検体 `tests/proofs/sample/` での表示:
+   ```text
+   Sample.Rules.incPositive  proved  kernel-checked against the obligation; axioms [propext, Quot.sound]; bound to sha256:c770e6ac…
+   Sample.Rules.seeded  sorry  Proofs.Sample.Rules.seeded depends on sorryAx (the proof is a draft)
+   Sample.Rules.biased  stale  binding line proofs/Proofs/Sample.lean:3 has sha256:…b036 but the current hash is …b035 (check the obligation's type and rebind)
+   Sample.Rules.tautology  stale  no binding line `-- naru-obligation: Sample.Rules.tautology sha256:…` in the proof files (current hash …)
+   Sample.Rules.lonely  missing  theorem Proofs.Sample.Rules.lonely is not declared under the proofs directory
+   Sample.Rules.other  invalid  the type of Proofs.Sample.Rules.other is not the obligation's type: Type mismatch
+   Sample.Rules.viaAxiom  invalid  Proofs.Sample.Rules.viaAxiom depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])
+   Sample.Rules.mixed  invalid  Proofs.Sample.Rules.mixed depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])
+   Sample.Rules.nonexistent  invalid  binding line proofs/Proofs/Invalid.lean:5 names an obligation that is not in the current list
+   proved 2 / missing 3 / sorry 1 / stale 2 / invalid 5 (of 12 obligation(s); 1 line(s) counted as invalid)
+   ```
+8. `--json`: 同じ内容を正規形 JSON(`naru deps` の `deps.json` と同じ印字)で標準出力に出す。`obligations`(パス)、`proofs`(パス)、`modules`(証明モジュール名の配列)、`build`(`"ok"`)、
+   `results`(義務ごとに `name` / `kind` / `lean` / `theorem` / `status` / `reason` / `sha256`(現在の hash)/ `bound`(束縛行の hash か null)/ `axioms`)、
+   `invalidBindings`(`file` / `line` / `name` / `sha256` / `reason`)、`counts`(`proved` / `missing` / `sorry` / `stale` / `invalid`)、`layer`。
+9. exit code: `lake build Statements Proofs` の失敗・検査ファイルが走らない(型が elaboration できない等)・`invalid` が 1 件でもあれば 1。`missing` / `sorry` / `stale` だけなら 0
+   (証明が未完了でも実行・シミュレーションを許す)。`proofs` が無い・`obligations.json` が無い・一覧が古い・ルート `Proofs.lean` が無ければ 2。
+   信頼する前提: 証明モジュールが義務の型の意味を変える notation / macro / instance を定義しないこと(検査ファイルは証明モジュールを import した環境で義務の型を読む。
+   `proofs/README.md` の禁止事項)。
+10. 書くのは `.lake/naru/` の link と検査ファイルだけで、生成先と証明ディレクトリには何も書かない。`compile` / `simulate` / `lsp` / `deps` は `proofs/` を読まず、証明の有無・成否で成否も出力も変えない。
+11. 状況の日本語の用語(IDEAL.md「証明状況」): proved = 証明済み、missing = 未証明(theorem が無い)、sorry = 未証明(`sorry` を含む)、stale = 失効、invalid = 不正。
+
+theorem の書き方: 名前は義務の `theorem` フィールド(`Proofs.` + 生成 Statements の宣言名の `Statements.` の後)、型は `type` フィールドの義務の型をそのまま(明示の binder。
+implicit な binder や別の形だと `example : <型> := Proofs.<名>` が通らず `invalid`)、bundle の theorem は構造体の値(`fun inputs => { item1 := …, item2 := … }`)。
+`sorry` を置けば `sorry` と表示される(下書きとして許される)。義務の型が変わった(生成 Statements / Model / stdlib が変わった)ときは束縛 hash が変わって `stale` になるので、
+`obligations.json` の `type` が意図した命題のままか確かめてから束縛行の hash を現在の値に書き換える(再束縛)。
 
 ## 言語サーバー(`naru lsp`)
 

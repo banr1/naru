@@ -1,0 +1,40 @@
+// 証明基盤の検体(C69 / C70): claim と claim bundle の義務。
+module Sample.Rules
+
+import Sample.Base
+
+// n が正。
+predicate Positive(n: Nat) { n > 0 }
+
+// inc(n) は正(正しい証明: proved)。
+claim incPositive(n: Nat) { Positive(inc(n)) }
+
+// inc(seed()) は正(ゼロ引数の input を使い仮引数は無い。sorry の証明: sorry)。
+claim seeded() { Positive(inc(seed())) }
+
+// bias(n) は自分と等しい(引数のある input。束縛 hash を 1 文字変えた証明: stale)。
+claim biased(n: Nat) { bias(n) == bias(n) }
+
+// b か !b(束縛行の無い証明: stale)。
+claim tautology(b: Bool) { b || !b }
+
+// n は自分と等しい(bundle に載らず theorem も無い: missing)。
+claim lonely(n: Nat) { n == n }
+
+// n + 1 は n より大きい(別の義務 lonely の型の theorem を名前だけ合わせた: invalid)。
+claim other(n: Nat) { n + 1 > n }
+
+// n は 0 以上(axiom に依存する証明: invalid)。
+claim viaAxiom(n: Nat) { n >= 0 }
+
+// n * 1 は n(sorry と axiom の両方に依存する証明: sorry より先に invalid)。
+claim mixed(n: Nat) { n * 1 == n }
+
+// n は n 以下(別の義務の型の theorem を coercion で義務の型に見せかける証明: 検査用の theorem の公理監査が coercion の axiom を捕まえて invalid)。
+claim coerced(n: Nat) { n <= n }
+
+// 入れ子にされる bundle(正しい証明: proved)。
+claim bundle Inner { incPositive, biased }
+
+// 入れ子の bundle を項目に持つ bundle(theorem 無し: missing)。
+claim bundle Outer { inner: Inner, tautology }

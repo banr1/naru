@@ -8,6 +8,7 @@ import NaruTest.Statements
 import NaruTest.Repo
 import NaruTest.Semantics
 import NaruTest.Deps
+import NaruTest.Proofs
 
 /-!
 # `naru_test regression` — 非対話の回帰・最終検証の入口(IDEAL.md C36)
@@ -795,9 +796,11 @@ def checkRenameStructure (roots : List System.FilePath) : M Unit := do
     let onlyOld := oldRels.filter (!newRels.contains ·)
     let onlyNew := newRels.filter (!oldRels.contains ·)
     fail s!"C37: generated paths differ: only before {onlyOld.take 5}, only after {onlyNew.take 5}"
+  -- 生成 Lean だけを比べる(`obligations.json`(C69)はソースの sha256・要旨・束縛 hash を含むので改名前とは一致しない。その構造は `naru_test proofs` が見る)
   let mut differ : List String := []
   let mut compared := 0
   for f in oldOut do
+    if !f.endsWith ".lean" then continue
     let rel := normalize (relOf oldGen f)
     let newPath := newGen / rel
     if !(← newPath.pathExists) then continue
@@ -806,7 +809,7 @@ def checkRenameStructure (roots : List System.FilePath) : M Unit := do
     let b := body (← IO.FS.readFile newPath)
     if a != b then differ := differ ++ [rel]
   if compared > 0 && differ.isEmpty then
-    ok s!"C37: {compared} generated files are identical below the 5-line header after substituting {c37OldMod} → {c37NewMod} (imports, declarations, bodies)"
+    ok s!"C37: {compared} generated Lean files are identical below the 5-line header after substituting {c37OldMod} → {c37NewMod} (imports, declarations, bodies; {Naru.Obligations.fileName} is compared structurally by naru_test proofs)"
   else fail s!"C37: generated files differ beyond the module names ({differ.length}): {differ.take 10}"
   -- 宣言数(spec 側のモジュールの Model / Statements)
   let mut nModel := 0
@@ -941,9 +944,10 @@ def checkGeneratedDirChange (generated : System.FilePath) : M Unit := do
   let s3 ← shaSnapshot custom
   if s3 == s2 then ok s!"C38: the repeated regeneration of {custom}/ gives the same {s3.length} paths and sha256"
   else fail s!"C38: the repeated regeneration of {custom}/ differs"
-  let nonLean := (s1.map (·.1)).filter fun f => !f.endsWith ".lean"
+  -- 生成先には `.lean` と義務の一覧 `obligations.json`(C69)だけ
+  let nonLean := (s1.map (·.1)).filter fun f => !f.endsWith ".lean" && (System.FilePath.mk f).fileName != some Naru.Obligations.fileName
   let runners := (← allFiles proj).filter fun f => (System.FilePath.mk f).fileName == some "Simulate.lean"
-  if nonLean.isEmpty && runners.isEmpty then ok s!"C26: no runner / temporary file under {proj}/ (only .lean output)"
+  if nonLean.isEmpty && runners.isEmpty then ok s!"C26: no runner / temporary file under {proj}/ (only .lean output and {Naru.Obligations.fileName})"
   else fail s!"C26: runner / temporary files under the project: {nonLean ++ runners}"
   let runner := root / ".lake" / "naru" / "simulate" / "Simulate.lean"
   if ← runner.pathExists then
@@ -1008,27 +1012,35 @@ def checkDeterminism (roots : List System.FilePath) (generated : System.FilePath
   else
     let differ := (s1.zip s2).filter (fun (a, b) => a != b) |>.map (·.1.1)
     fail s!"C1: sha256 differs across two runs ({differ.length} files): {differ.take 5}"
-  -- ヘッダ
+  -- ヘッダ(Lean はコメント、`obligations.json` は先頭のフィールド: C1 / C69)
   let mut bad : List String := []
   let mut contents : List (String × String) := []
+  let mut nJson := 0
   for (f, _) in s2 do
     let c ← IO.FS.readFile f
     contents := contents ++ [(f, c)]
-    let head := "\n".intercalate ((c.splitOn "\n").take 5)
-    if !(contains head "naru-compiler: " && contains head "naru-stdlib: " && contains head "naru-source: ") then bad := bad ++ [f]
-  if bad.isEmpty then ok s!"C1: all {s2.length} files have naru-compiler / naru-stdlib / naru-source in the first 5 lines"
-  else fail s!"C1: header missing in {bad}"
-  -- ソースのパスはルートからの相対(ルートのディレクトリ名で始まらない)
+    let head := "\n".intercalate ((c.splitOn "\n").take 6)
+    if f.endsWith ".json" then
+      nJson := nJson + 1
+      if !(contains head "\"naru-compiler\": " && contains head "\"naru-stdlib\": " && contains head "\"sources\": [") then bad := bad ++ [f]
+    else if !(contains head "naru-compiler: " && contains head "naru-stdlib: " && contains head "naru-source: ") then bad := bad ++ [f]
+  if bad.isEmpty && nJson == 1 then ok s!"C1: all {s2.length} files have naru-compiler / naru-stdlib / naru-source in the first lines ({s2.length - nJson} Lean headers, {nJson} JSON: {Naru.Obligations.fileName} with the 3 values as its first fields)"
+  else fail s!"C1: header missing in {bad} ({nJson} JSON file(s), expected exactly 1: {Naru.Obligations.fileName})"
+  -- ソースのパスはルートからの相対(ルートのディレクトリ名で始まらない)。JSON は `{ "path": "<相対パス>", "sha256": "…" }` の行
   let mut rooted : List String := []
   for (f, c) in contents do
     for l in c.splitOn "\n" do
-      if l.startsWith "-- naru-source: " then
-        let p := (l.drop "-- naru-source: ".length).toString
+      let p : Option String :=
+        if l.startsWith "-- naru-source: " then some (l.drop "-- naru-source: ".length).toString
+        else if l.trimAscii.toString.startsWith "{ \"path\": \"" then some ((l.trimAscii.toString.drop "{ \"path\": \"".length).toString)
+        else none
+      if let some p := p then
         if roots.any fun r => p.startsWith (prefixOf r) then rooted := rooted ++ [f]
-  if rooted.isEmpty then ok s!"C1: no naru-source path starts with a source root ({", ".intercalate (roots.map prefixOf)})"
+  if rooted.isEmpty then ok s!"C1: no naru-source path (Lean header or JSON `sources` entry) starts with a source root ({", ".intercalate (roots.map prefixOf)})"
   else fail s!"C1: naru-source paths start with the source root in {rooted}"
-  -- 各ソースの sha256 がヘッダにある
-  let all := "\n".intercalate (contents.map (·.2))
+  -- 各ソースの sha256 がヘッダにある(Lean のヘッダと `obligations.json` の `sources` の両方)
+  let leanAll := "\n".intercalate (contents.filterMap fun (f, c) => if f.endsWith ".lean" then some c else none)
+  let jsonAll := "\n".intercalate (contents.filterMap fun (f, c) => if f.endsWith ".json" then some c else none)
   let mut nSrc := 0
   let mut missing : List String := []
   for r in roots do
@@ -1036,9 +1048,10 @@ def checkDeterminism (roots : List System.FilePath) (generated : System.FilePath
       nSrc := nSrc + 1
       let rel := if f.startsWith (prefixOf r) then (f.drop (prefixOf r).length).toString else f
       let h := Naru.sha256Hex (← IO.FS.readBinFile f)
-      if !(contains all s!"naru-source: {rel} sha256:{h}") then missing := missing ++ [f]
+      if !(contains leanAll s!"naru-source: {rel} sha256:{h}") then missing := missing ++ [f]
+      if !(contains jsonAll s!"\{ \"path\": \"{rel}\", \"sha256\": \"{h}\" }") then missing := missing ++ [s!"{f} (JSON)"]
   if nSrc == 0 then fail "C1: no sources under the source roots"
-  else if missing.isEmpty then ok s!"C1: {nSrc} sources, each `naru-source: <root-relative path> sha256:<hash>` appears in the generated headers"
+  else if missing.isEmpty then ok s!"C1: {nSrc} sources, each `naru-source: <root-relative path> sha256:<hash>` appears in the generated Lean headers and as a `sources` entry of {Naru.Obligations.fileName}"
   else fail s!"C1: source hash not found in the headers for {missing}"
 
 /-- 6. C6 / C8 のビルドと grep、statements 群。 -/
@@ -1215,6 +1228,8 @@ def checks : M Unit := do
   subgroup "naru_test lsp (C18)" NaruTest.Lsp.run
   heading "dependency graph"
   subgroup "naru_test deps (C63 / C64 / C65 / C66)" NaruTest.Deps.run
+  heading "proof obligations and proof status"
+  subgroup "naru_test proofs (C68 / C69 / C70 / C72)" NaruTest.Proofs.run
   heading "golden rehearsal"
   subgroup "naru_test golden --finality-horizon 40 (rehearsal, not the C10 evidence)" (NaruTest.Golden.run 40)
   heading "C10 comparator regression"

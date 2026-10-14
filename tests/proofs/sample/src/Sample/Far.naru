@@ -1,0 +1,8 @@
+// 証明基盤の検体(C69): Sample.Rules の import 閉包の外にあるモジュール(claim は無く、predicate だけ: 義務 0 件)。
+module Sample.Far
+
+// 2 倍。claim `farClaim`(Sample.FarRules)だけが依存する(本体を変えても Sample.Rules の義務の束縛 hash は変わらない)。
+fn far(n: Nat) -> Nat { n * 2 }
+
+// far(n) が m に等しい。
+predicate Doubled(n: Nat, m: Nat) { far(n) == m }

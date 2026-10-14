@@ -1,0 +1,6 @@
+// 証明基盤の検体(C69): claim の無い単位(fn と predicate だけ)。
+module Only
+
+fn twice(n: Nat) -> Nat { n * 2 }
+
+predicate Big(n: Nat) { twice(n) > 10 }

@@ -1,0 +1,145 @@
+{
+  "obligations": "generated/obligations.json",
+  "proofs": "proofs",
+  "modules": ["Proofs", "Proofs.Invalid", "Proofs.Sample"],
+  "build": "ok",
+  "results": [
+    {
+      "name": "Sample.FarRules.farClaim",
+      "kind": "claim",
+      "lean": "Statements.Sample.FarRules.farClaim",
+      "theorem": "Proofs.Sample.FarRules.farClaim",
+      "status": "missing",
+      "reason": "theorem Proofs.Sample.FarRules.farClaim is not declared under the proofs directory",
+      "sha256": "3db214b0245372ad9af52d796f5b0929ecfe1753307edf4ebb7a704eeea696d3",
+      "bound": null,
+      "axioms": []
+    },
+    {
+      "name": "Sample.Rules.incPositive",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.incPositive",
+      "theorem": "Proofs.Sample.Rules.incPositive",
+      "status": "proved",
+      "reason": "kernel-checked against the obligation; axioms [propext, Quot.sound]; bound to sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["propext", "Quot.sound"]
+    },
+    {
+      "name": "Sample.Rules.seeded",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.seeded",
+      "theorem": "Proofs.Sample.Rules.seeded",
+      "status": "sorry",
+      "reason": "Proofs.Sample.Rules.seeded depends on sorryAx (the proof is a draft)",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["sorryAx"]
+    },
+    {
+      "name": "Sample.Rules.biased",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.biased",
+      "theorem": "Proofs.Sample.Rules.biased",
+      "status": "stale",
+      "reason": "binding line proofs/Proofs/Sample.lean:3 has sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5988 but the current hash is 7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987 (check the obligation's type and rebind)",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5988",
+      "axioms": []
+    },
+    {
+      "name": "Sample.Rules.tautology",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.tautology",
+      "theorem": "Proofs.Sample.Rules.tautology",
+      "status": "stale",
+      "reason": "no binding line `-- naru-obligation: Sample.Rules.tautology sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987` in the proof files (current hash 7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987)",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": null,
+      "axioms": ["propext"]
+    },
+    {
+      "name": "Sample.Rules.lonely",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.lonely",
+      "theorem": "Proofs.Sample.Rules.lonely",
+      "status": "missing",
+      "reason": "theorem Proofs.Sample.Rules.lonely is not declared under the proofs directory",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": null,
+      "axioms": []
+    },
+    {
+      "name": "Sample.Rules.other",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.other",
+      "theorem": "Proofs.Sample.Rules.other",
+      "status": "invalid",
+      "reason": "the type of Proofs.Sample.Rules.other is not the obligation's type: Type mismatch",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": []
+    },
+    {
+      "name": "Sample.Rules.viaAxiom",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.viaAxiom",
+      "theorem": "Proofs.Sample.Rules.viaAxiom",
+      "status": "invalid",
+      "reason": "Proofs.Sample.Rules.viaAxiom depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["Proofs.Sample.Rules.assumed"]
+    },
+    {
+      "name": "Sample.Rules.mixed",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.mixed",
+      "theorem": "Proofs.Sample.Rules.mixed",
+      "status": "invalid",
+      "reason": "Proofs.Sample.Rules.mixed depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["sorryAx", "Proofs.Sample.Rules.assumed"]
+    },
+    {
+      "name": "Sample.Rules.coerced",
+      "kind": "claim",
+      "lean": "Statements.Sample.Rules.coerced",
+      "theorem": "Proofs.Sample.Rules.coerced",
+      "status": "invalid",
+      "reason": "Proofs.Sample.Rules.coerced depends on axiom(s) [Proofs.Sample.Rules.coerce] (allowed: [propext, Classical.choice, Quot.sound])",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["Proofs.Sample.Rules.coerce"]
+    },
+    {
+      "name": "Sample.Rules.Inner",
+      "kind": "claim bundle",
+      "lean": "Statements.Sample.Rules.Inner",
+      "theorem": "Proofs.Sample.Rules.Inner",
+      "status": "proved",
+      "reason": "kernel-checked against the obligation; axioms [propext, Quot.sound]; bound to sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "axioms": ["propext", "Quot.sound"]
+    },
+    {
+      "name": "Sample.Rules.Outer",
+      "kind": "claim bundle",
+      "lean": "Statements.Sample.Rules.Outer",
+      "theorem": "Proofs.Sample.Rules.Outer",
+      "status": "missing",
+      "reason": "theorem Proofs.Sample.Rules.Outer is not declared under the proofs directory",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "bound": null,
+      "axioms": []
+    }
+  ],
+  "invalidBindings": [
+    { "file": "proofs/Proofs/Invalid.lean", "line": 5, "name": "Sample.Rules.nonexistent", "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987", "reason": "the binding line names an obligation that is not in the current list" }
+  ],
+  "counts": { "proved": 2, "missing": 3, "sorry": 1, "stale": 2, "invalid": 5 },
+  "layer": "protocol guarantees (the theorems under the proofs directory against the generated Statements). The compiler's semantics preservation (lake build NaruSem / naru_test semantics, C45) is a separate layer and is not reported here."
+}

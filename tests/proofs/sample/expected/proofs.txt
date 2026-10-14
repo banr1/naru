@@ -1,0 +1,16 @@
+naru proofs: 12 obligation(s) in generated/obligations.json; proofs in proofs/ (Lake library Proofs, 3 module(s)); lake build Statements Proofs ok
+Sample.FarRules.farClaim  missing  theorem Proofs.Sample.FarRules.farClaim is not declared under the proofs directory
+Sample.Rules.incPositive  proved  kernel-checked against the obligation; axioms [propext, Quot.sound]; bound to sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987
+Sample.Rules.seeded  sorry  Proofs.Sample.Rules.seeded depends on sorryAx (the proof is a draft)
+Sample.Rules.biased  stale  binding line proofs/Proofs/Sample.lean:3 has sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5988 but the current hash is 7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987 (check the obligation's type and rebind)
+Sample.Rules.tautology  stale  no binding line `-- naru-obligation: Sample.Rules.tautology sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987` in the proof files (current hash 7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987)
+Sample.Rules.lonely  missing  theorem Proofs.Sample.Rules.lonely is not declared under the proofs directory
+Sample.Rules.other  invalid  the type of Proofs.Sample.Rules.other is not the obligation's type: Type mismatch
+Sample.Rules.viaAxiom  invalid  Proofs.Sample.Rules.viaAxiom depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])
+Sample.Rules.mixed  invalid  Proofs.Sample.Rules.mixed depends on axiom(s) [Proofs.Sample.Rules.assumed] (allowed: [propext, Classical.choice, Quot.sound])
+Sample.Rules.coerced  invalid  Proofs.Sample.Rules.coerced depends on axiom(s) [Proofs.Sample.Rules.coerce] (allowed: [propext, Classical.choice, Quot.sound])
+Sample.Rules.Inner  proved  kernel-checked against the obligation; axioms [propext, Quot.sound]; bound to sha256:7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987
+Sample.Rules.Outer  missing  theorem Proofs.Sample.Rules.Outer is not declared under the proofs directory
+Sample.Rules.nonexistent  invalid  binding line proofs/Proofs/Invalid.lean:5 names an obligation that is not in the current list
+proved 2 / missing 3 / sorry 1 / stale 2 / invalid 5 (of 12 obligation(s); 1 line(s) counted as invalid)
+layer: protocol guarantees (the theorems under the proofs directory against the generated Statements). The compiler's semantics preservation (lake build NaruSem / naru_test semantics, C45) is a separate layer and is not reported here.

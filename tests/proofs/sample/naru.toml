@@ -1,0 +1,13 @@
+# 証明基盤の検体プロジェクト(C68 / C69 / C70)。`naru_test proofs` がこのディレクトリの複製を cwd にして `<ルート>/.lake/build/bin/naru compile` →
+# `naru proofs [--json]` を走らせ、`generated/obligations.json` が手で書いた `expected/obligations.json`(`naru-compiler-sha256` と `naru-stdlib-sha256` の値だけ
+# 実際の値に置き換える)と byte 単位で一致し、`naru proofs` の表示と `--json` が `expected/proofs.txt` / `expected/proofs.json` と一致することを確かめる。
+# 検体に含むもの: 入れ子の bundle(`Outer` の項目 `inner: Inner`)、input を使う claim(ゼロ引数の `seed`、引数ありの `bias`)、仮引数の無い claim(`seeded`)、
+# bundle に載らない claim(`lonely` / `other` / `viaAxiom` / `farClaim`)、claim の無いモジュール(`Sample.Far`: predicate だけ)。
+# `proofs/` の証明の検体: 正しい証明(`incPositive` / `Inner`)、`sorry` の証明(`seeded`)、theorem の無い義務(`lonely` / `Outer` / `farClaim`)、
+# 束縛 hash を 1 文字変えた証明(`biased`)、束縛行の無い証明(`tautology`)、別の義務の証明を名前だけ合わせた theorem(`other`)、`axiom` に依存する証明(`viaAxiom`)、
+# `sorry` と `axiom` の両方に依存する証明(`mixed`: sorry より先に invalid)、別の型の theorem を `axiom` で作った coercion で見せかける証明(`coerced`)、
+# 一覧に無い修飾名の束縛行(`Sample.Rules.nonexistent`)。不正の検体は `proofs/Proofs/Invalid.lean` にまとめてある(それを除いた複製では exit 0)。
+# ソースを 1 文字でも変えたら束縛 hash が変わるので、`proofs/` の束縛行と `expected/` を取り直す(`docs/testing.md`)。
+sources = ["src"]
+generated = "generated"
+proofs = "proofs"

@@ -1,0 +1,3 @@
+# 証明基盤の検体(C69): claim の無い単位。`naru compile` は義務 0 件の `generated/obligations.json` を書く。
+sources = ["src"]
+generated = "generated"

@@ -1,0 +1,146 @@
+{
+  "naru-compiler": "0.1.0",
+  "naru-compiler-sha256": "{{compiler-sha256}}",
+  "naru-stdlib": "0.1.0",
+  "naru-stdlib-sha256": "{{stdlib-sha256}}",
+  "sources": [
+    { "path": "Sample/Base.naru", "sha256": "929360eeba3b0df48455c4e69faed481c2c2a28029e218a0eb2302552cc1dea8" },
+    { "path": "Sample/Far.naru", "sha256": "f7121334d2b3d848f0f8f2f9e62a15ab83311e8e8af4fd8cef5df9f5217f007a" },
+    { "path": "Sample/FarRules.naru", "sha256": "b2047d11e303ca7adf7ddfd61c3e94d98ca56695de99161190a86ff9e2152098" },
+    { "path": "Sample/Rules.naru", "sha256": "56a78183390c71bff5dc3b74fd99e00ff7d8e8e3b496590b22a04a152fea14b7" }
+  ],
+  "obligations": [
+    {
+      "name": "Sample.FarRules.farClaim",
+      "kind": "claim",
+      "module": "Sample.FarRules",
+      "lean": "Statements.Sample.FarRules.farClaim",
+      "theorem": "Proofs.Sample.FarRules.farClaim",
+      "type": "∀ («n» : Nat), Statements.Sample.FarRules.farClaim «n»",
+      "sha256": "3db214b0245372ad9af52d796f5b0929ecfe1753307edf4ebb7a704eeea696d3",
+      "summary": "far(n) は n 以上。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.incPositive",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.incPositive",
+      "theorem": "Proofs.Sample.Rules.incPositive",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.incPositive «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "inc(n) は正(正しい証明: proved)。",
+      "bundles": ["Sample.Rules.Inner"]
+    },
+    {
+      "name": "Sample.Rules.seeded",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.seeded",
+      "theorem": "Proofs.Sample.Rules.seeded",
+      "type": "∀ (seed' : Nat), Statements.Sample.Rules.seeded seed'",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "inc(seed()) は正(ゼロ引数の input を使い仮引数は無い。sorry の証明: sorry)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.biased",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.biased",
+      "theorem": "Proofs.Sample.Rules.biased",
+      "type": "∀ (bias' : (Nat → Nat)) («n» : Nat), Statements.Sample.Rules.biased bias' «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "bias(n) は自分と等しい(引数のある input。束縛 hash を 1 文字変えた証明: stale)。",
+      "bundles": ["Sample.Rules.Inner"]
+    },
+    {
+      "name": "Sample.Rules.tautology",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.tautology",
+      "theorem": "Proofs.Sample.Rules.tautology",
+      "type": "∀ («b» : Bool), Statements.Sample.Rules.tautology «b»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "b か !b(束縛行の無い証明: stale)。",
+      "bundles": ["Sample.Rules.Outer"]
+    },
+    {
+      "name": "Sample.Rules.lonely",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.lonely",
+      "theorem": "Proofs.Sample.Rules.lonely",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.lonely «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "n は自分と等しい(bundle に載らず theorem も無い: missing)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.other",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.other",
+      "theorem": "Proofs.Sample.Rules.other",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.other «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "n + 1 は n より大きい(別の義務 lonely の型の theorem を名前だけ合わせた: invalid)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.viaAxiom",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.viaAxiom",
+      "theorem": "Proofs.Sample.Rules.viaAxiom",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.viaAxiom «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "n は 0 以上(axiom に依存する証明: invalid)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.mixed",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.mixed",
+      "theorem": "Proofs.Sample.Rules.mixed",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.mixed «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "n * 1 は n(sorry と axiom の両方に依存する証明: sorry より先に invalid)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.coerced",
+      "kind": "claim",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.coerced",
+      "theorem": "Proofs.Sample.Rules.coerced",
+      "type": "∀ («n» : Nat), Statements.Sample.Rules.coerced «n»",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "n は n 以下(別の義務の型の theorem を coercion で義務の型に見せかける証明: 検査用の theorem の公理監査が coercion の axiom を捕まえて invalid)。",
+      "bundles": []
+    },
+    {
+      "name": "Sample.Rules.Inner",
+      "kind": "claim bundle",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.Inner",
+      "theorem": "Proofs.Sample.Rules.Inner",
+      "type": "∀ (bias' : (Nat → Nat)), Statements.Sample.Rules.Inner bias'",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "入れ子にされる bundle(正しい証明: proved)。",
+      "bundles": ["Sample.Rules.Outer"]
+    },
+    {
+      "name": "Sample.Rules.Outer",
+      "kind": "claim bundle",
+      "module": "Sample.Rules",
+      "lean": "Statements.Sample.Rules.Outer",
+      "theorem": "Proofs.Sample.Rules.Outer",
+      "type": "∀ (bias' : (Nat → Nat)), Statements.Sample.Rules.Outer bias'",
+      "sha256": "7746fce82fede706f6e234924728b534e03aecadd60a3ef6d44c405e235c5987",
+      "summary": "入れ子の bundle を項目に持つ bundle(theorem 無し: missing)。",
+      "bundles": []
+    }
+  ]
+}
