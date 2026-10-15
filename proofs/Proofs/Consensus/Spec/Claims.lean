@@ -36,6 +36,7 @@ import Proofs.Consensus.ProposerFinality
 import Proofs.Consensus.ReceiverFinality
 import Proofs.Consensus.BlockSynchrony
 import Proofs.Consensus.ProposerReceipt
+import Proofs.Consensus.ProposerRoot
 import Mathlib.Tactic
 
 /-!
@@ -191,6 +192,11 @@ honest な受信者に発行より後、時刻 `d` 以下に配送され、時�
 残りの務めは tree を保存するので tick の後の tree にある `tick_block_mem` / `nodeTick_block_mem`。発行の tick の直後と、発行の時刻より後の時刻の読みの提案者の tree にある
 `emits_block_mem_self` / `emits_block_mem_stateBeforeTime_self`。したがって締切の読みの FG root がブロックの祖先なら、`w ≠ v` の仮定なしにすべての honest な受信者の
 締切の読みの tree にある `partialSynchrony_emitted_block_mem_honest`。残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
+周回 157 の足場: `ProposerRoot.lean`(filtered tree は `preceq fgRoot` で絞るので、anchor と head は前提なしに FG root を延ばす `getHeadWith_extends_fgRoot`。
+提案されたブロックは提案を作った store の FG root を延ばし `proposalWith_extends_fgRoot`、時計合わせは FG root を変えないので、発行されたブロックは発行の tick の直前の
+提案者の FG root を延ばす `emits_block_extends_fgRoot`。したがって締切の読みの受信者の FG root が提案者の FG root の祖先なら締切の読みの tree にある
+`partialSynchrony_emitted_block_mem_of_fgRoot`、受信者の FG root がブロックの親(提案者の head)の祖先なら同じく tree にある `partialSynchrony_emitted_block_mem_of_parent`。
+残りは honest な読みの FG root を、提案の親の祖先である共通の上界で抑えること)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
