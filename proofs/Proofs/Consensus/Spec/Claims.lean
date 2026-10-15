@@ -38,6 +38,7 @@ import Proofs.Consensus.BlockSynchrony
 import Proofs.Consensus.ProposerReceipt
 import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.JustifiedCarrier
+import Proofs.Consensus.FinalizedSource
 import Mathlib.Tactic
 
 /-!
@@ -203,6 +204,10 @@ honest な受信者に発行より後、時刻 `d` 以下に配送され、時�
 FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `fgRoot_source`、したがって tree にある bodies の消去の祖先 `fgRoot_preceq_body`
 (`stateBefore` / `storeAt` / `stateBeforeTime` の版)。手書き `HealingSurface.fgRoot_justificationSource_at_read` の 2 つの分岐の手前
 (`f` の分岐を justified な祖先の `J` に言い換えない版)で、共通の上界への最初の層)。
+周回 159 の足場: `FinalizedSource.lean`(`foldRows` は `(j, hJ, f, hF)` を変えず、`processHeightEvents` が `(f, hF)` を書くのは finality の分岐の `f := j`、`hF := hJ` だけなので、
+子の導出の `(f, hF)` は親の導出の `(j, hJ)` か `(f, hF)` `deriveNamed_f_node`。どの `C` にも導出の `(j, hJ)` が `C` の導出の `(f, hF)` に等しい名前付きの祖先がある
+`finalized_justificationAncestor`。bodies は祖先について閉じるので、FG root は常に bodies のどれかの導出の `j` `fgRoot_justified`(run のどの読みでも前提なし
+`stateBefore_fgRoot_justified` / `storeAt_fgRoot_justified` / `stateBeforeTime_fgRoot_justified`)。手書き `HealingSurface.fgRoot_justificationSource_at_read` の形)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
