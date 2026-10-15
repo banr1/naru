@@ -218,6 +218,10 @@ FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `f
 周回 161 の足場: `JustificationCertificate.lean` に、処理の event の添字を追う `bodies_processed_before` と、添字 `idxLt time` より前の event の時刻は `time` より前
 `time_lt_of_lt_idxLt` を足し、時刻 `< time` の読みの FG root の honest な署名者の処理の時刻 `t` と発行の時刻 `t2` がどちらも `time` より前
 `stateBeforeTime_fgRoot_honestEmission_lt`(手書きの `ta < time`)。
+周回 162 の足場: `JustificationCertificate.lean` に、faulty の重みが、要素がみな `H` にある集合の重みより小さければ定足数に `H` の署名者がいる
+`exists_honest_of_quorum_majority`(手書き `HonestWeightMajority.exists_honest_member_of_quorum`。手書きの faulty は `univ \ H`、ここは `validators \ H`)を足し、
+regime の重みの多数から `QuorumHonest` を出した: `quorumHonest_of_windowMajority` / `_freshMajority` / `_bftRegime` / `_sleepyRegime`(窓の条件を満たす時刻があれば)/
+`_outageRegime`(honest の整列を前提に。`RunDomain` から `sorted_honest` で出せる)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

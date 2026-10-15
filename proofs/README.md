@@ -387,7 +387,9 @@ checkpoint の witness に結ぶ(同じファイルの `fgRoot_confirmationWitne
 `tp_rows` と同じく flag を見ない)。定足数は重み `⌊(2W + 2) / 3⌋` 以上なので、faulty(`validators \ H`)の重み `w` が `3 · w < W`(`BelowOneThird`)なら `H` の署名者がいる
 `exists_honest_of_quorum`(署名者がどれも `H` に無ければ、重みが 0 でない署名者は `validators \ H` にあるので `weightOf_le_diff`)。store と run の版の前提は
 「どの定足数にも `H` の署名者がいる」`QuorumHonest` で、`BelowOneThird` からは `quorumHonest_of_belowOneThird`(手書きは `HonestWeightMajority`(faulty の重み < honest の重み)から
-`exists_honest_member_of_quorum` で取る。その重みの形から `QuorumHonest` を出すのは残り。`SleepyRegime` には `BelowOneThird` が無い)。store の FG root は genesis か、bodies の `D` の導出の `j` で、
+`exists_honest_member_of_quorum` で取る。`SleepyRegime` には `BelowOneThird` が無い。周回 162 で、faulty の重みが要素がみな `H` にある集合の重みより小さければ
+定足数に `H` の署名者がいる `exists_honest_of_quorum_majority` を足し、`WindowMajority` / `FreshMajority` から `quorumHonest_of_windowMajority` / `_freshMajority`、
+regime から `quorumHonest_of_bftRegime` / `_sleepyRegime`(窓の条件を満たす時刻があれば)/ `_outageRegime`(honest の整列を前提に。`RunDomain` から `sorted_honest` で出せる)を出した)。store の FG root は genesis か、bodies の `D` の導出の `j` で、
 bodies にある `D` の祖先の行に honest な署名者の `matchesEntry heightPair hJ (root FG root)` のものがある `fgRoot_honestRow`。run では、その祖先は読みの主が処理した(`Processes`)ブロックで
 (`Attribution.bodies_processed`)、`UnforgeableSignatures` の carried の半分から、署名者は処理の時刻以前にその行を出した(`Emits`)`stateBefore_fgRoot_honestEmission` /
 `stateBeforeTime_fgRoot_honestEmission`(`EventsSorted`)。手書き `processedJustification_confirmationWitness` の前半。周回 161 で、処理の event の添字を追う

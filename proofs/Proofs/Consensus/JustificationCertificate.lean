@@ -1,6 +1,7 @@
 import Proofs.Consensus.FinalizedSource
 import Proofs.Consensus.ReceiverFinality
 import Proofs.Consensus.Weights
+import Statements.Consensus.Spec.Regimes
 import Mathlib.Tactic
 
 /-!
@@ -16,7 +17,9 @@ justification の証明書を取り出し、faulty の重みが総重みの 1/3 
   (flag を見ない。`Derivation.Inv.tp_rows` と同じ)。
 - 手書きは honest な署名者を `HonestWeightMajority`(faulty の重み < honest の重み)から取る。ここでは前提を
   「どの定足数にも `H` の署名者がいる」`QuorumHonest` にして、`BelowOneThird` から出す版を系にする
-  (`quorumHonest_of_belowOneThird`。`HonestWeightMajority` に当たる重みの形から出す版は残り)。
+  (`quorumHonest_of_belowOneThird`)。`HonestWeightMajority` に当たる重みの形(faulty の重み < 要素がみな `H` にある集合の重み)から
+  出す版は `exists_honest_of_quorum_majority` で、regime の `WindowMajority` / `FreshMajority` から `QuorumHonest` を出す
+  (`quorumHonest_of_windowMajority` / `_freshMajority` / `_bftRegime` / `_sleepyRegime` / `_outageRegime`。周回 162 で足した)。
 - 手書きの発行の時刻 `ta < time` は、処理の event の添字を `bodies_processed_before` で追い、添字 `idxLt time` より前の event の
   時刻は `time` より前(`time_lt_of_lt_idxLt`)なので、処理の時刻 `t < time` と発行の時刻 `t2 ≤ t` から出す
   (`stateBeforeTime_fgRoot_honestEmission_lt`。周回 161 で足した)。
@@ -124,6 +127,107 @@ theorem justification_honestRow (e : ProtocolEnv) (cfg : HeightConfig) {H : VSet
     obtain ⟨i, hiQ, hiH⟩ := hqh Q hQs hQq
     obtain ⟨row, ⟨X, hX, hrow⟩, hvi, hm⟩ := hrows i hiQ
     exact Or.inr ⟨X, row, hX, hrow, hvi ▸ hiH, hm⟩
+
+/-! ## regime の重みの多数から `QuorumHonest`(周回 162) -/
+
+/-- 要素がみな `H` にある集合の重みは、`validators \ H` の重みと足しても総重みを超えない(2 つは交わらない)。 -/
+theorem weightOf_diff_add_le {e : Electorate} (hv : Sorted (validators e)) {H A : VSet} (hA : Sorted A)
+    (hAH : ∀ x ∈ A.elems, x ∈ H.elems) :
+    weightOf e ((validators e).diff H) + weightOf e A ≤ totalWeight e := by
+  have hd : Sorted ((validators e).diff H) := hv.filter _
+  have h1 := weightOf_union_add_inter (e := e) hd hA
+  have h2 := weightOf_le_totalWeight hv (hd.union A)
+  have h3 : weightOf e (((validators e).diff H).inter A) = 0 := by
+    rw [weightOf_eq (hd.inter A)]
+    apply Finset.sum_eq_zero
+    intro v hvi
+    rw [toFinset_inter, Finset.mem_inter, List.mem_toFinset, List.mem_toFinset] at hvi
+    obtain ⟨hvd, hvA⟩ := hvi
+    have hvd' : v ∈ (validators e).elems.filter (fun x => !H.contains x) := hvd
+    rw [List.mem_filter] at hvd'
+    have hc : H.contains v = true := (contains_iff_mem vid_eq H v).mpr (hAH v hvA)
+    simp [hc] at hvd'
+  omega
+
+/-- 部分集合の重みは小さい。 -/
+theorem weightOf_le_of_sub {e : Electorate} {A B : VSet} (hA : Sorted A) (hB : Sorted B)
+    (hAB : ∀ x ∈ A.elems, x ∈ B.elems) : weightOf e A ≤ weightOf e B := by
+  rw [weightOf_eq hA, weightOf_eq hB]
+  apply Finset.sum_le_sum_of_subset
+  intro x hx
+  rw [List.mem_toFinset] at hx ⊢
+  exact hAB x hx
+
+/-- 定足数には、`validators \ H` の重みが、要素がみな `H` にある集合 `A` の重みより小さければ `H` の署名者がいる。
+手書き `HonestWeightMajority.exists_honest_member_of_quorum`(前提は faulty の重み < honest の重み)に当たる(`A = H` で手書きの形。
+手書きの faulty は `univ \ H` で、ここは `validators \ H`。重み 0 の validator でない要素の扱いだけが違う)。 -/
+theorem exists_honest_of_quorum_majority {e : Electorate} (hv : Sorted (validators e)) {Q H A : VSet} (hQ : Sorted Q)
+    (hA : Sorted A) (hAH : ∀ x ∈ A.elems, x ∈ H.elems) (hq : quorumCheck e Q = true)
+    (hlt : weightOf e ((validators e).diff H) < weightOf e A) : ∃ i ∈ Q.elems, i ∈ H.elems := by
+  by_contra hno
+  have hle := weightOf_le_diff hv hQ (fun i hi hH => hno ⟨i, hi, hH⟩)
+  have hsum := weightOf_diff_add_le hv hA hAH
+  unfold quorumCheck finalityThreshold at hq
+  rw [decide_eq_true_iff] at hq
+  omega
+
+/-- `WindowMajority`(窓の中で起きていた honest の重み > faulty の重み)なら `QuorumHonest`。 -/
+theorem quorumHonest_of_windowMajority {a : ValidatorId → Nat → Bool} {s : Model.Consensus.Execution.Setup.Setup}
+    {H : VSet} {window t : Int} (hv : Sorted (validators s.e.electorate)) (hw : WindowMajority a s H window t) :
+    QuorumHonest s.e H := by
+  obtain ⟨members, hex, hlt⟩ := hw
+  intro Q hQ hq
+  refine exists_honest_of_quorum_majority hv hQ (Sorted.toSet members) (fun x hx => ?_) hq hlt
+  exact (contains_iff_mem vid_eq H x).mp ((hex x).mp ((contains_iff_mem vid_eq _ x).mpr hx)).1
+
+/-- `FreshMajority`(faulty と窓の中で起きていて新しくないものの和の重み < 新しく起きている honest の重み)なら
+`QuorumHonest`。新しく起きている集合は `H` の絞り込みなので、`H` の整列を前提に置く。 -/
+theorem quorumHonest_of_freshMajority {a : ValidatorId → Nat → Bool} {s : Model.Consensus.Execution.Setup.Setup}
+    {H : VSet} {t : Int} (hv : Sorted (validators s.e.electorate)) (hH : Sorted H) (hf : FreshMajority a s H t) :
+    QuorumHonest s.e H := by
+  obtain ⟨members, -, hlt⟩ := hf
+  intro Q hQ hq
+  have hd : Sorted ((validators s.e.electorate).diff H) := hv.filter _
+  have hfresh : Sorted (Model.Consensus.Spec.Conditions.awakeAt a s H (t - Model.Consensus.Spec.Constants.participationLag s)) :=
+    hH.filter _
+  refine exists_honest_of_quorum_majority hv hQ hfresh (fun x hx => (List.mem_filter.mp hx).1) hq
+    (lt_of_le_of_lt (weightOf_le_of_sub hd (hd.union _) (fun x hx => (mem_union_iff vid_eq _ _ x).mpr (Or.inl hx))) hlt)
+
+/-- `RunDomain` の下で honest の集合は整列している。 -/
+theorem sorted_honest {s : Model.Consensus.Execution.Setup.Setup} {rho : NamedRun} (hd : RunDomain s rho) :
+    Sorted rho.honest :=
+  sorted_of_normalized hd.1
+
+/-- `BFTRegime`(`BelowOneThird` を含む)なら `QuorumHonest`。 -/
+theorem quorumHonest_of_bftRegime {c : Nat → NaruStd.Set ValidatorId} {p : Nat → ValidatorId} {a : ValidatorId → Nat → Bool}
+    {nr : ValidatorId → Nat → BlockId} {s : Model.Consensus.Execution.Setup.Setup} {rho : NamedRun} {t0 : Int}
+    (hv : Sorted (validators s.e.electorate)) (hr : Statements.Consensus.Spec.Regimes.BFTRegime c p a nr s rho t0) :
+    QuorumHonest s.e rho.honest :=
+  quorumHonest_of_belowOneThird hv hr.1.2
+
+/-- `SleepyRegime` なら、窓の条件を満たす時刻 `t` があれば `QuorumHonest`(`SleepyRegime` は `BelowOneThird` を持たず、
+`WindowMajority` は `t0 ≤ t`・`lag ≤ t`・`t - lag ≤ horizon` の時刻についてだけ言う)。 -/
+theorem quorumHonest_of_sleepyRegime {c : Nat → NaruStd.Set ValidatorId} {p : Nat → ValidatorId} {a : ValidatorId → Nat → Bool}
+    {nr : ValidatorId → Nat → BlockId} {s : Model.Consensus.Execution.Setup.Setup} {rho : NamedRun} {t0 t : Int}
+    (hv : Sorted (validators s.e.electorate)) (hr : Statements.Consensus.Spec.Regimes.SleepyRegime c p a nr s rho t0)
+    (h0 : t0 ≤ t) (hl : Model.Consensus.Spec.Constants.participationLag s ≤ t)
+    (hh : t - Model.Consensus.Spec.Constants.participationLag s ≤ rho.horizon) :
+    QuorumHonest s.e rho.honest :=
+  quorumHonest_of_windowMajority hv (hr.1.2 t ⟨⟨h0, hl⟩, hh⟩)
+
+/-- `OutageRegime` なら、honest の集合が整列していれば `QuorumHonest`(`FreshMajority` を時刻 `participationLag` で使う。
+`0 ≤ b0 ≤ b1 ≤ horizon`)。 -/
+theorem quorumHonest_of_outageRegime {c : Nat → NaruStd.Set ValidatorId} {p : Nat → ValidatorId} {a : ValidatorId → Nat → Bool}
+    {nr : ValidatorId → Nat → BlockId} {s : Model.Consensus.Execution.Setup.Setup} {rho : NamedRun} {tRead b0 b1 : Int}
+    (hv : Sorted (validators s.e.electorate)) (hH : Sorted rho.honest)
+    (hr : Statements.Consensus.Spec.Regimes.OutageRegime c p a nr s rho tRead b0 b1) :
+    QuorumHonest s.e rho.honest := by
+  have x := hr.1.1.1.1
+  have hb0 : (0 : Int) ≤ b0 := x.1.1.1.1.2
+  have hb01 : b0 ≤ b1 := x.1.1.1.2
+  have hb1 : b1 ≤ rho.horizon := x.1.1.2
+  exact quorumHonest_of_freshMajority hv hH
+    (x.2 (Model.Consensus.Spec.Constants.participationLag s) ⟨le_refl _, by omega⟩)
 
 /-! ## FG root -/
 
