@@ -25,6 +25,8 @@ import Mathlib.Tactic
 6. 提案しない tick では、務めの store `dutyStoreAt w i t` の FG root は `stateBefore i` の `w` の store の FG root
    (`dutyStoreAt_fgRoot_of_not_proposing`。時計合わせ・投票・確認の更新は FG root の 4 欄を変えない。周回 173)。
    手書きの右辺は読みの時刻の store `storeBeforeTime` で、`stateBefore i` から読みの時刻への橋渡しはまだ無い。
+7. 行を出した tick は提案しない: action 時刻 `4Δ · (r · R) + 6Δ` は提案時刻 `4Δ · k` と重ならない(Δ > 0)ので、6 の前提は
+   発行から出る(`dutyStoreAt_fgRoot_of_emits`。周回 174)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -345,6 +347,65 @@ theorem tickDutyStore_fgRoot_of_not_proposing (c : Nat → NaruStd.Set Validator
   all_goals simp only [namedUpdateConfirmationWith_fgRoot, namedGoldfishVoteWith_fgRoot]
   all_goals rfl
 
+/-- tick の出力に行があれば、tick の時刻はある round の action 時刻(生成 `tick` の attestation の条件の左半分)。 -/
+theorem tick_attest_actionTime {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore)
+    (rec : Model.Consensus.Protocol.ValidatorClient.NamedRecord) (t : Int) {row : NamedAttestation}
+    (hrow : NamedObject.Attest row ∈ (Model.Consensus.Protocol.Tick.tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    ∃ r : Nat, t = Model.Consensus.Protocol.Grades.actionTime hc e.delta r := by
+  revert hrow
+  unfold Model.Consensus.Protocol.Tick.tick
+  dsimp only
+  split_ifs
+  all_goals intro hrow
+  all_goals simp only [List.mem_append, List.mem_singleton] at hrow
+  -- attestation を出さない経路: 出力に行は無い
+  all_goals (try (exfalso; rcases hrow with h | h <;> (try split at h) <;> simp at h; done))
+  -- attestation を出す経路: 最後の `if` の条件から時刻を取り出す
+  all_goals
+    rename_i hact
+    simp only [Bool.and_eq_true, beq_iff_eq] at hact
+    exact ⟨_, hact.1⟩
+
+/-- **action 時刻は提案時刻ではない**(Δ > 0): `4Δ · (r · R) + 6Δ = 4Δ · k` なら `6 = 4 · (k - r · R)` で、整数では成り立たない。 -/
+theorem actionTime_ne_proposalTime {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (r k : Nat) :
+    Model.Consensus.Protocol.Grades.actionTime hc e.delta r ≠ Model.Consensus.Protocol.Schedule.proposalTime e k := by
+  unfold Model.Consensus.Protocol.Grades.actionTime Model.Consensus.Protocol.Schedule.proposalTime
+    Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    Model.Consensus.Protocol.Grades.openingSlot
+  simp only [Int.ofNat_eq_natCast]
+  intro h
+  have h0 : e.delta * (4 * (k : Int) - 4 * ((r * hc.r : Nat) : Int) - 6) = 0 := by linarith
+  rcases mul_eq_zero.mp h0 with h1 | h1
+  · exact hδ.ne' h1
+  · omega
+
+/-- action 時刻の tick は提案しない(Δ > 0): `tick` の `proposing` の Bool 式は真でない。 -/
+theorem not_proposing_of_actionTime {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (p : Nat → ValidatorId) (nd : Model.Consensus.Protocol.Schedule.Node) {t : Int} {r : Nat}
+    (ht : t = Model.Consensus.Protocol.Grades.actionTime hc e.delta r) :
+    ¬ ((decide (0 < slotOf e t) && (t == Model.Consensus.Protocol.Schedule.proposalTime e (slotOf e t))) &&
+      (p (slotOf e t) == nd.valIndex)) = true := by
+  simp only [Bool.and_eq_true, beq_iff_eq]
+  rintro ⟨⟨-, hp⟩, -⟩
+  exact actionTime_ne_proposalTime hδ hc r _ (ht ▸ hp)
+
+/-- **行を出した tick の務めの store の FG root**(Δ > 0): tick の出力に行があれば、その tick は提案しないので、
+`tickDutyStore` の FG root は tick の前の store の FG root。 -/
+theorem tickDutyStore_fgRoot_of_attest {e : ProtocolEnv} {cfg : HeightConfig} (hδ : 0 < e.delta)
+    (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore)
+    (rec : Model.Consensus.Protocol.ValidatorClient.NamedRecord) (t : Int) {row : NamedAttestation}
+    (hrow : NamedObject.Attest row ∈ (Model.Consensus.Protocol.Tick.tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    getFgRoot (storeToHealing (Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache e hc cfg nd st t).core) =
+      getFgRoot (storeToHealing st.core) := by
+  obtain ⟨r, ht⟩ := tick_attest_actionTime c p a nr cache hc nd st rec t hrow
+  exact tickDutyStore_fgRoot_of_not_proposing c p nr cache e hc cfg nd st t (not_proposing_of_actionTime hδ hc p nd ht)
+
 section RunAtAction
 
 variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
@@ -358,6 +419,18 @@ theorem dutyStoreAt_fgRoot_of_not_proposing (w : ValidatorId) (i : Nat) (t : Int
     getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) =
       getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) :=
   tickDutyStore_fgRoot_of_not_proposing c p nr _ s.e s.hc s.cfg _ _ t hnp
+
+/-- **行を出した時刻の務めの store の FG root**(Δ > 0): `w` が時刻 `t` に行 `row` を出したなら、`t` は action 時刻で提案の
+時刻ではないので、任意の添字 `i` の務めの store `dutyStoreAt w i t` の FG root は `stateBefore i` の `w` の store の FG root
+(`dutyStoreAt_fgRoot_of_not_proposing` の前提 `hnp` を発行から供給する。周回 174)。 -/
+theorem dutyStoreAt_fgRoot_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) (i : Nat) :
+    getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) =
+      getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) := by
+  obtain ⟨j, -, hrow⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho w _ t).mp hem
+  rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
+  obtain ⟨r, ht⟩ := tick_attest_actionTime c p a nr _ s.hc _ _ _ t hrow
+  exact dutyStoreAt_fgRoot_of_not_proposing c p a nr s rho w i t (not_proposing_of_actionTime hδ s.hc p _ ht)
 
 end RunAtAction
 
