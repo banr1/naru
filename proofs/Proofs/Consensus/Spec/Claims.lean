@@ -246,6 +246,8 @@ tree にある(`AttestationSource.fgSourceWith_mem` / `fgSource_mem_tree`)。`ti
 (`stateBeforeTime_fgRoot_named`。`D` の導出の `j` を `erased_ancestor_lift` で `D` の名前付きの祖先に持ち上げる)、`NamedRootCollisionFree` の下で
 読みの主が honest なら `J` は `RootEntry` の入口のブロック `K` と同じ(`stateBeforeTime_fgRoot_entryWitness`): `J` は `w` の bodies にあって務めの FG source の
 名前付きブロック `D'` の祖先で、導出の `h` が `hJ`、`tH` が `J` の消去。`D'` の導出の `tH` は FG root そのもの。
+周回 167 の足場: 同じモジュールの `stateBeforeTime_fgRoot_storeWitness` で、これを `StoreInv.sigma` により tick の中の store `st3` の
+chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainStateOf st3.core.sigma ·).(h, tH)` が `(hJ, FG root)`、FG root は `st3` の tree にある)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

@@ -412,7 +412,7 @@ tree が親について閉じていれば tree にある(`fgSourceWith_mem` / `f
 手書き `NamedEntryHeight` に当たる。`entry_geometry_ancestor` は移していない)と `RootEntry.lean`(周回 165。読みの FG root が genesis でなければ、honest な署名者 `w` が時刻 `< time` に出した行は
 `Vote hJ (root FG root) nu`(`matchesEntry_vote`)で、`emits_vote_source` の `D'` に `entry_ancestor_same_height` を掛けると、その tick の後の `w` の bodies に
 導出の `h` が `hJ` で根が FG root の根の `K` がある `stateBeforeTime_fgRoot_honestEntry`。`D'` はその tick の中の store `st3` の務めの FG source `q` の名前付きブロック(`eraseBlock D' = q`)で、`K` の導出の `tH` は `K` の消去)と `RootWitness.lean`(周回 166。読みの主の bodies に消去が FG root の名前付きブロック `J` がある `stateBeforeTime_fgRoot_named`、
-`NamedRootCollisionFree` の下で読みの主が honest なら `J` は `RootEntry` の `K` と同じブロックで、`J` は `w` の bodies にあり `D'` の祖先、導出の `h` が `hJ`・`tH` が `J` の消去、`D'` の導出の `tH` は FG root そのもの `stateBeforeTime_fgRoot_entryWitness`)。
+`NamedRootCollisionFree` の下で読みの主が honest なら `J` は `RootEntry` の `K` と同じブロックで、`J` は `w` の bodies にあり `D'` の祖先、導出の `h` が `hJ`・`tH` が `J` の消去、`D'` の導出の `tH` は FG root そのもの `stateBeforeTime_fgRoot_entryWitness`、周回 167 でそれを `StoreInv.sigma` で tick の中の store `st3` の chain 状態に移し、務めの FG source `q` と FG root 自身の `(chainStateOf st3.core.sigma ·).(h, tH)` が `(hJ, FG root)` で FG root が `st3` の tree にある `stateBeforeTime_fgRoot_storeWitness`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

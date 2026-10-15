@@ -118,6 +118,63 @@ theorem stateBeforeTime_fgRoot_entryWitness (hs : EventsSorted rho) (hqh : Quoru
     exact ⟨D, J, row, nu, t2, i, q, D', hD, hDj, hJ, hJD, hJe', hH, hrow, ht2, hem, hev, hD', hD'q,
       ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hK, hKD', hKh, hKt, hD'h, hKe.symm.trans hJe'⟩
 
+/-- **store の言葉の版**: `stateBeforeTime_fgRoot_entryWitness` の `D'` / `J` を `StoreInv.sigma` で署名者の tick の中の store
+`st3` の chain 状態に移す。読みの FG root `R` が genesis でなければ、honest な署名者の行(height pair `Vote hJ (root R) nu`)の
+務めの FG source `q` について `(chainStateOf st3.core.sigma q).(h, tH) = (hJ, R)` で、`R` 自身も `st3` の tree にあって
+`(chainStateOf st3.core.sigma R).(h, tH) = (hJ, R)`。手書きでは `fgRoot_confirmationWitness_at_read` / `_at_action` の
+`(n.st.core.σ Cfg).T_h = some R` に当たる(務めの store は tick の中の `st3`)。 -/
+theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {v : ValidatorId} (hv : v ∈ rho.honest.elems) (time : Int) :
+    getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) = Block.Genesis ∨
+      ∃ (D : NamedBlock) (row : NamedAttestation) (nu : Bool) (t2 : Int) (i : Nat) (q : Block)
+        (cache : Model.Consensus.Protocol.Grades.Cache) (st3 : NamedStore),
+        D ∈ (worldAt (stateBeforeTime c p a nr s rho time) v).st.bodies.elems ∧
+        (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∧
+        row.valIndex ∈ rho.honest.elems ∧
+        row.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+          (root (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))) nu ∧
+        t2 < time ∧ Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 ∧
+        rho.events[i]? = some (NamedEvent.Tick row.valIndex t2) ∧
+        cache = Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (storeToHealing (worldAt (stateBefore c p a nr s rho i) row.valIndex).st.core) t2
+          (worldAt (stateBefore c p a nr s rho i) row.valIndex).cache ∧
+        StoreInv s.e s.cfg st3 ∧
+        (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies = st3.bodies ∧
+        Model.Consensus.Protocol.Duties.Inputs.fgSourceWith cache s.e s.hc (storeToHealing st3.core)
+            (Model.Consensus.Protocol.Grades.roundOf s.hc st3.core.s)
+            (Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith cache s.e s.hc (storeToHealing st3.core)
+              (Model.Consensus.Protocol.Grades.roundOf s.hc st3.core.s)) = some q ∧
+        q ∈ st3.core.tree.elems ∧
+        (chainStateOf st3.core.sigma q).h = (deriveNamed s.e s.cfg D).hJ ∧
+        (chainStateOf st3.core.sigma q).tH =
+          getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∧
+        getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∈ st3.core.tree.elems ∧
+        (chainStateOf st3.core.sigma
+          (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))).h =
+          (deriveNamed s.e s.cfg D).hJ ∧
+        (chainStateOf st3.core.sigma
+          (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))).tH =
+          getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) := by
+  rcases stateBeforeTime_fgRoot_entryWitness c p a nr s rho hs hqh hcar hcf hv time with hg |
+    ⟨D, J, row, nu, t2, i, q, D', hD, hDj, -, -, hJe, hH, hrow, ht2, hem, hev, hD', hD'q,
+      ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hJ, -, hJh, hJt, hD'h, hD't⟩
+  · exact Or.inl hg
+  · right
+    rw [hbod] at hD' hJ
+    have hsq := hinv.sigma D' hD'
+    have hsJ := hinv.sigma J hJ
+    rw [hD'q] at hsq
+    rw [hJe] at hsJ
+    refine ⟨D, row, nu, t2, i, q, cache, st3, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hinv, hbod, hq, hqt,
+      ?_, ?_, ?_, ?_, ?_⟩
+    · rw [hsq]; exact hD'h
+    · rw [hsq]; exact hD't
+    · rw [← hJe]; exact hinv.tree J hJ
+    · rw [hsJ]; exact hJh
+    · rw [hsJ, hJt, hJe]
+
 end Run
 
 end Proofs.Consensus.RootWitness
