@@ -18,7 +18,8 @@ honest な行の height pair `Vote h entry nu` が、その tick の attestation
 - 行の height pair が `Vote h entry nu` なら、FG source `q` があり、`(chainStateOf sigma q).h = h`、`root (chainStateOf sigma q).tH = entry`
   (`attestWith_vote_source`)。
 - tick の出力に行があれば、それは tick の中の store `st3` での `attestWith` の行で、tick の後の store は `attestWith` の後の store
-  (`tick_attest_store`)。`st3` は tick の前の store から `StoreInv` を受け継ぐ。
+  (`tick_attest_store`)。`st3` は tick の前の store から `StoreInv` を受け継ぐ。`st3` は tick の引数の関数 `tickDutyStore` で
+  (`tick_attest_dutyStore` / `tickDutyStore_inv` / `tickDutyStore_treeInv`。周回 171)、以下の補題はその等式も返す。
 - `liveConfirmed` が tree にあり tree が親について閉じていれば(`TreeInv` / `StoreInv`)、`q` は tree にある: `fgSourceWith` は
   `liveConfirmed` の祖先(`deepestClear`)か grade 2 のブロック(filtered tree の `activePrefix`)を返す(`fgSourceWith_mem`)。
 - `StoreInv` の下で、`q` が tree にあれば bodies に `eraseBlock D = q` の `D` があり、`deriveNamed D` の `h` / `tH` の根が行の
@@ -96,20 +97,36 @@ theorem attestWith_vote_source (cache : Model.Consensus.Protocol.Grades.Cache) (
 
 /-! ## tick -/
 
-/-- tick の出力に行 `row` があれば、それは tick の中の store `st3` での `attestWith` の行で、tick の後の store と記録は
-`attestWith` の後のもの。`st3` は tick の前の store の `StoreInv` と(`StoreInv` の下で)`TreeInv` を受け継ぐ。 -/
-theorem tick_attest_store {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+/-- tick の中で attestation の務めが読む store(生成 `tick` の `st3`: 時計合わせ・提案・投票・確認の更新の後)。
+手書きの `actionStoreAt` に当たる(周回 171)。 -/
+def tickDutyStore (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore) (t : Int) : NamedStore :=
+  let s := slotOf e t
+  let st0 : NamedStore := { st with core := { st.core with t := t, s := s } }
+  let proposing : Bool :=
+    (decide (0 < s) && (t == Model.Consensus.Protocol.Schedule.proposalTime e s)) && (p s == nd.valIndex)
+  let st1 := (if proposing then proposeBlockWith c p nr cache e hc cfg nd st0 else (st0, (none : Option NamedBlock))).1
+  let voting : Bool := decide (0 < s) && (t == Model.Consensus.Protocol.Schedule.voteTime e s)
+  let st2 := (if voting then namedGoldfishVoteWith c cache e hc nd st1 else (st1, (none : Option GoldfishVote))).1
+  if decide (0 < s) && (t == Model.Consensus.Protocol.Schedule.supportCutoff e s) then
+    namedUpdateConfirmationWith cache e hc st2 (s - 1)
+  else st2
+
+/-- tick の出力に行 `row` があれば、それは `tickDutyStore` での `attestWith` の行で、tick の後の store と記録は
+`attestWith` の後のもの。 -/
+theorem tick_attest_dutyStore {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
     (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool) (nr : ValidatorId → Nat → BlockId)
     (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
     (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore) (rec : NamedRecord) (t : Int) {row : NamedAttestation}
     (hrow : NamedObject.Attest row ∈ (tick c p a nr cache e hc cfg nd st rec t).2.2) :
-    ∃ st3 : NamedStore, (StoreInv e cfg st → StoreInv e cfg st3) ∧
-      (StoreInv e cfg st → TreeInv st.core → TreeInv st3.core) ∧
-      (tick c p a nr cache e hc cfg nd st rec t).1 = (attestWith cache e hc nd st3 rec).1 ∧
-      (tick c p a nr cache e hc cfg nd st rec t).2.1 = (attestWith cache e hc nd st3 rec).2.1 ∧
-      row = (attestWith cache e hc nd st3 rec).2.2 := by
+    (tick c p a nr cache e hc cfg nd st rec t).1 =
+        (attestWith cache e hc nd (tickDutyStore c p nr cache e hc cfg nd st t) rec).1 ∧
+      (tick c p a nr cache e hc cfg nd st rec t).2.1 =
+        (attestWith cache e hc nd (tickDutyStore c p nr cache e hc cfg nd st t) rec).2.1 ∧
+      row = (attestWith cache e hc nd (tickDutyStore c p nr cache e hc cfg nd st t) rec).2.2 := by
   revert hrow
-  unfold tick
+  unfold tick tickDutyStore
   dsimp only
   split_ifs
   all_goals intro hrow
@@ -124,33 +141,68 @@ theorem tick_attest_store {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → Na
     · exfalso
       (try split at h) <;> simp at h
     · simp only [NamedObject.Attest.injEq] at h
-      refine ⟨_, fun hi => ?_, fun hi ht => ?_, ?_, ?_, h⟩
-      · have h0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
-          hi.congr rfl ⟨rfl, rfl, rfl⟩
-        first
-          | with_reducible exact namedUpdateConfirmationWith_inv cache hc (namedGoldfishVoteWith_inv c cache hc nd (proposeBlockWith_inv c p nr cache hc nd h0)) _
-          | with_reducible exact namedUpdateConfirmationWith_inv cache hc (namedGoldfishVoteWith_inv c cache hc nd h0) _
-          | with_reducible exact namedUpdateConfirmationWith_inv cache hc (proposeBlockWith_inv c p nr cache hc nd h0) _
-          | with_reducible exact namedUpdateConfirmationWith_inv cache hc h0 _
-          | with_reducible exact namedGoldfishVoteWith_inv c cache hc nd (proposeBlockWith_inv c p nr cache hc nd h0)
-          | with_reducible exact namedGoldfishVoteWith_inv c cache hc nd h0
-          | with_reducible exact proposeBlockWith_inv c p nr cache hc nd h0
-          | with_reducible exact h0
-      · have hinv0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
-          hi.congr rfl ⟨rfl, rfl, rfl⟩
-        have h0 : TreeInv { st with core := { st.core with t := t, s := slotOf e t } }.core :=
-          ht.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-        first
-          | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (namedGoldfishVoteWith_treeInv c cache hc nd (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0)) _
-          | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (namedGoldfishVoteWith_treeInv c cache hc nd h0) _
-          | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0) _
-          | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc h0 _
-          | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0)
-          | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd h0
-          | with_reducible exact proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0
-          | with_reducible exact h0
-      · rfl
-      · rfl
+      exact ⟨rfl, rfl, h⟩
+
+/-- `tickDutyStore` は tick の前の store の `StoreInv` を受け継ぐ。 -/
+theorem tickDutyStore_inv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) {st : NamedStore} (t : Int) (hi : StoreInv e cfg st) :
+    StoreInv e cfg (tickDutyStore c p nr cache e hc cfg nd st t) := by
+  have h0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
+    hi.congr rfl ⟨rfl, rfl, rfl⟩
+  unfold tickDutyStore
+  dsimp only
+  split_ifs
+  all_goals first
+    | with_reducible exact namedUpdateConfirmationWith_inv cache hc (namedGoldfishVoteWith_inv c cache hc nd (proposeBlockWith_inv c p nr cache hc nd h0)) _
+    | with_reducible exact namedUpdateConfirmationWith_inv cache hc (namedGoldfishVoteWith_inv c cache hc nd h0) _
+    | with_reducible exact namedUpdateConfirmationWith_inv cache hc (proposeBlockWith_inv c p nr cache hc nd h0) _
+    | with_reducible exact namedUpdateConfirmationWith_inv cache hc h0 _
+    | with_reducible exact namedGoldfishVoteWith_inv c cache hc nd (proposeBlockWith_inv c p nr cache hc nd h0)
+    | with_reducible exact namedGoldfishVoteWith_inv c cache hc nd h0
+    | with_reducible exact proposeBlockWith_inv c p nr cache hc nd h0
+    | with_reducible exact h0
+
+/-- `tickDutyStore` は(`StoreInv` の下で)tick の前の store の `TreeInv` を受け継ぐ。 -/
+theorem tickDutyStore_treeInv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) {st : NamedStore} (t : Int) (hi : StoreInv e cfg st)
+    (ht : TreeInv st.core) : TreeInv (tickDutyStore c p nr cache e hc cfg nd st t).core := by
+  have hinv0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
+    hi.congr rfl ⟨rfl, rfl, rfl⟩
+  have h0 : TreeInv { st with core := { st.core with t := t, s := slotOf e t } }.core :=
+    ht.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  unfold tickDutyStore
+  dsimp only
+  split_ifs
+  all_goals first
+    | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (namedGoldfishVoteWith_treeInv c cache hc nd (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0)) _
+    | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (namedGoldfishVoteWith_treeInv c cache hc nd h0) _
+    | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0) _
+    | with_reducible exact namedUpdateConfirmationWith_treeInv cache hc h0 _
+    | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0)
+    | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd h0
+    | with_reducible exact proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0
+    | with_reducible exact h0
+
+/-- tick の出力に行 `row` があれば、それは tick の中の store `st3`(= `tickDutyStore`)での `attestWith` の行で、tick の後の
+store と記録は `attestWith` の後のもの。`st3` は tick の前の store の `StoreInv` と(`StoreInv` の下で)`TreeInv` を受け継ぐ。 -/
+theorem tick_attest_store {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore) (rec : NamedRecord) (t : Int) {row : NamedAttestation}
+    (hrow : NamedObject.Attest row ∈ (tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    ∃ st3 : NamedStore, (StoreInv e cfg st → StoreInv e cfg st3) ∧
+      (StoreInv e cfg st → TreeInv st.core → TreeInv st3.core) ∧
+      (tick c p a nr cache e hc cfg nd st rec t).1 = (attestWith cache e hc nd st3 rec).1 ∧
+      (tick c p a nr cache e hc cfg nd st rec t).2.1 = (attestWith cache e hc nd st3 rec).2.1 ∧
+      row = (attestWith cache e hc nd st3 rec).2.2 ∧
+      st3 = tickDutyStore c p nr cache e hc cfg nd st t := by
+  obtain ⟨h1, h2, h3⟩ := tick_attest_dutyStore (e := e) (cfg := cfg) c p a nr cache hc nd st rec t hrow
+  exact ⟨_, fun hi => tickDutyStore_inv c p nr cache hc nd t hi,
+    fun hi ht => tickDutyStore_treeInv c p nr cache hc nd t hi ht, h1, h2, h3, rfl⟩
 
 /-! ## FG source は tree にある -/
 
@@ -260,11 +312,11 @@ theorem tick_vote_source {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → Nar
           (grade2BlockWith cache e hc (storeToHealing st3.core) (Model.Consensus.Protocol.Grades.roundOf hc st3.core.s)) =
         some q ∧
       (chainStateOf st3.core.sigma q).h = h ∧ root (chainStateOf st3.core.sigma q).tH = entry ∧
-      q ∈ st3.core.tree.elems := by
-  obtain ⟨st3, hinv, htr, hst, -, hr⟩ := tick_attest_store (e := e) (cfg := cfg) c p a nr cache hc nd st rec t hrow
+      q ∈ st3.core.tree.elems ∧ st3 = tickDutyStore c p nr cache e hc cfg nd st t := by
+  obtain ⟨st3, hinv, htr, hst, -, hr, hd⟩ := tick_attest_store (e := e) (cfg := cfg) c p a nr cache hc nd st rec t hrow
   rw [hr] at hv
   obtain ⟨q, hq, hh, he⟩ := attestWith_vote_source cache e hc nd st3 rec hv
-  exact ⟨st3, q, hinv hi, hst, hr, hq, hh, he, fgSource_mem_tree (hinv hi) (htr hi ht) hq⟩
+  exact ⟨st3, q, hinv hi, hst, hr, hq, hh, he, fgSource_mem_tree (hinv hi) (htr hi ht) hq, hd⟩
 
 /-! ## run -/
 
@@ -285,6 +337,8 @@ theorem emits_vote_source {w : ValidatorId} {row : NamedAttestation} {t : Int}
       rho.events[i]? = some (NamedEvent.Tick w t) ∧
       cache = Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
         (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t (worldAt (stateBefore c p a nr s rho i) w).cache ∧
+      st3 = tickDutyStore c p nr cache s.e s.hc s.cfg (Model.Consensus.Execution.Setup.setupNode w)
+        (worldAt (stateBefore c p a nr s rho i) w).st t ∧
       StoreInv s.e s.cfg st3 ∧
       (worldAt (stateBefore c p a nr s rho (i + 1)) w).st = (attestWith cache s.e s.hc
         (Model.Consensus.Execution.Setup.setupNode w) st3 (worldAt (stateBefore c p a nr s rho i) w).signing).1 ∧
@@ -300,7 +354,7 @@ theorem emits_vote_source {w : ValidatorId} {row : NamedAttestation} {t : Int}
         eraseBlock D = q ∧ (deriveNamed s.e s.cfg D).h = h ∧ root (deriveNamed s.e s.cfg D).tH = entry := by
   obtain ⟨i, hev, hrow⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho w _ t).mp hem
   rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
-  obtain ⟨st3, q, hinv, hst, hr, hq, hh, he, hqt⟩ := tick_vote_source c p a nr _ s.hc _
+  obtain ⟨st3, q, hinv, hst, hr, hq, hh, he, hqt, hd⟩ := tick_vote_source c p a nr _ s.hc _
     (stateBefore_inv c p a nr s rho i w) (stateBefore_treeInv c p a nr s rho i w) _ t hrow hv
   have hstore : (worldAt (stateBefore c p a nr s rho (i + 1)) w).st = (attestWith
       (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
@@ -316,7 +370,7 @@ theorem emits_vote_source {w : ValidatorId} {row : NamedAttestation} {t : Int}
   have hsucc : (worldAt (stateBefore c p a nr s rho (i + 1)) w).st.bodies = st3.bodies := by
     rw [hstore]
     exact Proofs.Consensus.Attribution.attestWith_bodies _ _ _ _ _ _
-  refine ⟨i, _, st3, q, hev, rfl, hinv, hstore, hsucc, hr, hq, hh, he, hqt, ?_⟩
+  refine ⟨i, _, st3, q, hev, rfl, hd, hinv, hstore, hsucc, hr, hq, hh, he, hqt, ?_⟩
   obtain ⟨D, hD, hDq, hDh, hDe⟩ := source_named hinv hqt hh he
   exact ⟨D, hsucc ▸ hD, hDq, hDh, hDe⟩
 

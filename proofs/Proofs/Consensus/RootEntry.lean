@@ -66,6 +66,8 @@ theorem stateBeforeTime_fgRoot_honestEntry (hs : EventsSorted rho) (hqh : Quorum
         cache = Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
           (storeToHealing (worldAt (stateBefore c p a nr s rho i) row.valIndex).st.core) t2
           (worldAt (stateBefore c p a nr s rho i) row.valIndex).cache ∧
+        st3 = Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache s.e s.hc s.cfg
+          (Model.Consensus.Execution.Setup.setupNode row.valIndex) (worldAt (stateBefore c p a nr s rho i) row.valIndex).st t2 ∧
         StoreInv s.e s.cfg st3 ∧
         (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies = st3.bodies ∧
         Model.Consensus.Protocol.Duties.Inputs.fgSourceWith cache s.e s.hc (storeToHealing st3.core)
@@ -88,7 +90,7 @@ theorem stateBeforeTime_fgRoot_honestEntry (hs : EventsSorted rho) (hqh : Quorum
   · exact Or.inl hg
   · right
     obtain ⟨nu, hv⟩ := matchesEntry_vote hm
-    obtain ⟨i, cache, st3, q, hev, hcache, hinv, -, hbod, -, hq, -, -, hqt, D', hD', hD'q, hD'h, hD'e⟩ :=
+    obtain ⟨i, cache, st3, q, hev, hcache, hd, hinv, -, hbod, -, hq, -, -, hqt, D', hD', hD'q, hD'h, hD'e⟩ :=
       Proofs.Consensus.AttestationSource.emits_vote_source c p a nr s rho hem hv
     obtain ⟨K, hKD, hKe, hKh⟩ := Proofs.Consensus.EntryHeight.entry_ancestor_same_height s.e s.cfg D'
     have hK : K ∈ (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies.elems :=
@@ -96,7 +98,7 @@ theorem stateBeforeTime_fgRoot_honestEntry (hs : EventsSorted rho) (hqh : Quorum
         (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho (i + 1) row.valIndex).closed hD' hKD
     have hKt : (deriveNamed s.e s.cfg K).tH = eraseBlock K :=
       (Proofs.Consensus.EntryHeight.entry_eq_on_plateau s.e s.cfg hKD hKh).trans hKe.symm
-    exact ⟨D, row, nu, t2, i, cache, st3, q, D', K, hD, hDj, hH, hv, ht2, hem, hev, hcache, hinv, hbod, hq, hqt,
+    exact ⟨D, row, nu, t2, i, cache, st3, q, D', K, hD, hDj, hH, hv, ht2, hem, hev, hcache, hd, hinv, hbod, hq, hqt,
       hD', hD'q, hD'h, hD'e, hK, hKD, hKe, hKh.trans hD'h, hKt, by rw [hKe]; exact hD'e⟩
 
 end Run

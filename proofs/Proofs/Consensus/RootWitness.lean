@@ -7,7 +7,7 @@ import Mathlib.Tactic
 
 `RootEntry.stateBeforeTime_fgRoot_honestEntry` は、時刻 `< time` の読みの FG root が genesis でなければ、読みの bodies の `D`
 (導出の `j` が FG root)と、honest な署名者 `w` の bodies の入口の checkpoint `K`(導出の `h` が `D` の導出の `hJ`、
-`tH` が `K` の消去、根が FG root の根)を返す。ここでは次の 2 段を足す。
+`tH` が `K` の消去、根が FG root の根)を返す。ここでは次の段を足す。
 
 1. 読みの主 `v` の bodies に、消去が FG root の名前付きブロック `J` がある(`D` の導出の `j` は `D` の消去の祖先なので、
    `erased_ancestor_lift` で `D` の名前付きの祖先 `J` に持ち上げ、bodies は祖先について閉じる。`stateBeforeTime_fgRoot_named`)。
@@ -15,6 +15,10 @@ import Mathlib.Tactic
    run の中のブロックで、`namedRoot` が等しい)。したがって FG root の名前付きブロック `J` は署名者 `w` の bodies にもあり、
    `J` の導出の `h` は `D` の導出の `hJ`、`tH` は `J` の消去、`J` は `w` の務めの FG source の名前付きブロック `D'` の祖先
    (`stateBeforeTime_fgRoot_entryWitness`)。
+3. `D'` / `J` を `StoreInv.sigma` で `w` の tick の中の store `st3` の chain 状態に移す: 務めの FG source `q` と FG root `R` の
+   `(h, tH)` は `(hJ, R)` で、`R` は `st3` の tree にあり `R ⪯ q`(`stateBeforeTime_fgRoot_storeWitness`。周回 167 / 168)。
+4. `st3` は run の関数 `dutyStoreAt w i t2`(`AttestationSource.tickDutyStore`)で、その務めの確認の証人
+   `fgConfirmationWitnessAt w i t2`(FG source の chain 状態の `tH`)は `some R`(`stateBeforeTime_fgRoot_confirmationWitness`。周回 171)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -85,6 +89,8 @@ theorem stateBeforeTime_fgRoot_entryWitness (hs : EventsSorted rho) (hqh : Quoru
           cache = Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
             (storeToHealing (worldAt (stateBefore c p a nr s rho i) row.valIndex).st.core) t2
             (worldAt (stateBefore c p a nr s rho i) row.valIndex).cache ∧
+          st3 = Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache s.e s.hc s.cfg
+            (Model.Consensus.Execution.Setup.setupNode row.valIndex) (worldAt (stateBefore c p a nr s rho i) row.valIndex).st t2 ∧
           StoreInv s.e s.cfg st3 ∧
           (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies = st3.bodies ∧
           Model.Consensus.Protocol.Duties.Inputs.fgSourceWith cache s.e s.hc (storeToHealing st3.core)
@@ -100,7 +106,7 @@ theorem stateBeforeTime_fgRoot_entryWitness (hs : EventsSorted rho) (hqh : Quoru
         (deriveNamed s.e s.cfg D').tH =
           getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) := by
   rcases Proofs.Consensus.RootEntry.stateBeforeTime_fgRoot_honestEntry c p a nr s rho hs hqh hcar v time with hg |
-    ⟨D, row, nu, t2, i, cache, st3, q, D', K, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hinv, hbod, hq, hqt,
+    ⟨D, row, nu, t2, i, cache, st3, q, D', K, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hd, hinv, hbod, hq, hqt,
       hD', hD'q, hD'h, -, hK, hKD', hKe, hKh, hKt, hKr⟩
   · exact Or.inl hg
   · right
@@ -116,13 +122,13 @@ theorem stateBeforeTime_fgRoot_entryWitness (hs : EventsSorted rho) (hqh : Quoru
     have hJK : J = K := hcf J K ⟨hJrun, hKrun⟩ J K ⟨⟨Or.inl (namedPreceq_self J), Or.inr (namedPreceq_self K)⟩, hroot⟩
     subst hJK
     exact ⟨D, J, row, nu, t2, i, q, D', hD, hDj, hJ, hJD, hJe', hH, hrow, ht2, hem, hev, hD', hD'q,
-      ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hK, hKD', hKh, hKt, hD'h, hKe.symm.trans hJe'⟩
+      ⟨cache, st3, hcache, hd, hinv, hbod, hq, hqt⟩, hK, hKD', hKh, hKt, hD'h, hKe.symm.trans hJe'⟩
 
 /-- **store の言葉の版**: `stateBeforeTime_fgRoot_entryWitness` の `D'` / `J` を `StoreInv.sigma` で署名者の tick の中の store
 `st3` の chain 状態に移す。読みの FG root `R` が genesis でなければ、honest な署名者の行(height pair `Vote hJ (root R) nu`)の
 務めの FG source `q` について `(chainStateOf st3.core.sigma q).(h, tH) = (hJ, R)` で、`R` 自身も `st3` の tree にあって
 `(chainStateOf st3.core.sigma R).(h, tH) = (hJ, R)`、さらに `preceq R q = true`(`namedPreceq J D'` を `eraseBlock_preceq` で
-消去に落とす。周回168)。手書きでは `fgRoot_confirmationWitness_at_read` / `_at_action` の
+消去に落とす。周回 168)。手書きでは `fgRoot_confirmationWitness_at_read` / `_at_action` の
 `(n.st.core.σ Cfg).T_h = some R` に当たる(務めの store は tick の中の `st3`)。 -/
 theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
     (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
@@ -141,6 +147,8 @@ theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : Quoru
         cache = Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
           (storeToHealing (worldAt (stateBefore c p a nr s rho i) row.valIndex).st.core) t2
           (worldAt (stateBefore c p a nr s rho i) row.valIndex).cache ∧
+        st3 = Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache s.e s.hc s.cfg
+          (Model.Consensus.Execution.Setup.setupNode row.valIndex) (worldAt (stateBefore c p a nr s rho i) row.valIndex).st t2 ∧
         StoreInv s.e s.cfg st3 ∧
         (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies = st3.bodies ∧
         Model.Consensus.Protocol.Duties.Inputs.fgSourceWith cache s.e s.hc (storeToHealing st3.core)
@@ -161,7 +169,7 @@ theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : Quoru
         preceq (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) q = true := by
   rcases stateBeforeTime_fgRoot_entryWitness c p a nr s rho hs hqh hcar hcf hv time with hg |
     ⟨D, J, row, nu, t2, i, q, D', hD, hDj, -, -, hJe, hH, hrow, ht2, hem, hev, hD', hD'q,
-      ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hJ, hJD', hJh, hJt, hD'h, hD't⟩
+      ⟨cache, st3, hcache, hd, hinv, hbod, hq, hqt⟩, hJ, hJD', hJh, hJt, hD'h, hD't⟩
   · exact Or.inl hg
   · right
     rw [hbod] at hD' hJ
@@ -170,13 +178,67 @@ theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : Quoru
     have hpre := eraseBlock_preceq hJD'
     rw [hD'q] at hsq hpre
     rw [hJe] at hsJ hpre
-    refine ⟨D, row, nu, t2, i, q, cache, st3, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hinv, hbod, hq, hqt,
+    refine ⟨D, row, nu, t2, i, q, cache, st3, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hd, hinv, hbod, hq, hqt,
       ?_, ?_, ?_, ?_, ?_, hpre⟩
     · rw [hsq]; exact hD'h
     · rw [hsq]; exact hD't
     · rw [← hJe]; exact hinv.tree J hJ
     · rw [hsJ]; exact hJh
     · rw [hsJ, hJt, hJe]
+
+/-- run の添字 `i` の event `Tick w t` の中で attestation の務めが読む store(`AttestationSource.tickDutyStore` に tick の前の
+`w` の store と tick の `onPhaseTick` の cache を渡したもの)。手書きの `actionStoreAt` に当たる(周回 171)。 -/
+def dutyStoreAt (w : ValidatorId) (i : Nat) (t : Int) : NamedStore :=
+  Proofs.Consensus.AttestationSource.tickDutyStore c p nr
+    (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+      (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t (worldAt (stateBefore c p a nr s rho i) w).cache)
+    s.e s.hc s.cfg (Model.Consensus.Execution.Setup.setupNode w) (worldAt (stateBefore c p a nr s rho i) w).st t
+
+/-- 務めの FG source の chain 状態の `tH`(source が無ければ `none`)。手書き `fgConfirmationWitness`
+(`Internal/Definitions/ActionSources.lean`)の `(actionFGSource S n).map (fun Cfg => (n.st.core.σ Cfg).T_h)` に当たる(周回 171)。 -/
+def fgConfirmationWitnessAt (w : ValidatorId) (i : Nat) (t : Int) : Option Block :=
+  (Model.Consensus.Protocol.Duties.Inputs.fgSourceWith
+      (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+        (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t (worldAt (stateBefore c p a nr s rho i) w).cache)
+      s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+      (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+      (Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+        (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t (worldAt (stateBefore c p a nr s rho i) w).cache)
+        s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s))).map
+    (fun q => (chainStateOf (dutyStoreAt c p a nr s rho w i t).core.sigma q).tH)
+
+/-- **務めの確認の証人の版**: 前提 `EventsSorted` / `QuorumHonest` / `hcar` と `NamedRootCollisionFree` の下で、honest な `v` の
+時刻 `< time` の読みの FG root `R` は genesis か、読みの bodies の `D`(導出の `j` が `R`)と honest な署名者の行(height pair
+`Vote hJ (root R) nu`、発行は時刻 `t2 < time` の添字 `i` の `Tick`)があって、その tick の務めの確認の証人が `R`
+(`fgConfirmationWitnessAt … i t2 = some R`)。手書き `fgRoot_confirmationWitness_at_read` の
+`fgConfirmationWitness S (actionStoreAt …) = some R` に当たる(周回 171)。 -/
+theorem stateBeforeTime_fgRoot_confirmationWitness (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {v : ValidatorId} (hv : v ∈ rho.honest.elems) (time : Int) :
+    getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) = Block.Genesis ∨
+      ∃ (D : NamedBlock) (row : NamedAttestation) (nu : Bool) (t2 : Int) (i : Nat),
+        D ∈ (worldAt (stateBeforeTime c p a nr s rho time) v).st.bodies.elems ∧
+        (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∧
+        row.valIndex ∈ rho.honest.elems ∧
+        row.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+          (root (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))) nu ∧
+        t2 < time ∧ Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 ∧
+        rho.events[i]? = some (NamedEvent.Tick row.valIndex t2) ∧
+        fgConfirmationWitnessAt c p a nr s rho row.valIndex i t2 =
+          some (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) := by
+  rcases stateBeforeTime_fgRoot_storeWitness c p a nr s rho hs hqh hcar hcf hv time with hg |
+    ⟨D, row, nu, t2, i, q, cache, st3, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hd, -, -, hq, -, -, hqt, -, -, -, -⟩
+  · exact Or.inl hg
+  · right
+    refine ⟨D, row, nu, t2, i, hD, hDj, hH, hrow, ht2, hem, hev, ?_⟩
+    subst hcache
+    have hd' : st3 = dutyStoreAt c p a nr s rho row.valIndex i t2 := hd
+    subst hd'
+    unfold fgConfirmationWitnessAt
+    rw [hq, Option.map_some, hqt]
 
 end Run
 
