@@ -353,6 +353,12 @@ tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies
 FG root は `f` を延ばすので、締切の読みの FG root がブロックの消去の祖先なら `excludes` は偽 `compatible_of_stateBeforeTime_root` で、配送の event と時刻を仮定せずに締切の読みの tree にある
 `partialSynchrony_emitted_block_mem`。手書き `proposedBlock_admittedBefore_vote_after_gst_named`(`ProposalAdoptionNamedClosed.lean`)の提案者でない受信者の分岐に当たる(手書きの結論は投票の時刻より前の受理の event、ここは締切の読みの tree への所属)。
 残りは提案者自身の受理(手書き `acceptsAt_proposedBlock`)と、honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
+`ProposerReceipt.lean`(提案者は配送に頼らず、提案の tick の中で時計を合わせた store に `onBlockWith` で自分のブロックを受理する。`Admits` の 5 つの守りは提案の形と `f ⪯ j` から出て
+`proposeBlockWith_mem`、投票・確定の更新・attestation の務めは tree のブロックを保存するので tick の後の tree にある `tick_block_mem`(16 経路のうち提案の務めが走る 8 経路)/ `nodeTick_block_mem`。
+run では発行の tick の直後の提案者の tree にあり `emits_block_mem_self`、発行の時刻より後の時刻の読みの tree にもある `emits_block_mem_stateBeforeTime_self`(FG root の事実も配送も要らない)。
+締切 `max t tGST + Δ` は `0 < Δ` で発行の時刻より後なので、`BlockSynchrony.partialSynchrony_emitted_block_mem` と合わせ、`w ≠ v` の仮定なしにすべての honest な受信者について
+締切の読みの FG root がブロックの祖先なら締切の読みの tree にある `partialSynchrony_emitted_block_mem_honest`。手書き `acceptsAt_proposedBlock`(`Protocol/Handlers/HonestProposalAdmission.lean`)に当たる。
+残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
