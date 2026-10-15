@@ -121,7 +121,8 @@ theorem stateBeforeTime_fgRoot_entryWitness (hs : EventsSorted rho) (hqh : Quoru
 /-- **store の言葉の版**: `stateBeforeTime_fgRoot_entryWitness` の `D'` / `J` を `StoreInv.sigma` で署名者の tick の中の store
 `st3` の chain 状態に移す。読みの FG root `R` が genesis でなければ、honest な署名者の行(height pair `Vote hJ (root R) nu`)の
 務めの FG source `q` について `(chainStateOf st3.core.sigma q).(h, tH) = (hJ, R)` で、`R` 自身も `st3` の tree にあって
-`(chainStateOf st3.core.sigma R).(h, tH) = (hJ, R)`。手書きでは `fgRoot_confirmationWitness_at_read` / `_at_action` の
+`(chainStateOf st3.core.sigma R).(h, tH) = (hJ, R)`、さらに `preceq R q = true`(`namedPreceq J D'` を `eraseBlock_preceq` で
+消去に落とす。周回168)。手書きでは `fgRoot_confirmationWitness_at_read` / `_at_action` の
 `(n.st.core.σ Cfg).T_h = some R` に当たる(務めの store は tick の中の `st3`)。 -/
 theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
     (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
@@ -156,19 +157,21 @@ theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : Quoru
           (deriveNamed s.e s.cfg D).hJ ∧
         (chainStateOf st3.core.sigma
           (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))).tH =
-          getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) := by
+          getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∧
+        preceq (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) q = true := by
   rcases stateBeforeTime_fgRoot_entryWitness c p a nr s rho hs hqh hcar hcf hv time with hg |
     ⟨D, J, row, nu, t2, i, q, D', hD, hDj, -, -, hJe, hH, hrow, ht2, hem, hev, hD', hD'q,
-      ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hJ, -, hJh, hJt, hD'h, hD't⟩
+      ⟨cache, st3, hcache, hinv, hbod, hq, hqt⟩, hJ, hJD', hJh, hJt, hD'h, hD't⟩
   · exact Or.inl hg
   · right
     rw [hbod] at hD' hJ
     have hsq := hinv.sigma D' hD'
     have hsJ := hinv.sigma J hJ
-    rw [hD'q] at hsq
-    rw [hJe] at hsJ
+    have hpre := eraseBlock_preceq hJD'
+    rw [hD'q] at hsq hpre
+    rw [hJe] at hsJ hpre
     refine ⟨D, row, nu, t2, i, q, cache, st3, hD, hDj, hH, hrow, ht2, hem, hev, hcache, hinv, hbod, hq, hqt,
-      ?_, ?_, ?_, ?_, ?_⟩
+      ?_, ?_, ?_, ?_, ?_, hpre⟩
     · rw [hsq]; exact hD'h
     · rw [hsq]; exact hD't
     · rw [← hJe]; exact hinv.tree J hJ
