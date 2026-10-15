@@ -31,6 +31,7 @@ import Proofs.Consensus.BlockStamps
 import Proofs.Consensus.BlockReceipt
 import Proofs.Consensus.Proposal
 import Proofs.Consensus.ParentSlot
+import Proofs.Consensus.DeliveredBlock
 import Mathlib.Tactic
 
 /-!
@@ -164,6 +165,10 @@ round の守りを通る `proposalWith_some` / `_parent` / `_slot` / `_proposer`
 `stateBefore_slotInv`。時計は初期の 0 か前の自分の tick の時刻 `clock_origin` で、同じ tick は 2 度現れないので、提案の時刻の tick の直前の slot は提案の slot より小さい
 `clock_lt_of_tick` / `slot_lt_of_tick`。したがって発行されたブロックの名前付きの親は発行の直前の提案者の bodies にあり `emits_block_parent_mem`、親の slot はブロックの slot より小さい
 `emits_block_parent_slot`(`Admits.parent_slot`)。`Admits` の残り — 親が受信者の tree / bodies にあること、`preceq st.f b` — は残り)。
+周回 152 の足場: `DeliveredBlock.lean`(`DeliveryWellFormed` は配送の直前の受信者の store で名前付きの親が bodies にありブロック自身は無いことを要求するので
+`deliver_deps` / `deliver_not_processed`、bodies の消去は tree にあるので親は受信者の tree にある `deliver_parent_tree`(`Admits.parent_mem`)。周回 150・151 と合わせて、honest な受信者に発行より後に
+配送された発行されたブロックは `Admits` のうち `extends_f`(`preceq st.f b`)を除く 4 つを setup と run の前提(`ScheduleWellFormed` / `DeliveryWellFormed` / `0 < Δ`)で満たし `emits_admits_of_extends`、`extends_f` の下で配送の後の tree にあり
+`deliver_emitted_block_mem`、配送の時刻が `γ` より前なら以後ずっと受信の印が `γ` より前 `deliver_emitted_block_stamped`、tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies`。残りは `extends_f`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

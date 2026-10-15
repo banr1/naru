@@ -326,7 +326,12 @@ round は提案者の round 以下で round の守りを通る `proposalWith_adm
 `tick_fresh`、初期の tree `{Genesis}` の slot は 0 で時計の slot は単調 `slot_succ_ge` なので、run のどの添字でも tree のブロックの slot は store の slot 以下 `stateBefore_slotInv`。時計は初期の 0 か前の自分の tick の時刻
 `clock_origin` で、`EventsNodup` から同じ tick は 2 度現れないので正の時刻の tick の直前の時計はその時刻より前 `clock_lt_of_tick`、提案の時刻 `proposalTime k`(`0 < k`)の tick の直前の slot は `k` より小さい
 `slot_lt_of_tick`。発行されたブロックの名前付きの親は発行の直前の提案者の bodies にあり `emits_block_parent_mem`、その消去は tree にある(`Carrier.StoreInv.tree`)ので親の slot はブロックの slot より小さい
-`emits_block_parent_slot`(`Admits.parent_slot`)。`Admits` の残り — 親が受信者の tree / bodies にあること、`preceq st.f b` — は残り)。
+`emits_block_parent_slot`(`Admits.parent_slot`)。親が受信者の tree / bodies にあることは次の `DeliveredBlock.lean`)。
+`DeliveredBlock.lean`(run の前提 `DeliveryWellFormed` は配送の直前の受信者の store で依存が揃い(`depsPresent`: 名前付きの親が bodies にある)まだ受理していない(`!processed`: bodies に無い)ことを要求する
+`deliver_deps` / `deliver_not_processed`。bodies の消去は tree にある(`Carrier.StoreInv.tree`)ので、消去したブロックの親は受信者の tree にある `deliver_parent_tree`(`Admits.parent_mem`)。
+`Proposal.lean` / `ParentSlot.lean` と合わせ、honest な受信者に発行より後に配送された発行されたブロックは `Admits` のうち `extends_f`(`preceq st.f b`)を除く 4 つを setup と run の前提(`ScheduleWellFormed` / `DeliveryWellFormed` / `0 < Δ`)で満たし
+`emits_admits_of_extends`(名前付きの親は `deliver_deps`、round の守りは `emits_block_fields`)、`extends_f` の下で配送の後の tree にあり `deliver_emitted_block_mem`、配送の時刻が `γ` より前なら以後ずっと tree にあり受信の印が `γ` より前 `deliver_emitted_block_stamped`、
+tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies`。`Admits` の残りは `extends_f`(finality の事実)だけ)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
