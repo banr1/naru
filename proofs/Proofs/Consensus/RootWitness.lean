@@ -19,6 +19,9 @@ import Mathlib.Tactic
    `(h, tH)` は `(hJ, R)` で、`R` は `st3` の tree にあり `R ⪯ q`(`stateBeforeTime_fgRoot_storeWitness`。周回 167 / 168)。
 4. `st3` は run の関数 `dutyStoreAt w i t2`(`AttestationSource.tickDutyStore`)で、その務めの確認の証人
    `fgConfirmationWitnessAt w i t2`(FG source の chain 状態の `tH`)は `some R`(`stateBeforeTime_fgRoot_confirmationWitness`。周回 171)。
+5. 時刻の境 `cutTime` で証人の tick を最近(`cutTime ≤ t2`)と古い(`t2 < cutTime`)に分け、最近の務めの証人がどれも `B` と互換で、
+   古い証人が `R` なら `B` と `R` が互換、という 2 つの前提から `compatible R B`
+   (`stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent`。周回 172)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -187,7 +190,9 @@ theorem stateBeforeTime_fgRoot_storeWitness (hs : EventsSorted rho) (hqh : Quoru
     · rw [hsJ, hJt, hJe]
 
 /-- run の添字 `i` の event `Tick w t` の中で attestation の務めが読む store(`AttestationSource.tickDutyStore` に tick の前の
-`w` の store と tick の `onPhaseTick` の cache を渡したもの)。手書きの `actionStoreAt` に当たる(周回 171)。 -/
+`w` の store と tick の `onPhaseTick` の cache を渡したもの)。手書きの `actionStoreAt` に当たる(周回 171)。
+手書きは round の添字で確認の更新を無条件に掛けるが、ここは event の添字と時刻で、確認の更新は supportCutoff の時刻だけ。
+`rho.events[i]? = some (Tick w t)` でなくても定義されるので、単独で使うときはその前提を持ち回る(周回 172)。 -/
 def dutyStoreAt (w : ValidatorId) (i : Nat) (t : Int) : NamedStore :=
   Proofs.Consensus.AttestationSource.tickDutyStore c p nr
     (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
@@ -195,7 +200,7 @@ def dutyStoreAt (w : ValidatorId) (i : Nat) (t : Int) : NamedStore :=
     s.e s.hc s.cfg (Model.Consensus.Execution.Setup.setupNode w) (worldAt (stateBefore c p a nr s rho i) w).st t
 
 /-- 務めの FG source の chain 状態の `tH`(source が無ければ `none`)。手書き `fgConfirmationWitness`
-(`Internal/Definitions/ActionSources.lean`)の `(actionFGSource S n).map (fun Cfg => (n.st.core.σ Cfg).T_h)` に当たる(周回 171)。 -/
+(`DecoupledConsensusInternal/Legacy/Definitions/ActionSources.lean:48`)の `(actionFGSource S n).map (fun Cfg => (n.st.core.σ Cfg).T_h)` に当たる(周回 171)。 -/
 def fgConfirmationWitnessAt (w : ValidatorId) (i : Nat) (t : Int) : Option Block :=
   (Model.Consensus.Protocol.Duties.Inputs.fgSourceWith
       (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
@@ -239,6 +244,46 @@ theorem stateBeforeTime_fgRoot_confirmationWitness (hs : EventsSorted rho) (hqh 
     subst hd'
     unfold fgConfirmationWitnessAt
     rw [hq, Option.map_some, hqt]
+
+/-- **最近の務めの証人と古い証人から FG root の互換を出す**: 前提 `EventsSorted` / `QuorumHonest` / `hcar` と
+`NamedRootCollisionFree` の下で、honest な `v` の時刻 `< time` の読みの FG root `R` と任意のブロック `B` について、
+`hrecent`(時刻 `cutTime ≤ t < time` に honest な `w` が行を出した tick の務めの確認の証人 `T` はどれも `B` と互換。
+手書きと同じく行を出した務めの tick だけを量化する)と
+`hbootstrap`(時刻 `< cutTime` の、`R` を説明する古い行の証人が `R` なら `B` と `R` は互換)から `compatible R B`。
+`R` が genesis なら `preceq_genesis` で前提なしに成り立つ。手書き `fgRoot_compatible_of_bootstrap_and_recentActions_at_read`
+(`Protocol/ChainState/FGRootWitness.lean`)に当たり、手書きの round の境 `a.round < cut` を時刻の境 `t2 < cutTime` に置き換えた
+(周回 172)。 -/
+theorem stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent (hs : EventsSorted rho)
+    (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {v : ValidatorId} (hv : v ∈ rho.honest.elems) {time cutTime : Int}
+    {B : Block}
+    (hrecent : ∀ (w : ValidatorId) (i : Nat) (t : Int), cutTime ≤ t → t < time → w ∈ rho.honest.elems →
+      rho.events[i]? = some (NamedEvent.Tick w t) →
+      ∀ row : NamedAttestation, row.valIndex = w → Emits c p a nr s rho w (NamedObject.Attest row) t →
+      ∀ T, fgConfirmationWitnessAt c p a nr s rho w i t = some T → compatible B T = true)
+    (hbootstrap : ∀ (D : NamedBlock) (row : NamedAttestation) (nu : Bool) (t2 : Int) (i : Nat),
+      D ∈ (worldAt (stateBeforeTime c p a nr s rho time) v).st.bodies.elems →
+      (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) →
+      row.valIndex ∈ rho.honest.elems →
+      row.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+        (root (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))) nu →
+      t2 < time → t2 < cutTime → Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 →
+      rho.events[i]? = some (NamedEvent.Tick row.valIndex t2) →
+      fgConfirmationWitnessAt c p a nr s rho row.valIndex i t2 =
+        some (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) →
+      compatible B (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) = true) :
+    compatible (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core)) B = true := by
+  rcases stateBeforeTime_fgRoot_confirmationWitness c p a nr s rho hs hqh hcar hcf hv time with hg |
+    ⟨D, row, nu, t2, i, hD, hDj, hH, hrow, ht2, hem, hev, hT⟩
+  · rw [hg]
+    unfold compatible
+    rw [Proofs.Consensus.Blocks.preceq_genesis, Bool.true_or]
+  · rw [Proofs.Consensus.Blocks.compatible_comm]
+    by_cases hcut : t2 < cutTime
+    · exact hbootstrap D row nu t2 i hD hDj hH hrow ht2 hcut hem hev hT
+    · exact hrecent row.valIndex i t2 (le_of_not_gt hcut) ht2 hH hev row rfl hem _ hT
 
 end Run
 

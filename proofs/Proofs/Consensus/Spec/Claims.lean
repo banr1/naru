@@ -251,6 +251,8 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 168 で、その結論に `preceq (FG root) q = true` を足した(`namedPreceq J D'` を `eraseBlock_preceq` で消去に落とす)。
 周回 171 の足場: tick の中の store `st3` を tick の引数の関数 `AttestationSource.tickDutyStore`(run では `RootWitness.dutyStoreAt`)として定義し、
 その務めの確認の証人 `fgConfirmationWitnessAt` が FG root であることを示した(`stateBeforeTime_fgRoot_confirmationWitness`)。
+周回 172 の足場: 時刻の境 `cutTime` の前後で証人の tick を分け、最近の務めの証人と古い証人の 2 つの前提から `compatible (FG root) B` を出す
+`stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent` を足した(手書き `fgRoot_compatible_of_bootstrap_and_recentActions_at_read`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
