@@ -345,6 +345,14 @@ tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies
 前提(`PartialSynchrony` など)が使う時刻 `< d` の読み `stateBeforeTime` の版も置く(`stateBeforeTime_eq_stateBefore_idxLt`、配送の時刻は `d` より前:
 `stateBefore_f_preceq_of_stateBeforeTime_root` / `deliver_emitted_block_mem_stateBeforeTime_of_root`)。手書き `finalized_preceq_at_prefix_of_storeBeforeRoot_preceq`
 (`Execution/ExcludesRefute.lean`。読みは `stateBeforeTime`)と、それで `ProposalFinalizedBelowAtDeliveries` を組み立てる筋。`extends_f` の残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
+`BlockSynchrony.lean`(event の整列の鍵 `eventKey` は (時刻, phase) で tick の phase 0 < 配送の phase 1 なので、時刻 `t1 ≤ t2` の tick は時刻 `t2` の配送より添字が前 `tick_lt_deliver`。
+これで honest な受信者への配送の直前の slot は `proposalTime k ≤ t2` なら `k` 以上 `slot_ge_of_deliver_le` になり、発行の時刻と等しい時刻の配送でも `Admits` の 4 つの守りが出る
+`emits_admits_of_extends_le` / `deliver_emitted_block_mem_le` / `deliver_emitted_block_mem_stateBeforeTime_of_root_le`。tick が出すブロックの提案者は tick のノード自身なので発行者は 1 つ
+`emits_block_proposer` / `emits_block_unique`。ブロックの `HandlesAt` の経路は自分の tick の発行か配送 `handlesAt_block_cases` で、`PartialSynchrony` の第 1 連言から、締切 `max t tGST + Δ`
+(horizon 以内)の時刻の読み(`stateBeforeTime`)の受信者の `f` がブロックと互換なら締切より前に扱う `partialSynchrony_block`、ブロックの提案者(発行者)でない受信者には配送がある `partialSynchrony_block_deliver`。
+FG root は `f` を延ばすので、締切の読みの FG root がブロックの消去の祖先なら `excludes` は偽 `compatible_of_stateBeforeTime_root` で、配送の event と時刻を仮定せずに締切の読みの tree にある
+`partialSynchrony_emitted_block_mem`。手書き `proposedBlock_admittedBefore_vote_after_gst_named`(`ProposalAdoptionNamedClosed.lean`)の提案者でない受信者の分岐に当たる(手書きの結論は投票の時刻より前の受理の event、ここは締切の読みの tree への所属)。
+残りは提案者自身の受理(手書き `acceptsAt_proposedBlock`)と、honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

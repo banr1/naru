@@ -34,6 +34,7 @@ import Proofs.Consensus.ParentSlot
 import Proofs.Consensus.DeliveredBlock
 import Proofs.Consensus.ProposerFinality
 import Proofs.Consensus.ReceiverFinality
+import Proofs.Consensus.BlockSynchrony
 import Mathlib.Tactic
 
 /-!
@@ -180,6 +181,11 @@ round の守りを通る `proposalWith_some` / `_parent` / `_slot` / `_proposer`
 honest な受信者に発行より後、時刻 `d` 以下に配送され、時刻 `d` の読みの受信者の `f`(または FG root)がその祖先なら、時刻 `d` の読みの tree にある
 `deliver_emitted_block_mem_storeAt` / `_of_root`、時刻 `< d` の読み `stateBeforeTime` の版 `deliver_emitted_block_mem_stateBeforeTime_of_root`。手書き `finalized_preceq_at_prefix_of_storeBeforeRoot_preceq` と `ProposalFinalizedBelowAtDeliveries` の組み立ての筋。
 残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
+周回 155 の足場: `BlockSynchrony.lean`(同じ時刻の tick は配送より添字が前(`eventKey` の phase)`tick_lt_deliver` なので、発行の時刻と等しい時刻の配送でも受信の直前の slot はブロックの slot 以上
+`slot_ge_of_deliver_le` / `emits_admits_of_extends_le`。発行されたブロックの提案者は発行したノードなので発行者は 1 つ `emits_block_proposer` / `emits_block_unique`。
+`PartialSynchrony` から、締切 `max t tGST + Δ` の読みの受信者の `f` が互換なら締切より前にブロックを扱い `partialSynchrony_block`、ブロックの提案者(発行者)でない受信者には配送 `partialSynchrony_block_deliver`。
+したがって締切の読みの FG root がブロックの祖先なら、配送の event と時刻を仮定せずに締切の読みの tree にある `partialSynchrony_emitted_block_mem`。
+残りは提案者自身の受理と、honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
