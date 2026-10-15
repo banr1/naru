@@ -22,6 +22,7 @@ import Proofs.Consensus.Majority
 import Proofs.Consensus.Voting
 import Proofs.Consensus.Delivery
 import Proofs.Consensus.Window
+import Proofs.Consensus.PoolFrom
 import Mathlib.Tactic
 
 /-!
@@ -116,6 +117,10 @@ pool にまだ 2 つ無いときで(`mem_onGoldfishVote` / `mem_receiptProcess_g
 `stateBefore i` の時計以下 `tick_le_clock`、時刻が狭義に早い event は添字も前 `lt_of_time_lt`、slot の開始時刻は公開時刻なので honest な受信者への時刻 `t2` の
 配送の直前の slot は `proposalTime k < t2` なら `k` 以上・`t2 < proposalTime (k + 1)` なら `k` 以下 `slot_ge_of_deliver` / `slot_le_of_deliver`、GST 以後に
 発行された投票の発行の時刻 `t` 以後で締切 `t + Δ` より前の配送の直前の slot はちょうど `u.slot` で `InWindow` `slot_eq_of_deliver_gfVote` / `inWindow_of_deliver_gfVote`)。
+周回 143 の足場: `PoolFrom.lean`(pool の投票の由来。run のどの添字のノード `u` の pool の投票も、`u` が処理した(`Processes`)投票か、`u` が処理したブロックが
+運ぶ投票 `pool_from`(ハンドラごとに `onGoldfishVote_from` / `onBlockUsing_from` / `onBlockWith_from` / `receiptProcess_from` / `tick_from`)、`UnforgeableSignatures` の下で
+honest な投票者の pool の投票はその投票者の tick が出した投票 `pool_genuine`、`ScheduleWellFormed` も合わせると同じ honest な投票者・同じ slot の pool の投票は
+どのノード・どの添字でも 1 つ `pool_honest_unique` — `Delivery.deliver_gfVote_mem` の equivocation の仮定に向けた層)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

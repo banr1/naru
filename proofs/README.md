@@ -279,6 +279,12 @@ slot の開始時刻 `proposalTime k`(Δ の `4k` 倍)は公開時刻 `publicTim
 `k` 以下 `slot_le_of_deliver`。`proposalTime u.slot < t2 < proposalTime (u.slot + 2)` なら `InWindow` `inWindow_of_deliver`。投票の時刻は `proposalTime k + Δ`、
 slot の長さは `4Δ` なので、GST 以後(`tGST ≤ t`)に時刻 `t` に発行された投票の、発行の時刻 `t` 以後で締切 `t + Δ` より前の配送の直前の slot はちょうど `u.slot` で `InWindow`
 `slot_eq_of_deliver_gfVote` / `inWindow_of_deliver_gfVote` — `Delivery.deliver_gfVote_mem` の窓の仮定を満たす)。
+`PoolFrom.lean`(pool の投票の由来。pool に投票を入れるのは `onGoldfishVote` だけで、来る投票は配送された投票・受理したブロックが運ぶ投票(`gfVotes (eraseBlock B) = namedGfVotes B`)・
+自分の tick の出力(提案したブロックが運ぶ投票と自分の投票)の 3 通り(`onGoldfishVote_from` / `foldl_onGoldfishVoteChecked_from` / `onBlockUsing_from` / `onBlockWith_from` /
+`receiptProcess_from` / `proposeBlockWith_from` / `namedGoldfishVoteWith_from` / `tick_from`)。したがって `stateBefore i` のノード `u` の pool の投票は `u` が処理した(`Processes`)投票か、
+`u` が処理したブロックが運ぶ投票 `pool_from`(手書き `GfFrom` / `gfFrom_on_goldfish_vote_checked`。store の attestation の真正性の `Attribution.bodies_processed` と同じ運び)。`UnforgeableSignatures` の 2 つの連言から
+honest な投票者の pool の投票はその投票者の tick が出した投票 `pool_genuine`、`Voting.emits_gfVote_unique` と合わせて同じ honest な投票者・同じ slot の pool の投票は
+どのノード・どの添字でも 1 つ `pool_honest_unique` — `equivocates` が偽であることに向けた層)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
