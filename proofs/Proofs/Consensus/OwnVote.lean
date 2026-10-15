@@ -19,7 +19,7 @@ run では、honest な `w` の添字 `j` の tick が `u` を出すと、`u` �
 鍵 `u.slot` の pool に `u` がある(`tick_honest_gfVote_mem`)。`Delivery.handlesAt_gfVote_cases` の経路 (1)(2) をこれと
 `Equivocation.deliver_honest_gfVote_mem` でまとめると、GST 以後の honest な投票を honest な `w` が発行の時刻以後・締切より前の添字 `j` で扱えば、
 `stateBefore (j + 1)` の `w` の pool に投票があるか、経路 (3)(`u` を運ぶブロックが添字 `j` で `w` の tree に新しく入る)のどちらか
-(`handlesAt_honest_gfVote_mem_or_carried`)。残りは経路 (3) の pool への到達。
+(`handlesAt_honest_gfVote_mem_or_carried`)。経路 (3) の pool への到達は `Carried.carried_honest_gfVote_mem`。
 
 手書きでは `on_goldfish_vote_insert`(`DecoupledConsensusProofs/Protocol/Handlers/Pool.lean`)を自分の投票の務めに当てる運びに当たる。
 -/

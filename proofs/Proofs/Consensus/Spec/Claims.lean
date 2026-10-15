@@ -25,6 +25,7 @@ import Proofs.Consensus.Window
 import Proofs.Consensus.PoolFrom
 import Proofs.Consensus.Equivocation
 import Proofs.Consensus.OwnVote
+import Proofs.Consensus.Carried
 import Mathlib.Tactic
 
 /-!
@@ -131,6 +132,12 @@ honest な投票者の pool の投票はその投票者の tick が出した投�
 確定の更新と attestation の務めは pool を変えないので、tick の前の pool で equivocation が無ければ tick の後の鍵 `u.slot` の pool に投票がある `tick_gfVote_mem` / `nodeTick_gfVote_mem`。
 `ScheduleWellFormed` / `UnforgeableSignatures` / Δ > 0 の下で honest な `w` の tick が出した投票は以後 `w` の pool にある `tick_honest_gfVote_mem` / `emits_honest_gfVote_mem_of_lt`(経路 (1) の完成)、
 GST 以後の honest な投票を honest な `w` が発行の時刻以後・締切より前の添字 `j` で扱えば、`stateBefore (j + 1)` の `w` の pool に投票があるか経路 (3) `handlesAt_honest_gfVote_mem_or_carried`。経路 (3) は残り)。
+周回 146 の足場: `Carried.lean`(ブロックの受理は新しいブロックを tree に入れるときだけ運ばれた投票を `foldl onGoldfishVoteChecked` で pool に入れ、畳み込みの途中の store は時計が元のままで
+pool は最終の pool の部分集合なので、窓・committee・最終の pool の投票者の一意性 `UniqueIn` の下で運ばれた投票は受理の後の pool にある `foldl_mem` / `onBlockUsing_mem` / `processBlockCore_mem`。
+tick がブロックを出すのは提案の時刻だけ `tick_block_time` で、投票の時刻以後・次の slot の提案の時刻より前は提案の時刻ではない `ne_proposalTime_of_vote_window` ので、GST 以後の honest な投票の
+締切より前の経路 (3) は配送だけで、受信の直前の slot はちょうど `u.slot` で pool に入る `carried_honest_gfVote_mem`。経路 (1)(2)(3) をまとめて、GST 以後の honest な投票を honest な `w` が
+発行の時刻以後・締切より前の添字 `j` で扱えば `stateBefore (j + 1)` の `w` の pool にある `handlesAt_honest_gfVote_mem`、締切が horizon 以内なら honest な各ノード `w` について
+締切より前の `w` ごとのある添字の後で `w` の pool にある `partialSynchrony_honest_gfVote_mem`(全ノードに共通の添字はまだ))。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
