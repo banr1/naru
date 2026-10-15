@@ -317,6 +317,11 @@ run のどの添字でも tree のブロックの印は `Bottom` か時計以下
 その下で処理の後の tree にあり、tree に無かったなら `commitBlock` が bodies に入れる `processBlockCore_mem_tree` / `_bodies`。`admitCarried` は tree を保存し bodies を変えないので受信の処理でも同じ `onBlockWith_mem_tree` / `_bodies`。
 run では配送の直前の受信者の store がこれらを満たせば `stateBefore (j + 1)` の tree にある `deliver_block_mem`(tree に無かったなら bodies にもある `deliver_block_mem_bodies`)、配送の時刻が `γ` より前なら以後ずっと tree にあり
 受信の印が `γ` より前 `deliver_block_stamped`。条件を run の事実から外すこと — 受信者の slot、親が先に届いていること、honest な提案が `st.f` の子孫であること(`PartialSynchrony` の除外が外れること `¬ excludes` が与えるのは締切の時刻の store での `compatible` で、これより弱い)— は残り)。
+`Proposal.lean`(提案の務め `proposalWith` が出すブロックは `Node par st.s (newRoot' v st.s) … (proposalRows par (selectRows …)) v` で、名前付きの親 `par` は提案者の bodies から `parentBody?` で引き消去すると入力の親 `(proposalInput …).parent`(定義では fork choice の head)、
+slot は提案者の slot、提案者は自分 `proposalWith_some` / `_parent` / `_slot` / `_proposer`。運ぶ行は `selectRows`(pool の行と bodies の運んだ行。どちらも `inWindow` で絞る)の部分集合(`excludeOnChain` は filter、`capPerSigner` は足すだけ)なので
+round は提案者の round 以下で round の守りを通る `proposalWith_admissible`。tick が出すブロックは提案の務めが走った tick の、時計を合わせた store の `proposalWith` の出力 `tick_block_shape` で、slot は `slotOf e t`・
+提案者は `proposer' (slot)`・round の守りを通り・名前付きの親は tick の前の bodies にある `tick_block_fields`。run では発行されたブロックは slot の提案の時刻に発行される `emits_block_fields`、honest な受信者への
+発行より後の配送の直前の受信者の slot はブロックの slot 以上 `emits_block_slot_le`(`Admits.slot_le`)。`Admits` の残り — 親が受信者の tree / bodies にあること、`preceq st.f b`、親の slot が小さいこと — は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
