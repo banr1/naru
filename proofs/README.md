@@ -312,6 +312,11 @@ run では時計が添字について単調(`Window.clock_succ_ge`)なので poo
 run のどの添字でも tree のブロックの印は `Bottom` か時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の tree のブロックは以後ずっと tree にあり印は添字 `j` の event の時刻で抑えられる
 `stamp_le_of_mem` / `tree_stamped`。投票の受信の印と、投票の head の root を引いたブロック(slot が投票の slot 以下)の受信の印がどちらも `γ` より前なら解決の印 `storeTau` も `γ` より前
 `storeTau_before`。honest な提案のブロックが締切より前に honest な各ノードの tree に入ることは残り)。
+`BlockReceipt.lean`(`onBlockUsing` の受理の守りのうち「まだ tree に無い」を除く 5 つ — slot が受信者の slot 以下・親が tree にある・確定のブロック `st.f` の子孫・提案者が `proposer' (slot b)`・親の slot が小さい — を `Admits` にまとめ、
+その下で受理の後の tree にブロックがある `onBlockUsing_mem_tree`(既にあれば `Step` の保存、無ければ受理の分岐 `acceptBody` が入れる)。名前付きの処理は名前付きの親が bodies にあることと運ばれた attestation の round の守りも持ち、
+その下で処理の後の tree にあり、tree に無かったなら `commitBlock` が bodies に入れる `processBlockCore_mem_tree` / `_bodies`。`admitCarried` は tree を保存し bodies を変えないので受信の処理でも同じ `onBlockWith_mem_tree` / `_bodies`。
+run では配送の直前の受信者の store がこれらを満たせば `stateBefore (j + 1)` の tree にある `deliver_block_mem`(tree に無かったなら bodies にもある `deliver_block_mem_bodies`)、配送の時刻が `γ` より前なら以後ずっと tree にあり
+受信の印が `γ` より前 `deliver_block_stamped`。条件を run の事実から外すこと — 受信者の slot、親が先に届いていること、honest な提案が `st.f` の子孫であること(`PartialSynchrony` の除外が外れること `¬ excludes` が与えるのは締切の時刻の store での `compatible` で、これより弱い)— は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

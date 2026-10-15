@@ -28,6 +28,7 @@ import Proofs.Consensus.OwnVote
 import Proofs.Consensus.Carried
 import Proofs.Consensus.Stamps
 import Proofs.Consensus.BlockStamps
+import Proofs.Consensus.BlockReceipt
 import Mathlib.Tactic
 
 /-!
@@ -149,6 +150,10 @@ tick がブロックを出すのは提案の時刻だけ `tick_block_time` で�
 `Bottom` か時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の tree のブロックは以後ずっと tree にあり印は添字 `j` の event の時刻で抑えられる `stamp_le_of_mem` / `tree_stamped`。
 投票の head の root を引いたブロック(slot が投票の slot 以下)と投票の 2 つの印がどちらも `γ` より前なら `storeTau` も `γ` より前 `storeTau_before`。honest な提案が締切より前に
 各ノードの tree に入ることは残り)。
+周回 149 の足場: `BlockReceipt.lean`(`onBlockUsing` の受理の守りのうち「まだ tree に無い」を除く 5 つ(slot が受信者の slot 以下・親が tree にある・`st.f` の子孫・提案者・親の slot が小さい)を `Admits` にまとめ、
+その下で受理の後の tree にブロックがある `onBlockUsing_mem_tree`。名前付きの親が bodies にあり運ばれた attestation の round の守りも通れば、名前付きの処理・受信の処理の後の tree にあり、
+tree に無かったなら bodies にもある `processBlockCore_mem_tree` / `_bodies`・`onBlockWith_mem_tree` / `_bodies`。run では配送の直前の受信者の store がこれらを満たせば `stateBefore (j + 1)` の
+tree にある `deliver_block_mem` / `deliver_block_mem_bodies`、配送の時刻が `γ` より前なら以後ずっと tree にあり受信の印が `γ` より前 `deliver_block_stamped`。条件を run の事実から外すことは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

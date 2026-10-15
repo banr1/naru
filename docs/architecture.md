@@ -346,7 +346,9 @@ tick を horizon まで run に入れるので honest な committee の要素は
 `stateBefore (j + 1)` の pool の投票の印は以後ずっと添字 `j` の event の時刻以下 `stamp_le_of_mem` なので、GST 以後の honest な投票は `supportCutoff` が horizon 以内なら honest な各ノードの pool に
 (添字はノードごと)受信の印が `supportCutoff` より前のまま入る `partialSynchrony_honest_gfVote_stamped`)。`BlockStamps.lean`(ブロックの受信の印を書くのは `onBlockUsing` の受理だけで
 tree のブロックとその印はどのハンドラでも保存され、run のどの添字でも tree のブロックの印は `Bottom` か時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の tree のブロックは以後ずっと tree にあり
-印は添字 `j` の event の時刻で抑えられる `stamp_le_of_mem` / `tree_stamped`、投票と head のブロックの 2 つの印が `γ` より前なら解決の印 `storeTau` も `γ` より前 `storeTau_before`)。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
+印は添字 `j` の event の時刻で抑えられる `stamp_le_of_mem` / `tree_stamped`、投票と head のブロックの 2 つの印が `γ` より前なら解決の印 `storeTau` も `γ` より前 `storeTau_before`)。`BlockReceipt.lean`(`onBlockUsing` の受理の守りのうち「まだ tree に無い」を除く 5 つを `Admits` にまとめ、
+その下で受理の後の tree にブロックがある `onBlockUsing_mem_tree`、名前付きの親が bodies にあり運ばれた attestation の round の守りも通れば受信の処理の後の tree にあり tree に無かったなら bodies にもある
+`onBlockWith_mem_tree` / `_bodies`、run では配送の直前の受信者の store がこれらを満たせば `stateBefore (j + 1)` の tree にある `deliver_block_mem` と、配送の時刻が `γ` より前なら以後ずっと受信の印が `γ` より前 `deliver_block_stamped`)。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(済み)、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
 届く)を示すことと、2 つの honest なノードの読みの間の正準性(手書きの
 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の一致・finalized との
