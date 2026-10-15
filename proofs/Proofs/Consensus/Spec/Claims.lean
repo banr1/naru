@@ -26,6 +26,7 @@ import Proofs.Consensus.PoolFrom
 import Proofs.Consensus.Equivocation
 import Proofs.Consensus.OwnVote
 import Proofs.Consensus.Carried
+import Proofs.Consensus.Stamps
 import Mathlib.Tactic
 
 /-!
@@ -138,6 +139,10 @@ tick がブロックを出すのは提案の時刻だけ `tick_block_time` で�
 締切より前の経路 (3) は配送だけで、受信の直前の slot はちょうど `u.slot` で pool に入る `carried_honest_gfVote_mem`。経路 (1)(2)(3) をまとめて、GST 以後の honest な投票を honest な `w` が
 発行の時刻以後・締切より前の添字 `j` で扱えば `stateBefore (j + 1)` の `w` の pool にある `handlesAt_honest_gfVote_mem`、締切が horizon 以内なら honest な各ノード `w` について
 締切より前の `w` ごとのある添字の後で `w` の pool にある `partialSynchrony_honest_gfVote_mem`(全ノードに共通の添字はまだ))。
+周回 147 の足場: `Stamps.lean`(受信の印の表 `timestampVote` を書くのは `onGoldfishVote` だけで、既に鍵 `u.slot` の pool にある投票は受理されないので、どのハンドラも pool の投票の印を保存し、
+新しい投票の印は時計の時刻(`Step` / `Grow`)。時計は添字について単調なので run のどの添字でも pool の投票の印は時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の pool の投票の印は
+以後ずっと添字 `j` の event の時刻以下 `stamp_le_of_mem`。投票の締切 `voteTime + Δ` はちょうど `supportCutoff` なので、GST 以後の honest な投票は `supportCutoff` が horizon 以内なら honest な各ノード `w` について
+`w` ごとのある添字の後で `w` の pool にあり受信の印が `supportCutoff` より前 `partialSynchrony_honest_gfVote_stamped`。解決の印 `storeTau` の head のブロックの側は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
