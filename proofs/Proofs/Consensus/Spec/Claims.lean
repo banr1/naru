@@ -30,6 +30,7 @@ import Proofs.Consensus.Stamps
 import Proofs.Consensus.BlockStamps
 import Proofs.Consensus.BlockReceipt
 import Proofs.Consensus.Proposal
+import Proofs.Consensus.ParentSlot
 import Mathlib.Tactic
 
 /-!
@@ -159,6 +160,10 @@ tree にある `deliver_block_mem` / `deliver_block_mem_bodies`、配送の時�
 round の守りを通る `proposalWith_some` / `_parent` / `_slot` / `_proposer` / `_admissible`。tick が出すブロックは提案の務めが走った tick のもので `tick_block_shape` / `tick_block_fields`、
 発行されたブロックは slot の提案の時刻に発行され提案者は `proposer' (slot)` で round の守りを通る `emits_block_fields`、honest な受信者への発行より後の配送の直前の slot はブロックの slot 以上
 `emits_block_slot_le`。`Admits` の残り — 親が受信者の tree / bodies にあること、`preceq st.f b`、親の slot が小さいこと — は残り)。
+周回 151 の足場: `ParentSlot.lean`(tree を育てるのは受理の守り `st.s < slot b` を通ったブロックだけなので、run のどの添字でも tree のブロックの slot は store の slot 以下
+`stateBefore_slotInv`。時計は初期の 0 か前の自分の tick の時刻 `clock_origin` で、同じ tick は 2 度現れないので、提案の時刻の tick の直前の slot は提案の slot より小さい
+`clock_lt_of_tick` / `slot_lt_of_tick`。したがって発行されたブロックの名前付きの親は発行の直前の提案者の bodies にあり `emits_block_parent_mem`、親の slot はブロックの slot より小さい
+`emits_block_parent_slot`(`Admits.parent_slot`)。`Admits` の残り — 親が受信者の tree / bodies にあること、`preceq st.f b` — は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

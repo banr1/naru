@@ -30,7 +30,8 @@
   `Carried.lean`、pool の投票の受信の印は以後変わらず、GST 以後の honest な投票は honest な各ノードの pool に受信の印が `supportCutoff` より前のまま入る `Stamps.lean`、tree のブロックの受信の印は以後変わらず event の時刻で抑えられ、投票と head のブロックの 2 つの印から
   解決の印 `storeTau` が締切より前になる `BlockStamps.lean`、`onBlockUsing` の受理の守り(`Admits`)と名前付きの親・attestation の round の守りの下で配送されたブロックが受信者の tree(新しければ bodies)に入り、
   配送の時刻が締切より前なら受信の印も締切より前になる `BlockReceipt.lean`、提案の務め・tick が出すブロックの名前付きの親が提案者の bodies にあり、提案者が `proposer' (slot)` で
-  round の守りを通り、honest な受信者への発行より後の配送の直前の slot がブロックの slot 以上になる `Proposal.lean` は既にあり、残るのは
+  round の守りを通り、honest な受信者への発行より後の配送の直前の slot がブロックの slot 以上になる `Proposal.lean`、tree のブロックの slot が store の slot 以下で
+  発行されたブロックの親の slot がブロックの slot より小さい `ParentSlot.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の
