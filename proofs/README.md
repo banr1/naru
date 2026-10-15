@@ -336,7 +336,15 @@ tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies
 `anchor_extends`、head は anchor から `ghost` で辿るので `getHeadWith_extends`、提案されたブロックの親は head なので `proposalWith_extends`。`f ⪯ j`(`FJ`)は `updateFinality` の `j` を変える分岐の守り
 `preceq afterMax.f σ.j` と `f` を変える分岐の守り `preceq σ.f afterJustification.j` が保ち(`updateFinality_fj`)、他のハンドラは `f` / `j` を変えないので、run のどの添字・時刻の読みでも前提なしに成り立つ
 `stateBefore_fj` / `readAt_fj`。発行されたブロックは発行の tick の直前の提案者の `f` を延ばし `emits_block_extends`、配送の直前の受信者の `f` がその祖先なら配送の後の tree にある
-`deliver_emitted_block_mem_of_finalized`。`extends_f` の残りは受信者と提案者の finalized の順序)。
+`deliver_emitted_block_mem_of_finalized`。`extends_f` の残りは受信者の側で、次の `ReceiverFinality.lean`)。
+`ReceiverFinality.lean`(`f` は run の添字について `preceq` で単調 `stateBefore_f_mono`(各 `worldStep` が `f` を縮めない `FinalizedMonotone.worldStep_f`)、`f ⪯ j` から FG root は `f` を延ばす
+`store_fgRoot_extends` ので、後の添字の `f` か FG root がブロックの祖先ならそれ以前のどの添字の `f` も祖先 `stateBefore_f_preceq_of_later` / `_of_root`。時刻 `d` の読みは添字 `idx d` の直前の状態で、
+時刻 `d` 以下の event の添字は `idx d` より前 `lt_idx_of_time_le` なので、読みについても同じ `stateBefore_f_preceq_of_storeAt` / `_of_storeAt_root`。発行されたブロックが honest な受信者に
+発行より後、時刻 `d` 以下に配送され、時刻 `d` の読みの受信者の `f`(または FG root)がその消去の祖先なら、配送の後の tree にあり tree のブロックは残る(`BlockStamps.stateBefore_keep`)ので
+時刻 `d` の読みの tree にある `deliver_emitted_block_mem_storeAt` / `_of_root`(setup と run の前提、event の整列と重複なしの下で)。`storeAt` / `readAt` は時刻 `≤ d` の読みなので、
+前提(`PartialSynchrony` など)が使う時刻 `< d` の読み `stateBeforeTime` の版も置く(`stateBeforeTime_eq_stateBefore_idxLt`、配送の時刻は `d` より前:
+`stateBefore_f_preceq_of_stateBeforeTime_root` / `deliver_emitted_block_mem_stateBeforeTime_of_root`)。手書き `finalized_preceq_at_prefix_of_storeBeforeRoot_preceq`
+(`Execution/ExcludesRefute.lean`。読みは `stateBeforeTime`)と、それで `ProposalFinalizedBelowAtDeliveries` を組み立てる筋。`extends_f` の残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

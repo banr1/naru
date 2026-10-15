@@ -33,7 +33,9 @@
   round の守りを通り、honest な受信者への発行より後の配送の直前の slot がブロックの slot 以上になる `Proposal.lean`、tree のブロックの slot が store の slot 以下で
   発行されたブロックの親の slot がブロックの slot より小さい `ParentSlot.lean`、配送の前提 `DeliveryWellFormed` から親が受信者の tree にあり、
   発行されたブロックが `preceq st.f b` だけを仮定に配送の後の受信者の tree に入る `DeliveredBlock.lean`、store の `f ⪯ j` が run を通して保たれ、
-  発行されたブロックが提案者の `f` を延ばすので `preceq st.f b` が受信者と提案者の finalized の順序に還元される `ProposerFinality.lean` は既にあり、残るのは
+  発行されたブロックが提案者の `f` を延ばすので `preceq st.f b` が受信者と提案者の finalized の順序に還元される `ProposerFinality.lean`、
+  `f` が run の添字について単調で FG root が `f` を延ばすので、発行されたブロックが honest な受信者に発行より後、締切より前に配送され、締切の時刻の読みの受信者の FG root が
+  そのブロックの祖先なら(setup と run の前提の下で)その読みの tree にある `ReceiverFinality.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の

@@ -33,6 +33,7 @@ import Proofs.Consensus.Proposal
 import Proofs.Consensus.ParentSlot
 import Proofs.Consensus.DeliveredBlock
 import Proofs.Consensus.ProposerFinality
+import Proofs.Consensus.ReceiverFinality
 import Mathlib.Tactic
 
 /-!
@@ -174,6 +175,11 @@ round の守りを通る `proposalWith_some` / `_parent` / `_slot` / `_proposer`
 `f ⪯ j` の下で `f` を延ばし `anchor_extends`、head は anchor から `ghost` で辿るので `getHeadWith_extends`、提案されたブロックの親は head なので `proposalWith_extends`。`f ⪯ j`(`FJ`)は
 `updateFinality` の 2 つの分岐の守りが保ち、他のハンドラは `f` / `j` を変えないので、run のどの添字・時刻の読みでも前提なしに成り立つ `stateBefore_fj` / `readAt_fj`。したがって発行されたブロックは
 発行の tick の直前の提案者の `f` を延ばし `emits_block_extends`、受信者の `f` がその祖先なら配送の後の tree にある `deliver_emitted_block_mem_of_finalized`。残りは受信者と提案者の finalized の順序)。
+周回 154 の足場: `ReceiverFinality.lean`(`f` は run の添字について `preceq` で単調 `stateBefore_f_mono`、FG root は `f` を延ばすので、後の添字の `f` か FG root がブロックの祖先なら
+それ以前のどの添字の `f` も祖先 `stateBefore_f_preceq_of_later` / `_of_root`、時刻 `d` の読みについても同じ `stateBefore_f_preceq_of_storeAt` / `_of_storeAt_root`。したがって発行されたブロックが
+honest な受信者に発行より後、時刻 `d` 以下に配送され、時刻 `d` の読みの受信者の `f`(または FG root)がその祖先なら、時刻 `d` の読みの tree にある
+`deliver_emitted_block_mem_storeAt` / `_of_root`、時刻 `< d` の読み `stateBeforeTime` の版 `deliver_emitted_block_mem_stateBeforeTime_of_root`。手書き `finalized_preceq_at_prefix_of_storeBeforeRoot_preceq` と `ProposalFinalizedBelowAtDeliveries` の組み立ての筋。
+残りは honest な提案が締切の時刻の受信者の FG root を延ばすこと)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
