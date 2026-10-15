@@ -41,6 +41,8 @@ import Proofs.Consensus.JustifiedCarrier
 import Proofs.Consensus.FinalizedSource
 import Proofs.Consensus.JustificationCertificate
 import Proofs.Consensus.AttestationSource
+import Proofs.Consensus.EntryHeight
+import Proofs.Consensus.RootEntry
 import Mathlib.Tactic
 
 /-!
@@ -233,6 +235,12 @@ tick の中の store `st3`(`StoreInv` を受け継ぐ)での `attestWith` の行
 `getFgRoot`)を足し、`fgSourceWith` が返すのは `liveConfirmed` の祖先(`deepestClear_preceq`)か grade 2 のブロック(`grade2BlockWith_mem`)なので
 tree にある(`AttestationSource.fgSourceWith_mem` / `fgSource_mem_tree`)。`tick_attest_store` は `st3` が `TreeInv` も受け継ぐことを返し、
 `emits_vote_source` は前提なしに `q ∈ st3.tree` と bodies の `D`(`eraseBlock D = q`、`deriveNamed D` の `h` / `tH` の根が行のもの)を返す。
+周回 165 の足場: `EntryHeight.lean`(新規)に導出の高さの入口の補題を足した。子の導出の `(h, tH)` は親のものか `(親の h + 1, 子の消去)`
+(`deriveNamed_htH_node`)で、どの `B` にも消去が `B` の導出の `tH`・導出の `h` が等しい名前付きの祖先 `K` がある(`entry_ancestor_same_height`)。
+導出の `h` は祖先について単調で(`deriveNamed_h_mono`)、`h` の等しい祖先と子孫の `tH` は等しい(`entry_eq_on_plateau`)。`RootEntry.lean`(新規)で
+これを `stateBeforeTime_fgRoot_honestEmission_lt` と `emits_vote_source` に結んだ: 読みの FG root が genesis でなければ、honest な署名者 `w` が
+時刻 `< time` に出した行は `Vote hJ (root FG root) nu` で、その tick の務めの FG source の名前付きブロック `D'` の祖先で、導出の `h` が `hJ`・根が FG root の根の `K` が `w` の bodies にある
+(`stateBeforeTime_fgRoot_honestEntry`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

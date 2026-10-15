@@ -407,7 +407,11 @@ bodies にある `D` の祖先の行に honest な署名者の `matchesEntry hei
 tree が親について閉じていれば tree にある(`fgSourceWith_mem` / `fgSource_mem_tree`)。`TreeInv` に欄 `live`(`liveConfirmed ∈ tree`)を足し、
 `tick_attest_store` は `st3` が `TreeInv` も受け継ぐことを返す。手書き `HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の行と務めの source の結びに当たる。手書きは務めの store を `actionStoreAt`
 (`stateBeforeTime (a r)` に確認の更新を掛けたもの)で読み、source が bodies にあること(`NamedActionSources.action_witness`)まで示す。
-checkpoint `K`(同じ高さの最初の祖先)と FG root の justification の根の一致は残り)。
+`EntryHeight.lean`(周回 165。導出の高さの入口: 子の導出の `(h, tH)` は親のものか `(親の h + 1, 子の消去)` `deriveNamed_htH_node`、どの `B` にも消去が `B` の導出の
+`tH` で導出の `h` が等しい名前付きの祖先 `K` がある `entry_ancestor_same_height`、`deriveNamed_h_mono` / `node_entry_eq_of_height_eq` / `entry_eq_on_plateau`。
+手書き `NamedEntryHeight` に当たる。`entry_geometry_ancestor` は移していない)と `RootEntry.lean`(周回 165。読みの FG root が genesis でなければ、honest な署名者 `w` が時刻 `< time` に出した行は
+`Vote hJ (root FG root) nu`(`matchesEntry_vote`)で、`emits_vote_source` の `D'` に `entry_ancestor_same_height` を掛けると、その tick の後の `w` の bodies に
+導出の `h` が `hJ` で根が FG root の根の `K` がある `stateBeforeTime_fgRoot_honestEntry`。`D'` はその tick の中の store `st3` の務めの FG source `q` の名前付きブロック(`eraseBlock D' = q`)で、`K` の導出の `tH` は `K` の消去)。`K` から FG root そのものへの一致(根の一致からブロックの一致)は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
