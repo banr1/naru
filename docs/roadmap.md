@@ -27,7 +27,8 @@
   配送の後に投票が受信者の pool にある(`UnforgeableSignatures` / `ScheduleWellFormed` / Δ > 0 の下で)の `Equivocation.lean`、同じ仮定の下で honest なノードの tick が出した投票は以後そのノードの
   pool にあり、GST 以後の honest な投票を発行の時刻以後・締切より前に扱えば扱った直後の pool に入るか投票を運ぶブロックが tree に新しく入るの `OwnVote.lean`、ブロックが運ぶ投票は新しく受理したノードの
   pool に入り(tick がブロックを出すのは提案の時刻だけなので、締切より前の経路 (3) は配送だけ)、GST 以後の honest な投票は締切が horizon 以内なら締切より前に honest な各ノードの pool に届く(添字はノードごと)
-  `Carried.lean`、pool の投票の受信の印は以後変わらず、GST 以後の honest な投票は honest な各ノードの pool に受信の印が `supportCutoff` より前のまま入る `Stamps.lean` は既にあり、残るのは
+  `Carried.lean`、pool の投票の受信の印は以後変わらず、GST 以後の honest な投票は honest な各ノードの pool に受信の印が `supportCutoff` より前のまま入る `Stamps.lean`、tree のブロックの受信の印は以後変わらず event の時刻で抑えられ、投票と head のブロックの 2 つの印から
+  解決の印 `storeTau` が締切より前になる `BlockStamps.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の

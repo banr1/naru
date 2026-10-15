@@ -306,7 +306,12 @@ honest な `w` の pool にある `partialSynchrony_honest_gfVote_mem`)。
 (`onGoldfishVote_cases`)。したがってどのハンドラも時計を変えずに pool の投票の印を保存し新しい投票の印は時計以下(`Step`)、tick は時計を合わせた後の store からの `Step`(`tick_grow`)。
 run では時計が添字について単調(`Window.clock_succ_ge`)なので pool の投票の印は時計以下 `stateBefore_stampInv`、添字 `j` の event の後の時計はその event の時刻以下 `clock_succ_le_event` なので
 `stateBefore (j + 1)` の pool の投票は以後ずっと pool にあり印は添字 `j` の event の時刻以下 `stamp_le_of_mem`。投票の締切 `voteTime + Δ` は `supportCutoff` と等しいので、GST 以後の honest な投票は
-`supportCutoff` が horizon 以内なら honest な `w` の pool に `w` ごとのある添字の後で入り受信の印が `supportCutoff` より前 `partialSynchrony_honest_gfVote_stamped`。`storeTau` の head のブロックの受信の印の側は残り)。
+`supportCutoff` が horizon 以内なら honest な `w` の pool に `w` ごとのある添字の後で入り受信の印が `supportCutoff` より前 `partialSynchrony_honest_gfVote_stamped`)。
+`BlockStamps.lean`(ブロックの受信の印の表 `timestampBlock` を書くのは `onBlockUsing` の受理の分岐(`storedOf`)だけで、まだ tree に無いブロックを入れるときにその印を時計の時刻にする。
+したがってどのハンドラも時計を変えずに tree のブロックとその印を保存し新しいブロックの印は時計以下(`Step`)、tick は `tick_grow`。初期の tree `{Genesis}` の印は `Bottom` なので、
+run のどの添字でも tree のブロックの印は `Bottom` か時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の tree のブロックは以後ずっと tree にあり印は添字 `j` の event の時刻で抑えられる
+`stamp_le_of_mem` / `tree_stamped`。投票の受信の印と、投票の head の root を引いたブロック(slot が投票の slot 以下)の受信の印がどちらも `γ` より前なら解決の印 `storeTau` も `γ` より前
+`storeTau_before`。honest な提案のブロックが締切より前に honest な各ノードの tree に入ることは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

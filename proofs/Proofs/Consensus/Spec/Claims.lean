@@ -27,6 +27,7 @@ import Proofs.Consensus.Equivocation
 import Proofs.Consensus.OwnVote
 import Proofs.Consensus.Carried
 import Proofs.Consensus.Stamps
+import Proofs.Consensus.BlockStamps
 import Mathlib.Tactic
 
 /-!
@@ -142,7 +143,12 @@ tick がブロックを出すのは提案の時刻だけ `tick_block_time` で�
 周回 147 の足場: `Stamps.lean`(受信の印の表 `timestampVote` を書くのは `onGoldfishVote` だけで、既に鍵 `u.slot` の pool にある投票は受理されないので、どのハンドラも pool の投票の印を保存し、
 新しい投票の印は時計の時刻(`Step` / `Grow`)。時計は添字について単調なので run のどの添字でも pool の投票の印は時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の pool の投票の印は
 以後ずっと添字 `j` の event の時刻以下 `stamp_le_of_mem`。投票の締切 `voteTime + Δ` はちょうど `supportCutoff` なので、GST 以後の honest な投票は `supportCutoff` が horizon 以内なら honest な各ノード `w` について
-`w` ごとのある添字の後で `w` の pool にあり受信の印が `supportCutoff` より前 `partialSynchrony_honest_gfVote_stamped`。解決の印 `storeTau` の head のブロックの側は残り)。
+`w` ごとのある添字の後で `w` の pool にあり受信の印が `supportCutoff` より前 `partialSynchrony_honest_gfVote_stamped`)。
+周回 148 の足場: `BlockStamps.lean`(ブロックの受信の印の表 `timestampBlock` を書くのは `onBlockUsing` の受理(`storedOf`)だけで、受理するのはまだ tree に無いブロックなので、
+どのハンドラも tree のブロックとその印を保存し新しいブロックの印は時計の時刻(`Step` / `Grow`)、初期の tree は `{Genesis}` で印は `Bottom`。run のどの添字でも tree のブロックの印は
+`Bottom` か時計以下 `stateBefore_stampInv`、`stateBefore (j + 1)` の tree のブロックは以後ずっと tree にあり印は添字 `j` の event の時刻で抑えられる `stamp_le_of_mem` / `tree_stamped`。
+投票の head の root を引いたブロック(slot が投票の slot 以下)と投票の 2 つの印がどちらも `γ` より前なら `storeTau` も `γ` より前 `storeTau_before`。honest な提案が締切より前に
+各ノードの tree に入ることは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
