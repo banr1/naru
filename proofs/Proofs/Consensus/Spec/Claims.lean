@@ -43,6 +43,7 @@ import Proofs.Consensus.JustificationCertificate
 import Proofs.Consensus.AttestationSource
 import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.RootEntry
+import Proofs.Consensus.RootWitness
 import Mathlib.Tactic
 
 /-!
@@ -241,6 +242,10 @@ tree にある(`AttestationSource.fgSourceWith_mem` / `fgSource_mem_tree`)。`ti
 これを `stateBeforeTime_fgRoot_honestEmission_lt` と `emits_vote_source` に結んだ: 読みの FG root が genesis でなければ、honest な署名者 `w` が
 時刻 `< time` に出した行は `Vote hJ (root FG root) nu` で、その tick の務めの FG source の名前付きブロック `D'` の祖先で、導出の `h` が `hJ`・根が FG root の根の `K` が `w` の bodies にある
 (`stateBeforeTime_fgRoot_honestEntry`)。
+周回 166 の足場: `RootWitness.lean`(新規)で、読みの主の bodies に消去が FG root の名前付きブロック `J` があることを示し
+(`stateBeforeTime_fgRoot_named`。`D` の導出の `j` を `erased_ancestor_lift` で `D` の名前付きの祖先に持ち上げる)、`NamedRootCollisionFree` の下で
+読みの主が honest なら `J` は `RootEntry` の入口のブロック `K` と同じ(`stateBeforeTime_fgRoot_entryWitness`): `J` は `w` の bodies にあって務めの FG source の
+名前付きブロック `D'` の祖先で、導出の `h` が `hJ`、`tH` が `J` の消去。`D'` の導出の `tH` は FG root そのもの。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
