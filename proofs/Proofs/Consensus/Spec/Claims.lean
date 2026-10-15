@@ -40,6 +40,7 @@ import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.JustifiedCarrier
 import Proofs.Consensus.FinalizedSource
 import Proofs.Consensus.JustificationCertificate
+import Proofs.Consensus.AttestationSource
 import Mathlib.Tactic
 
 /-!
@@ -222,6 +223,12 @@ FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `f
 `exists_honest_of_quorum_majority`(手書き `HonestWeightMajority.exists_honest_member_of_quorum`。手書きの faulty は `univ \ H`、ここは `validators \ H`)を足し、
 regime の重みの多数から `QuorumHonest` を出した: `quorumHonest_of_windowMajority` / `_freshMajority` / `_bftRegime` / `_sleepyRegime`(窓の条件を満たす時刻があれば)/
 `_outageRegime`(honest の整列を前提に。`RunDomain` から `sorted_honest` で出せる)。
+周回 163 の足場: `AttestationSource.lean`(新規)に、行の height pair を attestation の務めの FG source に結ぶ補題を足した。`namedCreate` の行が
+`Vote h entry nu` なら入力の `fields` は `some (h, entry, _)`(`namedCreate_vote`)で、務めの `fields` は FG source `q` の chain 状態の
+`(h, root tH, nj)` なので、`(chainStateOf sigma q).h = h`・`root (chainStateOf sigma q).tH = entry`(`attestWith_vote_source`)。tick の出力の行は
+tick の中の store `st3`(`StoreInv` を受け継ぐ)での `attestWith` の行(`tick_attest_store` / `tick_vote_source`)。run の発行の版
+`emits_vote_source`(`q` が `st3` の tree にあれば bodies の `D` で `eraseBlock D = q`)。手書き
+`HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の、行と務めの source の結びに当たり、source が tree にあることはまだ前提。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

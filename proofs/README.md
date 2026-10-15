@@ -396,7 +396,15 @@ bodies にある `D` の祖先の行に honest な署名者の `matchesEntry hei
 `bodies_processed_before`(`Attribution.bodies_processed` に添字 `j < i` を足したもの)と、添字 `idxLt time` より前の event の時刻は `time` より前 `time_lt_of_lt_idxLt` から、
 処理の event の添字 `j < i` を返す `stateBefore_fgRoot_honestEmission_before` と、処理の時刻 `t < time` と発行の時刻 `t2 < time`(手書きの `ta < time`)を返す
 `stateBeforeTime_fgRoot_honestEmission_lt` を足した。
-後半の、その行を出した tick の store の checkpoint の witness に結ぶところは残り)。
+後半の、その行を出した tick の store の checkpoint の witness に結ぶところは次の `AttestationSource.lean` から)。
+`AttestationSource.lean`(周回 163。行の height pair を attestation の務めの FG source に結ぶ: `namedCreate` の行が `Vote h entry nu` なら入力の `fields` は
+`some (h, entry, _)` `namedCreate_vote`、務めの `fields` は FG source `q = fgSourceWith …` の chain 状態の `(h, root tH, nj)` なので `(chainStateOf sigma q).h = h`・
+`root (chainStateOf sigma q).tH = entry` `attestWith_vote_source`。tick の出力の行は tick の中の store `st3`(時計合わせ・提案・投票・確認の更新の後。`StoreInv` を受け継ぐ)での
+`attestWith` の行で、tick の後の store は `attestWith` の後のもの `tick_attest_store` / `tick_vote_source`。run の発行の版 `emits_vote_source` は添字 `i` の `Tick w t` の中の `st3` を返し、
+`stateBefore (i + 1)` の `w` の bodies は `st3` の bodies で、`q` が `st3` の tree にあれば bodies に `eraseBlock D = q` の `D` があって `deriveNamed D` の `h` / `tH` の根が行のもの
+(`source_named`)。手書き `HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の行と務めの source の結びに当たる。手書きは務めの store を `actionStoreAt`
+(`stateBeforeTime (a r)` に確認の更新を掛けたもの)で読み、source が bodies にあること(`NamedActionSources.action_witness`)まで示す。source が tree にあることと、
+checkpoint `K`(同じ高さの最初の祖先)と FG root の justification の根の一致は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
