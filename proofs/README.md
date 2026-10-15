@@ -138,8 +138,9 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`、補題は `pro
 `Blocks.lean`: `preceq` の推移律。前提のうち使うのは `RunWellFormed` の `EventsSorted` だけ。手書き `finalized_readAt_mono_of_sorted` の筋)、
 `certificatesAccountable`(補題 `Proofs/Consensus/CertificatesAccountable.lean`。run の前提は無く、`SetupWellFormed` からは
 `normalizedValidators`(電子集団が正規集合であること)だけを使う。`Derivation.lean`: 名前付き導出 `deriveNamed` の不変条件 `Inv` — 高さの順序
-`hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、`hF = 0 → f = Genesis`、`finalize` / `targetParticipation` / `progress` が整列していて各署名者に
-chain 上の行があること、finality の証明書(`hF ≠ 0` なら `finalityPair = some ⟨hF, root f⟩` の行を持つ定足数)、高さの横断(`1 ≤ h₀ < h` なら祖先 `X` と
+`hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、`hF = 0 → f = Genesis`、`hJ = 0 → j = Genesis`、`finalize` / `targetParticipation` / `progress` が整列していて各署名者に
+chain 上の行があること、finality の証明書(`hF ≠ 0` なら `finalityPair = some ⟨hF, root f⟩` の行を持つ定足数)、justification の証明書
+(`hJ ≠ 0` なら `matchesEntry … hJ (root j)` の行を持つ定足数。周回 160 で足した)、高さの横断(`1 ≤ h₀ < h` なら祖先 `X` と
 `matchesEntry … h₀ (root X)` の行を持つ定足数)— を `B` の構造帰納法で示す(`processAttestation` → `foldRows` → `processHeightEvents` の順)。
 `Orders.lean` / `Sets.lean`: 派生 `Ord` の `.eq ↔ =` と stdlib `Set` の所属の言い換え、`ValidatorId` の集合の整列(`Sorted`)と `Finset.sum` への橋。
 `Weights.lean`: どの集合の重みも総重み `W` 以下、`weight (s ∪ t) + weight (s ∩ t) = weight s + weight t`、定足数の交わり `2q ≤ W + weight (s ∩ t)`。
@@ -380,7 +381,17 @@ checkpoint の witness に結ぶ(同じファイルの `fgRoot_confirmationWitne
 `C` の構造帰納法で、どの `C` にも導出の `(j, hJ)` が `C` の導出の `(f, hF)` に等しい名前付きの祖先がある `finalized_justificationAncestor`(手書き `named_finalized_justificationAncestor`。高さの等式はここで足した)。
 `StoreInv.closed` から祖先も bodies にある(`Attribution.ancestor_mem_bodies`)ので、store の FG root は常に bodies のどれかの導出の `j` `fgRoot_justified`、その消去は tree にあり FG root はその祖先
 `fgRoot_justified_preceq`。run の読みの版 `stateBefore_fgRoot_justified` / `storeAt_fgRoot_justified` / `stateBeforeTime_fgRoot_justified` / `stateBeforeTime_fgRoot_justified_preceq` は前提なしで、
-手書き `fgRoot_justificationSource_at_read`(`AdmissibleCore` を仮定する)の形。次の層の justification の証明書の honest な署名者は残り)。
+手書き `fgRoot_justificationSource_at_read`(`AdmissibleCore` を仮定する)の形。次の層の justification の証明書の honest な署名者は次の `JustificationCertificate.lean`)。
+`JustificationCertificate.lean`(周回 160。`Derivation.Inv` の欄 `hJ_zero` / `jcert` から、導出の `hJ = 0` なら `j = Genesis` `justified_zero_is_genesis`、`hJ ≠ 0` なら
+`matchesEntry heightPair hJ (root j)` の行の定足数 `justification_certificate`(手書き `NamedJustificationCertificates` の 2 つ。手書きは行の flag を `false` に固定するが、ここは
+`tp_rows` と同じく flag を見ない)。定足数は重み `⌊(2W + 2) / 3⌋` 以上なので、faulty(`validators \ H`)の重み `w` が `3 · w < W`(`BelowOneThird`)なら `H` の署名者がいる
+`exists_honest_of_quorum`(署名者がどれも `H` に無ければ、重みが 0 でない署名者は `validators \ H` にあるので `weightOf_le_diff`)。store と run の版の前提は
+「どの定足数にも `H` の署名者がいる」`QuorumHonest` で、`BelowOneThird` からは `quorumHonest_of_belowOneThird`(手書きは `HonestWeightMajority`(faulty の重み < honest の重み)から
+`exists_honest_member_of_quorum` で取る。その重みの形から `QuorumHonest` を出すのは残り。`SleepyRegime` には `BelowOneThird` が無い)。store の FG root は genesis か、bodies の `D` の導出の `j` で、
+bodies にある `D` の祖先の行に honest な署名者の `matchesEntry heightPair hJ (root FG root)` のものがある `fgRoot_honestRow`。run では、その祖先は読みの主が処理した(`Processes`)ブロックで
+(`Attribution.bodies_processed`)、`UnforgeableSignatures` の carried の半分から、署名者は処理の時刻以前にその行を出した(`Emits`)`stateBefore_fgRoot_honestEmission` /
+`stateBeforeTime_fgRoot_honestEmission`(`EventsSorted`)。手書き `processedJustification_confirmationWitness` の前半。手書きの発行の時刻が読みの時刻より前(`ta < time`)なことと、
+後半の、その行を出した tick の store の checkpoint の witness に結ぶところは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

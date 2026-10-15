@@ -10,11 +10,13 @@ import Mathlib.Tactic
 生成 Model の `deriveNamed e cfg B`(`Protocol/ChainState.lean`: genesis は `initialChainState`、子は親の状態に
 `namedTransition` = `processHeightEvents (foldRows st (eraseBlock B) rows)` を当てる)の chain 状態 `st` について、
 `B` の祖先の行で裏付けられた不変条件 `Inv e B st` を帰納法で示す:
-- 高さの順序 `hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、`hF = 0 → f = Genesis`;
+- 高さの順序 `hF ≤ hJ < h`、`f` / `j` / `tH` が `eraseBlock B` の接頭辞、`hF = 0 → f = Genesis`、`hJ = 0 → j = Genesis`;
 - 3 つの署名者集合(`finalize` / `targetParticipation` / `progress`)が `Sorted` で、各署名者に `B` の chain 上の行
   (`OnChain B row`)があり、`finalize` の行は `finalityPair = some ⟨hJ, root j⟩`、`targetParticipation` / `progress` の行は
   `matchesEntry heightPair h (root tH)`;
 - finality の証明書 `cert`: `hF ≠ 0` なら、重み `q` 以上の署名者集合の各署名者が `finalityPair = some ⟨hF, root f⟩` の行を持つ;
+- justification の証明書 `jcert`: `hJ ≠ 0` なら、重み `q` 以上の署名者集合の各署名者が `matchesEntry heightPair hJ (root j)` の
+  行を持つ(`j` が target として justified になった高さ `hJ` の `targetParticipation`。周回 160 で足した);
 - 高さの横断 `crossing`: `1 ≤ h₀ < h` なら、`eraseBlock B` の祖先 `X` と、重み `q` 以上の署名者集合の各署名者が
   `matchesEntry heightPair h₀ (root X)` の行を持つ(高さ `h₀` を通過したときの定足数)。
 手書き `NamedFinalityCertificates`(`finalized_zero_is_genesis` / `finality_certificate` / `height_crossing`)、
@@ -83,6 +85,7 @@ structure Inv (e : ProtocolEnv) (B : NamedBlock) (st : ChainState) : Prop where
   j_preceq : preceq st.j (eraseBlock B) = true
   tH_preceq : preceq st.tH (eraseBlock B) = true
   hF_zero : st.hF = 0 → st.f = Block.Genesis
+  hJ_zero : st.hJ = 0 → st.j = Block.Genesis
   fin_sorted : Sorted st.finalize
   tp_sorted : Sorted st.targetParticipation
   pr_sorted : Sorted st.progress
@@ -90,6 +93,7 @@ structure Inv (e : ProtocolEnv) (B : NamedBlock) (st : ChainState) : Prop where
   tp_rows : Rows B st.targetParticipation (fun row => matchesEntry row.heightPair st.h (root st.tH) = true)
   pr_rows : Rows B st.progress (fun row => matchesEntry row.heightPair st.h (root st.tH) = true)
   cert : st.hF ≠ 0 → Quorum e B (fun row => row.finalityPair = some ⟨st.hF, root st.f⟩)
+  jcert : st.hJ ≠ 0 → Quorum e B (fun row => matchesEntry row.heightPair st.hJ (root st.j) = true)
   crossing : ∀ h : Nat, 1 ≤ h → h < st.h → ∃ X : Block, preceq X (eraseBlock B) = true ∧
     Quorum e B (fun row => matchesEntry row.heightPair h (root X) = true)
 
@@ -105,6 +109,7 @@ theorem Inv.node {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv e
   j_preceq := preceq_trans h.j_preceq (eraseBlock_node_preceq B s r v sup rows i)
   tH_preceq := preceq_trans h.tH_preceq (eraseBlock_node_preceq B s r v sup rows i)
   hF_zero := h.hF_zero
+  hJ_zero := h.hJ_zero
   fin_sorted := h.fin_sorted
   tp_sorted := h.tp_sorted
   pr_sorted := h.pr_sorted
@@ -112,6 +117,7 @@ theorem Inv.node {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv e
   tp_rows := h.tp_rows.node s r v sup rows i
   pr_rows := h.pr_rows.node s r v sup rows i
   cert := fun hz => (h.cert hz).node s r v sup rows i
+  jcert := fun hz => (h.jcert hz).node s r v sup rows i
   crossing := fun h0 h1 h2 => by
     obtain ⟨X, hX, hQ⟩ := h.crossing h0 h1 h2
     exact ⟨X, preceq_trans hX (eraseBlock_node_preceq B s r v sup rows i), hQ.node s r v sup rows i⟩
@@ -128,6 +134,7 @@ theorem Inv.congr {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv 
   j_preceq := by rw [hj]; exact h.j_preceq
   tH_preceq := by rw [htH]; exact h.tH_preceq
   hF_zero := by rw [hhF, hf]; exact h.hF_zero
+  hJ_zero := by rw [hhJ, hj]; exact h.hJ_zero
   fin_sorted := by rw [hfin]; exact h.fin_sorted
   tp_sorted := by rw [htp]; exact h.tp_sorted
   pr_sorted := by rw [hpr]; exact h.pr_sorted
@@ -135,6 +142,7 @@ theorem Inv.congr {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv 
   tp_rows := by rw [htp, hh, htH]; exact h.tp_rows
   pr_rows := by rw [hpr, hh, htH]; exact h.pr_rows
   cert := by rw [hhF, hf]; exact h.cert
+  jcert := by rw [hhJ, hj]; exact h.jcert
   crossing := by rw [hh]; exact h.crossing
 
 /-! ## 初期状態 -/
@@ -146,6 +154,7 @@ theorem inv_initial (e : ProtocolEnv) : Inv e NamedBlock.Genesis initialChainSta
   j_preceq := preceq_self _
   tH_preceq := preceq_self _
   hF_zero := fun _ => rfl
+  hJ_zero := fun _ => rfl
   fin_sorted := Sorted.empty
   tp_sorted := Sorted.empty
   pr_sorted := Sorted.empty
@@ -153,6 +162,7 @@ theorem inv_initial (e : ProtocolEnv) : Inv e NamedBlock.Genesis initialChainSta
   tp_rows := Rows.empty _ _
   pr_rows := Rows.empty _ _
   cert := fun hz => absurd rfl hz
+  jcert := fun hz => absurd rfl hz
   crossing := fun h0 h1 h2 => by
     have h2' : h0 < 1 := h2
     omega
@@ -222,6 +232,7 @@ theorem Inv.attest {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv
     j_preceq := by rw [hj]; exact h.j_preceq
     tH_preceq := by rw [htH]; exact h.tH_preceq
     hF_zero := by rw [hhF, hf]; exact h.hF_zero
+    hJ_zero := by rw [hhJ, hj]; exact h.hJ_zero
     fin_sorted := by
       rcases hfin with hfin | ⟨_, _, hfin⟩ <;> rw [hfin]
       · exact h.fin_sorted
@@ -253,6 +264,7 @@ theorem Inv.attest {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h : Inv
         · exact matchesEntry_of_targetedView_target hpair
         · exact matchesEntry_of_targetedView_timeout hpair
     cert := by rw [hhF, hf]; exact h.cert
+    jcert := by rw [hhJ, hj]; exact h.jcert
     crossing := by rw [hh]; exact h.crossing }
 
 /-- `B` の chain 上の行の列を畳み込んでも不変条件は保たれる。 -/
@@ -315,6 +327,7 @@ theorem Inv.finalizeStep {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h
   hF_zero := fun hz => by
     have hz' : st.hJ = 0 := hz
     omega
+  hJ_zero := h.hJ_zero
   fin_sorted := h.fin_sorted
   tp_sorted := h.tp_sorted
   pr_sorted := h.pr_sorted
@@ -322,6 +335,7 @@ theorem Inv.finalizeStep {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h
   tp_rows := h.tp_rows
   pr_rows := h.pr_rows
   cert := fun _ => ⟨st.finalize, h.fin_sorted, hq, h.fin_rows⟩
+  jcert := h.jcert
   crossing := h.crossing
 
 /-- target の定足数で高さを進める(`finalize := empty`、`j := tH`、`hJ := h` の後の `advanceHeight`)。
@@ -339,6 +353,10 @@ theorem Inv.advanceTarget {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (
     j_preceq := h.tH_preceq
     tH_preceq := hl
     hF_zero := h.hF_zero
+    hJ_zero := fun hz => by
+      have hz' : st.h = 0 := hz
+      have := h.hJ_lt_h
+      omega
     fin_sorted := Sorted.empty
     tp_sorted := Sorted.empty
     pr_sorted := Sorted.empty
@@ -346,6 +364,7 @@ theorem Inv.advanceTarget {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (
     tp_rows := Rows.empty _ _
     pr_rows := Rows.empty _ _
     cert := h.cert
+    jcert := fun _ => ⟨st.targetParticipation, h.tp_sorted, hq, h.tp_rows⟩
     crossing := fun h0 h1 h2 => by
       have h2' : h0 < st.h + 1 := h2
       rcases Nat.lt_or_ge h0 st.h with hlt | hge
@@ -368,6 +387,7 @@ theorem Inv.advanceProg {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h 
     j_preceq := h.j_preceq
     tH_preceq := hl
     hF_zero := h.hF_zero
+    hJ_zero := h.hJ_zero
     fin_sorted := h.fin_sorted
     tp_sorted := Sorted.empty
     pr_sorted := Sorted.empty
@@ -375,6 +395,7 @@ theorem Inv.advanceProg {e : ProtocolEnv} {B : NamedBlock} {st : ChainState} (h 
     tp_rows := Rows.empty _ _
     pr_rows := Rows.empty _ _
     cert := h.cert
+    jcert := h.jcert
     crossing := fun h0 h1 h2 => by
       have h2' : h0 < st.h + 1 := h2
       rcases Nat.lt_or_ge h0 st.h with hlt | hge

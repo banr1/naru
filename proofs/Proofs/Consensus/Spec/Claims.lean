@@ -39,6 +39,7 @@ import Proofs.Consensus.ProposerReceipt
 import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.JustifiedCarrier
 import Proofs.Consensus.FinalizedSource
+import Proofs.Consensus.JustificationCertificate
 import Mathlib.Tactic
 
 /-!
@@ -208,6 +209,12 @@ FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `f
 子の導出の `(f, hF)` は親の導出の `(j, hJ)` か `(f, hF)` `deriveNamed_f_node`。どの `C` にも導出の `(j, hJ)` が `C` の導出の `(f, hF)` に等しい名前付きの祖先がある
 `finalized_justificationAncestor`。bodies は祖先について閉じるので、FG root は常に bodies のどれかの導出の `j` `fgRoot_justified`(run のどの読みでも前提なし
 `stateBefore_fgRoot_justified` / `storeAt_fgRoot_justified` / `stateBeforeTime_fgRoot_justified`)。手書き `HealingSurface.fgRoot_justificationSource_at_read` の形)。
+周回 160 の足場: `JustificationCertificate.lean`(`Derivation.Inv` に欄 `hJ_zero` / `jcert` を足した: `(j, hJ)` を書くのは target の分岐の `j := tH`、`hJ := h` だけで、
+そのとき `targetParticipation` が定足数なので、導出の `hJ ≠ 0` なら `matchesEntry heightPair hJ (root j)` の行の定足数がある `justification_certificate`。
+`BelowOneThird` ならどの定足数にも honest な署名者がいる `quorumHonest_of_belowOneThird`。FG root は genesis か、bodies の `D` の導出の `j` で、
+`v` が処理した `D` の祖先が honest な署名者の行を運び、その署名者は処理の時刻以前にその行を出した `stateBefore_fgRoot_honestEmission`
+(前提は定足数の honest な署名者 `QuorumHonest` と `UnforgeableSignatures` の carried の半分)/ `stateBeforeTime_fgRoot_honestEmission`(さらに `EventsSorted`)。
+手書き `processedJustification_confirmationWitness` の前半。手書きの前提 `HonestWeightMajority` から `QuorumHonest` を出すこと、処理の時刻が読みの時刻より前なことは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
