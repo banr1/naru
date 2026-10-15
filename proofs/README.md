@@ -290,6 +290,11 @@ honest な投票者の pool の投票はその投票者の tick が出した投�
 発行された投票の投票者は committee の要素 `voteWellFormed_of_emits`。`Delivery.deliver_gfVote_mem` の 3 つの仮定 — committee・窓(`Window.inWindow_of_deliver_gfVote`)・equivocation — を
 すべて外し、GST 以後に honest な `v` が発行した投票の honest な `w` への締切 `max t tGST + Δ` より前の配送の後、`w` の鍵 `u.slot` の pool に投票がある
 `deliver_honest_gfVote_mem` / `deliver_honest_gfVote_mem_of_lt` — 配送の経路 (2) の完成。経路 (1)(自分の tick)と (3)(ブロックが運ぶ投票)は残り)。
+`OwnVote.lean`(tick の投票の務め `namedGoldfishVoteWith` は投票を出すとき store に `onGoldfishVoteChecked` で入れ(`Votes.goldfishVoteWith_some`)、務めの store の slot は投票の slot なので窓は自明、
+投票者は committee の要素。Δ > 0 なら投票の時刻に提案の務めは走らず(`Voting.voteStore_of_voteTime`)、確定の更新と attestation の務めは pool を変えないので、tick の前の pool で equivocation が無ければ
+tick の後の鍵 `u.slot` の pool に投票がある `tick_gfVote_mem` / `nodeTick_gfVote_mem`。run では honest な `w` の tick が出した投票の投票者は `w` 自身で `pool_no_equivocation` が守りを満たし、
+以後 `w` の pool にある `tick_honest_gfVote_mem` / `emits_honest_gfVote_mem_of_lt` — 経路 (1) の完成。`Delivery.handlesAt_gfVote_cases` の経路 (1)(2) をまとめ、GST 以後の honest な投票を honest な `w` が
+発行の時刻以後・締切より前の添字 `j` で扱えば `stateBefore (j + 1)` の `w` の pool に投票があるか経路 (3) `handlesAt_honest_gfVote_mem_or_carried`。経路 (3)(ブロックが運ぶ投票)は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

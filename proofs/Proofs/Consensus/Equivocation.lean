@@ -21,7 +21,7 @@ honest な投票者 `v` についてこれが偽であることを、run のど�
 equivocation の守りは `pool_no_equivocation`。GST 以後に honest な `v` が発行した投票が honest な `w` に発行の時刻 `t` 以後・締切
 `max t tGST + Δ` より前に配送されると、配送の後のどの添字でも `w` の鍵 `u.slot` の pool にある(`deliver_honest_gfVote_mem` /
 `deliver_honest_gfVote_mem_of_lt`)。これは `Majority.lean` の `HonestSupport.vote` に向けた配送の経路 (2) の完成で、
-残りは経路 (1)(自分の tick の投票)と経路 (3)(ブロックが運ぶ投票)の pool への到達。
+経路 (1)(自分の tick の投票)は `OwnVote.tick_honest_gfVote_mem`、残りは経路 (3)(ブロックが運ぶ投票)の pool への到達。
 
 手書きでは `on_goldfish_vote_insert`(`DecoupledConsensusProofs/Protocol/Handlers/Pool.lean`)の equivocation の仮定を、
 `GfFrom` と署名の偽造不能から honest な投票者について外す運びに当たる。

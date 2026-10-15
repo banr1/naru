@@ -338,7 +338,9 @@ tick を horizon まで run に入れるので honest な committee の要素は
 `InWindow` `inWindow_of_deliver_gfVote`)。`PoolFrom.lean`(pool の投票の由来。どのノードの pool の投票もそのノードが処理した投票か処理したブロックが運ぶ投票 `pool_from` で、
 `UnforgeableSignatures` の下で honest な投票者の pool の投票はその投票者が出した投票 `pool_genuine`、同じ honest な投票者・同じ slot の pool の投票はどのノード・どの添字でも 1 つ
 `pool_honest_unique`)。`Equivocation.lean`(`ScheduleWellFormed` / `UnforgeableSignatures` の下で honest な投票者はどの pool でも equivocate しない `pool_no_equivocation` で、GST 以後の honest な投票の honest な受信者への締切より前の
-配送の後、投票は受信者の pool にある `deliver_honest_gfVote_mem`(Δ > 0 も仮定))。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
+配送の後、投票は受信者の pool にある `deliver_honest_gfVote_mem`(Δ > 0 も仮定))。`OwnVote.lean`(同じ仮定の下で honest なノードの tick が出した投票は以後そのノードの pool にある
+`tick_honest_gfVote_mem` / `emits_honest_gfVote_mem_of_lt` で、GST 以後の honest な投票を honest なノードが発行の時刻以後・締切より前に扱えば、扱った event の直後の pool に投票があるか投票を運ぶブロックが tree に新しく入る
+`handlesAt_honest_gfVote_mem_or_carried`)。残るのは `SleepyRegime` の下で `HonestSupport` の `vote`(honest な committee の要素は `voteTime` に投票を発行し — 投票者・slot まで `Voting.lean` —、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(済み)、その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに
 届く)を示すことと、2 つの honest なノードの読みの間の正準性(手書きの
 `eligible_compatible`: 一方の支持の投票が他方の遅い投票に入る `CrossView` の下で同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の一致・finalized との

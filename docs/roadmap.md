@@ -24,7 +24,8 @@
   投票が pool にまだ 2 つ無いときに pool に入って以後も残る)の `Delivery.lean`、受信の直前の slot の窓(時計は添字について単調で、GST 以後に発行された投票の発行の時刻以後で締切より前の
   配送の直前の受信者の slot はちょうど投票の slot)の `Window.lean`、pool の投票の由来(どのノードの pool の投票もそのノードが処理した投票か処理したブロックが運ぶ投票で、
   `UnforgeableSignatures` の下で honest な投票者の pool の投票はその投票者が出した投票なので、`ScheduleWellFormed` も合わせて同じ honest な投票者・同じ slot の pool の投票は 1 つ)の `PoolFrom.lean`、honest な投票者は pool で equivocate せず、GST 以後の honest な投票の honest な受信者への締切より前の
-  配送の後に投票が受信者の pool にある(`UnforgeableSignatures` / `ScheduleWellFormed` / Δ > 0 の下で)の `Equivocation.lean` は既にあり、残るのは
+  配送の後に投票が受信者の pool にある(`UnforgeableSignatures` / `ScheduleWellFormed` / Δ > 0 の下で)の `Equivocation.lean`、同じ仮定の下で honest なノードの tick が出した投票は以後そのノードの
+  pool にあり、GST 以後の honest な投票を発行の時刻以後・締切より前に扱えば扱った直後の pool に入るか投票を運ぶブロックが tree に新しく入る(経路 (3) は残り)の `OwnVote.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の

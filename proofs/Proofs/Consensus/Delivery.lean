@@ -26,7 +26,7 @@ pool の slot `u.slot` に同じ投票者の投票がまだ 2 つ無い(`equivoc
 (`gfVote_mem_of_le`)。pool の所属は受信済みの判定 `processed st (GfVote u)` と同じ(`processed_gfVote_iff`)。
 
 これは `Majority.lean` の `HonestSupport.vote`(honest な committee の要素の投票が `supportCutoff` までに honest な全ノードの pool に
-あること)に向けた配送の層の入口で、残りは経路 (1)(自分の投票: `goldfishVoteWith_some` の `onGoldfishVoteChecked`)と経路 (3)
+あること)に向けた配送の層の入口で、残りは経路 (1)(自分の投票: `goldfishVoteWith_some` の `onGoldfishVoteChecked`。`OwnVote.tick_honest_gfVote_mem`)と経路 (3)
 (運ばれた投票)の pool への到達、受信の直前に `InWindow` が成り立つこと(配送は時計 `st.s` を進めないので、受信者の slot は
 受信の前の受信者自身の最後の tick で決まる。`ScheduleWellFormed` の honest な tick の網羅と時刻の順から示す — GST 以後に発行された投票の
 締切より前の配送は `Window.inWindow_of_deliver_gfVote`)、`UnforgeableSignatures` から
