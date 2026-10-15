@@ -331,7 +331,12 @@ round は提案者の round 以下で round の守りを通る `proposalWith_adm
 `deliver_deps` / `deliver_not_processed`。bodies の消去は tree にある(`Carrier.StoreInv.tree`)ので、消去したブロックの親は受信者の tree にある `deliver_parent_tree`(`Admits.parent_mem`)。
 `Proposal.lean` / `ParentSlot.lean` と合わせ、honest な受信者に発行より後に配送された発行されたブロックは `Admits` のうち `extends_f`(`preceq st.f b`)を除く 4 つを setup と run の前提(`ScheduleWellFormed` / `DeliveryWellFormed` / `0 < Δ`)で満たし
 `emits_admits_of_extends`(名前付きの親は `deliver_deps`、round の守りは `emits_block_fields`)、`extends_f` の下で配送の後の tree にあり `deliver_emitted_block_mem`、配送の時刻が `γ` より前なら以後ずっと tree にあり受信の印が `γ` より前 `deliver_emitted_block_stamped`、
-tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies`。`Admits` の残りは `extends_f`(finality の事実)だけ)。
+tree に無かったなら bodies にもある `deliver_emitted_block_mem_bodies`。`Admits` の残りは `extends_f`(finality の事実)だけで、提案者の側は次の `ProposerFinality.lean`)。
+`ProposerFinality.lean`(filtered tree は `finalizedDescendants f` で絞るので要素は `f` を延ばす `filtered_extends`。anchor は filtered tree の `activePrefix` か FG root(`j` か `f`)なので `f ⪯ j` の下で `f` を延ばす
+`anchor_extends`、head は anchor から `ghost` で辿るので `getHeadWith_extends`、提案されたブロックの親は head なので `proposalWith_extends`。`f ⪯ j`(`FJ`)は `updateFinality` の `j` を変える分岐の守り
+`preceq afterMax.f σ.j` と `f` を変える分岐の守り `preceq σ.f afterJustification.j` が保ち(`updateFinality_fj`)、他のハンドラは `f` / `j` を変えないので、run のどの添字・時刻の読みでも前提なしに成り立つ
+`stateBefore_fj` / `readAt_fj`。発行されたブロックは発行の tick の直前の提案者の `f` を延ばし `emits_block_extends`、配送の直前の受信者の `f` がその祖先なら配送の後の tree にある
+`deliver_emitted_block_mem_of_finalized`。`extends_f` の残りは受信者と提案者の finalized の順序)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと

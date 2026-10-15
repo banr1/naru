@@ -32,7 +32,8 @@
   配送の時刻が締切より前なら受信の印も締切より前になる `BlockReceipt.lean`、提案の務め・tick が出すブロックの名前付きの親が提案者の bodies にあり、提案者が `proposer' (slot)` で
   round の守りを通り、honest な受信者への発行より後の配送の直前の slot がブロックの slot 以上になる `Proposal.lean`、tree のブロックの slot が store の slot 以下で
   発行されたブロックの親の slot がブロックの slot より小さい `ParentSlot.lean`、配送の前提 `DeliveryWellFormed` から親が受信者の tree にあり、
-  発行されたブロックが `preceq st.f b` だけを仮定に配送の後の受信者の tree に入る `DeliveredBlock.lean` は既にあり、残るのは
+  発行されたブロックが `preceq st.f b` だけを仮定に配送の後の受信者の tree に入る `DeliveredBlock.lean`、store の `f ⪯ j` が run を通して保たれ、
+  発行されたブロックが提案者の `f` を延ばすので `preceq st.f b` が受信者と提案者の finalized の順序に還元される `ProposerFinality.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の
