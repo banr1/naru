@@ -285,6 +285,11 @@ slot の長さは `4Δ` なので、GST 以後(`tGST ≤ t`)に時刻 `t` に発
 `u` が処理したブロックが運ぶ投票 `pool_from`(手書き `GfFrom` / `gfFrom_on_goldfish_vote_checked`。store の attestation の真正性の `Attribution.bodies_processed` と同じ運び)。`UnforgeableSignatures` の 2 つの連言から
 honest な投票者の pool の投票はその投票者の tick が出した投票 `pool_genuine`、`Voting.emits_gfVote_unique` と合わせて同じ honest な投票者・同じ slot の pool の投票は
 どのノード・どの添字でも 1 つ `pool_honest_unique` — `equivocates` が偽であることに向けた層)。
+`Equivocation.lean`(honest な投票者は run のどの添字・どのノード・どの鍵の pool でも equivocate しない `pool_no_equivocation`: pool の集合は整列なので `votesBy` の絞り込みに重複は無く、
+鍵 `k` の pool の投票の slot は `k`(`Votes.PoolInv`)で、`pool_honest_unique` から同じ honest な投票者の投票はすべて等しく、大きさは 1 以下(`Majority.supportVotes_no_equivocation` と同じ運び)。
+発行された投票の投票者は committee の要素 `voteWellFormed_of_emits`。`Delivery.deliver_gfVote_mem` の 3 つの仮定 — committee・窓(`Window.inWindow_of_deliver_gfVote`)・equivocation — を
+すべて外し、GST 以後に honest な `v` が発行した投票の honest な `w` への締切 `max t tGST + Δ` より前の配送の後、`w` の鍵 `u.slot` の pool に投票がある
+`deliver_honest_gfVote_mem` / `deliver_honest_gfVote_mem_of_lt` — 配送の経路 (2) の完成。経路 (1)(自分の tick)と (3)(ブロックが運ぶ投票)は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
