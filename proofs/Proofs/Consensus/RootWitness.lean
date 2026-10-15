@@ -22,6 +22,9 @@ import Mathlib.Tactic
 5. 時刻の境 `cutTime` で証人の tick を最近(`cutTime ≤ t2`)と古い(`t2 < cutTime`)に分け、最近の務めの証人がどれも `B` と互換で、
    古い証人が `R` なら `B` と `R` が互換、という 2 つの前提から `compatible R B`
    (`stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent`。周回 172)。
+6. 提案しない tick では、務めの store `dutyStoreAt w i t` の FG root は `stateBefore i` の `w` の store の FG root
+   (`dutyStoreAt_fgRoot_of_not_proposing`。時計合わせ・投票・確認の更新は FG root の 4 欄を変えない。周回 173)。
+   手書きの右辺は読みの時刻の store `storeBeforeTime` で、`stateBefore i` から読みの時刻への橋渡しはまだ無い。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -286,5 +289,76 @@ theorem stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent (hs : EventsSo
     · exact hrecent row.valIndex i t2 (le_of_not_gt hcut) ht2 hH hev row rfl hem _ hT
 
 end Run
+
+/-! ## 提案しない tick の務めの store の FG root(周回 173)
+
+`getFgRoot` は store の `hMax` / `hJ` / `j` / `f` だけを読む。tick の中で務めの store `tickDutyStore` を作る段のうち、時計合わせ・
+投票 `namedGoldfishVoteWith`・確認の更新 `namedUpdateConfirmationWith` はこの 4 欄を変えず、変えうるのは提案
+`proposeBlockWith`(自分のブロックの受理)だけ。したがって提案しない tick では、務めの store の FG root は tick の前の store の
+FG root に等しい。手書き `fgRoot_confirmationWitness_at_action` が使う `actionStoreAt_fgRoot_eq_storeBeforeTime`(務めの store の
+FG root は読みの FG root)の前段に当たる。 -/
+
+/-- 投票 `namedGoldfishVoteWith` は FG root を変えない(`timestampVote` / `gfVotes` だけを更新する)。 -/
+theorem namedGoldfishVoteWith_fgRoot (c : Nat → NaruStd.Set ValidatorId) (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) :
+    getFgRoot (storeToHealing (Model.Consensus.Protocol.Duties.Proposals.namedGoldfishVoteWith c cache e hc nd st).1.core) =
+      getFgRoot (storeToHealing st.core) := by
+  unfold Model.Consensus.Protocol.Duties.Proposals.namedGoldfishVoteWith
+  split
+  rename_i core out h
+  show getFgRoot (storeToHealing core) = getFgRoot (storeToHealing st.core)
+  have h1 : core = (goldfishVoteWith c cache e hc nd st.core).1 := by rw [h]
+  subst h1
+  unfold goldfishVoteWith
+  dsimp only
+  split_ifs
+  · unfold onGoldfishVoteChecked
+    split_ifs
+    · rfl
+    · unfold onGoldfishVote
+      split_ifs <;> rfl
+  · rfl
+
+/-- 確認の更新 `namedUpdateConfirmationWith` は FG root を変えない(`liveConfirmed` / `latestConfirmed` / `latestStable` だけを
+更新する)。 -/
+theorem namedUpdateConfirmationWith_fgRoot (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (st : NamedStore) (k : Nat) :
+    getFgRoot (storeToHealing
+        (Model.Consensus.Protocol.Duties.Proposals.namedUpdateConfirmationWith cache e hc st k).core) =
+      getFgRoot (storeToHealing st.core) := rfl
+
+/-- **提案しない tick の務めの store の FG root**: tick の提案の条件(`0 < s`・`t` が slot `s` の提案時刻・`s` の proposer が
+自分)が成り立たなければ、`tickDutyStore` の FG root は tick の前の store の FG root。 -/
+theorem tickDutyStore_fgRoot_of_not_proposing (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) (t : Int)
+    (hnp : ¬ ((decide (0 < slotOf e t) && (t == Model.Consensus.Protocol.Schedule.proposalTime e (slotOf e t))) &&
+      (p (slotOf e t) == nd.valIndex)) = true) :
+    getFgRoot (storeToHealing (Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache e hc cfg nd st t).core) =
+      getFgRoot (storeToHealing st.core) := by
+  unfold Proofs.Consensus.AttestationSource.tickDutyStore
+  dsimp only
+  simp only [hnp, Bool.false_eq_true, ↓reduceIte]
+  split_ifs
+  all_goals simp only [namedUpdateConfirmationWith_fgRoot, namedGoldfishVoteWith_fgRoot]
+  all_goals rfl
+
+section RunAtAction
+
+variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+  (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun)
+
+/-- **run の版**: `w` が時刻 `t` の slot の proposer でない(または `t` が提案時刻でない)なら、添字 `i` の tick の務めの store
+`dutyStoreAt w i t` の FG root は、`stateBefore i` の `w` の store の FG root。 -/
+theorem dutyStoreAt_fgRoot_of_not_proposing (w : ValidatorId) (i : Nat) (t : Int)
+    (hnp : ¬ ((decide (0 < slotOf s.e t) && (t == Model.Consensus.Protocol.Schedule.proposalTime s.e (slotOf s.e t))) &&
+      (p (slotOf s.e t) == (Model.Consensus.Execution.Setup.setupNode w).valIndex)) = true) :
+    getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) =
+      getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) :=
+  tickDutyStore_fgRoot_of_not_proposing c p nr _ s.e s.hc s.cfg _ _ t hnp
+
+end RunAtAction
 
 end Proofs.Consensus.RootWitness
