@@ -228,7 +228,11 @@ regime の重みの多数から `QuorumHonest` を出した: `quorumHonest_of_wi
 `(h, root tH, nj)` なので、`(chainStateOf sigma q).h = h`・`root (chainStateOf sigma q).tH = entry`(`attestWith_vote_source`)。tick の出力の行は
 tick の中の store `st3`(`StoreInv` を受け継ぐ)での `attestWith` の行(`tick_attest_store` / `tick_vote_source`)。run の発行の版
 `emits_vote_source`(`q` が `st3` の tree にあれば bodies の `D` で `eraseBlock D = q`)。手書き
-`HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の、行と務めの source の結びに当たり、source が tree にあることはまだ前提。
+`HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の、行と務めの source の結びに当たる。
+周回 164 の足場: FG source が tree にあることを示した。`TreeInv` に欄 `live`(`liveConfirmed ∈ tree`。確認の更新が書く値は `ghost` の head か
+`getFgRoot`)を足し、`fgSourceWith` が返すのは `liveConfirmed` の祖先(`deepestClear_preceq`)か grade 2 のブロック(`grade2BlockWith_mem`)なので
+tree にある(`AttestationSource.fgSourceWith_mem` / `fgSource_mem_tree`)。`tick_attest_store` は `st3` が `TreeInv` も受け継ぐことを返し、
+`emits_vote_source` は前提なしに `q ∈ st3.tree` と bodies の `D`(`eraseBlock D = q`、`deriveNamed D` の `h` / `tH` の根が行のもの)を返す。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

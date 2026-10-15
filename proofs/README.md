@@ -178,7 +178,7 @@ attestation は bodies の名前付き祖先の行の消去で、bodies の gene
 claim `finalized` の活性の半分。単調性は `finalizedMonotone` の補題、再発は `StrongMultiProposerRecurrence`)。`NoFutureRead.lean` は
 「時刻 `t` の読みに提案時刻が `t` より後の honest な提案は入らない」を `ExecutionValid`(`EventsSorted`・event の時刻が非負)と Δ > 0 だけから
 3 出力すべてについて示す: `Clocks.lean`(store の時計 `t` / `s` を書くのは tick の冒頭だけで `s = slotOf e t`、時計は event の時刻以下で非負)、
-`TreeInv.lean`(`f` / `j` / `latestConfirmed` / `latestStable` は常に tree の要素。`updateFinality` が書く `σ.f` / `σ.j` は受理したブロックの祖先、
+`TreeInv.lean`(`f` / `j` / `latestConfirmed` / `latestStable` と、確認の更新が書く `liveConfirmed`(周回 164 で追加。`ghost` の head か `getFgRoot`)は常に tree の要素。`updateFinality` が書く `σ.f` / `σ.j` は受理したブロックの祖先、
 `updateConfirmationWith` が書く値は grade の読み `activePrefix` = filtered tree の `deepest?`・fork choice `ghost`(anchor か tree の子)・
 `getFgRoot`(`j` / `f`)か元の値)、受理の守り `¬ (st.s < slot b)`(`onBlockUsing_slot_le`)から tree のブロックの提案時刻は読みの時刻以下
 (`tree_block_slot`)、honest な提案 `proposedBlockAt k` は slot `k` のブロック(提案の時計は `proposalTime k`)。残るのは `available`
@@ -401,9 +401,12 @@ bodies にある `D` の祖先の行に honest な署名者の `matchesEntry hei
 `some (h, entry, _)` `namedCreate_vote`、務めの `fields` は FG source `q = fgSourceWith …` の chain 状態の `(h, root tH, nj)` なので `(chainStateOf sigma q).h = h`・
 `root (chainStateOf sigma q).tH = entry` `attestWith_vote_source`。tick の出力の行は tick の中の store `st3`(時計合わせ・提案・投票・確認の更新の後。`StoreInv` を受け継ぐ)での
 `attestWith` の行で、tick の後の store は `attestWith` の後のもの `tick_attest_store` / `tick_vote_source`。run の発行の版 `emits_vote_source` は添字 `i` の `Tick w t` の中の `st3` を返し、
-`stateBefore (i + 1)` の `w` の bodies は `st3` の bodies で、`q` が `st3` の tree にあれば bodies に `eraseBlock D = q` の `D` があって `deriveNamed D` の `h` / `tH` の根が行のもの
-(`source_named`)。手書き `HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の行と務めの source の結びに当たる。手書きは務めの store を `actionStoreAt`
-(`stateBeforeTime (a r)` に確認の更新を掛けたもの)で読み、source が bodies にあること(`NamedActionSources.action_witness`)まで示す。source が tree にあることと、
+`stateBefore (i + 1)` の `w` の bodies は `st3` の bodies で、`q` は `st3` の tree にあり(周回 164)、bodies に `eraseBlock D = q` の `D` があって `deriveNamed D` の `h` / `tH` の根が行のもの
+(`source_named`)。周回 164 で、FG source が tree にあることを示した: `fgSourceWith` は `liveConfirmed` の祖先(`deepestClear` は `chainOf liveConfirmed` から選ぶ。
+`mem_chainUp_preceq` / `deepestClear_preceq`)か grade 2 のブロック(filtered tree の `activePrefix`。`grade2BlockWith_mem`)を返すので、`liveConfirmed` が tree にあり
+tree が親について閉じていれば tree にある(`fgSourceWith_mem` / `fgSource_mem_tree`)。`TreeInv` に欄 `live`(`liveConfirmed ∈ tree`)を足し、
+`tick_attest_store` は `st3` が `TreeInv` も受け継ぐことを返す。手書き `HealingSurface.honestEmittedHeightRow_exactFGSelectorWitness_core` の行と務めの source の結びに当たる。手書きは務めの store を `actionStoreAt`
+(`stateBeforeTime (a r)` に確認の更新を掛けたもの)で読み、source が bodies にあること(`NamedActionSources.action_witness`)まで示す。
 checkpoint `K`(同じ高さの最初の祖先)と FG root の justification の根の一致は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。

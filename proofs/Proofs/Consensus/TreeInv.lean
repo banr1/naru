@@ -9,14 +9,14 @@ import Mathlib.Tactic
 # 出力のブロックは tree にある(C71 の補題)
 
 生成 Model の store(`Model/Consensus/Protocol/Store.lean`)の 4 つの欄 — finalized `f`、justified `j`、`latestConfirmed`、
-`latestStable` — は常にブロック木 `tree` の要素である(`TreeInv`)。3 つの出力 `getConfirmed` / `getStable` / `f`
+`latestStable` — と、確認の更新が書く `liveConfirmed`(attestation の務めの FG source の起点)は常にブロック木 `tree` の要素である(`TreeInv`)。3 つの出力 `getConfirmed` / `getStable` / `f`
 (`Model/Consensus/Spec/Interface.lean` の `outputAt`)はこの 4 つの欄のどれかなので、どの読みも tree の要素(`outputAt_mem`)。
 - 書くのは 2 か所だけ: `updateFinality`(ブロックの受理で `f` / `j` を導出した chain 状態 `σ` の値にする。`σ = deriveNamed B` の
   `f` / `j` は受理したブロック `eraseBlock B` の祖先(`Derivation.lean` の `Inv.f_preceq` / `j_preceq`)で、tree は親について閉じている
   (`Carrier.lean` の `named` / `closed`)ので tree の要素)と `updateConfirmationWith`(`latestStable` / `latestConfirmed` を、
   grade の読み(`frameStableRoot` / `frameSgCandidate`: `activePrefix` = filtered tree の `deepest?`)か fork choice `ghost`(anchor か
-  tree の子を辿る)か `getFgRoot`(`j` / `f`)か元の値にする)。
-- 他のハンドラは 4 つの欄と tree を変えない(`SameOut`)。初期 store は `{Genesis}` と `Genesis` で成立する。
+  tree の子を辿る)か `getFgRoot`(`j` / `f`)か元の値にする。`liveConfirmed` は `ghost` の head か `getFgRoot`)。
+- 他のハンドラは 4 つの欄と `liveConfirmed` と tree を変えない(`SameOut`)。初期 store は `{Genesis}` と `Genesis` で成立する。
 `NamedStore` → `nodeTick` / `nodeProcess` → world → `readAt` の順に積み上げる(`Carrier.lean` と同じ運び。受理の経路で `StoreInv` が要る)。
 手書き `NamedRuntime.readAt_invariants`(`F ∈ T`、`latest_confirmed ∈ T`、`latest_stable ∈ T`。
 `DecoupledConsensusProofs/Execution/Runtime.lean`)に当たる。
@@ -216,39 +216,44 @@ theorem tree_closed {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (h 
 
 /-! ## 不変条件 -/
 
-/-- 出力の元になる 4 つの欄は tree の要素。 -/
+/-- 出力の元になる 4 つの欄と `liveConfirmed` は tree の要素。 -/
 structure TreeInv (st : Store) : Prop where
   f : st.f ∈ st.tree.elems
   j : st.j ∈ st.tree.elems
   confirmed : st.latestConfirmed ∈ st.tree.elems
   stable : st.latestStable ∈ st.tree.elems
+  /-- `liveConfirmed`(確認の更新が書く fork choice の読み。grade の読みと attestation の務めの FG source の `deepestClear` の起点)も tree の要素。 -/
+  live : st.liveConfirmed ∈ st.tree.elems
 
-/-- tree と 4 つの欄が等しい。 -/
+/-- tree と 4 つの欄と `liveConfirmed` が等しい。 -/
 structure SameOut (a b : Store) : Prop where
   tree : a.tree = b.tree
   f : a.f = b.f
   j : a.j = b.j
   confirmed : a.latestConfirmed = b.latestConfirmed
   stable : a.latestStable = b.latestStable
+  live : a.liveConfirmed = b.liveConfirmed
 
-theorem SameOut.refl (a : Store) : SameOut a a := ⟨rfl, rfl, rfl, rfl, rfl⟩
+theorem SameOut.refl (a : Store) : SameOut a a := ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem SameOut.trans {a b c : Store} (h1 : SameOut a b) (h2 : SameOut b c) : SameOut a c :=
-  ⟨h1.tree.trans h2.tree, h1.f.trans h2.f, h1.j.trans h2.j, h1.confirmed.trans h2.confirmed, h1.stable.trans h2.stable⟩
+  ⟨h1.tree.trans h2.tree, h1.f.trans h2.f, h1.j.trans h2.j, h1.confirmed.trans h2.confirmed, h1.stable.trans h2.stable,
+   h1.live.trans h2.live⟩
 
 theorem TreeInv.congr {st : Store} (h : TreeInv st) {st' : Store} (hs : SameOut st' st) : TreeInv st' :=
   ⟨by rw [hs.f, hs.tree]; exact h.f, by rw [hs.j, hs.tree]; exact h.j,
-   by rw [hs.confirmed, hs.tree]; exact h.confirmed, by rw [hs.stable, hs.tree]; exact h.stable⟩
+   by rw [hs.confirmed, hs.tree]; exact h.confirmed, by rw [hs.stable, hs.tree]; exact h.stable,
+   by rw [hs.live, hs.tree]; exact h.live⟩
 
 theorem initial_treeInv : TreeInv initStore :=
   ⟨(mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl,
-   (mem_singleton_iff _ _).mpr rfl⟩
+   (mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl⟩
 
 /-! ## `Store` のハンドラ -/
 
 theorem onGoldfishVote_out (st : Store) (u : GoldfishVote) : SameOut (onGoldfishVote st u) st := by
   unfold onGoldfishVote
-  split_ifs <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  split_ifs <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem onGoldfishVoteChecked_out (c : Nat → NaruStd.Set ValidatorId) (st : Store) (u : GoldfishVote) :
     SameOut (onGoldfishVoteChecked c st u) st := by
@@ -267,7 +272,7 @@ theorem foldl_out {β : Type} (g : Store → β → Store) (hg : ∀ s x, SameOu
 theorem onSgVote_out (hc : HealConfig) (st : Store) (a : CombinedAttestation) : SameOut (onSgVote hc st a) st := by
   unfold onSgVote
   dsimp only
-  split_ifs <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  split_ifs <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem goldfishVoteWith_out (c : Nat → NaruStd.Set ValidatorId) (cache : Cache) (e : ProtocolEnv) (hc : HealConfig)
     (nd : Model.Consensus.Protocol.Schedule.Node) (st : Store) : SameOut (goldfishVoteWith c cache e hc nd st).1 st := by
@@ -297,6 +302,16 @@ theorem storedOf_out (st : Store) (b : Block) (post : ChainState) :
 theorem unpackedOf_out (c : Nat → NaruStd.Set ValidatorId) (st : Store) (b : Block) (post : ChainState) :
     SameOut (unpackedOf c st b post) (storedOf st b post) :=
   foldl_out _ (fun s u => onGoldfishVoteChecked_out c s u) _ _
+
+theorem updateFinality_live (st : Store) (σ : ChainState) : (updateFinality st σ).liveConfirmed = st.liveConfirmed := by
+  unfold updateFinality
+  dsimp only
+  split_ifs <;> rfl
+
+/-- 受理の分岐は `liveConfirmed` を変えない。 -/
+theorem acceptBody_live (c : Nat → NaruStd.Set ValidatorId) (st : Store) (b : Block) (post : ChainState) :
+    (acceptBody c st b post).liveConfirmed = st.liveConfirmed :=
+  (updateFinality_live _ _).trans (unpackedOf_out c st b post).live
 
 /-- 受理の分岐の結果: tree に `b` が入り、`f` / `j` は元のままか `post` の値、latestConfirmed / latestStable は不変。 -/
 theorem acceptBody_out (c : Nat → NaruStd.Set ValidatorId) (st : Store) (b : Block) (post : ChainState) :
@@ -341,7 +356,7 @@ theorem acceptBody_treeInv (c : Nat → NaruStd.Set ValidatorId) {st : Store} (h
   have hclosed' : ∀ x, x ∈ (acceptBody c st b post).tree.elems → parent x ∈ (acceptBody c st b post).tree.elems := by
     rw [htree]
     exact hclosed
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · rcases hf' with hf' | hf'
     · rw [hf']; exact hsub _ h.f
     · rw [hf']; exact ancestor_mem_tree hclosed' hf hb
@@ -350,8 +365,9 @@ theorem acceptBody_treeInv (c : Nat → NaruStd.Set ValidatorId) {st : Store} (h
     · rw [hj']; exact ancestor_mem_tree hclosed' hj hb
   · rw [hc']; exact hsub _ h.confirmed
   · rw [hs']; exact hsub _ h.stable
+  · rw [acceptBody_live]; exact hsub _ h.live
 
-/-- 確認の更新は 4 つの欄を tree の要素に保つ(`frameStableRoot` / `frameSgCandidate` / `ghost` / `getFgRoot` の結果の分類)。 -/
+/-- 確認の更新は 4 つの欄と `liveConfirmed` を tree の要素に保つ(`frameStableRoot` / `frameSgCandidate` / `ghost` / `getFgRoot` の結果の分類)。 -/
 theorem updateConfirmationWith_treeInv (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) {st : Store} (h : TreeInv st)
     (k : Nat) : TreeInv (updateConfirmationWith cache e hc st k) := by
   have hstable : (match frameStableRoot cache e hc (storeToHealing st) (roundOf hc st.s) with
@@ -370,7 +386,12 @@ theorem updateConfirmationWith_treeInv (cache : Cache) (e : ProtocolEnv) (hc : H
       exact h.stable
   unfold updateConfirmationWith
   dsimp only
-  refine ⟨h.f, h.j, ?_, hstable⟩
+  refine ⟨h.f, h.j, ?_, hstable, ?_⟩
+  swap
+  · apply ite_mem (ghost_mem h.j h.f cache e hc (roundOf hc st.s) _ _)
+    rcases getFgRoot_cases (storeToHealing st) with hr | hr
+    · rw [hr]; exact h.j
+    · rw [hr]; exact h.f
   apply floorOnStable_mem hstable _ h.confirmed
   apply ite_mem
   · exact advanceConfirmed_mem h.confirmed (ghost_mem h.j h.f cache e hc (roundOf hc st.s) _ _)
@@ -534,7 +555,7 @@ theorem tick_treeInv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd
   have hinv0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
     hinv.congr rfl ⟨rfl, rfl, rfl⟩
   have h0 : TreeInv { st with core := { st.core with t := t, s := slotOf e t } }.core :=
-    h.congr ⟨rfl, rfl, rfl, rfl, rfl⟩
+    h.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
   unfold tick
   dsimp only
   split_ifs
@@ -566,7 +587,7 @@ theorem nodeTick_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat → Vali
 
 /-! ## world -/
 
-/-- world のどのノードの store も 4 つの欄が tree にある。 -/
+/-- world のどのノードの store も 4 つの欄と `liveConfirmed` が tree にある。 -/
 def WorldTreeInv (w : NamedWorld) : Prop := ∀ v, TreeInv (worldAt w v).st.core
 
 theorem worldInit_treeInv : WorldTreeInv worldInit := fun _ => initial_treeInv
@@ -602,11 +623,18 @@ theorem foldl_worldStep_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat �
     rw [List.foldl_cons]
     exact foldl_worldStep_treeInv c p a nr s l (worldStep_inv c p a nr s hinv ev) (worldStep_treeInv c p a nr s hinv h ev)
 
-/-- 時刻 `t` の読みのどのノードでも 4 つの欄は tree にある。 -/
+/-- 時刻 `t` の読みのどのノードでも 4 つの欄と `liveConfirmed` は tree にある。 -/
 theorem readAt_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
     (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun) (t : Int) :
     WorldTreeInv (readAt c p a nr s rho t) := by
   unfold readAt
+  exact foldl_worldStep_treeInv c p a nr s _ (worldInit_inv s.e s.cfg) worldInit_treeInv
+
+/-- 添字 `i` の直前の world のどのノードでも 4 つの欄と `liveConfirmed` は tree にある。 -/
+theorem stateBefore_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+    (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun) (i : Nat) :
+    WorldTreeInv (stateBefore c p a nr s rho i) := by
+  unfold stateBefore
   exact foldl_worldStep_treeInv c p a nr s _ (worldInit_inv s.e s.cfg) worldInit_treeInv
 
 /-! ## 3 つの出力 -/
