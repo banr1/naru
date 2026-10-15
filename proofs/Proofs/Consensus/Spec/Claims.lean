@@ -214,7 +214,10 @@ FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `f
 `BelowOneThird` ならどの定足数にも honest な署名者がいる `quorumHonest_of_belowOneThird`。FG root は genesis か、bodies の `D` の導出の `j` で、
 `v` が処理した `D` の祖先が honest な署名者の行を運び、その署名者は処理の時刻以前にその行を出した `stateBefore_fgRoot_honestEmission`
 (前提は定足数の honest な署名者 `QuorumHonest` と `UnforgeableSignatures` の carried の半分)/ `stateBeforeTime_fgRoot_honestEmission`(さらに `EventsSorted`)。
-手書き `processedJustification_confirmationWitness` の前半。手書きの前提 `HonestWeightMajority` から `QuorumHonest` を出すこと、処理の時刻が読みの時刻より前なことは残り)。
+手書き `processedJustification_confirmationWitness` の前半。手書きの前提 `HonestWeightMajority` から `QuorumHonest` を出すことは残り)。
+周回 161 の足場: `JustificationCertificate.lean` に、処理の event の添字を追う `bodies_processed_before` と、添字 `idxLt time` より前の event の時刻は `time` より前
+`time_lt_of_lt_idxLt` を足し、時刻 `< time` の読みの FG root の honest な署名者の処理の時刻 `t` と発行の時刻 `t2` がどちらも `time` より前
+`stateBeforeTime_fgRoot_honestEmission_lt`(手書きの `ta < time`)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

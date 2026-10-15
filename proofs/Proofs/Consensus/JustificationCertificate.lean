@@ -17,7 +17,9 @@ justification の証明書を取り出し、faulty の重みが総重みの 1/3 
 - 手書きは honest な署名者を `HonestWeightMajority`(faulty の重み < honest の重み)から取る。ここでは前提を
   「どの定足数にも `H` の署名者がいる」`QuorumHonest` にして、`BelowOneThird` から出す版を系にする
   (`quorumHonest_of_belowOneThird`。`HonestWeightMajority` に当たる重みの形から出す版は残り)。
-- 手書きは発行の時刻が読みの時刻より厳密に前(`ta < time`)まで出すが、ここは処理の時刻 `t` 以前(`t2 ≤ t`)まで。
+- 手書きの発行の時刻 `ta < time` は、処理の event の添字を `bodies_processed_before` で追い、添字 `idxLt time` より前の event の
+  時刻は `time` より前(`time_lt_of_lt_idxLt`)なので、処理の時刻 `t < time` と発行の時刻 `t2 ≤ t` から出す
+  (`stateBeforeTime_fgRoot_honestEmission_lt`。周回 161 で足した)。
 
 - **証明書**: `Derivation.Inv` の欄 `hJ_zero` / `jcert`(周回 160 で足した)。`(j, hJ)` を書くのは `processHeightEvents` の
   target の分岐の `j := tH`、`hJ := h` だけで、そのとき `targetParticipation` が定足数で、各署名者に `matchesEntry heightPair h
@@ -28,7 +30,8 @@ justification の証明書を取り出し、faulty の重みが総重みの 1/3 
 - **store と run**: bodies は祖先について閉じるので、行を運ぶブロックも bodies にある(`fgRoot_honestRow`)。run の読みでは、
   そのブロックは読みの主がある時刻に処理した(`Processes`)ブロックで(`Attribution.bodies_processed`)、
   `UnforgeableSignatures` の carried の半分(`Attribution.attributed` の `hcar` と同じ形)から、honest な署名者が実際に出した行(`Emits`)になる
-  (`stateBefore_fgRoot_honestEmission` / `stateBeforeTime_fgRoot_honestEmission`)。
+  (`stateBefore_fgRoot_honestEmission` / `stateBeforeTime_fgRoot_honestEmission`。処理と発行の時刻が読みの時刻より前な版は
+  `stateBeforeTime_fgRoot_honestEmission_lt`)。
 -/
 
 namespace Proofs.Consensus.JustificationCertificate
@@ -172,7 +175,8 @@ theorem stateBefore_fgRoot_honestEmission (hqh : QuorumHonest s.e rho.honest)
       exact ⟨D, X, row, t, t2, hD, hDj, hX, hrow, hH, hm, hproc, ht2, hem⟩
 
 /-- 時刻 `< time` の読みの版(前提に `EventsSorted` を足し、`stateBefore` の読みに写す)。手書き
-`processedJustification_confirmationWitness` の前半に当たる(処理の時刻 `t < time` は返さない。手書きの `ta < time` は残り)。 -/
+`processedJustification_confirmationWitness` の前半に当たる(処理の時刻 `t < time` まで返す版は
+`stateBeforeTime_fgRoot_honestEmission_lt`)。 -/
 theorem stateBeforeTime_fgRoot_honestEmission (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
     (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
       ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
@@ -188,6 +192,117 @@ theorem stateBeforeTime_fgRoot_honestEmission (hs : EventsSorted rho) (hqh : Quo
         Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 := by
   rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs time]
   exact stateBefore_fgRoot_honestEmission c p a nr s rho hqh hcar _ v
+
+/-! ## 処理の時刻を読みの時刻より前に抑える -/
+
+/-- `stateBefore i` のノード `u` の bodies の genesis でないブロックは、添字 `j < i` の event(時刻 `t`)で `u` が処理した
+ブロック。`Attribution.bodies_processed` に処理の event の添字を足したもの。手書き `Bridges.processes_block_of_mem_T` の
+添字つきの読み。 -/
+theorem bodies_processed_before (u : ValidatorId) :
+    ∀ (i : Nat) (X : NamedBlock), X ∈ (worldAt (stateBefore c p a nr s rho i) u).st.bodies.elems →
+      X = NamedBlock.Genesis ∨ ∃ (j : Nat) (ev : NamedEvent) (t : Int), j < i ∧ rho.events[j]? = some ev ∧
+        eventTime ev = t ∧ Processes c p a nr s rho u (NamedObject.Block X) t
+  | 0, X, hX => by
+    left
+    have hX' : X ∈ (NaruStd.Set.singleton NamedBlock.Genesis).elems := hX
+    exact (mem_singleton_iff _ _).mp hX'
+  | i + 1, X, hX => by
+    have lift : (X = NamedBlock.Genesis ∨ ∃ (j : Nat) (ev : NamedEvent) (t : Int), j < i ∧ rho.events[j]? = some ev ∧
+        eventTime ev = t ∧ Processes c p a nr s rho u (NamedObject.Block X) t) →
+        X = NamedBlock.Genesis ∨ ∃ (j : Nat) (ev : NamedEvent) (t : Int), j < i + 1 ∧ rho.events[j]? = some ev ∧
+          eventTime ev = t ∧ Processes c p a nr s rho u (NamedObject.Block X) t := by
+      rintro (h | ⟨j, ev, t, hj, hev, ht, hp⟩)
+      · exact Or.inl h
+      · exact Or.inr ⟨j, ev, t, Nat.lt_succ_of_lt hj, hev, ht, hp⟩
+    cases hev : rho.events[i]? with
+    | none =>
+      rw [Proofs.Consensus.Signing.stateBefore_succ_of_none c p a nr s rho hev] at hX
+      exact lift (bodies_processed_before u i X hX)
+    | some ev =>
+      rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev] at hX
+      cases ev with
+      | Tick w t =>
+        unfold worldStep at hX
+        dsimp only at hX
+        by_cases hwu : w = u
+        · subst hwu
+          rw [Proofs.Consensus.Signing.worldAt_insert_self] at hX
+          rcases Proofs.Consensus.Attribution.nodeTick_bodies c p a nr s w _ t hX with h | h
+          · exact lift (bodies_processed_before w i X h)
+          · exact Or.inr ⟨i, _, t, Nat.lt_succ_self i, hev, rfl,
+              Or.inl ((Proofs.Consensus.Signing.emits_iff c p a nr s rho w _ t).mpr ⟨i, hev, h⟩)⟩
+        · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ hwu] at hX
+          exact lift (bodies_processed_before u i X hX)
+      | Deliver w o t =>
+        unfold worldStep at hX
+        dsimp only at hX
+        by_cases hwu : w = u
+        · subst hwu
+          rw [Proofs.Consensus.Signing.worldAt_insert_self] at hX
+          rcases Proofs.Consensus.Attribution.nodeProcess_bodies c p s hX with h | rfl
+          · exact lift (bodies_processed_before w i X h)
+          · exact Or.inr ⟨i, _, t, Nat.lt_succ_self i, hev, rfl, Or.inr ⟨i, hev⟩⟩
+        · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ hwu] at hX
+          exact lift (bodies_processed_before u i X hX)
+
+/-- 添字 `idxLt time` より前の event の時刻は `time` より前(`EventsSorted` の下で。重複なしは要らない)。 -/
+theorem time_lt_of_lt_idxLt (hs : EventsSorted rho) {time : Int} {j : Nat} {ev : NamedEvent}
+    (hj : j < Proofs.Consensus.ReceiverFinality.idxLt rho time) (hev : rho.events[j]? = some ev) : eventTime ev < time := by
+  have hmem : ev ∈ rho.events.take (Proofs.Consensus.ReceiverFinality.idxLt rho time) := by
+    rw [List.mem_iff_getElem?]
+    refine ⟨j, ?_⟩
+    rw [List.getElem?_take]
+    split
+    · exact hev
+    · omega
+  rw [← Proofs.Consensus.ReceiverFinality.filter_eq_take_idxLt rho hs] at hmem
+  exact of_decide_eq_true (List.mem_filter.mp hmem).2
+
+/-- `stateBefore_fgRoot_honestEmission` に、処理の event の添字が `i` より前であることを足したもの。 -/
+theorem stateBefore_fgRoot_honestEmission_before (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (i : Nat) (v : ValidatorId) :
+    getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) v).st.core) = Block.Genesis ∨
+      ∃ D X row j ev t t2, D ∈ (worldAt (stateBefore c p a nr s rho i) v).st.bodies.elems ∧
+        (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) v).st.core) ∧
+        namedPreceq X D = true ∧ row ∈ namedAttestations X ∧ row.valIndex ∈ rho.honest.elems ∧
+        matchesEntry row.heightPair (deriveNamed s.e s.cfg D).hJ
+          (root (getFgRoot (storeToHealing (worldAt (stateBefore c p a nr s rho i) v).st.core))) = true ∧
+        j < i ∧ rho.events[j]? = some ev ∧ eventTime ev = t ∧
+        Processes c p a nr s rho v (NamedObject.Block X) t ∧ t2 ≤ t ∧
+        Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 := by
+  rcases fgRoot_honestRow (stateBefore_inv c p a nr s rho i v) (stateBefore_jcarrier c p a nr s rho i v) hqh with hg | ⟨D, X, row, hD, hDj, hXb, hX, hrow, hH, hm⟩
+  · exact Or.inl hg
+  · right
+    rcases bodies_processed_before c p a nr s rho v i X hXb with rfl | ⟨j, ev, t, hj, hev, het, hproc⟩
+    · simp [namedAttestations] at hrow
+    · have hhon : rho.honest.contains row.valIndex = true := (contains_iff_mem vid_eq _ _).mpr hH
+      obtain ⟨t2, ht2, hem⟩ := hcar v (NamedObject.Block X) t hproc (NamedObject.Attest row)
+        (Proofs.Consensus.Attribution.carries_attest hrow) row.valIndex ⟨hhon, rfl⟩
+      exact ⟨D, X, row, j, ev, t, t2, hD, hDj, hX, hrow, hH, hm, hj, hev, het, hproc, ht2, hem⟩
+
+/-- **時刻 `< time` の読みの FG root の honest な発行は `time` より前**: `stateBeforeTime_fgRoot_honestEmission` に、処理の時刻
+`t < time`(よって発行の時刻 `t2 < time`)を足したもの。手書き `processedJustification_confirmationWitness` の前半の `ta < time`
+に当たる。 -/
+theorem stateBeforeTime_fgRoot_honestEmission_lt (hs : EventsSorted rho) (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (v : ValidatorId) (time : Int) :
+    getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) = Block.Genesis ∨
+      ∃ D X row t t2, D ∈ (worldAt (stateBeforeTime c p a nr s rho time) v).st.bodies.elems ∧
+        (deriveNamed s.e s.cfg D).j =
+          getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core) ∧
+        namedPreceq X D = true ∧ row ∈ namedAttestations X ∧ row.valIndex ∈ rho.honest.elems ∧
+        matchesEntry row.heightPair (deriveNamed s.e s.cfg D).hJ
+          (root (getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho time) v).st.core))) = true ∧
+        Processes c p a nr s rho v (NamedObject.Block X) t ∧ t < time ∧ t2 ≤ t ∧ t2 < time ∧
+        Emits c p a nr s rho row.valIndex (NamedObject.Attest row) t2 := by
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs time]
+  rcases stateBefore_fgRoot_honestEmission_before c p a nr s rho hqh hcar _ v with hg | ⟨D, X, row, j, ev, t, t2, hD, hDj, hX, hrow, hH, hm, hj, hev, het, hproc, ht2, hem⟩
+  · exact Or.inl hg
+  · have htime : t < time := het ▸ time_lt_of_lt_idxLt rho hs hj hev
+    exact Or.inr ⟨D, X, row, t, t2, hD, hDj, hX, hrow, hH, hm, hproc, htime, ht2, lt_of_le_of_lt ht2 htime, hem⟩
 
 end RunRoot
 

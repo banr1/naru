@@ -390,7 +390,10 @@ checkpoint の witness に結ぶ(同じファイルの `fgRoot_confirmationWitne
 `exists_honest_member_of_quorum` で取る。その重みの形から `QuorumHonest` を出すのは残り。`SleepyRegime` には `BelowOneThird` が無い)。store の FG root は genesis か、bodies の `D` の導出の `j` で、
 bodies にある `D` の祖先の行に honest な署名者の `matchesEntry heightPair hJ (root FG root)` のものがある `fgRoot_honestRow`。run では、その祖先は読みの主が処理した(`Processes`)ブロックで
 (`Attribution.bodies_processed`)、`UnforgeableSignatures` の carried の半分から、署名者は処理の時刻以前にその行を出した(`Emits`)`stateBefore_fgRoot_honestEmission` /
-`stateBeforeTime_fgRoot_honestEmission`(`EventsSorted`)。手書き `processedJustification_confirmationWitness` の前半。手書きの発行の時刻が読みの時刻より前(`ta < time`)なことと、
+`stateBeforeTime_fgRoot_honestEmission`(`EventsSorted`)。手書き `processedJustification_confirmationWitness` の前半。周回 161 で、処理の event の添字を追う
+`bodies_processed_before`(`Attribution.bodies_processed` に添字 `j < i` を足したもの)と、添字 `idxLt time` より前の event の時刻は `time` より前 `time_lt_of_lt_idxLt` から、
+処理の event の添字 `j < i` を返す `stateBefore_fgRoot_honestEmission_before` と、処理の時刻 `t < time` と発行の時刻 `t2 < time`(手書きの `ta < time`)を返す
+`stateBeforeTime_fgRoot_honestEmission_lt` を足した。
 後半の、その行を出した tick の store の checkpoint の witness に結ぶところは残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
