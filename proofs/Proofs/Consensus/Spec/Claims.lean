@@ -37,6 +37,7 @@ import Proofs.Consensus.ReceiverFinality
 import Proofs.Consensus.BlockSynchrony
 import Proofs.Consensus.ProposerReceipt
 import Proofs.Consensus.ProposerRoot
+import Proofs.Consensus.JustifiedCarrier
 import Mathlib.Tactic
 
 /-!
@@ -197,6 +198,11 @@ honest な受信者に発行より後、時刻 `d` 以下に配送され、時�
 提案者の FG root を延ばす `emits_block_extends_fgRoot`。したがって締切の読みの受信者の FG root が提案者の FG root の祖先なら締切の読みの tree にある
 `partialSynchrony_emitted_block_mem_of_fgRoot`、受信者の FG root がブロックの親(提案者の head)の祖先なら同じく tree にある `partialSynchrony_emitted_block_mem_of_parent`。
 残りは honest な読みの FG root を、提案の親の祖先である共通の上界で抑えること)。
+周回 158 の足場: `JustifiedCarrier.lean`(store の `(j, hJ)` を書くのは `updateFinality` だけで、値は受理したブロックの導出の `(j, hJ)` なので、
+`(j, hJ)` は常に bodies のどれかの導出のもの `JCarrier`(run のどの読みでも前提なし `stateBefore_jcarrier` / `readAt_jcarrier` / `stateBeforeTime_jcarrier`)。
+FG root は `j` か `f` なので bodies のどれかの導出の `j` か `f` `fgRoot_source`、したがって tree にある bodies の消去の祖先 `fgRoot_preceq_body`
+(`stateBefore` / `storeAt` / `stateBeforeTime` の版)。手書き `HealingSurface.fgRoot_justificationSource_at_read` の 2 つの分岐の手前
+(`f` の分岐を justified な祖先の `J` に言い換えない版)で、共通の上界への最初の層)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

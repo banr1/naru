@@ -38,7 +38,8 @@
   そのブロックの祖先なら(setup と run の前提の下で)その読みの tree にある `ReceiverFinality.lean`、配送の event を `PartialSynchrony` から取り出し、
   ブロックの提案者(発行者)でない honest な受信者について(setup と run の前提の下で)締切の読みの FG root の事実だけでその読みの tree に入れる `BlockSynchrony.lean`、
   提案者自身は提案の tick の中で自分のブロックを受理するので、すべての honest な受信者について同じ結論を出す `ProposerReceipt.lean`、
-  発行されたブロックが発行の tick の直前の提案者の FG root を延ばすので、締切の読みの FG root の仮定を、受信者の FG root が提案者の FG root かブロックの親の祖先であることに還元する `ProposerRoot.lean` は既にあり、残るのは
+  発行されたブロックが発行の tick の直前の提案者の FG root を延ばすので、締切の読みの FG root の仮定を、受信者の FG root が提案者の FG root かブロックの親の祖先であることに還元する `ProposerRoot.lean`、
+  run のどの読みの FG root も(前提なし)bodies のどれかの導出の `j` か `f` で tree にある bodies の消去の祖先であることを示す `JustifiedCarrier.lean` は既にあり、残るのは
   `SleepyRegime` の下で `HonestSupport` の前提(honest な tick が `voteTime` に出す投票の head が honest な提案 `B` を延ばして slot が `s` 以下で、
   `ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が `supportCutoff` までに届く)と、2 つの honest なノードの読みの間の
   正準性(手書きの `eligible_compatible` の筋: 一方の支持の投票が他方の遅い投票に入れば、同じ slot に両ノードで門を通る 2 ブロックは互換)で確認の記録の

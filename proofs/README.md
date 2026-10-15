@@ -368,6 +368,13 @@ tick の直前の store の FG root を延ばす `nodeTick_block_extends_fgRoot`
 手書きでは `hreadBound`(`ProposalAdoptionNamedClosed.lean`。すべての honest な読みの FG root ⪯ `E`)がそれで、中身の `fgRoot_preceq_previousHead_through_confirmation_after_GST`
 (`Objects/FGSafetyRootNamed.lean`。honest な読みの FG root ⪯ honest な投票の head)は GST 後の `fgSafetyProgressDeadline` 以後の読みについて height の regime と
 `MultiProposerRecurrence` / `TimeoutDelayBound` から出る)。
+`JustifiedCarrier.lean`(共通の上界への最初の層。store の `(j, hJ)` を書くのは `updateFinality` だけで、値は受理したブロックの chain 状態 `post = deriveNamed B` の `(j, hJ)` なので、
+`(j, hJ)` は常に bodies のどれかの導出のもの `JCarrier`(`Carrier.StoreInv` の `carrier` の `j` 版。run のどの読みでも前提なし `stateBefore_jcarrier` / `readAt_jcarrier` / `stateBeforeTime_jcarrier`)。
+FG root は `j` か `f` `fgRoot_eq` なので bodies のどれかの導出の `j` か `f` `fgRoot_source`、導出の `j` / `f` はその消去の祖先なので FG root は tree にある bodies の消去の祖先 `fgRoot_preceq_body`
+(`stateBefore` / `storeAt` / `stateBeforeTime` の版 `*_fgRoot_source` / `*_fgRoot_preceq_body`)。手書き `HealingSurface.fgRoot_justificationSource_at_read`(`Protocol/ChainState/FGRootWitness.lean`)の 2 つの分岐
+(`Proofs.Bridges.storeJustificationOnChain_stateBeforeTime` / `storeFinalizationOnChain_stateBeforeTime`)に当たるが、手書きは finalized の分岐を導出の justified な祖先の `J` に
+言い換える(private な `named_finalized_justificationAncestor`)ので、`f` の分岐をそのまま返すここの版はそれより弱い。手書きはその後、justification の証明書の honest な署名者の
+checkpoint の witness に結ぶ(同じファイルの `fgRoot_confirmationWitness_at_read`)。その先は残り)。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、その head が honest な提案 `B` を延ばして slot が `s` 以下であること(投票者の fork choice `getHeadInTreeWith` / `voterView` が `B` を採る。
 手書きでは `B.slot = Σ.s` なので過半なしに適格)、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに `supportCutoff` までに届くこと
