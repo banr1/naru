@@ -35,6 +35,9 @@ import Mathlib.Tactic
 10. 9 の証人の時刻を時刻の境 `cutTime` で分け、最近の務めの証人がどれも `X` の祖先で、古い証人が `R` なら `R ⪯ X`、という
    2 つの前提から、行を出した tick の務めの FG root は `X` の祖先(`dutyStoreAt_fgRoot_preceq_of_recent_and_legacy`。
    手書き `actionSources_preceq_of_priorConfirmations_and_historyCut` の帰納の段 `hroots`。周回 177)。
+11. 発行した行の時刻は行の round の action 時刻(`emits_attest_actionTime_round`)で、action 時刻は round について狭義単調
+   (Δ > 0、`0 < R`。`actionTime_lt_actionTime_iff`)なので、時刻の境を round `cut` の action 時刻に置くと `t2 < cutTime` は
+   手書きの round の境 `a.round < cut` と同じ行を選ぶ(`emits_attest_time_lt_actionTime_iff`。周回 178)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -377,6 +380,67 @@ theorem tick_attest_actionTime {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat �
     simp only [Bool.and_eq_true, beq_iff_eq] at hact
     exact ⟨_, hact.1⟩
 
+/-- tick の出力に行があれば、tick の時刻は務めの store `tickDutyStore` の slot の round の action 時刻(生成 `tick` の
+attestation の条件の左半分を、round を務めの store から読む形で取り出す。周回 178)。 -/
+theorem tick_attest_actionTime_dutyStore {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore)
+    (rec : Model.Consensus.Protocol.ValidatorClient.NamedRecord) (t : Int) {row : NamedAttestation}
+    (hrow : NamedObject.Attest row ∈ (Model.Consensus.Protocol.Tick.tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    t = Model.Consensus.Protocol.Grades.actionTime hc e.delta
+      (Model.Consensus.Protocol.Grades.roundOf hc
+        (Proofs.Consensus.AttestationSource.tickDutyStore c p nr cache e hc cfg nd st t).core.s) := by
+  revert hrow
+  unfold Model.Consensus.Protocol.Tick.tick Proofs.Consensus.AttestationSource.tickDutyStore
+  dsimp only
+  split_ifs
+  all_goals intro hrow
+  all_goals simp only [List.mem_append, List.mem_singleton] at hrow
+  -- attestation を出さない経路: 出力に行は無い
+  all_goals (try (exfalso; rcases hrow with h | h <;> (try split at h) <;> simp at h; done))
+  -- attestation を出す経路: 最後の `if` の条件から時刻を取り出す
+  all_goals
+    rename_i hact
+    simp only [Bool.and_eq_true, beq_iff_eq] at hact
+    exact hact.1
+
+/-- **行の round の action 時刻**: tick の出力に行 `row` があれば、tick の時刻は `row.round` の action 時刻。行は務めの store
+`tickDutyStore` での `attestWith` の行(`tick_attest_dutyStore`)で、その round は務めの store の slot の round
+(`attestationInput` の `round` を `namedCreate` がそのまま写す)。手書きでは行が round `a.round` の action 時刻にだけ出ることに
+当たる(周回 178)。 -/
+theorem tick_attest_actionTime_round {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore)
+    (rec : Model.Consensus.Protocol.ValidatorClient.NamedRecord) (t : Int) {row : NamedAttestation}
+    (hrow : NamedObject.Attest row ∈ (Model.Consensus.Protocol.Tick.tick c p a nr cache e hc cfg nd st rec t).2.2) :
+    t = Model.Consensus.Protocol.Grades.actionTime hc e.delta row.round := by
+  have ht := tick_attest_actionTime_dutyStore c p a nr cache hc nd st rec t hrow
+  obtain ⟨-, -, hr⟩ := Proofs.Consensus.AttestationSource.tick_attest_dutyStore c p a nr cache hc nd st rec t hrow
+  rw [hr]
+  exact ht
+
+/-- **action 時刻は round について狭義単調**(Δ > 0、`0 < R`): `actionTime r1 < actionTime r2 ↔ r1 < r2`
+(`4Δ · (r · R) + 6Δ` の `r` の係数 `4Δ · R` が正)。時刻の境と round の境を行き来するのに使う(周回 178)。 -/
+theorem actionTime_lt_actionTime_iff {delta : Int} (hδ : 0 < delta) {hc : Model.Consensus.Protocol.Grades.HealConfig}
+    (hr : 0 < hc.r) (r1 r2 : Nat) :
+    Model.Consensus.Protocol.Grades.actionTime hc delta r1 < Model.Consensus.Protocol.Grades.actionTime hc delta r2 ↔
+      r1 < r2 := by
+  unfold Model.Consensus.Protocol.Grades.actionTime Model.Consensus.Objects.Time.slotStart
+    Model.Consensus.Protocol.Grades.openingSlot
+  simp only [Int.ofNat_eq_natCast, Nat.cast_mul]
+  have hr' : (0 : Int) < (hc.r : Int) := by exact_mod_cast hr
+  have hpos : 0 < delta * (hc.r : Int) := mul_pos hδ hr'
+  constructor
+  · intro h
+    by_contra hge
+    have hle : (r2 : Int) ≤ (r1 : Int) := by exact_mod_cast not_lt.mp hge
+    nlinarith
+  · intro h
+    have hlt : (r1 : Int) < (r2 : Int) := by exact_mod_cast h
+    nlinarith
+
 /-- **action 時刻は提案時刻ではない**(Δ > 0): `4Δ · (r · R) + 6Δ = 4Δ · k` なら `6 = 4 · (k - r · R)` で、整数では成り立たない。 -/
 theorem actionTime_ne_proposalTime {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
     (r k : Nat) :
@@ -586,6 +650,24 @@ theorem dutyStoreAt_fgRoot_preceq_of_recent_and_legacy (hδ : 0 < s.e.delta) (hs
   · by_cases hcut : t2 < cutTime
     · exact hlegacy D row2 nu t2 i2 hD hDj hH hrow ht2 hcut hem2 hev hT
     · exact hrecent row2.valIndex i2 t2 (le_of_not_gt hcut) ht2 hH hev row2 rfl hem2 _ hT
+
+/-- **発行した行の時刻は行の round の action 時刻**: `w` が時刻 `t` に行 `row` を出したなら `t = actionTime row.round`
+(`tick_attest_actionTime_round` を `Emits` の tick に掛けたもの。周回 178)。 -/
+theorem emits_attest_actionTime_round {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) :
+    t = Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta row.round := by
+  obtain ⟨j, -, hrow⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho w _ t).mp hem
+  rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
+  exact tick_attest_actionTime_round c p a nr _ s.hc _ _ _ t hrow
+
+/-- **時刻の境と round の境の対応**(Δ > 0、`0 < R`): `w` が時刻 `t` に行 `row` を出したなら、
+`t < actionTime cut ↔ row.round < cut`。round `cut` の action 時刻を時刻の境 `cutTime` に置くと、周回 172 / 177 の時刻の境
+`t2 < cutTime` は手書きの round の境 `a.round < cut` と同じ行を選ぶ(周回 177 の reviewer の軽微 (b)。周回 178)。 -/
+theorem emits_attest_time_lt_actionTime_iff (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) {w : ValidatorId}
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) (cut : Nat) :
+    t < Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta cut ↔ row.round < cut := by
+  rw [emits_attest_actionTime_round c p a nr s rho hem]
+  exact actionTime_lt_actionTime_iff hδ hr row.round cut
 
 end RunAtAction
 
