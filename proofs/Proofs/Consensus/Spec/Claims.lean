@@ -260,7 +260,8 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 176 の足場: 行を出した tick の務めの store の FG root が genesis か、時刻 `< t` に発行された行の tick の務めの確認の証人である `dutyStoreAt_fgRoot_confirmationWitness` を足した。
 周回 177 の足場: 最近の務めの証人と古い根の 2 つの前提から、行を出した tick の務めの FG root が `X` の祖先である `dutyStoreAt_fgRoot_preceq_of_recent_and_legacy` を足した。
 周回 178 の足場: 発行した行の時刻は行の round の action 時刻で、Δ > 0・`0 < R` なら時刻の境を round `cut` の action 時刻に置くと時刻の境と round の境が同じ行を選ぶ `emits_attest_time_lt_actionTime_iff` を足した。
-周回 179 の足場: round の強い帰納で、round `cut` 以上の行の tick の務めの FG root と確認の証人が `X` の祖先であることを古い証人と段の前提から出す `dutyStoreAt_preceq_of_roundInduction` を足した。
+周回 179 の足場: round の強い帰納で、round `cut` 以上の行の tick の務めの FG root と確認の証人が `X` の祖先であることを古い証人と段の前提(前の round の仮定の下で)から出す `dutyStoreAt_preceq_of_roundInduction` を足した。
+周回 180 の足場: それを行ごとの性質 `Q`(SG block ⪯ X に当たる)との同時帰納に広げた `dutyStoreAt_jointRoundInduction` を足し、周回 179 の定理をその系にした。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
