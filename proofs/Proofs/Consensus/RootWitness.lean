@@ -72,6 +72,10 @@ import Mathlib.Tactic
    から `liveConfirmed ⪯ X`(`dutyStoreAt_live_preceq_of_prior`。手書きの本体の `hlive`)、確認の証人は `X` の祖先か grade 2 の
    候補の祖先(`fgConfirmationWitnessAt_preceq_of_emits_prior`。手書きの `hform.witness` の第 1 の枝に `hlive` を掛ける段)。
    残る grade 2 の枝は窓の SG block に繋ぐ(周回 186)。
+19. 務めの grade 2 の候補を `grade2CandidateAt` と名付け、genuine な確認 ⪯ X と grade 2 の候補 ⪯ X から確認の証人 ⪯ X
+   (`fgConfirmationWitnessAt_preceq_of_prior_grade2`)。round の同時帰納の `hstep` の確認の証人の連言を、この 2 つ
+   (手書きの `hprior` と `nodeQ2_preceq_honestWindowCarrier` の側)の供給に置き換えた版
+   `dutyStoreAt_jointRoundInduction_of_prior`(周回 187)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -954,7 +958,8 @@ theorem fgConfirmationWitnessAt_preceq_of_emits_fgRoot (hδ : 0 < s.e.delta) {w 
 
 /-- **務めの tick の genuine な確認**: `C` は確認の更新の前の段 `preUpdateStoreAt` の head(確認の更新の slot `slotOf t - 1` の
 `Goldfish.head`)で、その slot で eligible。手書き `GenuineConfirmationWith`(`Protocol/Grades/ProposalLifecycleCore.lean`。
-欄 `selected`(`C` は walk の結果)と `genuine`(walk の結果が eligible))に当たる。手書きは opening slot の `confStore` で読み、
+欄 `selected`(更新の後の `live_confirmed` が `C`)と `genuine`(walk の結果が eligible)。両方が揃えば `C` は eligible な
+walk の結果)に当たる。手書きは opening slot の `confStore` で読み、
 ここは添字 `i` の tick の確認の更新の前の段で読む(行を出した tick ではその slot は行の round の opening slot。
 `emits_attest_slotOf_pred`。周回 186)。 -/
 def GenuineConfirmationAt (w : ValidatorId) (i : Nat) (t : Int) (C : Block) : Prop :=
@@ -966,8 +971,8 @@ def GenuineConfirmationAt (w : ValidatorId) (i : Nat) (t : Int) (C : Block) : Pr
     Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1) C = true
 
 /-- **行を出した tick の `liveConfirmed` は genuine な確認か FG root**(Δ > 0): `dutyStoreAt_live_cases_of_emits` の 2 枝を
-`GenuineConfirmationAt` で書いた形。手書き `actionStoreAt_liveConfirmed_genuine_or_fgRoot` と同じ形
-(第 1 の枝が GenuineConfirmation、第 2 の枝が FG root)。手書きの FG root は確認の更新の前の store(`confStore`)の FG root で、
+`GenuineConfirmationAt` で書いた形。手書き `actionStoreAt_liveConfirmed_genuine_or_fgRoot` と同じ内容の 2 枝
+(第 1 の枝が GenuineConfirmation、第 2 の枝が FG root。第 2 枝の存在量化を外した形)。手書きの FG root は確認の更新の前の store(`confStore`)の FG root で、
 こちらは更新の後の務めの store の FG root だが、確認の更新は FG root の 4 欄を変えないので値は同じ
 (`namedUpdateConfirmationWith_fgRoot`。周回 186)。 -/
 theorem dutyStoreAt_live_genuine_or_fgRoot_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation}
@@ -983,7 +988,7 @@ theorem dutyStoreAt_live_genuine_or_fgRoot_of_emits (hδ : 0 < s.e.delta) {w : V
 /-- **行を出した tick の `liveConfirmed` は `X` の祖先**(Δ > 0): 務めの store の FG root が `X` の祖先で(`hroot`)、
 その tick の genuine な確認がどれも `X` の祖先なら(`hprior`)、務めの store の `liveConfirmed` も `X` の祖先。
 手書き `actionSources_preceq_of_priorConfirmations_and_historyCut` の本体の `hlive`(`hprior` を opening slot で呼ぶ枝と
-`hroots` の枝)に当たる。手書きの `hprior` は opening slot `cut` 以上の全 slot と全 honest を量化するが、ここはこの tick の
+`hroots` の枝)に当たる。手書きの `hprior` は `cut` の opening slot 以上 `s` 未満の全 slot と全 honest を量化するが、ここはこの tick の
 確認だけを受ける(周回 186)。 -/
 theorem dutyStoreAt_live_preceq_of_prior (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {X : Block}
@@ -1193,6 +1198,90 @@ theorem dutyStoreAt_preceq_of_roundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.h
     (fun _ _ _ _ => True) le_rfl (fun _ _ _ _ _ _ _ _ _ _ => trivial) hlegacy ?_ w i t row hw hi hem hlim hcut).2 hcut
   intro w i t row hw hi hem hlim hcut _ hprev _ hroot
   exact ⟨trivial, hstep w i t row hw hi hem hlim hcut hprev hroot⟩
+
+/-- **務めの grade 2 の候補**: 添字 `i` の tick の務めの store で、その round の grade 2 の候補(`grade2BlockWith`)。
+`fgConfirmationWitnessAt_preceq_source` などの第 2 の枝の `q` はこの値(周回 187)。 -/
+def grade2CandidateAt (w : ValidatorId) (i : Nat) (t : Int) : Option Block :=
+  Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+    (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+      (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+      (worldAt (stateBefore c p a nr s rho i) w).cache)
+    s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+    (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+
+/-- **行を出した tick の確認の証人は `X` の祖先**(Δ > 0): FG root ⪯ X(`hroot`)、この tick の genuine な確認 ⪯ X
+(`hprior`)、務めの grade 2 の候補 ⪯ X(`hgrade2`)から、務めの確認の証人 ⪯ X。`fgConfirmationWitnessAt_preceq_of_emits_prior`
+の grade 2 の枝を `T ⪯ q ⪯ X` で閉じる。手書きの本体で `hform.witness` の第 2 の枝を `nodeQ2_preceq_honestWindowCarrier`
+(`WeakBootstrapAction.lean`)と窓の SG block ⪯ X で閉じるところに当たり、`hgrade2` はその 2 段をまとめた前提(周回 187)。 -/
+theorem fgConfirmationWitnessAt_preceq_of_prior_grade2 (hδ : 0 < s.e.delta) {w : ValidatorId}
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat}
+    {T X : Block} (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T)
+    (hroot : preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true)
+    (hprior : ∀ C, GenuineConfirmationAt c p a nr s rho w i t C → preceq C X = true)
+    (hgrade2 : ∀ q, grade2CandidateAt c p a nr s rho w i t = some q → preceq q X = true) :
+    preceq T X = true := by
+  rcases fgConfirmationWitnessAt_preceq_of_emits_prior c p a nr s rho hδ hem h hroot hprior with hX | ⟨q, hq, hTq⟩
+  · exact hX
+  · exact Proofs.Consensus.Blocks.preceq_trans hTq (hgrade2 q hq)
+
+/-- **round の同時帰納の `hstep` を genuine な確認と grade 2 の候補で書いた版**(Δ > 0、`0 < R`、`EventsSorted` と重複なし、
+`QuorumHonest` / `hcar` / `NamedRootCollisionFree`、`base ≤ cut`): `dutyStoreAt_jointRoundInduction` の `hstep` の結論のうち
+確認の証人の連言を、その tick の genuine な確認 ⪯ X と務めの grade 2 の候補 ⪯ X の 2 つに置き換えた。証人の連言は
+`fgConfirmationWitnessAt_preceq_of_prior_grade2` で `hstep'` の FG root の仮定と合わせて出す。手書き
+`actionSources_preceq_of_priorConfirmations_and_historyCut` では、`hprior` は定理の前提で opening slot で呼ばれ、grade 2 の
+候補は窓の SG block を経て閉じる。ここではどちらも `hstep'` を書く側が帰納法の仮定の下で供給する(周回 187)。 -/
+theorem dutyStoreAt_jointRoundInduction_of_prior (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) (hs : EventsSorted rho)
+    (hnd : EventsNodup rho) (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {base cut : Nat} {limit : Int} {X : Block}
+    (Q : ValidatorId → Nat → Int → NamedAttestation → Prop) (hbc : base ≤ cut)
+    (hbootstrap : ∀ (w : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), w ∈ rho.honest.elems →
+      rho.events[i]? = some (NamedEvent.Tick w t) → Emits c p a nr s rho w (NamedObject.Attest row) t →
+      t < limit → base ≤ row.round → row.round < cut → Q w i t row)
+    (hlegacy : ∀ (w : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), w ∈ rho.honest.elems →
+      rho.events[i]? = some (NamedEvent.Tick w t) → Emits c p a nr s rho w (NamedObject.Attest row) t →
+      t < limit → cut ≤ row.round →
+      ∀ (D : NamedBlock) (row2 : NamedAttestation) (nu : Bool) (t2 : Int) (i2 : Nat),
+      D ∈ (worldAt (stateBeforeTime c p a nr s rho t) w).st.bodies.elems →
+      (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) →
+      row2.valIndex ∈ rho.honest.elems →
+      row2.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+        (root (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core))) nu →
+      t2 < t → row2.round < cut → Emits c p a nr s rho row2.valIndex (NamedObject.Attest row2) t2 →
+      rho.events[i2]? = some (NamedEvent.Tick row2.valIndex t2) →
+      fgConfirmationWitnessAt c p a nr s rho row2.valIndex i2 t2 =
+        some (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) →
+      preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true)
+    (hstep' : ∀ (w : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), w ∈ rho.honest.elems →
+      rho.events[i]? = some (NamedEvent.Tick w t) → Emits c p a nr s rho w (NamedObject.Attest row) t →
+      t < limit → cut ≤ row.round →
+      (∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : NamedAttestation), w2 ∈ rho.honest.elems →
+        rho.events[i2]? = some (NamedEvent.Tick w2 t2) → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+        base ≤ row2.round → row2.round < row.round → Q w2 i2 t2 row2) →
+      (∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : NamedAttestation), w2 ∈ rho.honest.elems →
+        rho.events[i2]? = some (NamedEvent.Tick w2 t2) → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+        cut ≤ row2.round → row2.round < row.round →
+        preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w2 i2 t2).core)) X = true ∧
+          ∀ T, fgConfirmationWitnessAt c p a nr s rho w2 i2 t2 = some T → preceq T X = true) →
+      (∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : NamedAttestation), w2 ∈ rho.honest.elems →
+        rho.events[i2]? = some (NamedEvent.Tick w2 t2) → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+        row2.round = row.round →
+        preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w2 i2 t2).core)) X = true) →
+      preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true →
+      Q w i t row ∧ (∀ C, GenuineConfirmationAt c p a nr s rho w i t C → preceq C X = true) ∧
+        ∀ q, grade2CandidateAt c p a nr s rho w i t = some q → preceq q X = true) :
+    ∀ (w : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), w ∈ rho.honest.elems →
+      rho.events[i]? = some (NamedEvent.Tick w t) → Emits c p a nr s rho w (NamedObject.Attest row) t →
+      t < limit → base ≤ row.round →
+      Q w i t row ∧ (cut ≤ row.round →
+        preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true ∧
+          ∀ T, fgConfirmationWitnessAt c p a nr s rho w i t = some T → preceq T X = true) := by
+  refine dutyStoreAt_jointRoundInduction c p a nr s rho hδ hr hs hnd hqh hcar hcf Q hbc hbootstrap hlegacy ?_
+  intro w i t row hw hi hem hlim hcut hprevQ hprev hsame hroot
+  obtain ⟨hq, hprior, hgrade2⟩ := hstep' w i t row hw hi hem hlim hcut hprevQ hprev hsame hroot
+  exact ⟨hq, fun T hT =>
+    fgConfirmationWitnessAt_preceq_of_prior_grade2 c p a nr s rho hδ hem hT hroot hprior hgrade2⟩
 
 end RunAtAction
 
