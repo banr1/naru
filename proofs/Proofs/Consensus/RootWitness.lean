@@ -57,7 +57,14 @@ import Mathlib.Tactic
    確認の更新の前の段 `preUpdateStoreAt` の eligible な head(提案・投票はこの欄を変えず、確認の更新は `Goldfish.live` を書く。
    `dutyStoreAt_live_cases`)。15 の `liveConfirmed` の枝をこれで割り、確認の証人を 4 つの枝に分け
    (`fgConfirmationWitnessAt_preceq_cases`)、FG root ⪯ X の下で FG root の枝を閉じる(`fgConfirmationWitnessAt_preceq_of_fgRoot`。
-   手書きの `hlive` の出どころの場合分け。周回 184)。
+   手書きの `hlive` の出どころの場合分け。手書きの対応先は `actionStoreAt_liveConfirmed_genuine_or_fgRoot` で、枝は
+   GenuineConfirmation と FG root の 2 つ。周回 184)。
+17. 行を出した tick の時刻は action 時刻 `4Δ · (r · R) + 6Δ` で、その slot `r · R + 1` の supportCutoff `4Δ · (r · R + 1) + 2Δ`
+   と一致する(Δ > 0。`AttestationSource.slotOf_actionTime` / `supportCutoff_actionTime`)。したがって務めの store は必ず
+   確認の更新を通り(その slot `slotOf t - 1` は行の round の opening slot。`emits_attest_slotOf_pred`)、16 の第 1 の枝は起きない
+   (`dutyStoreAt_live_cases_of_emits`。手書きの 2 枝に当たる)。確認の証人は 3 つの枝になり
+   (`fgConfirmationWitnessAt_preceq_cases_of_emits`)、FG root ⪯ X の下で残るのは eligible な head と grade 2 の候補の 2 枝
+   (`fgConfirmationWitnessAt_preceq_of_emits_fgRoot`。周回 185)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -334,7 +341,9 @@ theorem dutyStoreAt_live_cases (w : ValidatorId) (i : Nat) (t : Int) :
 /-- **確認の証人の 4 つの枝**(前提なし): 務めの確認の証人 `T` は、`stateBefore i` の `w` の store の `liveConfirmed` の祖先か、
 務めの store の FG root の祖先か、確認の更新の前の段の eligible な head の祖先か、務めの grade 2 の候補 `q` の祖先
 (15 の `liveConfirmed` の枝を `dutyStoreAt_live_cases` で割る。周回 184)。手書きの段で `T ⪯ live_confirmed` に `hlive` を
-掛けるところを、`live_confirmed` の出どころごとに分けたもの。 -/
+掛けるところを、`live_confirmed` の出どころごとに分けたもの(手書きの出どころの場合分けは
+`actionStoreAt_liveConfirmed_genuine_or_fgRoot` の 2 枝。行を出した tick の 3 枝の版は
+`fgConfirmationWitnessAt_preceq_cases_of_emits`)。 -/
 theorem fgConfirmationWitnessAt_preceq_cases {w : ValidatorId} {i : Nat} {t : Int} {T : Block}
     (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T) :
     preceq T (worldAt (stateBefore c p a nr s rho i) w).st.core.liveConfirmed = true ∨
@@ -834,6 +843,104 @@ theorem emits_attest_time_lt_actionTime_iff (hδ : 0 < s.e.delta) (hr : 0 < s.hc
     t < Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta cut ↔ row.round < cut := by
   rw [emits_attest_actionTime_round c p a nr s rho hem]
   exact actionTime_lt_actionTime_iff hδ hr row.round cut
+
+/-- **行を出した tick の確認の更新の slot は行の round の opening slot**(Δ > 0): `w` が時刻 `t` に行 `row` を出したなら、
+`slotOf t - 1 = openingSlot row.round`(`t` は action 時刻で、その slot は opening slot の次。`AttestationSource.slotOf_actionTime`)。
+手書きの確認の更新が opening slot の store `confStore … (opening_slot r)` で読むことに当たる(周回 185)。 -/
+theorem emits_attest_slotOf_pred (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) :
+    slotOf s.e t - 1 = Model.Consensus.Protocol.Grades.openingSlot s.hc row.round := by
+  rw [emits_attest_actionTime_round c p a nr s rho hem,
+    Proofs.Consensus.AttestationSource.slotOf_actionTime hδ s.hc row.round, Nat.add_sub_cancel]
+
+/-- **行を出した tick の務めの store の `liveConfirmed` の 2 つの枝**(Δ > 0): `w` が時刻 `t` に行 `row` を出したなら、`t` は
+action 時刻(`emits_attest_actionTime_round`)で supportCutoff の時刻でもあるので、務めの store は必ず確認の更新を通る
+(`AttestationSource.tickDutyStore_live_cases_of_actionTime`)。したがって任意の添字 `i` の務めの store `dutyStoreAt w i t` の
+`liveConfirmed` は、務めの store の FG root か、確認の更新の前の段 `preUpdateStoreAt` の eligible な head で、
+`dutyStoreAt_live_cases` の第 1 の枝(`stateBefore i` の値のまま)は起きない。手書き
+`actionStoreAt_liveConfirmed_genuine_or_fgRoot`(`Execution/RecoveryActionLiveSourceSplit.lean`。GenuineConfirmation と FG root の
+2 枝)に当たる。確認の更新の slot `slotOf t - 1` は行の round の opening slot(`emits_attest_slotOf_pred`。周回 185)。 -/
+theorem dutyStoreAt_live_cases_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) (i : Nat) :
+    (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed =
+        getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed =
+          Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) :=
+  Proofs.Consensus.AttestationSource.tickDutyStore_live_cases_of_actionTime c p nr _ s.e s.hc s.cfg _ _ hδ
+    (emits_attest_actionTime_round c p a nr s rho hem)
+
+/-- **行を出した tick の確認の証人の 3 つの枝**(Δ > 0): `w` が時刻 `t` に行 `row` を出したなら、務めの確認の証人 `T` は、
+務めの store の FG root の祖先か、確認の更新の前の段の eligible な head の祖先か、務めの grade 2 の候補 `q` の祖先
+(`fgConfirmationWitnessAt_preceq_source` の `liveConfirmed` の枝を `dutyStoreAt_live_cases_of_emits` で割る。
+`fgConfirmationWitnessAt_preceq_cases` の第 1 の枝(前の `liveConfirmed`)は起きない。周回 185)。 -/
+theorem fgConfirmationWitnessAt_preceq_cases_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId}
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {T : Block}
+    (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T) :
+    preceq T (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) = true ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        preceq T (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true) ∨
+      ∃ q : Block, Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q ∧
+        preceq T q = true := by
+  obtain ⟨q, -, -, hTq, hl | hg⟩ := fgConfirmationWitnessAt_preceq_source c p a nr s rho h
+  · rcases dutyStoreAt_live_cases_of_emits c p a nr s rho hδ hem i with he | ⟨hel, he⟩
+    · exact Or.inl (he ▸ hl)
+    · exact Or.inr (Or.inl ⟨hel, he ▸ hl⟩)
+  · exact Or.inr (Or.inr ⟨q, hg, hTq⟩)
+
+/-- **行を出した tick で FG root が `X` の祖先なら**(Δ > 0): 務めの確認の証人 `T` は `X` の祖先か、eligible な head の枝か、
+grade 2 の候補の枝(`fgConfirmationWitnessAt_preceq_of_fgRoot` から前の `liveConfirmed` の枝を除いた形。`hstep` の中で、段の
+仮定の FG root ⪯ X の下で残るのは手書きの `hprior`(GenuineConfirmation ⪯ D)と窓の SG block に当たる 2 枝。周回 185)。 -/
+theorem fgConfirmationWitnessAt_preceq_of_emits_fgRoot (hδ : 0 < s.e.delta) {w : ValidatorId}
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat}
+    {T X : Block} (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T)
+    (hroot : preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true) :
+    preceq T X = true ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        preceq T (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true) ∨
+      ∃ q : Block, Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q ∧
+        preceq T q = true := by
+  rcases fgConfirmationWitnessAt_preceq_cases_of_emits c p a nr s rho hδ hem h with hr | hh | hg
+  · exact Or.inl (Proofs.Consensus.Blocks.preceq_trans hr hroot)
+  · exact Or.inr (Or.inl hh)
+  · exact Or.inr (Or.inr hg)
 
 /-- **round の同時帰納で行ごとの性質 `Q` と FG root・確認の証人を運ぶ**(Δ > 0、`0 < R`、`EventsSorted` と重複なし、
 `QuorumHonest` / `hcar` / `NamedRootCollisionFree`、`base ≤ cut`): round `base` 以上の行を時刻 `< limit` に出した honest な

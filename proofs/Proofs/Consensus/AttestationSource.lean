@@ -207,11 +207,14 @@ theorem tick_attest_store {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → Na
 
 /-! ## 務めの store の `liveConfirmed`(周回 184)
 
-`liveConfirmed` を書くのは確認の更新 `updateConfirmationWith` だけで、値は `Goldfish.live`(head が eligible なら head、
-そうでなければ FG root)。tick の中の時計合わせ・提案(ブロックの受理)・投票はこの欄を変えない。したがって務めの store の
+tick の中で `liveConfirmed` を書くのは確認の更新 `updateConfirmationWith` だけで、値は `Goldfish.live`(head が eligible なら
+head、そうでなければ FG root)。tick の中の時計合わせ・提案(ブロックの受理)・投票はこの欄を変えない。したがって務めの store の
 `liveConfirmed` は、tick の前の store の `liveConfirmed` か、務めの store の FG root か、確認の更新の直前の store の eligible な
 head。手書きの段で確認の証人の `T ⪯ live_confirmed` の枝に `hlive`(live_confirmed ⪯ D)を掛けるところの、`live_confirmed` の
-出どころの場合分けに当たる。 -/
+出どころの場合分けに当たる(手書きの対応先は `actionStoreAt_liveConfirmed_genuine_or_fgRoot`
+(`Execution/RecoveryActionLiveSourceSplit.lean`)で、枝は GenuineConfirmation と FG root の 2 つ。手書きは action の store に
+確認の更新を無条件に掛けるので第 1 の枝が無い。ここでは action 時刻の tick が必ず確認の更新を通ることを
+`tickDutyStore_live_cases_of_actionTime` で示して 2 枝にする。周回 185)。 -/
 
 theorem onBlockUsing_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (st : Store) (b : Block)
     (build : ChainState → ChainState) : (onBlockUsing c p st b build).liveConfirmed = st.liveConfirmed := by
@@ -357,6 +360,64 @@ theorem tickDutyStore_live_cases (c : Nat → NaruStd.Set ValidatorId) (p : Nat 
   split_ifs
   · exact Or.inr (updateConfirmationWith_live_cases cache e hc _ _)
   · exact Or.inl (tickPreUpdateStore_live c p nr cache e hc cfg nd st t)
+
+/-- **action 時刻の slot は opening slot の次**(Δ > 0): `4Δ · (r · R) + 6Δ = 4Δ · (r · R + 1) + 2Δ` で `0 ≤ 2Δ < 4Δ` なので、
+`4Δ` で割った床は `r · R + 1`(周回 185)。 -/
+theorem slotOf_actionTime {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (r : Nat) :
+    slotOf e (Model.Consensus.Protocol.Grades.actionTime hc e.delta r) =
+      Model.Consensus.Protocol.Grades.openingSlot hc r + 1 := by
+  unfold slotOf Model.Consensus.Objects.Time.slotOfTime Model.Consensus.Protocol.Grades.actionTime
+    Model.Consensus.Objects.Time.slotStart
+  have hb : (0 : Int) < e.delta * 4 := by linarith
+  rw [Int.fdiv_eq_ediv_of_nonneg _ hb.le]
+  have h : e.delta * 4 * Int.ofNat (Model.Consensus.Protocol.Grades.openingSlot hc r) + 6 * e.delta =
+      2 * e.delta + ((Model.Consensus.Protocol.Grades.openingSlot hc r + 1 : Nat) : Int) * (e.delta * 4) := by
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    ring
+  rw [h, Int.add_mul_ediv_right _ _ hb.ne', Int.ediv_eq_zero_of_lt (by linarith) (by linarith), zero_add]
+  simp
+
+/-- **action 時刻は supportCutoff の時刻**(Δ > 0): action 時刻の slot `r · R + 1` は正で、その supportCutoff
+`4Δ · (r · R + 1) + 2Δ` は action 時刻 `4Δ · (r · R) + 6Δ` に等しい。したがって action 時刻の tick は確認の更新の側を通る
+(周回 185)。 -/
+theorem supportCutoff_actionTime {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (r : Nat) :
+    (decide (0 < slotOf e (Model.Consensus.Protocol.Grades.actionTime hc e.delta r)) &&
+      (Model.Consensus.Protocol.Grades.actionTime hc e.delta r ==
+        Model.Consensus.Protocol.Schedule.supportCutoff e
+          (slotOf e (Model.Consensus.Protocol.Grades.actionTime hc e.delta r)))) = true := by
+  rw [slotOf_actionTime hδ hc r]
+  simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+  refine ⟨Nat.succ_pos _, ?_⟩
+  unfold Model.Consensus.Protocol.Grades.actionTime Model.Consensus.Protocol.Schedule.supportCutoff slotTime
+    Model.Consensus.Objects.Time.slotStart
+  simp only [Int.ofNat_eq_natCast]
+  push_cast
+  ring
+
+/-- **action 時刻の務めの store の `liveConfirmed`**(Δ > 0): tick の時刻 `t` が action 時刻なら、務めの store は必ず確認の更新を
+通る(`supportCutoff_actionTime`)ので、`liveConfirmed` は務めの store の FG root か、確認の更新の前の段の eligible な head
+(`tickDutyStore_live_cases` の第 1 の枝(tick の前の値のまま)は起きない。周回 185)。 -/
+theorem tickDutyStore_live_cases_of_actionTime (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) (hδ : 0 < e.delta) {t : Int} {r : Nat}
+    (ht : t = Model.Consensus.Protocol.Grades.actionTime hc e.delta r) :
+    (tickDutyStore c p nr cache e hc cfg nd st t).core.liveConfirmed =
+        getFgRoot (storeToHealing (tickDutyStore c p nr cache e hc cfg nd st t).core) ∨
+      (Proofs.Consensus.Goldfish.eligible e (tickPreUpdateStore c p nr cache e hc cfg nd st t).core (slotOf e t - 1)
+          (Proofs.Consensus.Goldfish.head cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t).core
+            (slotOf e t - 1)) = true ∧
+        (tickDutyStore c p nr cache e hc cfg nd st t).core.liveConfirmed =
+          Proofs.Consensus.Goldfish.head cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t).core
+            (slotOf e t - 1)) := by
+  subst ht
+  rw [tickDutyStore_eq_preUpdate]
+  split_ifs with hcut
+  · exact updateConfirmationWith_live_cases cache e hc _ _
+  · exact absurd (supportCutoff_actionTime hδ hc r) hcut
 
 /-! ## FG source は tree にある -/
 
