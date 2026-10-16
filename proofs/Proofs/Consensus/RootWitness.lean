@@ -45,6 +45,8 @@ import Mathlib.Tactic
 13. 12 を行ごとの性質 `Q`(手書きの第 1 連言の SG block ⪯ X に当たる)との同時帰納に広げる。round `base` 以上 `cut` 未満の
    行は `Q` を前提 `hbootstrap` から受け、段の前提 `hstep` は前の round の `Q` と FG root・確認の証人の両方を仮定に受ける
    (`dutyStoreAt_jointRoundInduction`。手書きの段 `hsg` が `hstep` の中に届く。12 はその `Q := True` の系。周回 180)。
+   `hstep` は、同じ round の行を出した honest な tick の FG root がどれも `X` の祖先であることも仮定に受ける
+   (手書きの `hformation` が要る同じ round の FG root ⪯ D に当たる。周回 181)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -683,7 +685,8 @@ tick について、
 - `hlegacy`: round `cut` 以上の行の tick で、round `< cut` の古い行の証人が務めの FG root `R` なら `R ⪯ X`。
 - `hstep`: round `cut` 以上の行 `row` の tick で、前の round の仮定(round `base` 以上 `row.round` 未満の行の tick はどれも
   `Q` を満たし、round `cut` 以上 `row.round` 未満の行の tick の FG root と確認の証人はどれも `X` の祖先)の下で、自分の務めの
-  FG root も `X` の祖先なら、自分も `Q` を満たし確認の証人も `X` の祖先。
+  FG root も `X` の祖先なら、自分も `Q` を満たし確認の証人も `X` の祖先。`hstep` は、同じ round `row.round` の行を出した
+  honest な tick の務めの FG root がどれも `X` の祖先であることも仮定に受ける(本体が自分の FG root と同じ導出で出す)。
 
 これらから、その tick は `Q` を満たし、round が `cut` 以上なら務めの FG root と確認の証人はどれも `X` の祖先。
 手書き `actionSources_preceq_of_priorConfirmations_and_historyCut`(`Protocol/Grades/WeakBootstrapAction.lean`)の
@@ -691,7 +694,9 @@ round の強い帰納の骨組みの 2 つの連言に当たる。`Q` を手書�
 `hsg`(round `base` 以上 `r` 未満の行の SG block)は `hstep` の第 1 の仮定として届く。段 `hroots` は
 `dutyStoreAt_fgRoot_preceq_of_recent_and_legacy` に `cutTime := actionTime cut` を置き、時刻の境を
 `emits_attest_time_lt_actionTime_iff` で round の境に移して帰納法の仮定から供給する。`hstep` の中身(SG block と確認の証人を
-grade と clear から押さえる段)は含まない(周回 180)。 -/
+grade と clear から押さえる段)は含まない(周回 180)。手書きの `hformation`・`hlive`・`hprior`、round 0 の場合、窓の `hspan`
+も `hstep` を書く側が供給する。同じ round の FG root の仮定は行を出した tick だけを量化し、行を出さない honest の FG root は
+含まない(周回 181)。 -/
 theorem dutyStoreAt_jointRoundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) (hs : EventsSorted rho)
     (hnd : EventsNodup rho) (hqh : QuorumHonest s.e rho.honest)
     (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
@@ -726,6 +731,10 @@ theorem dutyStoreAt_jointRoundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) 
         cut ≤ row2.round → row2.round < row.round →
         preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w2 i2 t2).core)) X = true ∧
           ∀ T, fgConfirmationWitnessAt c p a nr s rho w2 i2 t2 = some T → preceq T X = true) →
+      (∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : NamedAttestation), w2 ∈ rho.honest.elems →
+        rho.events[i2]? = some (NamedEvent.Tick w2 t2) → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+        row2.round = row.round →
+        preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w2 i2 t2).core)) X = true) →
       preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true →
       Q w i t row ∧ ∀ T, fgConfirmationWitnessAt c p a nr s rho w i t = some T → preceq T X = true) :
     ∀ (w : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), w ∈ rho.honest.elems →
@@ -768,23 +777,33 @@ theorem dutyStoreAt_jointRoundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) 
       intro w2 i2 t2 row2 hw2 hi2 hem2 hcut2 hlt
       exact (ih row2.round (hrr ▸ hlt) w2 i2 t2 row2 rfl hw2 hi2 hem2 ((hearlier hem2 hlt).trans hlim)
         (hbc.trans hcut2)).2 hcut2
-    have hroot : preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true := by
-      refine dutyStoreAt_fgRoot_preceq_of_recent_and_legacy c p a nr s rho hδ hs hnd hqh hcar hcf hw hem hi
+    -- 同じ round の行を出した honest な tick の FG root は、どれも `X` の祖先(段 `hroots`)。同じ round の行の時刻は
+    -- `t` と同じ action 時刻なので `limit` 未満で、前の round の仮定と `hlegacy` がその tick にも届く。
+    have hsame : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : NamedAttestation), w2 ∈ rho.honest.elems →
+        rho.events[i2]? = some (NamedEvent.Tick w2 t2) → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+        row2.round = row.round →
+        preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w2 i2 t2).core)) X = true := by
+      intro w2 i2 t2 row2 hw2 hi2 hem2 hsr
+      have ht2t : t2 = t := by
+        rw [emits_attest_actionTime_round c p a nr s rho hem2, emits_attest_actionTime_round c p a nr s rho hem, hsr]
+      have hcut2 : cut ≤ row2.round := hsr ▸ hcut
+      refine dutyStoreAt_fgRoot_preceq_of_recent_and_legacy c p a nr s rho hδ hs hnd hqh hcar hcf hw2 hem2 hi2
         (cutTime := Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta cut) ?_ ?_
-      · intro w2 i2 t2 hct2 ht2 hw2 hi2 row2 hrow2 hem2 T hT
-        subst hrow2
-        have hcut2 : cut ≤ row2.round :=
-          le_of_not_gt fun h => absurd ((emits_attest_time_lt_actionTime_iff c p a nr s rho hδ hr hem2 cut).mpr h)
-            (not_lt_of_ge hct2)
-        have hlt : row2.round < row.round := by
-          rw [emits_attest_actionTime_round c p a nr s rho hem2, emits_attest_actionTime_round c p a nr s rho hem]
-            at ht2
-          exact (actionTime_lt_actionTime_iff hδ hr row2.round row.round).mp ht2
-        exact (hprev row2.valIndex i2 t2 row2 hw2 hi2 hem2 hcut2 hlt).2 T hT
-      · intro D row2 nu t2 i2 hD hDj hH hrow ht2 hct2 hem2 hev hT
-        exact hlegacy w i t row hw hi hem hlim hcut D row2 nu t2 i2 hD hDj hH hrow ht2
-          ((emits_attest_time_lt_actionTime_iff c p a nr s rho hδ hr hem2 cut).mp hct2) hem2 hev hT
-    obtain ⟨hq, hwit⟩ := hstep w i t row hw hi hem hlim hcut hprevQ hprev hroot
+      · intro w3 i3 t3 hct3 ht3 hw3 hi3 row3 hrow3 hem3 T hT
+        subst hrow3
+        have hcut3 : cut ≤ row3.round :=
+          le_of_not_gt fun h => absurd ((emits_attest_time_lt_actionTime_iff c p a nr s rho hδ hr hem3 cut).mpr h)
+            (not_lt_of_ge hct3)
+        have hlt : row3.round < row.round := by
+          rw [emits_attest_actionTime_round c p a nr s rho hem3, emits_attest_actionTime_round c p a nr s rho hem2]
+            at ht3
+          exact hsr ▸ (actionTime_lt_actionTime_iff hδ hr row3.round row2.round).mp ht3
+        exact (hprev row3.valIndex i3 t3 row3 hw3 hi3 hem3 hcut3 hlt).2 T hT
+      · intro D row3 nu t3 i3 hD hDj hH hrow ht3 hct3 hem3 hev hT
+        exact hlegacy w2 i2 t2 row2 hw2 hi2 hem2 (ht2t ▸ hlim) hcut2 D row3 nu t3 i3 hD hDj hH hrow ht3
+          ((emits_attest_time_lt_actionTime_iff c p a nr s rho hδ hr hem3 cut).mp hct3) hem3 hev hT
+    have hroot := hsame w i t row hw hi hem rfl
+    obtain ⟨hq, hwit⟩ := hstep w i t row hw hi hem hlim hcut hprevQ hprev hsame hroot
     exact ⟨hq, fun _ => ⟨hroot, hwit⟩⟩
 
 /-- **round の帰納で FG root と確認の証人を運ぶ**(Δ > 0、`0 < R`、`EventsSorted` と重複なし、`QuorumHonest` / `hcar` /
@@ -832,7 +851,7 @@ theorem dutyStoreAt_preceq_of_roundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.h
   intro w i t row hw hi hem hlim hcut
   refine (dutyStoreAt_jointRoundInduction c p a nr s rho hδ hr hs hnd hqh hcar hcf (base := cut)
     (fun _ _ _ _ => True) le_rfl (fun _ _ _ _ _ _ _ _ _ _ => trivial) hlegacy ?_ w i t row hw hi hem hlim hcut).2 hcut
-  intro w i t row hw hi hem hlim hcut _ hprev hroot
+  intro w i t row hw hi hem hlim hcut _ hprev _ hroot
   exact ⟨trivial, hstep w i t row hw hi hem hlim hcut hprev hroot⟩
 
 end RunAtAction
