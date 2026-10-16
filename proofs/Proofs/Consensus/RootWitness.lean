@@ -24,9 +24,12 @@ import Mathlib.Tactic
    (`stateBeforeTime_fgRoot_compatible_of_bootstrap_and_recent`。周回 172)。
 6. 提案しない tick では、務めの store `dutyStoreAt w i t` の FG root は `stateBefore i` の `w` の store の FG root
    (`dutyStoreAt_fgRoot_of_not_proposing`。時計合わせ・投票・確認の更新は FG root の 4 欄を変えない。周回 173)。
-   手書きの右辺は読みの時刻の store `storeBeforeTime` で、`stateBefore i` から読みの時刻への橋渡しはまだ無い。
+   手書きの右辺は読みの時刻の store `storeBeforeTime` で、`stateBefore i` から読みの時刻への橋渡しは 8。
 7. 行を出した tick は提案しない: action 時刻 `4Δ · (r · R) + 6Δ` は提案時刻 `4Δ · k` と重ならない(Δ > 0)ので、6 の前提は
    発行から出る(`dutyStoreAt_fgRoot_of_emits`。周回 174)。
+8. 添字 `i` の event が `Tick w t` なら、`stateBefore i` の `w` の状態は時刻 `< t` の読み `stateBeforeTime t` の `w` の状態
+   (`idxLt t` から `i` までの event は `w` のものでない。`EventsSorted` と重複なし)。7 と合わせて、行を出した tick の務めの store の
+   FG root は読みの FG root(`dutyStoreAt_fgRoot_eq_stateBeforeTime`。手書き `actionStoreAt_fgRoot_eq_storeBeforeTime`。周回 175)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -431,6 +434,87 @@ theorem dutyStoreAt_fgRoot_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row
   rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
   obtain ⟨r, ht⟩ := tick_attest_actionTime c p a nr _ s.hc _ _ _ t hrow
   exact dutyStoreAt_fgRoot_of_not_proposing c p a nr s rho w i t (not_proposing_of_actionTime hδ s.hc p _ ht)
+
+/-- `idxLt t` から tick `Tick w t`(添字 `i`)までの event は `w` のものではない(`EventsSorted` と重複なし): その時刻は `t` 以上で
+key は `(t, 0)` 以下なので、`w` の配送(phase 1)は並ばず、`w` の時刻 `t` の tick は添字 `i` の event と同じで重複になる。 -/
+theorem eventNode_ne_of_idxLt_le_of_lt_tick (hs : EventsSorted rho) (hnd : rho.events.Nodup) {w : ValidatorId}
+    {i j : Nat} {t : Int} (hi : rho.events[i]? = some (NamedEvent.Tick w t))
+    (hj : Proofs.Consensus.ReceiverFinality.idxLt rho t ≤ j) (hji : j < i) {ev : NamedEvent}
+    (hev : rho.events[j]? = some ev) : eventNode ev ≠ w := by
+  have hge : t ≤ eventTime ev := by
+    by_contra hlt
+    have := Proofs.Consensus.ReceiverFinality.lt_idxLt_of_time_lt rho hs hnd hev (not_le.mp hlt)
+    omega
+  have hkey : compare (eventKey ev) (eventKey (NamedEvent.Tick w t)) ≠ .gt := by
+    have h := hs j i hji
+    rw [hev, hi] at h
+    exact h
+  intro hn
+  cases ev with
+  | Tick u t' =>
+    simp only [eventNode] at hn
+    subst hn
+    have hle : t' ≤ t := Proofs.Consensus.Runs.time_le_of_key_ne_gt hkey
+    simp only [eventTime] at hge hle
+    have ht' : t' = t := le_antisymm hle hge
+    subst ht'
+    have hjl : j < rho.events.length := (List.getElem?_eq_some_iff.mp hev).1
+    have : j = i := (List.Nodup.getElem?_inj hjl hnd).mp (hev.trans hi.symm)
+    omega
+  | Deliver u o t' =>
+    apply hkey
+    simp only [eventTime] at hge
+    show (compare t' t).then (compare (1 : Nat) 0) = .gt
+    rcases lt_or_eq_of_le hge with hlt | heq
+    · rw [Int.compare_eq_gt.mpr hlt]
+      rfl
+    · rw [heq, Int.compare_eq_eq.mpr rfl]
+      rfl
+
+/-- **tick の前の状態は時刻 `< t` の読み**(`EventsSorted` と重複なし): 添字 `i` の event が `Tick w t` なら、`stateBefore i` の
+`w` の状態は `stateBeforeTime t` の `w` の状態。`idxLt t ≤ i` で、その間の event はどれも `w` のものでない
+(`eventNode_ne_of_idxLt_le_of_lt_tick`)ので `RecordGrowth.node_succ_other` で `w` の状態は変わらない(周回 175)。 -/
+theorem worldAt_stateBefore_tick_eq_stateBeforeTime (hs : EventsSorted rho) (hnd : rho.events.Nodup)
+    {w : ValidatorId} {i : Nat} {t : Int} (hi : rho.events[i]? = some (NamedEvent.Tick w t)) :
+    worldAt (stateBefore c p a nr s rho i) w = worldAt (stateBeforeTime c p a nr s rho t) w := by
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
+  have hle : Proofs.Consensus.ReceiverFinality.idxLt rho t ≤ i := by
+    by_contra hlt
+    have := Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs (not_le.mp hlt) hi
+    simp only [eventTime] at this
+    exact lt_irrefl _ this
+  have hil : i < rho.events.length := (List.getElem?_eq_some_iff.mp hi).1
+  have key : ∀ n, Proofs.Consensus.ReceiverFinality.idxLt rho t ≤ n → n ≤ i →
+      worldAt (stateBefore c p a nr s rho n) w =
+        worldAt (stateBefore c p a nr s rho (Proofs.Consensus.ReceiverFinality.idxLt rho t)) w := by
+    intro n
+    induction n with
+    | zero => intro h0 _; rw [Nat.le_zero.mp h0]
+    | succ n ih =>
+      intro hm hni
+      by_cases hmn : Proofs.Consensus.ReceiverFinality.idxLt rho t ≤ n
+      · have hnl : n < rho.events.length := by omega
+        have hev : rho.events[n]? = some rho.events[n] := List.getElem?_eq_getElem hnl
+        rw [Proofs.Consensus.RecordGrowth.node_succ_other c p a nr s rho hev w
+          (eventNode_ne_of_idxLt_le_of_lt_tick rho hs hnd hi hmn (by omega) hev)]
+        exact ih hmn (by omega)
+      · have : Proofs.Consensus.ReceiverFinality.idxLt rho t = n + 1 := by omega
+        rw [this]
+  exact key i hle le_rfl
+
+/-- **行を出した tick の務めの store の FG root は時刻 `< t` の読みの FG root**(Δ > 0、`EventsSorted` と重複なし): `w` が時刻 `t` に
+行 `row` を出し、添字 `i` の event が `Tick w t` なら、務めの store `dutyStoreAt w i t` の FG root は `stateBeforeTime t` の `w` の
+store の FG root。`dutyStoreAt_fgRoot_of_emits` と `worldAt_stateBefore_tick_eq_stateBeforeTime` を合わせたもの。手書き
+`actionStoreAt_fgRoot_eq_storeBeforeTime` に当たる(手書きの務めの store は定義上読みの時刻の store から作るので `rfl` だが、
+生成 `tick` は tick の前の状態 `stateBefore i` から作るので橋渡しが要る。周回 175)。 -/
+theorem dutyStoreAt_fgRoot_eq_stateBeforeTime (hδ : 0 < s.e.delta) (hs : EventsSorted rho) (hnd : EventsNodup rho)
+    {w : ValidatorId} {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t)
+    {i : Nat} (hi : rho.events[i]? = some (NamedEvent.Tick w t)) :
+    getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) =
+      getFgRoot (storeToHealing (worldAt (stateBeforeTime c p a nr s rho t) w).st.core) := by
+  rw [dutyStoreAt_fgRoot_of_emits c p a nr s rho hδ hem i,
+    worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs
+      (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd) hi]
 
 end RunAtAction
 
