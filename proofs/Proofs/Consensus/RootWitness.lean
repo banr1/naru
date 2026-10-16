@@ -30,6 +30,8 @@ import Mathlib.Tactic
 8. 添字 `i` の event が `Tick w t` なら、`stateBefore i` の `w` の状態は時刻 `< t` の読み `stateBeforeTime t` の `w` の状態
    (`idxLt t` から `i` までの event は `w` のものでない。`EventsSorted` と重複なし)。7 と合わせて、行を出した tick の務めの store の
    FG root は読みの FG root(`dutyStoreAt_fgRoot_eq_stateBeforeTime`。手書き `actionStoreAt_fgRoot_eq_storeBeforeTime`。周回 175)。
+9. 8 に 4 を掛けて、行を出した tick の務めの store の FG root は genesis か、時刻 `< t` に発行された行の tick の務めの確認の証人
+   (`dutyStoreAt_fgRoot_confirmationWitness`。手書き `fgRoot_confirmationWitness_at_action`。周回 176)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -515,6 +517,34 @@ theorem dutyStoreAt_fgRoot_eq_stateBeforeTime (hδ : 0 < s.e.delta) (hs : Events
   rw [dutyStoreAt_fgRoot_of_emits c p a nr s rho hδ hem i,
     worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs
       (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd) hi]
+
+/-- **行を出した tick の務めの store の FG root の確認の証人**(Δ > 0、`EventsSorted` と重複なし、`QuorumHonest` / `hcar` /
+`NamedRootCollisionFree`): honest な `w` が時刻 `t` に行 `row` を出し、添字 `i` の event が `Tick w t` なら、務めの store
+`dutyStoreAt w i t` の FG root `R` は genesis か、読みの bodies の `D`(導出の `j` が `R`)と honest な署名者の行(height pair
+`Vote hJ (root R) nu`、発行は時刻 `t2 < t` の添字 `i2` の `Tick`)があって、その tick の務めの確認の証人が `R`。
+`dutyStoreAt_fgRoot_eq_stateBeforeTime` で `R` を `w` の時刻 `< t` の読みの FG root に移し、
+`stateBeforeTime_fgRoot_confirmationWitness` を掛けたもの。手書き `fgRoot_confirmationWitness_at_action`
+(`Protocol/ChainState/FGRootWitness.lean`)に当たる(周回 176)。 -/
+theorem dutyStoreAt_fgRoot_confirmationWitness (hδ : 0 < s.e.delta) (hs : EventsSorted rho) (hnd : EventsNodup rho)
+    (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {w : ValidatorId} (hw : w ∈ rho.honest.elems)
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t)
+    {i : Nat} (hi : rho.events[i]? = some (NamedEvent.Tick w t)) :
+    getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) = Block.Genesis ∨
+      ∃ (D : NamedBlock) (row2 : NamedAttestation) (nu : Bool) (t2 : Int) (i2 : Nat),
+        D ∈ (worldAt (stateBeforeTime c p a nr s rho t) w).st.bodies.elems ∧
+        (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) ∧
+        row2.valIndex ∈ rho.honest.elems ∧
+        row2.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+          (root (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core))) nu ∧
+        t2 < t ∧ Emits c p a nr s rho row2.valIndex (NamedObject.Attest row2) t2 ∧
+        rho.events[i2]? = some (NamedEvent.Tick row2.valIndex t2) ∧
+        fgConfirmationWitnessAt c p a nr s rho row2.valIndex i2 t2 =
+          some (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) := by
+  rw [dutyStoreAt_fgRoot_eq_stateBeforeTime c p a nr s rho hδ hs hnd hem hi]
+  exact stateBeforeTime_fgRoot_confirmationWitness c p a nr s rho hs hqh hcar hcf hw t
 
 end RunAtAction
 
