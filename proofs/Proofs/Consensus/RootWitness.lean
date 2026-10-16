@@ -32,6 +32,9 @@ import Mathlib.Tactic
    FG root は読みの FG root(`dutyStoreAt_fgRoot_eq_stateBeforeTime`。手書き `actionStoreAt_fgRoot_eq_storeBeforeTime`。周回 175)。
 9. 8 に 4 を掛けて、行を出した tick の務めの store の FG root は genesis か、時刻 `< t` に発行された行の tick の務めの確認の証人
    (`dutyStoreAt_fgRoot_confirmationWitness`。手書き `fgRoot_confirmationWitness_at_action`。周回 176)。
+10. 9 の証人の時刻を時刻の境 `cutTime` で分け、最近の務めの証人がどれも `X` の祖先で、古い証人が `R` なら `R ⪯ X`、という
+   2 つの前提から、行を出した tick の務めの FG root は `X` の祖先(`dutyStoreAt_fgRoot_preceq_of_recent_and_legacy`。
+   手書き `actionSources_preceq_of_priorConfirmations_and_historyCut` の帰納の段 `hroots`。周回 177)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -545,6 +548,44 @@ theorem dutyStoreAt_fgRoot_confirmationWitness (hδ : 0 < s.e.delta) (hs : Event
           some (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) := by
   rw [dutyStoreAt_fgRoot_eq_stateBeforeTime c p a nr s rho hδ hs hnd hem hi]
   exact stateBeforeTime_fgRoot_confirmationWitness c p a nr s rho hs hqh hcar hcf hw t
+
+/-- **行を出した tick の務めの FG root は `X` の祖先 — 最近の証人と古い根から**(Δ > 0、`EventsSorted` と重複なし、
+`QuorumHonest` / `hcar` / `NamedRootCollisionFree`): honest な `w` が時刻 `t` に行 `row` を出し、添字 `i` の event が `Tick w t` で、
+`hrecent`(時刻 `cutTime ≤ t2 < t` に honest な署名者が行を出した tick の務めの確認の証人 `T` はどれも `T ⪯ X`)と
+`hlegacy`(時刻 `t2 < cutTime` の、務めの FG root `R` を説明する古い行の証人が `R` なら `R ⪯ X`)があれば、務めの store
+`dutyStoreAt w i t` の FG root は `X` の祖先。`R` が genesis なら `preceq_genesis` で前提なしに成り立つ。手書き
+`actionSources_preceq_of_priorConfirmations_and_historyCut`(`Protocol/Grades/WeakBootstrapAction.lean`)の帰納の中の段 `hroots`
+に当たり、手書きの round の境 `a.round < cut` を時刻の境 `t2 < cutTime` に置き換えた(周回 177)。 -/
+theorem dutyStoreAt_fgRoot_preceq_of_recent_and_legacy (hδ : 0 < s.e.delta) (hs : EventsSorted rho)
+    (hnd : EventsNodup rho) (hqh : QuorumHonest s.e rho.honest)
+    (hcar : ∀ v o t, Processes c p a nr s rho v o t → ∀ o2, Carries o o2 →
+      ∀ u, rho.honest.contains u = true ∧ author o2 = some u → ∃ t2, t2 ≤ t ∧ Emits c p a nr s rho u o2 t2)
+    (hcf : NamedRootCollisionFree c p a nr s rho) {w : ValidatorId} (hw : w ∈ rho.honest.elems)
+    {row : NamedAttestation} {t : Int} (hem : Emits c p a nr s rho w (NamedObject.Attest row) t)
+    {i : Nat} (hi : rho.events[i]? = some (NamedEvent.Tick w t)) {cutTime : Int} {X : Block}
+    (hrecent : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int), cutTime ≤ t2 → t2 < t → w2 ∈ rho.honest.elems →
+      rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      ∀ row2 : NamedAttestation, row2.valIndex = w2 → Emits c p a nr s rho w2 (NamedObject.Attest row2) t2 →
+      ∀ T, fgConfirmationWitnessAt c p a nr s rho w2 i2 t2 = some T → preceq T X = true)
+    (hlegacy : ∀ (D : NamedBlock) (row2 : NamedAttestation) (nu : Bool) (t2 : Int) (i2 : Nat),
+      D ∈ (worldAt (stateBeforeTime c p a nr s rho t) w).st.bodies.elems →
+      (deriveNamed s.e s.cfg D).j = getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) →
+      row2.valIndex ∈ rho.honest.elems →
+      row2.heightPair = NamedHeightPair.Vote (deriveNamed s.e s.cfg D).hJ
+        (root (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core))) nu →
+      t2 < t → t2 < cutTime → Emits c p a nr s rho row2.valIndex (NamedObject.Attest row2) t2 →
+      rho.events[i2]? = some (NamedEvent.Tick row2.valIndex t2) →
+      fgConfirmationWitnessAt c p a nr s rho row2.valIndex i2 t2 =
+        some (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) →
+      preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true) :
+    preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true := by
+  rcases dutyStoreAt_fgRoot_confirmationWitness c p a nr s rho hδ hs hnd hqh hcar hcf hw hem hi with hg |
+    ⟨D, row2, nu, t2, i2, hD, hDj, hH, hrow, ht2, hem2, hev, hT⟩
+  · rw [hg]
+    exact Proofs.Consensus.Blocks.preceq_genesis X
+  · by_cases hcut : t2 < cutTime
+    · exact hlegacy D row2 nu t2 i2 hD hDj hH hrow ht2 hcut hem2 hev hT
+    · exact hrecent row2.valIndex i2 t2 (le_of_not_gt hcut) ht2 hH hev row2 rfl hem2 _ hT
 
 end RunAtAction
 

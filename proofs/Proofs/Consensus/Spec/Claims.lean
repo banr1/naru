@@ -258,6 +258,7 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 174 の足場: 行を出した tick は提案しない(Δ > 0)ので、その前提を発行から出す `dutyStoreAt_fgRoot_of_emits` を足した。
 周回 175 の足場: tick の前の状態を時刻 `< t` の読みに結び、行を出した tick の務めの store の FG root が読みの FG root に等しい `dutyStoreAt_fgRoot_eq_stateBeforeTime` を足した。
 周回 176 の足場: 行を出した tick の務めの store の FG root が genesis か、時刻 `< t` に発行された行の tick の務めの確認の証人である `dutyStoreAt_fgRoot_confirmationWitness` を足した。
+周回 177 の足場: 最近の務めの証人と古い根の 2 つの前提から、行を出した tick の務めの FG root が `X` の祖先である `dutyStoreAt_fgRoot_preceq_of_recent_and_legacy` を足した。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに
