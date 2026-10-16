@@ -269,6 +269,7 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 185 の足場: 行を出した tick は必ず確認の更新を通るので、`liveConfirmed` の 2 枝の版 `dutyStoreAt_live_cases_of_emits` と確認の証人の 3 枝の版 `fgConfirmationWitnessAt_preceq_cases_of_emits` / `fgConfirmationWitnessAt_preceq_of_emits_fgRoot` を足した。
 周回 186 の足場: 手書き `GenuineConfirmationWith` に当たる `GenuineConfirmationAt` を置き、`liveConfirmed` の 2 枝を手書きと同じ形にした `dutyStoreAt_live_genuine_or_fgRoot_of_emits`、手書きの `hlive` に当たる `dutyStoreAt_live_preceq_of_prior`、確認の証人を `X` の祖先か grade 2 の枝に絞る `fgConfirmationWitnessAt_preceq_of_emits_prior` を足した。
 周回 187 の足場: 務めの grade 2 の候補 `grade2CandidateAt` と、genuine な確認と grade 2 の候補から確認の証人を押さえる `fgConfirmationWitnessAt_preceq_of_prior_grade2`、`hstep` をその 2 つで書いた `dutyStoreAt_jointRoundInduction_of_prior` を足した。
+周回 188 の足場: `Grade2Capture`(phase tick の G2 の結果の出どころ `onPhaseTick_g2_cases`)と、行を出した tick の務めの grade 2 の候補は tick の前の cache の G2 の結果の祖先 `RootWitness.grade2CandidateAt_of_emits` を足した。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

@@ -1,5 +1,6 @@
 import Proofs.Consensus.RootEntry
 import Proofs.Consensus.FinalizedAccountable
+import Proofs.Consensus.Grade2Capture
 import Mathlib.Tactic
 
 /-!
@@ -74,8 +75,13 @@ import Mathlib.Tactic
    残る grade 2 の枝は窓の SG block に繋ぐ(周回 186)。
 19. 務めの grade 2 の候補を `grade2CandidateAt` と名付け、genuine な確認 ⪯ X と grade 2 の候補 ⪯ X から確認の証人 ⪯ X
    (`fgConfirmationWitnessAt_preceq_of_prior_grade2`)。round の同時帰納の `hstep` の確認の証人の連言を、この 2 つ
-   (手書きの `hprior` と `nodeQ2_preceq_honestWindowCarrier` の側)の供給に置き換えた版
+   (手書きの `hprior` と、`nodeQ2_preceq_honestWindowCarrier` に `hsg` を掛ける側)の供給に置き換えた版
    `dutyStoreAt_jointRoundInduction_of_prior`(周回 187)。
+20. 務めの grade 2 の候補 `q` は、`stateBefore i` の `w` の cache の務めの round の G2 の結果 `b0` の祖先か、この tick で
+   凍結した `freezeRoot` の結果の祖先(`grade2CandidateAt_cases`。cache の 1 段は `Grade2Capture`)。行を出した tick の時刻は
+   G2 の domain 時刻ではない(`actionTime_ne_domainTime_G2`)ので、行を出した tick では前者だけ
+   (`grade2CandidateAt_of_emits`。手書き `q2_capture_at_action_read` の前半。周回 188)。`b0` を凍結した tick への run の
+   帰納は手書きの `NamedCacheProvenance.completed_phase_origin` に当たり、まだ置いていない。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -1199,7 +1205,8 @@ theorem dutyStoreAt_preceq_of_roundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.h
   intro w i t row hw hi hem hlim hcut _ hprev _ hroot
   exact ⟨trivial, hstep w i t row hw hi hem hlim hcut hprev hroot⟩
 
-/-- **務めの grade 2 の候補**: 添字 `i` の tick の務めの store で、その round の grade 2 の候補(`grade2BlockWith`)。
+/-- **務めの grade 2 の候補**: 添字 `i` の tick の務めの store で、務めの store の slot の round(`roundOf … .core.s`)の
+grade 2 の候補(`grade2BlockWith`)。行の round に繋ぐには `tick_attest_actionTime_round` 系の補題が要る(手書きは `actionStoreAt_round`)。
 `fgConfirmationWitnessAt_preceq_source` などの第 2 の枝の `q` はこの値(周回 187)。 -/
 def grade2CandidateAt (w : ValidatorId) (i : Nat) (t : Int) : Option Block :=
   Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
@@ -1282,6 +1289,66 @@ theorem dutyStoreAt_jointRoundInduction_of_prior (hδ : 0 < s.e.delta) (hr : 0 <
   obtain ⟨hq, hprior, hgrade2⟩ := hstep' w i t row hw hi hem hlim hcut hprevQ hprev hsame hroot
   exact ⟨hq, fun T hT =>
     fgConfirmationWitnessAt_preceq_of_prior_grade2 c p a nr s rho hδ hem hT hroot hprior hgrade2⟩
+
+/-- **action 時刻は G2 の domain 時刻ではない**(Δ > 0): `4Δ · (r · R) + 6Δ = 4Δ · (k · R) - Δ` なら
+`7 = 4 · (k · R - r · R)` で、整数では成り立たない。手書きの `action_after_g2` は同じ round で `domain < a` を示す。
+ここは round を問わない(周回 188)。 -/
+theorem actionTime_ne_domainTime_G2 {e : ProtocolEnv} (hδ : 0 < e.delta) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (r k : Nat) :
+    Model.Consensus.Protocol.Grades.actionTime hc e.delta r ≠
+      Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 := by
+  unfold Model.Consensus.Protocol.Grades.actionTime Model.Consensus.Protocol.Grades.domainTime
+    Model.Consensus.Protocol.Grades.openingTime Model.Consensus.Protocol.Schedule.proposalTime
+    Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    Model.Consensus.Protocol.Grades.openingSlot
+  simp only [Model.Consensus.Protocol.Grades.domainOffset, Int.ofNat_eq_natCast]
+  intro h
+  have h0 : e.delta * (4 * ((k * hc.r : Nat) : Int) - 4 * ((r * hc.r : Nat) : Int) - 7) = 0 := by linarith
+  rcases mul_eq_zero.mp h0 with h1 | h1
+  · exact hδ.ne' h1
+  · omega
+
+/-- **務めの grade 2 の候補の出どころ**(前提なし): 務めの grade 2 の候補が `q` なら、`q ⪯ b0` の `b0` があり、
+`stateBefore i` の `w` の cache の、務めの store の slot の round `k` の G2 の結果が `some (some b0)` か、tick の時刻 `t` が
+round `k` の G2 の domain 時刻で、tick の前の store で `freezeRoot` が `b0` を凍結した
+(`Grade2Capture.grade2BlockWith_onPhaseTick_cases`。手書き `q2_capture_at_action_read` の本体の前半。周回 188)。 -/
+theorem grade2CandidateAt_cases {w : ValidatorId} {i : Nat} {t : Int} {q : Block}
+    (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ b0, preceq q b0 = true ∧
+      ((Model.Consensus.Protocol.Grades.cacheAtRound (worldAt (stateBefore c p a nr s rho i) w).cache
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)).g2 = some (some b0) ∨
+        (t = Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G2 ∧
+          Model.Consensus.Protocol.Grades.freezeRoot s.e
+              (Model.Consensus.Protocol.Grades.gradeView
+                (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core))
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core).f s.hc.etaSG
+              (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+              (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc
+                (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+                Model.Consensus.Protocol.Grades.GradePhase.G2)
+              (Model.Consensus.Protocol.Grades.lateTime s.e s.hc
+                (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+                Model.Consensus.Protocol.Grades.GradePhase.G2) = some b0)) :=
+  Proofs.Consensus.Grade2Capture.grade2BlockWith_onPhaseTick_cases h
+
+/-- **行を出した tick の grade 2 の候補は、tick の前の cache の G2 の結果の祖先**(Δ > 0): 行を出した tick の時刻は
+action 時刻で G2 の domain 時刻ではない(`actionTime_ne_domainTime_G2`)ので、`grade2CandidateAt_cases` の凍結の枝は起きない。
+務めの grade 2 の候補 `q` について、`stateBefore i` の `w` の cache の務めの round の G2 の結果は `some (some b0)` で `q ⪯ b0`。
+手書き `q2_capture_at_action_read` の、action の読みの cache から tick の前の cache へ戻す段(`prepared_g2_from_old`)に
+当たる。`b0` を凍結した tick への run の帰納(手書き `completed_phase_origin`)は次の段(周回 188)。 -/
+theorem grade2CandidateAt_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
+    (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ b0, preceq q b0 = true ∧
+      (Model.Consensus.Protocol.Grades.cacheAtRound (worldAt (stateBefore c p a nr s rho i) w).cache
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)).g2 =
+        some (some b0) := by
+  obtain ⟨b0, hqb, hold | ⟨ht, -⟩⟩ := grade2CandidateAt_cases c p a nr s rho h
+  · exact ⟨b0, hqb, hold⟩
+  · rw [emits_attest_actionTime_round c p a nr s rho hem] at ht
+    exact absurd ht (actionTime_ne_domainTime_G2 hδ s.hc _ _)
 
 end RunAtAction
 
