@@ -46,7 +46,10 @@ import Mathlib.Tactic
    行は `Q` を前提 `hbootstrap` から受け、段の前提 `hstep` は前の round の `Q` と FG root・確認の証人の両方を仮定に受ける
    (`dutyStoreAt_jointRoundInduction`。手書きの段 `hsg` が `hstep` の中に届く。12 はその `Q := True` の系。周回 180)。
    `hstep` は、同じ round の行を出した honest な tick の FG root がどれも `X` の祖先であることも仮定に受ける
-   (手書きの `hformation` が要る同じ round の FG root ⪯ D に当たる。周回 181)。
+   (手書きの `hformation` が要る同じ round の FG root ⪯ D に当たる(行を出した tick に限る)。周回 181)。
+14. 務めの確認の証人 `T` は務めの FG source `q` の chain 状態の `tH` で、`q` は務めの store の `liveConfirmed` の祖先か、
+   務めの grade 2 の候補そのもの(`fgConfirmationWitnessAt_source`。`deepestClear` の場合分け。手書きの段で確認の証人を
+   `hlive` と窓の SG block に分ける前の段。周回 182)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -238,6 +241,24 @@ def fgConfirmationWitnessAt (w : ValidatorId) (i : Nat) (t : Int) : Option Block
         s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
         (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s))).map
     (fun q => (chainStateOf (dutyStoreAt c p a nr s rho w i t).core.sigma q).tH)
+
+/-- **務めの確認の証人の source の 2 つの場合**(前提なし): 務めの確認の証人が `T` なら、`T` は務めの FG source `q` の
+chain 状態の `tH` で、`q` は務めの store の `liveConfirmed` の祖先か、務めの grade 2 の候補そのもの
+(`AttestationSource.fgSourceWith_cases`)。手書きの段で `hform.witness` を `hlive` と窓の SG block に分ける前の、
+`fg_source_with` の `deepest_clear` の場合分けに当たる(周回 182)。 -/
+theorem fgConfirmationWitnessAt_source {w : ValidatorId} {i : Nat} {t : Int} {T : Block}
+    (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T) :
+    ∃ q : Block, T = (chainStateOf (dutyStoreAt c p a nr s rho w i t).core.sigma q).tH ∧
+      (preceq q (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed = true ∨
+        Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q) := by
+  unfold fgConfirmationWitnessAt at h
+  obtain ⟨q, hq, hT⟩ := Option.map_eq_some_iff.mp h
+  exact ⟨q, hT.symm, Proofs.Consensus.AttestationSource.fgSourceWith_cases hq⟩
 
 /-- **務めの確認の証人の版**: 前提 `EventsSorted` / `QuorumHonest` / `hcar` と `NamedRootCollisionFree` の下で、honest な `v` の
 時刻 `< time` の読みの FG root `R` は genesis か、読みの bodies の `D`(導出の `j` が `R`)と honest な署名者の行(height pair
@@ -694,8 +715,8 @@ round の強い帰納の骨組みの 2 つの連言に当たる。`Q` を手書�
 `hsg`(round `base` 以上 `r` 未満の行の SG block)は `hstep` の第 1 の仮定として届く。段 `hroots` は
 `dutyStoreAt_fgRoot_preceq_of_recent_and_legacy` に `cutTime := actionTime cut` を置き、時刻の境を
 `emits_attest_time_lt_actionTime_iff` で round の境に移して帰納法の仮定から供給する。`hstep` の中身(SG block と確認の証人を
-grade と clear から押さえる段)は含まない(周回 180)。手書きの `hformation`・`hlive`・`hprior`、round 0 の場合、窓の `hspan`
-も `hstep` を書く側が供給する。同じ round の FG root の仮定は行を出した tick だけを量化し、行を出さない honest の FG root は
+grade と clear から押さえる段)は含まない(周回 180)。手書きの `hformation`・`hprior`、round 0 の場合、窓の `hspan`
+も `hstep` を書く側が供給し、`hlive` は書く側が `hprior` と FG root から導く(手書きでも前提ではなく本体で導く)。同じ round の FG root の仮定は行を出した tick だけを量化し、行を出さない honest の FG root は
 含まない(周回 181)。 -/
 theorem dutyStoreAt_jointRoundInduction (hδ : 0 < s.e.delta) (hr : 0 < s.hc.r) (hs : EventsSorted rho)
     (hnd : EventsNodup rho) (hqh : QuorumHonest s.e rho.honest)

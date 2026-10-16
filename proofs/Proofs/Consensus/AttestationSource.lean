@@ -276,6 +276,27 @@ theorem fgSourceWith_mem {cache : Model.Consensus.Protocol.Grades.Cache} {e : Pr
       subst h
       exact grade2BlockWith_mem hg
 
+/-- **FG source の 2 つの場合**(前提なし): `fgSourceWith` の結果 `q` は、`deepestClear` が clear な祖先を見つけたなら
+`liveConfirmed` の祖先、見つけなかったなら渡した grade 2 の候補 `aG2` そのもの。手書き
+`actionSources_preceq_of_priorConfirmations_and_historyCut` の段の前に `fg_source_with` を `deepest_clear` で割る場合分け
+(`deepest_clear_preceq` と `nodeQ2` の分岐)に当たる(周回 182)。 -/
+theorem fgSourceWith_cases {cache : Model.Consensus.Protocol.Grades.Cache} {e : ProtocolEnv}
+    {hc : Model.Consensus.Protocol.Grades.HealConfig} {hs : FGStore} {r : Nat} {aG2 : Option Block} {q : Block}
+    (h : fgSourceWith cache e hc hs r aG2 = some q) : preceq q hs.liveConfirmed = true ∨ aG2 = some q := by
+  unfold fgSourceWith at h
+  cases aG2 with
+  | none => simp at h
+  | some q0 =>
+    dsimp only at h
+    split at h
+    · rename_i b hb
+      simp only [Option.some.injEq] at h
+      subst h
+      exact Or.inl (deepestClear_preceq hb)
+    · simp only [Option.some.injEq] at h
+      subst h
+      exact Or.inr rfl
+
 /-- store の版: `TreeInv` と `StoreInv`(tree が親について閉じている)の下で、務めの store の FG source は tree にある。 -/
 theorem fgSource_mem_tree {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (hi : StoreInv e cfg st)
     (ht : TreeInv st.core) {cache : Model.Consensus.Protocol.Grades.Cache} {e' : ProtocolEnv}
