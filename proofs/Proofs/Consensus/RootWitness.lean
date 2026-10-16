@@ -84,8 +84,11 @@ import Mathlib.Tactic
    帰納は手書きの `NamedCacheProvenance.completed_phase_origin` に当たる(`Grade2Capture.stateBefore_g2_origin`)。
 21. 20 に run の帰納を掛け、行を出した tick の務めの grade 2 の候補は、添字 `j < i` の `w` の tick(時刻は務めの round の G2 の
    domain 時刻)で `stateBefore j` の store の `freezeRoot` が凍結した root の祖先(`grade2CandidateAt_origin_of_emits`。
-   手書き `q2_capture_at_action_read` の全体を祖先の関係に弱めた形。周回 189)。凍結の `gradeBool` を窓の SG block に繋ぐ
-   (手書き `nodeQ2_preceq_honestWindowCarrier` の `hgrade`)のは次の段。
+   手書き `q2_capture_at_action_read` の全体に当たる。手書きは任意の round を取り、ここは `hem` と Δ > 0 で務めの round に限る。
+   周回 189)。
+22. 21 の凍結した root `b0` は `stateBefore j` の `w` の grade view の tree にあり、その `gradeBool` が真
+   (`grade2CandidateAt_frozen_of_emits`。`Grade2Capture.freezeRoot_mem` を掛ける。周回 190)。この `gradeBool` を窓の SG block
+   に繋ぐ(手書き `nodeQ2_preceq_honestWindowCarrier` の `hgrade`)のは次の段。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -1342,7 +1345,8 @@ action 時刻で G2 の domain 時刻ではない(`actionTime_ne_domainTime_G2`)
 務めの grade 2 の候補 `q` について、`stateBefore i` の `w` の cache の務めの round の G2 の結果は `some (some b0)` で `q ⪯ b0`。
 `hem` は `t` が action 時刻であることにだけ使い、添字 `i` を問わない(`i` が `Tick w t` の添字でなくても成り立つ)。
 手書き `q2_capture_at_action_read` の、action の読みの cache から tick の前の cache へ戻す段(`prepared_g2_from_old`)に
-当たる。`b0` を凍結した tick への run の帰納(手書き `completed_phase_origin`)は次の段(周回 188)。 -/
+当たる(周回 188)。`b0` を凍結した tick への run の帰納(手書き `completed_phase_origin`)を掛けた形は
+`grade2CandidateAt_origin_of_emits`。 -/
 theorem grade2CandidateAt_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
     (h : grade2CandidateAt c p a nr s rho w i t = some q) :
@@ -1358,7 +1362,8 @@ theorem grade2CandidateAt_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row 
 /-- **行を出した tick の grade 2 の候補は、前の tick で凍結した G2 の root の祖先**(Δ > 0): 務めの grade 2 の候補 `q` について、
 務めの round を `k` とすると、添字 `j < i` の event `Tick w t2`(`t2` は round `k` の G2 の domain 時刻)があり、`stateBefore j` の
 `w` の store で `freezeRoot` が `b0` を凍結し、`q ⪯ b0`。`grade2CandidateAt_of_emits` に `Grade2Capture.stateBefore_g2_origin`
-を掛ける。手書き `q2_capture_at_action_read` の全体(凍結した root との等式を祖先の関係に弱めた形)に当たる(周回 189)。 -/
+を掛ける。手書き `q2_capture_at_action_read` の全体に当たる(手書きは任意の round を取り、ここは `hem` と Δ > 0 で務めの
+round に限る。周回 189)。 -/
 theorem grade2CandidateAt_origin_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
     (h : grade2CandidateAt c p a nr s rho w i t = some q) :
@@ -1382,6 +1387,36 @@ theorem grade2CandidateAt_origin_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId
   obtain ⟨j, t2, b0, hj, he, ht2, hfz, hb10⟩ :=
     Proofs.Consensus.Grade2Capture.stateBefore_g2_origin c p a nr s rho i w _ hold
   exact ⟨j, t2, b0, hj, he, ht2, hfz, Proofs.Consensus.Blocks.preceq_trans hqb1 hb10⟩
+
+/-- **行を出した tick の grade 2 の候補は、grade の通った凍結した root の祖先**(Δ > 0): 務めの grade 2 の候補 `q` について、
+務めの round を `k` とすると、添字 `j < i` の event `Tick w t2`(`t2` は round `k` の G2 の domain 時刻)と block `b0` があり、
+`b0` は `stateBefore j` の `w` の grade view の tree にあり、その store での round `k` の G2 の `gradeBool` が真で、`q ⪯ b0`。
+`grade2CandidateAt_origin_of_emits` に `Grade2Capture.freezeRoot_mem` を掛ける。手書き `nodeQ2_preceq_honestWindowCarrier` の
+`hgrade` の手前まで(周回 190)。 -/
+theorem grade2CandidateAt_frozen_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
+    (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ (j : Nat) (t2 : Int) (b0 : Block), j < i ∧ rho.events[j]? = some (NamedEvent.Tick w t2) ∧
+      t2 = Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+        Model.Consensus.Protocol.Grades.GradePhase.G2 ∧
+      b0 ∈ (Model.Consensus.Protocol.Grades.gradeView
+            (storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core)).tree.elems ∧
+      Model.Consensus.Protocol.Grades.gradeBool s.e
+          (Model.Consensus.Protocol.Grades.gradeView
+            (storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core))
+          (storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core).f s.hc.etaSG
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+          (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G2)
+          (Model.Consensus.Protocol.Grades.lateTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G2) b0 = true ∧
+      preceq q b0 = true := by
+  obtain ⟨j, t2, b0, hj, he, ht2, hfz, hqb0⟩ := grade2CandidateAt_origin_of_emits c p a nr s rho hδ hem h
+  obtain ⟨hmem, hgrade⟩ := Proofs.Consensus.Grade2Capture.freezeRoot_mem hfz
+  exact ⟨j, t2, b0, hj, he, ht2, hmem, hgrade, hqb0⟩
 
 end RunAtAction
 
