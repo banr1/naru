@@ -265,6 +265,7 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 181 の足場: その段の前提 `hstep` に、同じ round の行を出した honest な tick の FG root がどれも `X` の祖先である仮定を足した(行を出した tick に限った手書きの `hformation` に当たる)。
 周回 182 の足場: 務めの確認の証人の source が務めの store の `liveConfirmed` の祖先か grade 2 の候補そのものである `fgConfirmationWitnessAt_source` を足した(`fgSourceWith_cases`)。
 周回 183 の足場: その source が務めの store の tree にあり確認の証人がその祖先である `fgConfirmationWitnessAt_preceq_source` を足した(`chainState_tH_preceq`)。
+周回 184 の足場: 務めの store の `liveConfirmed` の出どころ `dutyStoreAt_live_cases` と、確認の証人の 4 つの枝 `fgConfirmationWitnessAt_preceq_cases` / `fgConfirmationWitnessAt_preceq_of_fgRoot` を足した。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

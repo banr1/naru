@@ -1,5 +1,6 @@
 import Proofs.Consensus.Signing
 import Proofs.Consensus.Carrier
+import Proofs.Consensus.Stores
 import Proofs.Consensus.Attribution
 import Proofs.Consensus.TreeInv
 import Proofs.Consensus.Goldfish
@@ -204,6 +205,159 @@ theorem tick_attest_store {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → Na
   exact ⟨_, fun hi => tickDutyStore_inv c p nr cache hc nd t hi,
     fun hi ht => tickDutyStore_treeInv c p nr cache hc nd t hi ht, h1, h2, h3, rfl⟩
 
+/-! ## 務めの store の `liveConfirmed`(周回 184)
+
+`liveConfirmed` を書くのは確認の更新 `updateConfirmationWith` だけで、値は `Goldfish.live`(head が eligible なら head、
+そうでなければ FG root)。tick の中の時計合わせ・提案(ブロックの受理)・投票はこの欄を変えない。したがって務めの store の
+`liveConfirmed` は、tick の前の store の `liveConfirmed` か、務めの store の FG root か、確認の更新の直前の store の eligible な
+head。手書きの段で確認の証人の `T ⪯ live_confirmed` の枝に `hlive`(live_confirmed ⪯ D)を掛けるところの、`live_confirmed` の
+出どころの場合分けに当たる。 -/
+
+theorem onBlockUsing_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (st : Store) (b : Block)
+    (build : ChainState → ChainState) : (onBlockUsing c p st b build).liveConfirmed = st.liveConfirmed := by
+  rcases onBlockUsing_eq c p st b build with h | ⟨-, -, h⟩
+  · rw [h]
+  · rw [h]; exact acceptBody_live c st b _
+
+theorem onBlockCheckedUsing_live (handle : Store → Store) (hh : ∀ s, (handle s).liveConfirmed = s.liveConfirmed)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (st : Store) (b : Block) :
+    (onBlockCheckedUsing handle hc st b).liveConfirmed = st.liveConfirmed := by
+  rcases onBlockCheckedUsing_eq handle hc st b with h | h
+  · rw [h]; exact hh st
+  · rw [h]
+
+theorem processBlockCore_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (st : NamedStore) (b : NamedBlock) :
+    (processBlockCore c p e hc cfg st b).core.liveConfirmed = st.core.liveConfirmed := by
+  unfold processBlockCore
+  dsimp only
+  split_ifs
+  · rfl
+  · rw [Proofs.Consensus.Stores.commitBlock_core]
+    exact onBlockCheckedUsing_live _ (fun cur => onBlockUsing_live c p cur _ _) hc st.core _
+
+theorem admitRow_live (hc : Model.Consensus.Protocol.Grades.HealConfig) (st : NamedStore) (row : NamedAttestation) :
+    (admitRow hc st row).core.liveConfirmed = st.core.liveConfirmed := by
+  unfold admitRow
+  dsimp only
+  split_ifs <;> exact (onSgVote_out hc st.core _).live
+
+theorem admitRows_live (hc : Model.Consensus.Protocol.Grades.HealConfig) :
+    ∀ (rows : List NamedAttestation) (st : NamedStore),
+      (admitRows hc st rows).core.liveConfirmed = st.core.liveConfirmed
+  | [], _ => rfl
+  | row :: rows, st => by
+    unfold admitRows
+    rw [List.foldl_cons]
+    have ih := admitRows_live hc rows (admitRow hc st row)
+    unfold admitRows at ih
+    exact ih.trans (admitRow_live hc st row)
+
+theorem admitCarried_live (adm : CarriedAdmission) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (before after : NamedStore) (b : NamedBlock) :
+    (admitCarried adm hc before after b).core.liveConfirmed = after.core.liveConfirmed := by
+  unfold admitCarried
+  split_ifs
+  · exact admitRows_live hc _ after
+  · rfl
+
+theorem onBlockWith_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (adm : CarriedAdmission)
+    (e : ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (st : NamedStore)
+    (b : NamedBlock) : (onBlockWith c p adm e hc cfg st b).core.liveConfirmed = st.core.liveConfirmed := by
+  unfold onBlockWith
+  exact (admitCarried_live adm hc st _ b).trans (processBlockCore_live c p e hc cfg st b)
+
+/-- 提案(自分のブロックの受理)は `liveConfirmed` を変えない。 -/
+theorem proposeBlockWith_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) : (proposeBlockWith c p nr cache e hc cfg nd st).1.core.liveConfirmed = st.core.liveConfirmed := by
+  unfold proposeBlockWith
+  split
+  · rfl
+  · rename_i b _
+    exact onBlockWith_live c p CarriedAdmission.AlsoCarried e hc cfg st b
+
+/-- 投票は `liveConfirmed` を変えない。 -/
+theorem namedGoldfishVoteWith_live (c : Nat → NaruStd.Set ValidatorId) (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) : (namedGoldfishVoteWith c cache e hc nd st).1.core.liveConfirmed = st.core.liveConfirmed := by
+  unfold namedGoldfishVoteWith
+  split
+  rename_i core out h
+  show core.liveConfirmed = st.core.liveConfirmed
+  have h1 : core = (goldfishVoteWith c cache e hc nd st.core).1 := by rw [h]
+  rw [h1]
+  exact (goldfishVoteWith_out c cache e hc nd st.core).live
+
+/-- 務めの store の確認の更新の前の段(時計合わせ・提案・投票)。`tickDutyStore` はこれに確認の更新を高々 1 回掛けたもの。 -/
+def tickPreUpdateStore (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore) (t : Int) : NamedStore :=
+  let s := slotOf e t
+  let st0 : NamedStore := { st with core := { st.core with t := t, s := s } }
+  let proposing : Bool :=
+    (decide (0 < s) && (t == Model.Consensus.Protocol.Schedule.proposalTime e s)) && (p s == nd.valIndex)
+  let st1 := (if proposing then proposeBlockWith c p nr cache e hc cfg nd st0 else (st0, (none : Option NamedBlock))).1
+  let voting : Bool := decide (0 < s) && (t == Model.Consensus.Protocol.Schedule.voteTime e s)
+  (if voting then namedGoldfishVoteWith c cache e hc nd st1 else (st1, (none : Option GoldfishVote))).1
+
+theorem tickDutyStore_eq_preUpdate (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) (t : Int) :
+    tickDutyStore c p nr cache e hc cfg nd st t =
+      if decide (0 < slotOf e t) && (t == Model.Consensus.Protocol.Schedule.supportCutoff e (slotOf e t)) then
+        namedUpdateConfirmationWith cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t) (slotOf e t - 1)
+      else tickPreUpdateStore c p nr cache e hc cfg nd st t := rfl
+
+/-- 確認の更新の前の段は `liveConfirmed` を変えない。 -/
+theorem tickPreUpdateStore_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) (t : Int) :
+    (tickPreUpdateStore c p nr cache e hc cfg nd st t).core.liveConfirmed = st.core.liveConfirmed := by
+  unfold tickPreUpdateStore
+  dsimp only
+  split_ifs
+  all_goals simp only [namedGoldfishVoteWith_live, proposeBlockWith_live]
+
+/-- 確認の更新の後の `liveConfirmed` は、更新の後の store の FG root か、更新の前の store の eligible な head
+(`Goldfish.live` の 2 分岐。更新は FG root の 4 欄を変えない)。 -/
+theorem updateConfirmationWith_live_cases (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (st : Store) (k : Nat) :
+    (updateConfirmationWith cache e hc st k).liveConfirmed =
+        getFgRoot (storeToHealing (updateConfirmationWith cache e hc st k)) ∨
+      (Proofs.Consensus.Goldfish.eligible e st k (Proofs.Consensus.Goldfish.head cache e hc st k) = true ∧
+        (updateConfirmationWith cache e hc st k).liveConfirmed = Proofs.Consensus.Goldfish.head cache e hc st k) := by
+  rw [Proofs.Consensus.Goldfish.updateConfirmationWith_eq]
+  dsimp only
+  unfold Proofs.Consensus.Goldfish.live
+  split_ifs with hel
+  · exact Or.inr ⟨hel, rfl⟩
+  · exact Or.inl rfl
+
+/-- **務めの store の `liveConfirmed` の出どころ**(前提なし): tick の前の store の `liveConfirmed` のままか、務めの store が
+確認の更新の後の store で(更新の前の store `st2` が確認の更新の前の段)、`liveConfirmed` は務めの store の FG root か、`st2` の
+eligible な head。 -/
+theorem tickDutyStore_live_cases (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
+    (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (cfg : HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : NamedStore) (t : Int) :
+    (tickDutyStore c p nr cache e hc cfg nd st t).core.liveConfirmed = st.core.liveConfirmed ∨
+      (tickDutyStore c p nr cache e hc cfg nd st t).core.liveConfirmed =
+        getFgRoot (storeToHealing (tickDutyStore c p nr cache e hc cfg nd st t).core) ∨
+      (Proofs.Consensus.Goldfish.eligible e (tickPreUpdateStore c p nr cache e hc cfg nd st t).core (slotOf e t - 1)
+          (Proofs.Consensus.Goldfish.head cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t).core
+            (slotOf e t - 1)) = true ∧
+        (tickDutyStore c p nr cache e hc cfg nd st t).core.liveConfirmed =
+          Proofs.Consensus.Goldfish.head cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t).core
+            (slotOf e t - 1)) := by
+  rw [tickDutyStore_eq_preUpdate]
+  split_ifs
+  · exact Or.inr (updateConfirmationWith_live_cases cache e hc _ _)
+  · exact Or.inl (tickPreUpdateStore_live c p nr cache e hc cfg nd st t)
+
 /-! ## FG source は tree にある -/
 
 /-- `chainUp n c` の要素は `c` の祖先。 -/
@@ -320,7 +474,7 @@ theorem source_named {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (h
   exact ⟨D, hD, hDq, hh, he⟩
 
 /-- `StoreInv` の下で、tree にある `q` の chain 状態の `tH` は `q` の祖先(`q` は bodies の `D` の消去で、`D` の導出の
-`Derivation.Inv.tH_preceq`)。手書き `Proofs.Records.derived_state_T_h_preceq`(`σ[C].T_h ⪯ C`)に当たる(周回 183)。 -/
+`Derivation.Inv.tH_preceq`)。手書き `derive_named_T_h_preceq`(`σ[C].T_h ⪯ C`)に当たる(周回 183)。 -/
 theorem chainState_tH_preceq {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (hi : StoreInv e cfg st) {q : Block}
     (hq : q ∈ st.core.tree.elems) : preceq (chainStateOf st.core.sigma q).tH q = true := by
   obtain ⟨D, hD, rfl⟩ := hi.named q hq

@@ -51,8 +51,13 @@ import Mathlib.Tactic
    務めの grade 2 の候補そのもの(`fgConfirmationWitnessAt_source`。`deepestClear` の場合分け。手書きの段で確認の証人を
    `hlive` と窓の SG block に分ける前の段。周回 182)。
 15. 14 の `q` は務めの store の tree にあり、`T ⪯ q`(chain 状態の `tH` は自分の祖先。store の版は
-   `AttestationSource.chainState_tH_preceq`、手書き `derived_state_T_h_preceq`)。したがって `T` は務めの store の
+   `AttestationSource.chainState_tH_preceq`、手書き `derive_named_T_h_preceq`)。したがって `T` は務めの store の
    `liveConfirmed` の祖先か、grade 2 の候補 `q` の祖先(`fgConfirmationWitnessAt_preceq_source`。周回 183)。
+16. 務めの store の `liveConfirmed` は、`stateBefore i` の `w` の store の `liveConfirmed` のままか、務めの store の FG root か、
+   確認の更新の前の段 `preUpdateStoreAt` の eligible な head(提案・投票はこの欄を変えず、確認の更新は `Goldfish.live` を書く。
+   `dutyStoreAt_live_cases`)。15 の `liveConfirmed` の枝をこれで割り、確認の証人を 4 つの枝に分け
+   (`fgConfirmationWitnessAt_preceq_cases`)、FG root ⪯ X の下で FG root の枝を閉じる(`fgConfirmationWitnessAt_preceq_of_fgRoot`。
+   手書きの `hlive` の出どころの場合分け。周回 184)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -296,6 +301,100 @@ theorem fgConfirmationWitnessAt_preceq_source {w : ValidatorId} {i : Nat} {t : I
   rcases Proofs.Consensus.AttestationSource.fgSourceWith_cases hq with hl | hg
   · exact Or.inl (Proofs.Consensus.Blocks.preceq_trans hTq hl)
   · exact Or.inr hg
+
+/-- 務めの store の確認の更新の前の段(`AttestationSource.tickPreUpdateStore`。時計合わせ・提案・投票の後)。 -/
+def preUpdateStoreAt (w : ValidatorId) (i : Nat) (t : Int) : NamedStore :=
+  Proofs.Consensus.AttestationSource.tickPreUpdateStore c p nr
+    (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+      (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t (worldAt (stateBefore c p a nr s rho i) w).cache)
+    s.e s.hc s.cfg (Model.Consensus.Execution.Setup.setupNode w) (worldAt (stateBefore c p a nr s rho i) w).st t
+
+/-- **務めの store の `liveConfirmed` の出どころ**(前提なし): `stateBefore i` の `w` の store の `liveConfirmed` のままか、
+務めの store の FG root か、確認の更新の前の段 `preUpdateStoreAt` の eligible な head
+(`AttestationSource.tickDutyStore_live_cases`。周回 184)。 -/
+theorem dutyStoreAt_live_cases (w : ValidatorId) (i : Nat) (t : Int) :
+    (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed =
+        (worldAt (stateBefore c p a nr s rho i) w).st.core.liveConfirmed ∨
+      (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed =
+        getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core) ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed =
+          Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) :=
+  Proofs.Consensus.AttestationSource.tickDutyStore_live_cases c p nr _ s.e s.hc s.cfg _ _ t
+
+/-- **確認の証人の 4 つの枝**(前提なし): 務めの確認の証人 `T` は、`stateBefore i` の `w` の store の `liveConfirmed` の祖先か、
+務めの store の FG root の祖先か、確認の更新の前の段の eligible な head の祖先か、務めの grade 2 の候補 `q` の祖先
+(15 の `liveConfirmed` の枝を `dutyStoreAt_live_cases` で割る。周回 184)。手書きの段で `T ⪯ live_confirmed` に `hlive` を
+掛けるところを、`live_confirmed` の出どころごとに分けたもの。 -/
+theorem fgConfirmationWitnessAt_preceq_cases {w : ValidatorId} {i : Nat} {t : Int} {T : Block}
+    (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T) :
+    preceq T (worldAt (stateBefore c p a nr s rho i) w).st.core.liveConfirmed = true ∨
+      preceq T (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) = true ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        preceq T (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true) ∨
+      ∃ q : Block, Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q ∧
+        preceq T q = true := by
+  obtain ⟨q, -, -, hTq, hl | hg⟩ := fgConfirmationWitnessAt_preceq_source c p a nr s rho h
+  · rcases dutyStoreAt_live_cases c p a nr s rho w i t with he | he | ⟨hel, he⟩
+    · exact Or.inl (he ▸ hl)
+    · exact Or.inr (Or.inl (he ▸ hl))
+    · exact Or.inr (Or.inr (Or.inl ⟨hel, he ▸ hl⟩))
+  · exact Or.inr (Or.inr (Or.inr ⟨q, hg, hTq⟩))
+
+/-- **FG root が `X` の祖先なら**(前提なし): 務めの確認の証人 `T` は `X` の祖先か、残る 3 つの枝(前の `liveConfirmed`、
+eligible な head、grade 2 の候補)のどれか。`hstep` の中で、段の仮定の FG root ⪯ X から確認の証人の FG root の枝を閉じる形
+(周回 184)。 -/
+theorem fgConfirmationWitnessAt_preceq_of_fgRoot {w : ValidatorId} {i : Nat} {t : Int} {T X : Block}
+    (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T)
+    (hroot : preceq (getFgRoot (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)) X = true) :
+    preceq T X = true ∨
+      preceq T (worldAt (stateBefore c p a nr s rho i) w).st.core.liveConfirmed = true ∨
+      (Proofs.Consensus.Goldfish.eligible s.e (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)
+          (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true ∧
+        preceq T (Proofs.Consensus.Goldfish.head
+            (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+              (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+              (worldAt (stateBefore c p a nr s rho i) w).cache)
+            s.e s.hc (preUpdateStoreAt c p a nr s rho w i t).core (slotOf s.e t - 1)) = true) ∨
+      ∃ q : Block, Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q ∧
+        preceq T q = true := by
+  rcases fgConfirmationWitnessAt_preceq_cases c p a nr s rho h with hl | hr | hh | hg
+  · exact Or.inr (Or.inl hl)
+  · exact Or.inl (Proofs.Consensus.Blocks.preceq_trans hr hroot)
+  · exact Or.inr (Or.inr (Or.inl hh))
+  · exact Or.inr (Or.inr (Or.inr hg))
 
 /-- **務めの確認の証人の版**: 前提 `EventsSorted` / `QuorumHonest` / `hcar` と `NamedRootCollisionFree` の下で、honest な `v` の
 時刻 `< time` の読みの FG root `R` は genesis か、読みの bodies の `D`(導出の `j` が `R`)と honest な署名者の行(height pair
