@@ -50,6 +50,9 @@ import Mathlib.Tactic
 14. 務めの確認の証人 `T` は務めの FG source `q` の chain 状態の `tH` で、`q` は務めの store の `liveConfirmed` の祖先か、
    務めの grade 2 の候補そのもの(`fgConfirmationWitnessAt_source`。`deepestClear` の場合分け。手書きの段で確認の証人を
    `hlive` と窓の SG block に分ける前の段。周回 182)。
+15. 14 の `q` は務めの store の tree にあり、`T ⪯ q`(chain 状態の `tH` は自分の祖先。store の版は
+   `AttestationSource.chainState_tH_preceq`、手書き `derived_state_T_h_preceq`)。したがって `T` は務めの store の
+   `liveConfirmed` の祖先か、grade 2 の候補 `q` の祖先(`fgConfirmationWitnessAt_preceq_source`。周回 183)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -259,6 +262,40 @@ theorem fgConfirmationWitnessAt_source {w : ValidatorId} {i : Nat} {t : Int} {T 
   unfold fgConfirmationWitnessAt at h
   obtain ⟨q, hq, hT⟩ := Option.map_eq_some_iff.mp h
   exact ⟨q, hT.symm, Proofs.Consensus.AttestationSource.fgSourceWith_cases hq⟩
+
+/-- **確認の証人は source の祖先**(前提なし): 務めの確認の証人が `T` なら、14 の source `q` は務めの store の tree にあり、
+`T ⪯ q`(務めの store は `stateBefore` の `StoreInv` / `TreeInv` を受け継ぎ、`AttestationSource.chainState_tH_preceq`)。
+したがって `T` は務めの store の `liveConfirmed` の祖先か、務めの grade 2 の候補 `q` の祖先。手書きの段で `hform.witness` の
+`T ⪯ live_confirmed` の枝(`derive_named_T_h_preceq` と `deepest_clear_preceq` の推移)と、grade 2 の枝の `T ⪯ q` に当たる
+(周回 183)。 -/
+theorem fgConfirmationWitnessAt_preceq_source {w : ValidatorId} {i : Nat} {t : Int} {T : Block}
+    (h : fgConfirmationWitnessAt c p a nr s rho w i t = some T) :
+    ∃ q : Block, T = (chainStateOf (dutyStoreAt c p a nr s rho w i t).core.sigma q).tH ∧
+      q ∈ (dutyStoreAt c p a nr s rho w i t).core.tree.elems ∧ preceq T q = true ∧
+      (preceq T (dutyStoreAt c p a nr s rho w i t).core.liveConfirmed = true ∨
+        Model.Consensus.Protocol.Duties.Inputs.grade2BlockWith
+          (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+            (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+            (worldAt (stateBefore c p a nr s rho i) w).cache)
+          s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) = some q) := by
+  have hi : StoreInv s.e s.cfg (dutyStoreAt c p a nr s rho w i t) :=
+    Proofs.Consensus.AttestationSource.tickDutyStore_inv c p nr _ s.hc _ t (stateBefore_inv c p a nr s rho i w)
+  have ht : Proofs.Consensus.Trees.TreeInv (dutyStoreAt c p a nr s rho w i t).core :=
+    Proofs.Consensus.AttestationSource.tickDutyStore_treeInv c p nr _ s.hc _ t (stateBefore_inv c p a nr s rho i w)
+      (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i w)
+  have h' := h
+  unfold fgConfirmationWitnessAt at h'
+  obtain ⟨q, hq, hT⟩ := Option.map_eq_some_iff.mp h'
+  have hqm : q ∈ (dutyStoreAt c p a nr s rho w i t).core.tree.elems :=
+    Proofs.Consensus.AttestationSource.fgSource_mem_tree hi ht hq
+  have hTq : preceq T q = true := by
+    rw [← hT]
+    exact Proofs.Consensus.AttestationSource.chainState_tH_preceq hi hqm
+  refine ⟨q, hT.symm, hqm, hTq, ?_⟩
+  rcases Proofs.Consensus.AttestationSource.fgSourceWith_cases hq with hl | hg
+  · exact Or.inl (Proofs.Consensus.Blocks.preceq_trans hTq hl)
+  · exact Or.inr hg
 
 /-- **務めの確認の証人の版**: 前提 `EventsSorted` / `QuorumHonest` / `hcar` と `NamedRootCollisionFree` の下で、honest な `v` の
 時刻 `< time` の読みの FG root `R` は genesis か、読みの bodies の `D`(導出の `j` が `R`)と honest な署名者の行(height pair

@@ -278,8 +278,8 @@ theorem fgSourceWith_mem {cache : Model.Consensus.Protocol.Grades.Cache} {e : Pr
 
 /-- **FG source の 2 つの場合**(前提なし): `fgSourceWith` の結果 `q` は、`deepestClear` が clear な祖先を見つけたなら
 `liveConfirmed` の祖先、見つけなかったなら渡した grade 2 の候補 `aG2` そのもの。手書き
-`actionSources_preceq_of_priorConfirmations_and_historyCut` の段の前に `fg_source_with` を `deepest_clear` で割る場合分け
-(`deepest_clear_preceq` と `nodeQ2` の分岐)に当たる(周回 182)。 -/
+`actionGradeFormationAt_of_awakeWindowMajority` の `witness` の欄で `fg_source_with` を割る場合分け(`nodeQ2` で割り、
+`deepest_clear` で割る。`deepest_clear_preceq` の枝が前者)に当たる(周回 182)。 -/
 theorem fgSourceWith_cases {cache : Model.Consensus.Protocol.Grades.Cache} {e : ProtocolEnv}
     {hc : Model.Consensus.Protocol.Grades.HealConfig} {hs : FGStore} {r : Nat} {aG2 : Option Block} {q : Block}
     (h : fgSourceWith cache e hc hs r aG2 = some q) : preceq q hs.liveConfirmed = true ∨ aG2 = some q := by
@@ -318,6 +318,14 @@ theorem source_named {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (h
   rw [hDq] at hs
   rw [hs] at hh he
   exact ⟨D, hD, hDq, hh, he⟩
+
+/-- `StoreInv` の下で、tree にある `q` の chain 状態の `tH` は `q` の祖先(`q` は bodies の `D` の消去で、`D` の導出の
+`Derivation.Inv.tH_preceq`)。手書き `Proofs.Records.derived_state_T_h_preceq`(`σ[C].T_h ⪯ C`)に当たる(周回 183)。 -/
+theorem chainState_tH_preceq {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (hi : StoreInv e cfg st) {q : Block}
+    (hq : q ∈ st.core.tree.elems) : preceq (chainStateOf st.core.sigma q).tH q = true := by
+  obtain ⟨D, hD, rfl⟩ := hi.named q hq
+  rw [hi.sigma D hD]
+  exact (Proofs.Consensus.Derivation.deriveNamed_inv e cfg D).tH_preceq
 
 /-- tick の出力の行が `Vote h entry nu` なら、tick の中の store `st3`(`StoreInv` を受け継ぐ)の FG source `q` の chain 状態の
 `h` / `tH` の根が `h` / `entry` で、`q` は `st3` の tree にあり、tick の後の store は `st3` での `attestWith` の後の store。 -/
