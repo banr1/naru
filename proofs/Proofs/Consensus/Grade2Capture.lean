@@ -9,8 +9,8 @@ import Mathlib.Tactic
 生成 Model の grade 2 の候補 `grade2BlockWith c e hc st r`(`Duties/Inputs`)は、cache `c` の round `r` の frame を
 `clipFrame st.f` で切り詰めた frame の G2 の結果 `some (some b)` を、filtered tree の `activePrefix` で `b` の祖先に写したもの。
 G2 の結果は phase tick `onPhaseTick` が、tick の時刻がちょうど G2 の domain 時刻のときに `freezeRoot` で凍結し、
-以後は再計算せず、切り詰め(`clipGrade`。結果は元の root の祖先)だけを受ける。ただし round が変わると、範囲外になった
-round の frame は `alignRound` が未完了の frame(`pendingFrame`)に捨てる(捨てた結果は `none` で、それ自体は候補にならない)。
+以後は再計算せず、切り詰め(`clipGrade`。結果は元の root の祖先)だけを受ける。ただし round が変わると、`alignRound` は
+古い frame を捨て、空いた枠を未完了の frame(`pendingFrame`)で埋める(その結果は `none` で、それ自体は候補にならない)。
 1〜5 は 1 回の phase tick の段、6 は run の帰納、7 は凍結した root の形。
 
 1. `clipGrade g f` は `g` の祖先(`clipGrade_preceq`)。切り詰めた結果が `some (some root)` なら、元の結果は
