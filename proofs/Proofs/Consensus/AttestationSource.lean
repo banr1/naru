@@ -214,7 +214,8 @@ head。手書きの段で確認の証人の `T ⪯ live_confirmed` の枝に `hl
 出どころの場合分けに当たる(手書きの対応先は `actionStoreAt_liveConfirmed_genuine_or_fgRoot`
 (`Execution/RecoveryActionLiveSourceSplit.lean`)で、枝は GenuineConfirmation と FG root の 2 つ。手書きは action の store に
 確認の更新を無条件に掛けるので第 1 の枝が無い。ここでは action 時刻の tick が必ず確認の更新を通ることを
-`tickDutyStore_live_cases_of_actionTime` で示して 2 枝にする。周回 185)。 -/
+`tickDutyStore_live_cases_of_actionTime` で示して 2 枝にする。周回 185)。手書きの FG root の枝は確認の更新の前の store の
+FG root で、ここは更新の後の務めの store の FG root だが、確認の更新は FG root の 4 欄を変えないので値は同じ。 -/
 
 theorem onBlockUsing_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (st : Store) (b : Block)
     (build : ChainState → ChainState) : (onBlockUsing c p st b build).liveConfirmed = st.liveConfirmed := by
