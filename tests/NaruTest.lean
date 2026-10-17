@@ -9,6 +9,7 @@ import NaruTest.Repo
 import NaruTest.Semantics
 import NaruTest.Deps
 import NaruTest.Proofs
+import NaruTest.Properties
 import NaruTest.Regression
 
 /-!
@@ -33,6 +34,8 @@ IDEAL.md「前提」のとおり Lean で書く。実行ファイルは `NaruTes
   `obligations.json`(決定性・先頭の 3 値・consensus の 14 件・手で書いた期待 JSON の検体 `tests/proofs/sample/`・束縛 hash の独立な再計算と変化の検体)、
   `naru proofs` の証明状況(検体の 5 値と件数・`--json`・不正を除いた複製・別名の証明ディレクトリ・生成先と証明ディレクトリの不変)、書き手の案内と文書。
   `NaruTest/Proofs.lean`。
+- `properties` — 有界検査(C73): 共通の run の記述から生成した run の上の検査器(中間命題 `hreadBound` / `IncludedFrom`)の 4 区分の件数と違反 0、
+  決定性、負の検体、生成先と `proofs/` の不変、文書。`NaruTest/Properties.lean`(本体は `tests/properties/`)。
 - `regression` — 非対話の回帰一式(C36): 受理例・反例、C34 の意味(`tests/accept/guard_shadow.naru` の戻り値と命題の真偽)、C1 の決定性、
   C6 / C8 のビルド、C7 の simulate と C26、C24 の設定、`grammar` / `zed` / `lsp` / `semantics` / `statements` / `repo` / `deps` / `proofs` の各群、C28 / C22 / C27、C10 の golden。
   `NaruTest/Regression.lean`。

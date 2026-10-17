@@ -59,6 +59,19 @@ name = "Proofs"
 srcDir = ".lake/naru/proofs-src"
 globs = ["Proofs.*"]
 
+# 有界検査(C73 / C74): 生成 Model の具体的な run の上で、claim の前提・結論の有界版と証明の途中の中間命題を有限の horizon で判定する
+# 検査器と、用語「共通の run の記述」から固定 seed の決定的な擬似乱数で run を組み立てる生成器(`tests/properties/`)。生成 Model と
+# `NaruStd` だけを import し(mathlib なし)、`Proofs` からは import されない(`naru_test proofs` が閉包で確かめる)。`lake build Properties` が
+# 検査器の Lake target(C74 の theorem もここに置く)。実行ファイル `naru_properties` は native にビルドして `naru_test properties` が走らせる。
+[[lean_lib]]
+name = "Properties"
+srcDir = "tests/properties"
+
+[[lean_exe]]
+name = "naru_properties"
+root = "PropertiesMain"
+srcDir = "tests/properties"
+
 # 検査ドライバ: `lake exe naru_test grammar`(C16)/ `zed`(C17)/ `lsp`(C18)/ `zed-install`(C19)/ `golden`(C10)/ `statements`(C8 / C9)/
 # `repo`(C21 / C23 / C25)/ `regression`(C36。zed-install を除く上の全群と受理例・反例・C34 の意味・C1 / C6 / C7 / C8 / C24 / C26 を
 # 1 コマンドで走らせる非対話の回帰一式)。Lean で書く(前提)。

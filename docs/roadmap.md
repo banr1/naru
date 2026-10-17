@@ -46,6 +46,13 @@
   一致・確認の記録と finalized の交差の互換・GST-zero の枝(`t0 = 0`)の finalized の一致(stable の記録と grade の候補の分岐についても同じ)を結ぶことと、honest な提案が適格な子の一意な最大になって `ghost_reaches` で選ばれること
   (`IncludedFrom`)を示す `available` の本体、finalized の包含、`stableIncludedFast`、`stableAsynchronyResilient` の本体)。bridge の形式証明、手書きライブラリ(`DecoupledConsensus*`)の import、証明の自動生成、`naru proofs` による
   義務の雛形の生成、レビュー面 / エディタへの証明状況の表示は対象外
+- 有界検査(C73 / C74。[testing.md](testing.md)「有界検査」、`proofs/README.md` 10 節)の残り: 周回 197 で置いたのは共通の run の記述からの run の生成(`tests/properties/`)、
+  前提の有界版(`SetupWellFormed` / `RunDomain` / `ExecutionValid` / `PartialSynchrony` / `FullParticipation` / `HonestCommittees` / `BelowOneThird` / `MultiProposerRecurrence`)、
+  中間命題の検査器 2 つ(`hreadBound`: 判定 0・違反 0(手書きの期限 `a(D)` ≥ 3858 が horizon に収まる run は予算の外。期限を外した診断では全読みで成立)、
+  `IncludedFrom`(confirmed / stable): 判定 60 / 22・違反 0)、負の検体 9 件、`naru_test properties`(38 項目。まだ回帰一式には入れていない)。残るのは
+  6 claim の前提・結論の検査器と `WindowMajority` / `FreshMajority` / `SlashableBound` / `RecoveredBy` の有界版、他の中間命題、scenario が fn で公開する run、
+  共通の run の記述からの手書き側(golden)への写しと C10 の拡充、C74 の theorem、C75(前提を満たす具体的な run の kernel 検査。native の FinalityLiveness は
+  horizon 100 / 200 / 400 で 28 ms / 0.4 秒 / 7.4 秒と約 4 乗で増え、全 horizon 33,730 は実行不能)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)
 - `import` の意味(現状は全ファイルが 1 つの大域表。backend は参照からモジュールの依存を計算する)
 - 型引数付きのユーザ宣言(`record R<T>`)

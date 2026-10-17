@@ -202,6 +202,9 @@ stdlib の `Set` / `Table` に不変条件の証明欄を足すか、量化に�
   証明の有無・成否で成否も出力も変えない(`naru proofs` だけが読む)。mathlib を import するのは `Proofs` だけ。
 - `NaruSem`(コンパイラの意味保存)とは別の層: `naru proofs` は生成 Statements に対する theorem の状況だけを報告し、最後の行 `layer: protocol guarantees (…). The compiler's
   semantics preservation (lake build NaruSem / naru_test semantics, C45) is a separate layer and is not reported here.` でそれを明示する。
+- 有界検査(`tests/properties/`。C73 / C74。[testing.md](testing.md)「有界検査」)も別の層: 生成 Model の具体的な run の上で claim の前提・結論の有界版と証明の途中の
+  中間命題を Bool の検査器で判定する実行テストで、生成 Model と `NaruStd` だけを import し(mathlib なし)、`Proofs` からは import されない。証明の前段の篩であり、
+  その結果で証明状況の表示を変えない。
 
 **Lake の配線**(`lakefile.toml` / `lake-manifest.json`):
 - lean_lib `Proofs`: `srcDir = ".lake/naru/proofs-src"`(`naru.toml` の `proofs` が指すディレクトリへの symlink。追跡対象外。`naru proofs` が置く。Model / Statements の

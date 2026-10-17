@@ -46,7 +46,7 @@ def readmeWords : List String := ["義務", "束縛行", "失効", "sorry", "mat
 def mathlibRoots : List String := ["Mathlib", "Batteries", "Aesop", "Qq", "ProofWidgets", "ImportGraph", "LeanSearchClient", "Plausible", "Cli"]
 /-- `Proofs` の import 閉包に許すモジュールのルート(Lean 本体・生成物・stdlib・mathlib とその依存パッケージ)。 -/
 def allowedRoots : List String := ["Proofs", "Model", "Statements", "NaruStd", "Init", "Lean", "Std", "Lake"] ++ mathlibRoots
-def forbidden : List String := ["DecoupledConsensus", "NaruSem", "Naru.", "NaruTest"]
+def forbidden : List String := ["DecoupledConsensus", "NaruSem", "Naru.", "NaruTest", "Properties"]
 /-- `Proofs` を import してはならないライブラリのルート(逆依存の検査)。 -/
 def reverseRoots : List String := ["Model", "Statements", "NaruStd", "NaruSem", "Naru"]
 def expectedStatuses : List (String × String) :=

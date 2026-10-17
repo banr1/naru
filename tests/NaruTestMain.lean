@@ -12,12 +12,13 @@ prefix の horizon、既定 100 = C10)/ `golden --comparator`(C10 の比較器�
 README・submodule・docs。基準コミットは引数、無ければ IDEAL.md の前提から読む)/ `semantics`(C39 / C45。コンパイラ意味論保存の検査入口
 `lake build NaruSem` と公理監査、実際の compiler 経路の Core の適格性)/ `deps`(C63〜C66。依存グラフ `naru deps` の生成・決定性・検体・独立検査・
 HTML の自己完結・追跡中の `docs/deps/` の鮮度)/ `proofs`(C68〜C70 / C72。Lake ライブラリ `Proofs` と依存方向、`obligations.json` の決定性・内容・束縛 hash、
-`naru proofs` の証明状況の検体、書き手の案内と文書)/ `regression`(C36。受理例・反例・C34 の意味・C1 の決定性・
+`naru proofs` の証明状況の検体、書き手の案内と文書)/ `properties`(C73。有界検査: 共通の run の記述から生成した run の上で中間命題の
+検査器を走らせ、4 区分の件数・違反 0・決定性・負の検体・生成先と `proofs/` の不変・文書を検査する)/ `regression`(C36。受理例・反例・C34 の意味・C1 の決定性・
 C6 / C8 のビルド・C7 の simulate・C24 の設定・上の各群(zed-install を除く)・C10 の golden を 1 コマンドで順に走らせる非対話の回帰一式。約 14 分)。
 各群は検査項目ごとに `ok: …` / `FAIL: …` を標準出力に出し、すべて ok なら exit 0、1 つでも FAIL なら exit 1。
 -/
 
-def usage : String := "usage: naru_test <grammar|zed|lsp|zed-install|golden [--finality-horizon N]|golden --comparator|statements|repo [--base-commit <sha>]|semantics|deps|proofs|regression>"
+def usage : String := "usage: naru_test <grammar|zed|lsp|zed-install|golden [--finality-horizon N]|golden --comparator|statements|repo [--base-commit <sha>]|semantics|deps|proofs|properties|regression>"
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -37,6 +38,7 @@ def main (args : List String) : IO UInt32 := do
   | ["semantics"] => NaruTest.Semantics.run
   | ["deps"] => NaruTest.Deps.run
   | ["proofs"] => NaruTest.Proofs.run
+  | ["properties"] => NaruTest.Properties.run
   | ["regression"] => NaruTest.Regression.run
   | _ =>
     IO.eprintln usage
