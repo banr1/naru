@@ -273,6 +273,7 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 189 の足場: `Grade2Capture.stateBefore_g2_origin`(cache の G2 の結果の出どころの run の帰納)と、行を出した tick の務めの grade 2 の候補は前の tick で凍結した G2 の root の祖先 `RootWitness.grade2CandidateAt_origin_of_emits` を足した。
 周回 190 の足場: `Grade2Capture.freezeRoot_mem`(凍結した root は tree にあり `gradeBool` が真)と、行を出した tick の務めの grade 2 の候補は grade の通った凍結した root の祖先 `RootWitness.grade2CandidateAt_frozen_of_emits` を足した。
 周回 191 の足場: その root を G2 の domain 時刻の読みに移す `RootWitness.grade2CandidateAt_graded_of_emits` と、担い手を性質 `P` に抽象した手書き `nodeQ2_preceq_honestWindowCarrier` の版 `RootWitness.grade2CandidateAt_preceq_carrier_of_emits` を足した。
+周回 193 の足場: その読みの時刻が 0 以上 horizon 以下の `RootWitness.grade2CandidateAt_domainTime_bounds_of_emits` と、担い手の前提に horizon の守りと tree への所属を足した `RootWitness.grade2CandidateAt_preceq_carrier_horizon_of_emits` を足した。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

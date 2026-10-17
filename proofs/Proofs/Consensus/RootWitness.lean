@@ -92,7 +92,12 @@ import Mathlib.Tactic
 23. 22 の `stateBefore j` を、8 で時刻 `< domainTime k G2` の読みに移す(`grade2CandidateAt_graded_of_emits`。手書きの局所の
    `hrawGrade`)。その `gradeBool` の通った block に性質 `P` の担い手があれば、務めの grade 2 の候補にもある
    (`grade2CandidateAt_preceq_carrier_of_emits`。手書き `nodeQ2_preceq_honestWindowCarrier` の全体で、担い手「窓の round の
-   honest な action の SG block」を `P` に抽象した。周回 191)。担い手を窓の SG block として供給する
+   honest な action の SG block」を `P` に抽象した。周回 191)。ただし手書きの `hgrade` の horizon の守り
+   (`domain … ≤ horizon →`)は外して、`hcarrier` を守りなしの全称にしている。
+24. 23 の読みの時刻 `domainTime k G2` は、`ScheduleWellFormed` の下で 0 以上 horizon 以下(凍結した tick が run の event なので
+   `Window.eventTime_bounds`。`grade2CandidateAt_domainTime_bounds_of_emits`。手書きの `hdomainHor`)。これで担い手の前提に
+   手書きの `hgrade` の horizon の守り(と `0 ≤`)と tree への所属を足した版を置く
+   (`grade2CandidateAt_preceq_carrier_horizon_of_emits`。周回 193)。担い手を窓の SG block として供給する
    (手書き `RelativeGradeCarrierAt` の G2 の段)のは次の段。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
@@ -1397,8 +1402,8 @@ theorem grade2CandidateAt_origin_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId
 務めの round を `k` とすると、添字 `j < i` の event `Tick w t2`(`t2` は round `k` の G2 の domain 時刻)と block `b0` があり、
 `b0` は `stateBefore j` の `w` の grade view の tree にあり、その store での round `k` の G2 の `gradeBool` が真で、`q ⪯ b0`。
 `grade2CandidateAt_origin_of_emits` に `Grade2Capture.freezeRoot_mem` を掛ける。手書き `nodeQ2_preceq_honestWindowCarrier` の
-`hfreeze` から出す局所の `hgrade'` に当たる。その後の `stateBeforeTime` への書き換え(`hrawGrade`)は
-`grade2CandidateAt_graded_of_emits`(周回 190)。 -/
+`hfreeze` から出す局所の `hgrade'` に当たる(周回 190)。その後の `stateBeforeTime` への書き換え(`hrawGrade`)は
+`grade2CandidateAt_graded_of_emits`(周回 191)。 -/
 theorem grade2CandidateAt_frozen_of_emits (hδ : 0 < s.e.delta) {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
     (h : grade2CandidateAt c p a nr s rho w i t = some q) :
@@ -1495,6 +1500,73 @@ theorem grade2CandidateAt_preceq_carrier_of_emits (hδ : 0 < s.e.delta) (hs : Ev
     ∃ Y, P Y ∧ preceq q Y = true := by
   obtain ⟨b0, -, hgrade, hqb0⟩ := grade2CandidateAt_graded_of_emits c p a nr s rho hδ hs hnd hem h
   obtain ⟨Y, hY, hb0Y⟩ := hcarrier b0 hgrade
+  exact ⟨Y, hY, Proofs.Consensus.Blocks.preceq_trans hqb0 hb0Y⟩
+
+/-- **grade 2 の候補があれば、読みの時刻は 0 以上 horizon 以下**(Δ > 0、`ScheduleWellFormed`): 務めの grade 2 の候補があれば、
+務めの round を `k` として `0 ≤ domainTime k G2 ≤ horizon`。`grade2CandidateAt_frozen_of_emits` の凍結した tick
+`Tick w (domainTime k G2)` は run の event なので `Window.eventTime_bounds`。手書き `nodeQ2_preceq_honestWindowCarrier` の
+`hdomainHor` に当たる(周回 193)。 -/
+theorem grade2CandidateAt_domainTime_bounds_of_emits (hδ : 0 < s.e.delta) (hsch : ScheduleWellFormed s rho)
+    {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {q : Block}
+    (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    0 ≤ Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+        Model.Consensus.Protocol.Grades.GradePhase.G2 ∧
+      Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+        Model.Consensus.Protocol.Grades.GradePhase.G2 ≤ rho.horizon := by
+  obtain ⟨j, t2, b0, -, he, ht2, -⟩ := grade2CandidateAt_frozen_of_emits c p a nr s rho hδ hem h
+  have hb := Proofs.Consensus.Window.eventTime_bounds hsch (List.mem_of_getElem? he)
+  simp only [eventTime] at hb
+  rw [← ht2]
+  exact hb
+
+/-- **行を出した tick の grade 2 の候補は、horizon 以内の grade の担い手の祖先**(Δ > 0、`ScheduleWellFormed` と重複なし):
+`grade2CandidateAt_preceq_carrier_of_emits` の `hcarrier` に、手書きの `hgrade` の horizon の守り `domainTime k G2 ≤ horizon`
+(と `0 ≤ domainTime k G2`)と、`B` が読みの grade view の tree にあることを前件として足した版。守りは
+`grade2CandidateAt_domainTime_bounds_of_emits`、tree への所属は `grade2CandidateAt_graded_of_emits` が供給する。
+手書き `nodeQ2_preceq_honestWindowCarrier` の全体に当たる(担い手は `P` に抽象したまま。周回 193)。 -/
+theorem grade2CandidateAt_preceq_carrier_horizon_of_emits (hδ : 0 < s.e.delta) (hsch : ScheduleWellFormed s rho)
+    (hnd : EventsNodup rho) {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {P : Block → Prop}
+    (hcarrier :
+      0 ≤ Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+          Model.Consensus.Protocol.Grades.GradePhase.G2 →
+      Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+          Model.Consensus.Protocol.Grades.GradePhase.G2 ≤ rho.horizon →
+      ∀ B : Block,
+      B ∈ (Model.Consensus.Protocol.Grades.gradeView
+            (storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+              (Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+                (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+                Model.Consensus.Protocol.Grades.GradePhase.G2)) w).st.core)).tree.elems →
+      Model.Consensus.Protocol.Grades.gradeBool s.e
+          (Model.Consensus.Protocol.Grades.gradeView
+            (storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+              (Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+                (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+                Model.Consensus.Protocol.Grades.GradePhase.G2)) w).st.core))
+          (storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+            (Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+              (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+              Model.Consensus.Protocol.Grades.GradePhase.G2)) w).st.core).f s.hc.etaSG
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+          (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G2)
+          (Model.Consensus.Protocol.Grades.lateTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G2) B = true →
+      ∃ Y, P Y ∧ preceq B Y = true)
+    {q : Block} (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ Y, P Y ∧ preceq q Y = true := by
+  obtain ⟨h0, hhor⟩ := grade2CandidateAt_domainTime_bounds_of_emits c p a nr s rho hδ hsch hem h
+  obtain ⟨b0, hmem, hgrade, hqb0⟩ := grade2CandidateAt_graded_of_emits c p a nr s rho hδ
+    (Proofs.Consensus.Window.eventsSorted_of_schedule hsch) hnd hem h
+  obtain ⟨Y, hY, hb0Y⟩ := hcarrier h0 hhor b0 hmem hgrade
   exact ⟨Y, hY, Proofs.Consensus.Blocks.preceq_trans hqb0 hb0Y⟩
 
 end RunAtAction
