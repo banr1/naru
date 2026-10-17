@@ -16,7 +16,7 @@ namespace NaruTest.Properties
 def has (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 /-- 検査器の名前(`tests/properties/Properties/Report.lean` の `reportRun` の順)。 -/
-def expectedCheckers : List String := ["hreadBound", "includedFrom(confirmed)", "includedFrom(stable)"]
+def expectedCheckers : List String := ["hreadBound", "includedFrom(confirmed)", "includedFrom(stable)", "available"]
 
 /-- 固定設定の run の名前(`Properties.shortSpecs`)。 -/
 def expectedRuns : List String :=
@@ -36,7 +36,8 @@ def expectedNegatives : List String :=
     "hreadBound(strong-form violation at or after the deadline is not classified)", "hreadBound(corrupted proposal parent)",
     "hreadBound(control: genuine read, strong form)",
     "includedFrom(confirmed)(corrupted output read)",
-    "includedFrom(stable)(corrupted output read)", "byzantine beyond one third", "WindowMajority broken (honest asleep)",
+    "includedFrom(stable)(corrupted output read)", "available(AgreeFrom: conflicting confirmed reads)",
+    "available(MonotoneFrom: regressing stable read)", "available(control: genuine reads)", "byzantine beyond one third", "WindowMajority broken (honest asleep)",
     "SlashableBound(conflicting height targets)", "RecoveredBy(recovered branch out of reach)",
     "AgreesUntil(prefix agreement of the recovered branch)", "RecoveredBy(source of another run description)", "withheld block delivery after GST", "unsorted events",
     "missing honest tick", "replay agrees with generation" ]

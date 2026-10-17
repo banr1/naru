@@ -113,7 +113,7 @@ lake exe naru_test statements   # 生成 Statements の import 閉包と claim s
 lake exe naru_test repo         # README・submodule・docs(C21 / C23 / C25)
 lake exe naru_test deps         # 依存グラフ `naru deps`: 生成・決定性・手書きの期待 JSON の検体・移植ソースの独立検査・HTML の自己完結・docs/deps/ の鮮度(C63 / C64 / C65 / C66)。約 10 秒
 lake exe naru_test proofs       # 証明基盤: obligations.json・束縛 hash・依存方向・naru proofs の状況・書き手の案内(C68 / C69 / C70 / C72)。約 1 分
-lake exe naru_test properties   # 有界検査: 共通の run の記述から生成した run の上で中間命題(hreadBound / IncludedFrom)の検査器を走らせ、4 区分の件数・違反 0・決定性・負の検体を検査(C73。hreadBound は期限を外した強い形で判定。回帰一式にも入っている)。約 30 秒
+lake exe naru_test properties   # 有界検査: 共通の run の記述から生成した run の上で中間命題(hreadBound / IncludedFrom)と claim available の検査器を走らせ、4 区分の件数・違反 0・決定性・負の検体を検査(C73。hreadBound は期限を外した強い形で判定。回帰一式にも入っている)。約 30 秒
 lake exe naru_test semantics    # コンパイラ意味論保存: `lake build NaruSem`(意味論・一般定理・公理監査)、実際の AST / Core の適格性、AST → Core の変換の一致(runtime / spec)、実生成 Model / Statements の接続・保存と AST → 生成 Lean の合成(C39〜C45、C48〜C52)、関数・input の呼出しを含む宣言群の適格性(C54)と実生成 Model への接続・宣言群の意味との合成(C55〜C57 の runtime)、呼出しを含む spec 式の一般同値と10宣言の prefix 読みへの接続・宣言群の命題同値の合成(C55 の進展、inputのみの別モジュールからの任意解釈と別モジュールのfn/spec呼出し先への接続、runtime17関数のAST→Coreの構造的一致・評価保存とspec10宣言の独立lowering/実Core一致・一般の全域性/型保存も検査、Surface の宣言群の意味の対応から実生成 Model / Statements への合成 `sfn_*` / `sstmt_*`(C55 / C57)も検査)。約 1 分
 lake exe naru_test golden       # 手書き Model との golden test(C10)。約 9 分
 lake exe naru_test regression   # 上の全部 + 受理例・反例・生成 Lean の意味(C34)・決定性(C1)・simulate(C7)・設定(C24)を 1 コマンドで(C36。`deps` の次に `proofs` 群、その次に有界検査の `properties` 群も走らせる)。約 15 分

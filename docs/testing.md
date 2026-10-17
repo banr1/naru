@@ -226,6 +226,12 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
     `prefixEnd(s, t0', gap)`(最小の設定でも 3500 前後から)の run で生成の予算に収まらないので、固定設定では与えない。`tGST > 0` の run は genesis の枝で
     `tGST <= t0` を満たさず、回復の枝は `recoveryEnd(s, tGST, 0)`(固定設定で 3513 / 3525 / 7002)が horizon を越えてどの証人でも成り立たないので前提不成立に
     数える(理由は `diag includedFrom(…)` の行)。sleepy の run は `FullParticipation` が破れても `WindowMajority` を満たすので判定に入る。
+  - `available` — claim `available`(生成 Statements `Claims.available`。周回 202 から)。前提は `includedFrom` と同じ `SetupWellFormed` ∧ `RunDomain` ∧
+    `SleepyRegime(t0)` の本来の形の有界版(`Checkers.lean` の `sleepyAt`。`t0` の候補 `sleepyCandidates` のうち前提が成り立つものをすべて判定)、結論は
+    `AvailableAt(t0)` = `SafeFrom(Confirmed, t0)` ∧ `IncludedFrom(Confirmed, t0, confirmationDelay)` ∧ `SafeFrom(Stable, t0)` ∧ `IncludedFrom(Stable, t0, stableInclusionDelay)`。
+    `SafeFrom` = `AgreeFrom` ∧ `MonotoneFrom` は述語自身が時刻を `[t0, horizon]`、ノードを honest に切っているので、有界版は本物と同じ範囲を尽くす:
+    `AgreeFrom` は全読みの異なる値の順序対の `compatible`(1 件の義務)、`MonotoneFrom` は honest ごとに読みの列を同じ値の連なりで縮めた `i <= j` の対の
+    `preceq`(honest ごとに 1 件)。`IncludedFrom` の 2 項目は `includedFrom` と同じ slot の義務(期限が horizon を越える slot は判定外)。
 - **固定設定**(`Properties/Report.lean` の `shortSpecs`。Δ = 1、`r = 3`、`etaSG = 2`、`k = 4`、`d = 2`、`timeoutDelay = 6`、重みは 3 validator の run だけ
   `[2, 2, 1]`(byzantine が 1/3 未満)):
 
@@ -245,11 +251,15 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   提案の親の義務 269。byzantine を含む run で 877 = 647 + 230)/ 前提不成立 168(sleepy の run)/ 判定外 1055(期限付きの形の判定外を含む)/ 違反 0、「期限の前の
   正常な挙動」に分けたもの 0(周回 200 と同じ)。`includedFrom(confirmed)` は判定 71 / 前提不成立 45 / 判定外 16、`includedFrom(stable)` は判定 25 / 45 / 62
   (前提不成立は `tGST > 0` の 3 run。sleepy の run は confirmed 11・stable 3 を判定。周回 200 の BFT の形では 60 / 58 / 14 と 22 / 58 / 52)。配送順の入れ替えは 3 run で計 57 回。どの run でも timeout の行は 0。
+  周回 202 の結果(`lake exe naru_test properties`: 55 項目 PASS): 4 検査器とも違反 0、上の 3 検査器の件数は周回 201 と同じ。`available` は判定 136 / 前提不成立 114 /
+  判定外 78(byzantine を含む run で判定 117。前提不成立は `includedFrom` と同じ `tGST > 0` の 3 run)。
   `--mode probe` の計測: horizon 300 の run(1,171 event)は生成約 8 秒、600(約 2,300 event)は生成約 103 秒(生成 Model の tick の費用が tree の
   大きさの 3〜4 乗で増える)。`a(D) = 3858` を horizon に収める run は予算(`properties` の群 ≤ 5 分)に収まらない。
   `--mode finality` の計測(C75 の判断材料): golden の FinalityLiveness の fixture を native で horizon 100 / 200 / 400 まで畳み込むと 28 ms / 0.4 秒 / 7.4 秒
   (約 4 乗)。全 horizon 33,730 は native でも実行不能。
-- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、17 件): FG root の読みを head の祖先でないブロックに差し替えた `hreadBound`
+- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、20 件。周回 202 に `available` の 3 件を追加: validator 0 の confirmed の読みを
+  `t >= 20` で genesis の別の子に壊すと `AgreeFrom` が破れる、stable の読みをどの slot の包含の期限にも当たらない 1 つの時刻だけ genesis に戻すと `AgreeFrom` と `IncludedFrom` は保ったまま `MonotoneFrom` だけが破れる、
+  本物の読みでは全義務が判定され違反しない(対照)。honest がすべて眠る検体では `available` も前提不成立に数える): FG root の読みを head の祖先でないブロックに差し替えた `hreadBound`
   (強い形で違反を報告し、期限の前の破れでも run が golden の一覧に無いので分類しない)、同じ壊れた読みで run が golden で一致したと仮定すると
   「期限の前の正常な挙動」に分かれて違反に数えないこと(対照)、期限を 0 round に置いて `a(D)` 以後の読みに破れがある義務は分類しないこと、
   提案の親だけを壊すと提案の義務の経路が違反を報告すること、本物の読みが強い形で判定の経路を通り違反しないこと(対照)、出力の読みを genesis に差し替えた
@@ -261,6 +271,7 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   source にした証人(同じ設定と入力の run でないので最初の項で退ける。回復の枝の証人の経路は固定設定では horizon の項より後ろが実行されないので、
   `Continues` の前半はこの単体の検体で確かめる)、GST 後にノード 1 へブロックを
   配らない(`PartialSynchrony` が破れる)、整列の崩れた event 列、honest の tick の欠け、生成器の畳み込みと event 列の再畳み込み(`replay`)が同じ世界を与えること。
+- 残り 5 claim(`confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)の検査器はまだ無い。
 - C74(`検査器 = true ↔ 述語` の theorem)はまだ無い(後続の周回。theorem は同じ `Properties` ライブラリに置き、`lake build Properties` が Lake target)。
 
 ## コンパイラ意味論保存(C39〜C47、C48〜C53、C54〜C59)

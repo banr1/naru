@@ -82,6 +82,33 @@ def negatives : List Negative := Id.run do
   let v2s := includedFrom tlS pS .Stable (Spec.Constants.stableInclusionDelay tlS.setup) (readOut := fun _ _ _ => .Genesis)
   out := out ++ [⟨"includedFrom(stable)(corrupted output read)", v2s.violations > 0 && v2s.judged == 0,
                   s!"judged {v2s.judged} violations {v2s.violations}"⟩]
+  -- 2b. claim available の結論 AvailableAt の SafeFrom: confirmed の読みを、validator 0 だけ t >= 20 で genesis の別の子(strayBlock)に壊すと
+  --     他の honest の読み(同じ時刻以後に genesis より深い)と互換でなくなり AgreeFrom が破れる
+  let firstHonest := tlS.rho.honest.elems.headD (vid 0)
+  let deep := tlS.rho.honest.elems.any fun v => Blocks.depth (tlS.outputAt .Confirmed v 30) > 0
+  let disagree (g : Spec.Interface.Output) (v : Identifiers.ValidatorId) (t : Int) : Blocks.Block :=
+    if g == .Confirmed && v == firstHonest && t ≥ 20 then strayBlock else tlS.outputAt g v t
+  let va := available tlS pS (readOut := disagree)
+  out := out ++ [⟨"available(AgreeFrom: conflicting confirmed reads)", deep && va.violations > 0 && va.notes.any (fun n => (n.splitOn "AgreeFrom(confirmed").length > 1),
+                  s!"judged {va.judged} violations {va.violations}; first note: {va.notes[0]?.getD "-"}"⟩]
+  -- 2c. MonotoneFrom: stable の読みを 1 つの時刻 `tBad` だけ genesis に戻す。genesis はどの読みとも互換なので AgreeFrom は破れず、
+  --     `tBad` はどの slot の包含の期限 `proposalTime(k) + stableInclusionDelay` にも当たらないので IncludedFrom も破れず、
+  --     それより前の genesis より深い stable の読みが接頭辞にならないので MonotoneFrom だけが破れる
+  let dS := Spec.Constants.stableInclusionDelay tlS.setup
+  let deadlines := (List.range (maxSlot tlS.setup tlS.rho.horizon + 1)).map fun k => proposalTime tlS.setup k + dS
+  let tBad : Int := ((intRange 0 (tlS.rho.horizon - 1)).reverse.find? fun t => !deadlines.contains t).getD 0
+  let deepStable := tlS.rho.honest.elems.any fun v => Blocks.depth (tlS.outputAt .Stable v (tBad - 1)) > 0
+  let regress (g : Spec.Interface.Output) (v : Identifiers.ValidatorId) (t : Int) : Blocks.Block :=
+    if g == .Stable && t == tBad then .Genesis else tlS.outputAt g v t
+  let vm := available tlS pS (readOut := regress)
+  let hasNote (v : Verdict) (k : String) := v.notes.any fun n => (n.splitOn k).length > 1
+  out := out ++ [⟨"available(MonotoneFrom: regressing stable read)",
+                  deepStable && hasNote vm "MonotoneFrom(stable" && !hasNote vm "AgreeFrom(" && !hasNote vm "includedFrom(" && vm.violations ≤ tlS.rho.honest.elems.length,
+                  s!"genesis at t = {tBad}; judged {vm.judged} violations {vm.violations}; first note: {vm.notes[0]?.getD "-"}"⟩]
+  -- 2d. 本物の読みでは available の全義務が判定の経路を通り、違反しない(対照)
+  let vok := available tlS pS
+  out := out ++ [⟨"available(control: genuine reads)", vok.judged > 0 && vok.violations == 0 && vok.unmet == 0,
+                  s!"judged {vok.judged} out-of-horizon {vok.outside} violations {vok.violations}"⟩]
   -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
   --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }
@@ -94,8 +121,9 @@ def negatives : List Negative := Id.run do
   let tl3w := generate { baseSpec with name := "negative-asleep", asleepFromRound := some 1 }
   let p3w := Premises.of tl3w
   let v3w := includedFrom tl3w p3w .Confirmed (Spec.Constants.confirmationDelay tl3w.setup)
-  out := out ++ [⟨"WindowMajority broken (honest asleep)", !p3w.windows.holds && v3w.judged == 0 && v3w.unmet > 0,
-                  s!"{p3w.windows.render}; includedFrom judged {v3w.judged} unmet {v3w.unmet}"⟩]
+  let v3a := available tl3w p3w
+  out := out ++ [⟨"WindowMajority broken (honest asleep)", !p3w.windows.holds && v3w.judged == 0 && v3w.unmet > 0 && v3a.judged == 0 && v3a.unmet > 0,
+                  s!"{p3w.windows.render}; includedFrom judged {v3w.judged} unmet {v3w.unmet}; available judged {v3a.judged} unmet {v3a.unmet}"⟩]
   -- 3c. SlashableBound: validator 0 の同じ高さで target の違う 2 行(E2)を運ぶ 2 つのブロック。重み 1 は 2q − W = 1 に届くので
   --     slashable な証拠があり、判定器が捉える。本物の run(対照)は成り立つ
   let row (target : Nat) : Blocks.CombinedAttestation := ⟨vid 0, 1, none, .Target 1 ⟨target⟩, none⟩

@@ -224,6 +224,64 @@ def outputLabel : Spec.Interface.Output → String
   | .Stable => "stable"
   | .Finalized => "finalized"
 
+/-- 生成 Statements `Statements.Consensus.Spec.Regimes.SleepyRegime(s, rho, t0)`(手書き `SleepyRegime`)の有界版を 1 つの `t0` で判定する
+(最初の不成立の理由): `SetupWellFormed` ∧ `RunDomain` ∧ `ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧
+窓の欄(`t0` 以後の各時刻の `WindowMajority`。`Timeline.sleepyWindows`)∧ `RecoveredBy(s, rho, t0)`(`Timeline.recoveredBy`)。
+`BelowOneThird` / `FullParticipation` は `SleepyRegime` に無いので見ない。claim `available` と `IncludedFrom` の検査器が使う。 -/
+def sleepyAt (tl : Timeline) (p : Premises) (recovery : Option RecoveryWitness) (t0 : Int) : Judge :=
+  let s := tl.setup
+  let windows := if t0 == 0 then p.windows else tl.sleepyWindows t0
+  let base := firstFailure "SleepyRegime"
+    [ (p.setup.holds, p.setup.render), (p.runDomain.holds, p.runDomain.render),
+      (p.executionValid, "ExecutionValid"), (p.partialSync.holds, p.partialSync.render),
+      (s.e.tGST ≤ t0, s!"tGST {s.e.tGST} > t0 = {t0}"), (p.honestCommittees.holds, p.honestCommittees.render),
+      (windows.holds, windows.render) ]
+  if !base.holds then base else
+    let r := tl.recoveredBy p.slashable t0 recovery
+    if r.holds then base else Judge.no "SleepyRegime" r.render
+
+/-- 自由変数 `t0` の候補: genesis の枝の `0` と、生成側が回復の枝の証人を与えたときのその `recoveryEnd(s, t0', gap)`。
+`RecoveredBy(s, rho, t0)` は `t0 = 0` か `t0 = recoveryEnd(s, t0', gap)`(証人の値)でしか成り立たないので、証人を与えた下で候補は尽きている。 -/
+def sleepyCandidates (tl : Timeline) (recovery : Option RecoveryWitness) : List Int :=
+  0 :: (recovery.map fun w => Spec.Constants.recoveryEnd tl.setup w.t0 w.gap).toList
+
+/-- 各候補の `t0` での `SleepyRegime` の判定。 -/
+def sleepyChoices (tl : Timeline) (p : Premises) (recovery : Option RecoveryWitness) : List (Int × Judge) :=
+  (sleepyCandidates tl recovery).map fun t0 => (t0, sleepyAt tl p recovery t0)
+
+/-- どの候補でも `SleepyRegime` が成り立たないときの診断。`t0 > 0` は回復の枝でしか `RecoveredBy` を満たさないので、証人が無ければ
+その枝がどの証人でも成り立たないかを示す。 -/
+def sleepyFailure (tl : Timeline) (p : Premises) (recovery : Option RecoveryWitness) (judged : List (Int × Judge)) : String :=
+  let s := tl.setup
+  let recovered := if recovery.isSome then "" else
+    let r := tl.recoveredBy p.slashable (Spec.Constants.recoveryEnd s s.e.tGST 0) none
+    s!"; every t0 > 0 needs the recovered branch: {r.reason}"
+  "SleepyRegime fails for every t0 candidate: " ++ "; ".intercalate (judged.map fun (q : Int × Judge) => s!"t0 = {q.1}: {q.2.reason}") ++ recovered
+
+/-- `IncludedFrom(s, rho, g, t0, delay)` の義務(slot)を 1 つの `t0` で判定して `out` に足す(`premiseOk` が偽なら前提不成立に数える)。 -/
+def includedFromAt (tl : Timeline) (g : Spec.Interface.Output) (delay : Int)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block) (premiseOk : Bool) (t0 : Int)
+    (out : Verdict) : Verdict := Id.run do
+  let s := tl.setup
+  let I := tl.inputs
+  let horizon := tl.rho.horizon
+  let honest := tl.rho.honest.elems
+  let mut out := out
+  for k in List.range (maxSlot s horizon + 1) do
+    if t0 < proposalTime s k && tl.rho.honest.contains (I.proposer k) then
+      if !premiseOk then out := { out with unmet := out.unmet + 1 }
+      else if proposalTime s k + delay > horizon then out := { out with outside := out.outside + 1 }
+      else
+        match tl.proposedBlock k with
+        | none => out := out.note s!"includedFrom({outputLabel g}): no honest proposal computed at slot {k} (proposer {(I.proposer k).value})"
+        | some b =>
+          let t := proposalTime s k + delay
+          match honest.find? (fun v => !Blocks.preceq b (readOut g v t)) with
+          | none => out := { out with judged := out.judged + 1 }
+          | some v =>
+            out := out.note s!"includedFrom({outputLabel g}): the honest proposal of slot {k} (root {(Blocks.root b).value}) is not in the {outputLabel g} read of {v.value} at t = {t} (root {(Blocks.root (readOut g v t)).value})"
+  return out
+
 /-- `IncludedFrom(s, rho, g, t0, d)` の検査器(生成 Statements `Statements.Consensus.Spec.Properties.IncludedFrom`)。
 `t0 < proposalTime(k)`、`proposer(k)` が honest、`proposalTime(k) + d <= horizon` の各 slot `k` について、`proposedBlock(s, rho, k)` が
 `Some(b)` で、`InBy(s, rho, g, b, proposalTime(k) + d)`(honest な全 `v` で `preceq(b, outputAt(g, s, rho, v, …))`)。期限が horizon を越える slot は判定外。
@@ -238,49 +296,91 @@ def outputLabel : Spec.Interface.Output → String
 `readOut` は負の検体のための差し替え。 -/
 def includedFrom (tl : Timeline) (p : Premises) (g : Spec.Interface.Output) (delay : Int)
     (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
-    (recovery : Option RecoveryWitness := none) : Verdict := Id.run do
-  let s := tl.setup
-  let I := tl.inputs
-  let horizon := tl.rho.horizon
-  -- `SleepyRegime(s, rho, t0)` を 1 つの t0 で判定する(最初の不成立の理由)
-  let sleepy (t0 : Int) : Judge :=
-    let windows := if t0 == 0 then p.windows else tl.sleepyWindows t0
-    let base := firstFailure "SleepyRegime"
-      [ (p.setup.holds, p.setup.render), (p.runDomain.holds, p.runDomain.render),
-        (p.executionValid, "ExecutionValid"), (p.partialSync.holds, p.partialSync.render),
-        (s.e.tGST ≤ t0, s!"tGST {s.e.tGST} > t0 = {t0}"), (p.honestCommittees.holds, p.honestCommittees.render),
-        (windows.holds, windows.render) ]
-    if !base.holds then base else
-      let r := tl.recoveredBy p.slashable t0 recovery
-      if r.holds then base else Judge.no "SleepyRegime" r.render
-  let candidates : List Int := 0 :: (recovery.map fun w => Spec.Constants.recoveryEnd s w.t0 w.gap).toList
-  let judged := candidates.map fun t0 => (t0, sleepy t0)
+    (recovery : Option RecoveryWitness := none) : Verdict :=
+  let judged := sleepyChoices tl p recovery
   let chosen := judged.find? (·.2.holds)
-  let premiseOk := chosen.isSome
   let t0 : Int := (chosen.map (·.1)).getD 0
-  let honest := tl.rho.honest.elems
-  let mut out : Verdict := { name := s!"includedFrom({outputLabel g})" }
-  for k in List.range (maxSlot s horizon + 1) do
-    if t0 < proposalTime s k && tl.rho.honest.contains (I.proposer k) then
-      if !premiseOk then out := { out with unmet := out.unmet + 1 }
-      else if proposalTime s k + delay > horizon then out := { out with outside := out.outside + 1 }
-      else
-        match tl.proposedBlock k with
-        | none => out := out.note s!"includedFrom({outputLabel g}): no honest proposal computed at slot {k} (proposer {(I.proposer k).value})"
-        | some b =>
-          let t := proposalTime s k + delay
-          match honest.find? (fun v => !Blocks.preceq b (readOut g v t)) with
-          | none => out := { out with judged := out.judged + 1 }
-          | some v =>
-            out := out.note s!"includedFrom({outputLabel g}): the honest proposal of slot {k} (root {(Blocks.root b).value}) is not in the {outputLabel g} read of {v.value} at t = {t} (root {(Blocks.root (readOut g v t)).value})"
+  let out := includedFromAt tl g delay readOut chosen.isSome t0 { name := s!"includedFrom({outputLabel g})" }
   let premiseDiag := match chosen with
     | some (t0, _) => s!"SleepyRegime holds at t0 = {t0}"
-    | none =>
-      -- t0 > 0 は回復の枝でしか `RecoveredBy` を満たさない。証人が無ければ、その枝がどの証人でも成り立たないかを示す
-      let recovered := if recovery.isSome then "" else
-        let r := tl.recoveredBy p.slashable (Spec.Constants.recoveryEnd s s.e.tGST 0) none
-        s!"; every t0 > 0 needs the recovered branch: {r.reason}"
-      "SleepyRegime fails for every t0 candidate: " ++ "; ".intercalate (judged.map fun (q : Int × Judge) => s!"t0 = {q.1}: {q.2.reason}") ++ recovered
-  return { out with diag := some s!"delay {delay}, t0 = {t0}; {premiseDiag}" }
+    | none => sleepyFailure tl p recovery judged
+  { out with diag := some s!"delay {delay}, t0 = {t0}; {premiseDiag}" }
+
+/-! ## claim `available`(前提 `SleepyRegime`、結論 `AvailableAt`) -/
+
+/-- `SafeFrom(s, rho, g, t0)`(生成 Statements `Statements.Consensus.Spec.Properties.SafeFrom` = `AgreeFrom` ∧ `MonotoneFrom`。手書き `SafeFrom`)を
+判定して `out` に足す。量化は述語自身が `t0 <= t, t2 <= rho.horizon` と honest に切っているので、有界版は本物と同じ範囲を尽くす:
+- `AgreeFrom(g, t0)` = `ConsistentFrom(g, g, t0)`: honest な `u`, `v` と `[t0, horizon]` の `t`, `t2` で `compatible(outputAt(u, t), outputAt(v, t2))`。
+  `compatible` の結果は読みの値だけで決まるので、すべての読みの値の異なるものの順序対(自身との対を含む)を比べる(厳密)。1 件の義務に数える。
+- `MonotoneFrom(g, t0)`: honest な `v` と `t0 <= t <= t2 <= horizon` で `preceq(outputAt(v, t), outputAt(v, t2))`。`v` の読みの列を同じ値の連なりで
+  縮め、縮めた列の `i <= j` の対を比べる(厳密)。honest な `v` ごとに 1 件の義務に数える。
+`premiseOk` が偽なら義務をすべて前提不成立に数える。 -/
+def safeFrom (tl : Timeline) (g : Spec.Interface.Output) (t0 : Int) (premiseOk : Bool)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block) (out : Verdict) : Verdict := Id.run do
+  let honest := tl.rho.honest.elems
+  if !premiseOk then return { out with unmet := out.unmet + 1 + honest.length }
+  let times := intRange t0 tl.rho.horizon
+  let mut out := out
+  -- 各 honest の読みの列(同じ値の連なりを縮める。値と最初の時刻)
+  let mut runs : List (Identifiers.ValidatorId × Array (Blocks.Block × Int)) := []
+  let mut distinct : Array (Blocks.Block × Identifiers.ValidatorId × Int) := #[]
+  for v in honest do
+    let mut seq : Array (Blocks.Block × Int) := #[]
+    for t in times do
+      let b := readOut g v t
+      match seq.back? with
+      | some (b', _) => if b' != b then seq := seq.push (b, t)
+      | none => seq := seq.push (b, t)
+    for (b, t) in seq do
+      if !(distinct.any (·.1 == b)) then distinct := distinct.push (b, v, t)
+    runs := runs ++ [(v, seq)]
+  -- AgreeFrom: 異なる読みの値の順序対
+  let bad := Id.run do
+    for (b, u, t) in distinct do
+      for (c, v, t2) in distinct do
+        if !Blocks.compatible b c then return some (u, t, b, v, t2, c)
+    return none
+  match bad with
+  | none => out := { out with judged := out.judged + 1 }
+  | some (u, t, b, v, t2, c) =>
+    out := out.note s!"AgreeFrom({outputLabel g}, t0 = {t0}): the {outputLabel g} read of {u.value} at t = {t} (root {(Blocks.root b).value}) and that of {v.value} at t = {t2} (root {(Blocks.root c).value}) are not compatible"
+  -- MonotoneFrom: honest ごとに、縮めた列の i <= j の対
+  for (v, seq) in runs do
+    let broken := Id.run do
+      for i in List.range seq.size do
+        for j in List.range seq.size do
+          if i ≤ j && !Blocks.preceq seq[i]!.1 seq[j]!.1 then return some (seq[i]!, seq[j]!)
+      return none
+    match broken with
+    | none => out := { out with judged := out.judged + 1 }
+    | some ((b, t), (c, t2)) =>
+      out := out.note s!"MonotoneFrom({outputLabel g}, t0 = {t0}): the {outputLabel g} read of {v.value} at t = {t} (root {(Blocks.root b).value}) is not a prefix of its read at t = {t2} (root {(Blocks.root c).value})"
+  return out
+
+/-- claim `available(s, rho, t0)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.available`。手書き `Consensus.available`):
+前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `SleepyRegime(s, rho, t0)`(`includedFrom` と同じ本来の形の有界版。`sleepyAt`)、
+結論 `AvailableAt(s, rho, t0)`(生成 Statements `Statements.Consensus.Spec.Claims.AvailableAt`。手書き `AvailableAt`)=
+`SafeFrom(Confirmed, t0)` ∧ `IncludedFrom(Confirmed, t0, confirmationDelay(s))` ∧ `SafeFrom(Stable, t0)` ∧ `IncludedFrom(Stable, t0, stableInclusionDelay(s))`。
+義務は `SafeFrom` ごとに `AgreeFrom` 1 件と honest ごとの `MonotoneFrom`、`IncludedFrom` ごとに `includedFromAt` の slot(期限が horizon を
+越える slot は判定外)。自由変数 `t0` は `sleepyCandidates` の値のうち前提が成り立つものをすべて判定する(どれも成り立たなければ `t0 = 0` の
+義務を前提不成立に数える)。手書きの補題は結論の 4 項目ごとに `available_confirmedSafe` / `available_confirmedIncluded` /
+`available_stableSafe`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)/ `available_stableIncluded_any`
+(`Bridge/StableIncludedAnySlot.lean`)。naru 側の `proofs/` の証明は未着手(C71 の残り)。`readOut` は負の検体のための差し替え。 -/
+def available (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict := Id.run do
+  let s := tl.setup
+  let judged := sleepyChoices tl p recovery
+  let holding := judged.filter (·.2.holds)
+  let ts : List (Int × Bool) := if holding.isEmpty then [(0, false)] else holding.map fun q => (q.1, true)
+  let mut out : Verdict := { name := "available" }
+  for (t0, ok) in ts do
+    out := safeFrom tl .Confirmed t0 ok readOut out
+    out := includedFromAt tl .Confirmed (Spec.Constants.confirmationDelay s) readOut ok t0 out
+    out := safeFrom tl .Stable t0 ok readOut out
+    out := includedFromAt tl .Stable (Spec.Constants.stableInclusionDelay s) readOut ok t0 out
+  let premiseDiag := if holding.isEmpty then sleepyFailure tl p recovery judged
+    else s!"SleepyRegime holds at t0 in {(holding.map (·.1))}"
+  return { out with diag := some s!"AvailableAt = SafeFrom(confirmed) ∧ IncludedFrom(confirmed, confirmationDelay {Spec.Constants.confirmationDelay s}) ∧ SafeFrom(stable) ∧ IncludedFrom(stable, stableInclusionDelay {Spec.Constants.stableInclusionDelay s}); {premiseDiag}" }
 
 end Properties
