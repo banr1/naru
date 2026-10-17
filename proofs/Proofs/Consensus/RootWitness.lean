@@ -102,6 +102,9 @@ import Mathlib.Tactic
    `confirmed` はその根(`emits_confirmed_sgBlockAt`)。窓の round の honest な行の SG block を `HonestWindowCarrierAt`、
    手書きと同じ形の担い手の性質を `RelativeGradeCarrierAt` と名付け、24 の `P` をそれに置いて手書き
    `nodeQ2_preceq_honestWindowCarrier` と同じ前提の形にした(`grade2CandidateAt_preceq_honestWindowCarrier_of_emits`。周回 194)。
+26. 担い手の行の `confirmed` は担い手の根(`EventsNodup` の下で `honestWindowCarrierAt_confirmed`)。25 の結論を、窓の round の
+   honest な行 `row2` で `row2.confirmed = some (root Y)` かつ `q ⪯ Y` の形に開いた
+   (`grade2CandidateAt_preceq_windowConfirmed_of_emits`。周回 195)。
    `RelativeGradeCarrierAt` を awake の窓の多数派と `hsg` から作る(手書き
    `relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`)のは次の段。
 
@@ -1614,7 +1617,8 @@ def HonestWindowCarrierAt (r : Nat) (Y : Block) : Prop :=
 
 /-- **grade の担い手の性質**: round `r` の phase `ph` の domain 時刻の読みで、honest な `w` の store の `gradeBool` が真の
 block `B` には、窓の round の honest な行の SG block `Y`(`HonestWindowCarrierAt r`)があって `B ⪯ Y`。手書き
-`RelativeGradeCarrierAt`(`Protocol/Grades/RelativeOneChain.lean`)に当たる(周回 194)。 -/
+`RelativeGradeCarrierAt`(`Protocol/Grades/RelativeOneChain.lean`)に当たる(周回 194)。窓は読みの round `r` 自身の
+`latestWindow etaSG r`(手書きの `RelativeCarrierWindowAt` は `r + 1` で読む。周回 194 の reviewer の所見 B。周回 195)。 -/
 def RelativeGradeCarrierAt (r : Nat) (ph : Model.Consensus.Protocol.Grades.GradePhase) : Prop :=
   ∀ w ∈ rho.honest.elems, ∀ B : Block,
     Model.Consensus.Protocol.Grades.gradeBool s.e
@@ -1648,6 +1652,47 @@ theorem grade2CandidateAt_preceq_honestWindowCarrier_of_emits (hδ : 0 < s.e.del
     (P := HonestWindowCarrierAt c p a nr s rho
       (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s))
     (fun _ hhor B _ hB => hgrade _ hhor w hw B hB) h
+
+/-- **担い手の行の `confirmed` は担い手の根**(重複なし): `HonestWindowCarrierAt r Y` の行 `row` は、honest な `u` が時刻 `t` に
+出した round が窓の中の行で、`row.confirmed = some (root Y)`、`row.round` は添字 `i` の tick の務めの round。
+`HonestWindowCarrierAt` は添字 `i` と行を `events[i]? = Tick u t` でしか結ばないので、`emits_confirmed_sgBlockAt` の返す添字が
+`i` と同じであることを `EventsNodup` で示す(周回 194 の reviewer の所見 A。周回 195)。 -/
+theorem honestWindowCarrierAt_confirmed (hnd : EventsNodup rho) {r : Nat} {Y : Block}
+    (h : HonestWindowCarrierAt c p a nr s rho r Y) :
+    ∃ (u : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), u ∈ rho.honest.elems ∧
+      rho.events[i]? = some (NamedEvent.Tick u t) ∧ Emits c p a nr s rho u (NamedObject.Attest row) t ∧
+      row.round ∈ latestWindow s.hc.etaSG r ∧ Y = sgBlockAt c p a nr s rho u i t ∧
+      row.confirmed = some (root Y) ∧
+      row.round = Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho u i t).core.s := by
+  obtain ⟨u, i, t, row, hu, hev, hem, hwin, rfl⟩ := h
+  obtain ⟨i', hev', hconf, hround⟩ := emits_confirmed_sgBlockAt c p a nr s rho hem
+  have hil : i' < rho.events.length := (List.getElem?_eq_some_iff.mp hev').1
+  have : i' = i := (List.Nodup.getElem?_inj hil
+    (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd)).mp (hev'.trans hev.symm)
+  subst this
+  exact ⟨u, i', t, row, hu, hev, hem, hwin, rfl, hconf, hround⟩
+
+/-- **行を出した honest な tick の grade 2 の候補は、窓の round の honest な行の `confirmed` の祖先**(Δ > 0、
+`ScheduleWellFormed` と重複なし): `grade2CandidateAt_preceq_honestWindowCarrier_of_emits` の担い手 `Y` を
+`honestWindowCarrierAt_confirmed` で開き、honest な `u` が出した窓の round の行 `row2` で `row2.confirmed = some (root Y)` かつ
+`q ⪯ Y` の形にした。手書き `nodeQ2_preceq_honestWindowCarrier` の結論を発行した行の `confirmed` で読む形(周回 195)。 -/
+theorem grade2CandidateAt_preceq_windowConfirmed_of_emits (hδ : 0 < s.e.delta) (hsch : ScheduleWellFormed s rho)
+    (hnd : EventsNodup rho) {w : ValidatorId} (hw : w ∈ rho.honest.elems) {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat}
+    (hgrade : ∀ ph, Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) ph ≤ rho.horizon →
+      RelativeGradeCarrierAt c p a nr s rho
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) ph)
+    {q : Block} (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ (Y : Block) (u : ValidatorId) (t2 : Int) (row2 : NamedAttestation), u ∈ rho.honest.elems ∧
+      Emits c p a nr s rho u (NamedObject.Attest row2) t2 ∧
+      row2.round ∈ latestWindow s.hc.etaSG
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) ∧
+      row2.confirmed = some (root Y) ∧ preceq q Y = true := by
+  obtain ⟨Y, hY, hqY⟩ :=
+    grade2CandidateAt_preceq_honestWindowCarrier_of_emits c p a nr s rho hδ hsch hnd hw hem hgrade h
+  obtain ⟨u, -, t2, row2, hu, -, hem2, hwin, -, hconf, -⟩ := honestWindowCarrierAt_confirmed c p a nr s rho hnd hY
+  exact ⟨Y, u, t2, row2, hu, hem2, hwin, hconf, hqY⟩
 
 end RunAtAction
 
