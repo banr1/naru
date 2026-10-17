@@ -96,6 +96,18 @@ theorem attestWith_vote_source (cache : Model.Consensus.Protocol.Grades.Cache) (
   simp only [Prod.mk.injEq] at hqe
   exact ⟨q, hq, hqe.1, hqe.2.1⟩
 
+/-- **行の `confirmed` は務めの SG 投票の根、`round` は務めの store の slot の round**: `attestationInput` は `confirmed` に
+`getSgVoteWith`(grade 2 の候補を `aG2` に渡した SG 投票)の根を入れ、`namedCreate` はそれと `round` をそのまま行に写す。
+手書きの `actionAttestationAt` の `confirmed = some (actionSGBlockAt …).root` に当たる(周回 194)。 -/
+theorem attestWith_confirmed_round (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (nd : Model.Consensus.Protocol.Schedule.Node) (st : NamedStore)
+    (rec : NamedRecord) :
+    (attestWith cache e hc nd st rec).2.2.confirmed =
+        some (root (getSgVoteWith cache e hc (storeToHealing st.core) (Model.Consensus.Protocol.Grades.roundOf hc st.core.s)
+          (grade2BlockWith cache e hc (storeToHealing st.core) (Model.Consensus.Protocol.Grades.roundOf hc st.core.s)))) ∧
+      (attestWith cache e hc nd st rec).2.2.round = Model.Consensus.Protocol.Grades.roundOf hc st.core.s :=
+  ⟨rfl, rfl⟩
+
 /-! ## tick -/
 
 /-- tick の中で attestation の務めが読む store(生成 `tick` の `st3`: 時計合わせ・提案・投票・確認の更新の後)。

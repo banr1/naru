@@ -97,8 +97,13 @@ import Mathlib.Tactic
 24. 23 の読みの時刻 `domainTime k G2` は、`ScheduleWellFormed` の下で 0 以上 horizon 以下(凍結した tick が run の event なので
    `Window.eventTime_bounds`。`grade2CandidateAt_domainTime_bounds_of_emits`。手書きの `hdomainHor`)。これで担い手の前提に
    手書きの `hgrade` の horizon の守り(と `0 ≤`)と tree への所属を足した版を置く
-   (`grade2CandidateAt_preceq_carrier_horizon_of_emits`。周回 193)。担い手を窓の SG block として供給する
-   (手書き `RelativeGradeCarrierAt` の G2 の段)のは次の段。
+   (`grade2CandidateAt_preceq_carrier_horizon_of_emits`。`ScheduleWellFormed` と重複なし `EventsNodup` の下。周回 193)。
+25. 務めの SG block `sgBlockAt`(務めの grade 2 の候補を渡した `getSgVoteWith`。手書き `actionSGBlockAt`)を置き、発行した行の
+   `confirmed` はその根(`emits_confirmed_sgBlockAt`)。窓の round の honest な行の SG block を `HonestWindowCarrierAt`、
+   手書きと同じ形の担い手の性質を `RelativeGradeCarrierAt` と名付け、24 の `P` をそれに置いて手書き
+   `nodeQ2_preceq_honestWindowCarrier` と同じ前提の形にした(`grade2CandidateAt_preceq_honestWindowCarrier_of_emits`。周回 194)。
+   `RelativeGradeCarrierAt` を awake の窓の多数派と `hsg` から作る(手書き
+   `relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`)のは次の段。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -1472,8 +1477,9 @@ theorem grade2CandidateAt_graded_of_emits (hδ : 0 < s.e.delta) (hs : EventsSort
 /-- **行を出した tick の grade 2 の候補は、grade の担い手の祖先**(Δ > 0、`EventsSorted` と重複なし): 務めの round を `k` として、
 時刻 `< domainTime k G2` の読みの `w` の store で round `k` の G2 の `gradeBool` が真の block `B` には、性質 `P` を持つ `Y` があって
 `B ⪯ Y`(`hcarrier`)なら、務めの grade 2 の候補 `q` にも `P` を持つ `Y` があって `q ⪯ Y`。`grade2CandidateAt_graded_of_emits`
-に `hcarrier` を掛けて `preceq_trans` で繋ぐ。手書き `nodeQ2_preceq_honestWindowCarrier` の全体に当たり、手書きの `hgrade`
-(`RelativeGradeCarrierAt` の G2 の段)の担い手「窓の round の honest な action の SG block」を `P` に抽象した(周回 191)。 -/
+に `hcarrier` を掛けて `preceq_trans` で繋ぐ。手書き `nodeQ2_preceq_honestWindowCarrier` の、horizon の守りを外した強い前提の
+版で、手書きの `hgrade`(`RelativeGradeCarrierAt` の G2 の段)の担い手「窓の round の honest な action の SG block」を `P` に
+抽象した(周回 191)。 -/
 theorem grade2CandidateAt_preceq_carrier_of_emits (hδ : 0 < s.e.delta) (hs : EventsSorted rho)
     (hnd : EventsNodup rho) {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat} {P : Block → Prop}
@@ -1568,6 +1574,80 @@ theorem grade2CandidateAt_preceq_carrier_horizon_of_emits (hδ : 0 < s.e.delta) 
     (Proofs.Consensus.Window.eventsSorted_of_schedule hsch) hnd hem h
   obtain ⟨Y, hY, hb0Y⟩ := hcarrier h0 hhor b0 hmem hgrade
   exact ⟨Y, hY, Proofs.Consensus.Blocks.preceq_trans hqb0 hb0Y⟩
+
+/-- **務めの SG 投票のブロック**: 添字 `i` の tick の務めの store で、務めの round の grade 2 の候補 `grade2CandidateAt` を
+`aG2` に渡した `getSgVoteWith`。行を出した tick では行の `confirmed` はこの根(`emits_confirmed_sgBlockAt`)。手書き
+`actionSGBlockAt` に当たる(手書きは round の添字で読み、ここは event の添字と時刻で読む。周回 194)。 -/
+def sgBlockAt (w : ValidatorId) (i : Nat) (t : Int) : Block :=
+  Model.Consensus.Protocol.Duties.Inputs.getSgVoteWith
+    (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+      (storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+      (worldAt (stateBefore c p a nr s rho i) w).cache)
+    s.e s.hc (storeToHealing (dutyStoreAt c p a nr s rho w i t).core)
+    (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s)
+    (grade2CandidateAt c p a nr s rho w i t)
+
+/-- **発行した行の `confirmed` は務めの SG block の根**(前提なし): `w` が時刻 `t` に行 `row` を出したなら、添字 `i` の event
+`Tick w t` があり、`row.confirmed = some (root (sgBlockAt w i t))` で、`row.round` は務めの store の slot の round。
+`tick_attest_dutyStore` と `AttestationSource.attestWith_confirmed_round`。手書きの `actionAttestationAt` の
+`confirmed` の欄に当たる(周回 194)。 -/
+theorem emits_confirmed_sgBlockAt {w : ValidatorId} {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) :
+    ∃ i : Nat, rho.events[i]? = some (NamedEvent.Tick w t) ∧
+      row.confirmed = some (root (sgBlockAt c p a nr s rho w i t)) ∧
+      row.round = Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s := by
+  obtain ⟨i, hev, hrow⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho w _ t).mp hem
+  rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
+  obtain ⟨-, -, hr⟩ := Proofs.Consensus.AttestationSource.tick_attest_dutyStore c p a nr _ s.hc _ _ _ t hrow
+  subst hr
+  exact ⟨i, hev, Proofs.Consensus.AttestationSource.attestWith_confirmed_round _ _ _ _ _ _⟩
+
+/-- **窓の round の honest な行の SG block**: `Y` は、honest な `u` が添字 `i` の event `Tick u t` で出した行 `row`
+(round は `latestWindow etaSG r` の中)の tick の務めの SG block。手書き `RelativeGradeCarrierAt` の結論
+`∃ k ∈ latest_window η_SG r, ∃ u ∈ honest, emits u (attest (actionAttestationAt u k)) (a k) ∧ B ⪯ actionSGBlockAt u k` の
+担い手に当たる(手書きは round `k` の action の行を `actionAttestationAt` で名指しし、ここは発行した行と event の添字で
+名指しする。周回 194)。 -/
+def HonestWindowCarrierAt (r : Nat) (Y : Block) : Prop :=
+  ∃ (u : ValidatorId) (i : Nat) (t : Int) (row : NamedAttestation), u ∈ rho.honest.elems ∧
+    rho.events[i]? = some (NamedEvent.Tick u t) ∧ Emits c p a nr s rho u (NamedObject.Attest row) t ∧
+    row.round ∈ latestWindow s.hc.etaSG r ∧ Y = sgBlockAt c p a nr s rho u i t
+
+/-- **grade の担い手の性質**: round `r` の phase `ph` の domain 時刻の読みで、honest な `w` の store の `gradeBool` が真の
+block `B` には、窓の round の honest な行の SG block `Y`(`HonestWindowCarrierAt r`)があって `B ⪯ Y`。手書き
+`RelativeGradeCarrierAt`(`Protocol/Grades/RelativeOneChain.lean`)に当たる(周回 194)。 -/
+def RelativeGradeCarrierAt (r : Nat) (ph : Model.Consensus.Protocol.Grades.GradePhase) : Prop :=
+  ∀ w ∈ rho.honest.elems, ∀ B : Block,
+    Model.Consensus.Protocol.Grades.gradeBool s.e
+        (Model.Consensus.Protocol.Grades.gradeView
+          (storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+            (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph)) w).st.core))
+        (storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+          (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph)) w).st.core).f s.hc.etaSG r
+        (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc r ph)
+        (Model.Consensus.Protocol.Grades.lateTime s.e s.hc r ph) B = true →
+      ∃ Y, HonestWindowCarrierAt c p a nr s rho r Y ∧ preceq B Y = true
+
+/-- **行を出した honest な tick の grade 2 の候補は、窓の round の honest な行の SG block の祖先**(Δ > 0、
+`ScheduleWellFormed` と重複なし): 務めの round を `k` として、horizon 以内の phase で `RelativeGradeCarrierAt k` が成り立てば
+(`hgrade`)、務めの grade 2 の候補 `q` には `HonestWindowCarrierAt k` の `Y` があって `q ⪯ Y`。
+`grade2CandidateAt_preceq_carrier_horizon_of_emits` の担い手 `P` を窓の SG block に置いた版で、手書き
+`nodeQ2_preceq_honestWindowCarrier`(`Protocol/Grades/WeakBootstrapAction.lean`)と同じ前提の形(`hgrade` は phase ごとの
+horizon の守りつき)。手書きの前提 `0 < r` は使わない(周回 194)。 -/
+theorem grade2CandidateAt_preceq_honestWindowCarrier_of_emits (hδ : 0 < s.e.delta) (hsch : ScheduleWellFormed s rho)
+    (hnd : EventsNodup rho) {w : ValidatorId} (hw : w ∈ rho.honest.elems) {row : NamedAttestation} {t : Int}
+    (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {i : Nat}
+    (hgrade : ∀ ph, Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) ph ≤ rho.horizon →
+      RelativeGradeCarrierAt c p a nr s rho
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) ph)
+    {q : Block} (h : grade2CandidateAt c p a nr s rho w i t = some q) :
+    ∃ Y, HonestWindowCarrierAt c p a nr s rho
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s) Y ∧
+      preceq q Y = true :=
+  grade2CandidateAt_preceq_carrier_horizon_of_emits c p a nr s rho hδ hsch hnd hem
+    (P := HonestWindowCarrierAt c p a nr s rho
+      (Model.Consensus.Protocol.Grades.roundOf s.hc (dutyStoreAt c p a nr s rho w i t).core.s))
+    (fun _ hhor B _ hB => hgrade _ hhor w hw B hB) h
 
 end RunAtAction
 
