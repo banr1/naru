@@ -9,6 +9,7 @@ import NaruTest.Repo
 import NaruTest.Semantics
 import NaruTest.Deps
 import NaruTest.Proofs
+import NaruTest.Properties
 
 /-!
 # `naru_test regression` — 非対話の回帰・最終検証の入口(IDEAL.md C36)
@@ -54,7 +55,8 @@ import NaruTest.Proofs
    C10 の比較器回帰(`golden --comparator`: `tests/golden/Golden.lean --comparator-check`。emitted objects の共通表現について、同じ意味の両表現が
    一致する検体と、各フィールド・入れ子・親関係・Option・variant・リスト順序を一つだけ変えた検体がすべて不一致になること、`none` と root 99 /
    root 0 の `some` を混同しないこと、旧 3 つ組 `(kind, root, author)` が見逃す検体(失敗例)を `NaruTest/Golden.lean` の `expectedAgreements` /
-   `expectedProbes` / `expectedLegacyMisses` と照合する)。
+   `expectedProbes` / `expectedLegacyMisses` と照合する)。`proofs` 群の次に有界検査の `properties` 群(C73。`docs/testing.md`「有界検査」の
+   固定の短い設定。約 30 秒)。
 5. C1 の決定性: `lake exe naru compile` を 2 回走らせ、生成先の全ファイルの sha256 が一致、各ファイルの先頭 5 行にコンパイラ版・stdlib 版・
    ソースの hash があり、ソースのパスがソースルートからの相対(ルートのディレクトリ名で始まらない)で、各ソースの sha256 がヘッダと一致。
 6. `lake build Model`(C6。`noncomputable` / `unsafe` / `axiom` / `sorry` / `partial` が 0 件)、`lake build Statements`(C8。`sorry` 0 件)、
@@ -1230,6 +1232,8 @@ def checks : M Unit := do
   subgroup "naru_test deps (C63 / C64 / C65 / C66)" NaruTest.Deps.run
   heading "proof obligations and proof status"
   subgroup "naru_test proofs (C68 / C69 / C70 / C72)" NaruTest.Proofs.run
+  heading "bounded checks"
+  subgroup "naru_test properties (C73: the fixed short setting)" NaruTest.Properties.run
   heading "golden rehearsal"
   subgroup "naru_test golden --finality-horizon 40 (rehearsal, not the C10 evidence)" (NaruTest.Golden.run 40)
   heading "C10 comparator regression"

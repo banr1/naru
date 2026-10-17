@@ -81,6 +81,8 @@ def reportRun (sp : RunSpec) : IO (List String × List Verdict) := do
     lines := lines ++ [s!"  {v.render}"]
     if let some d := v.diag then lines := lines ++ [s!"  diag {v.name}: {d}"]
     for n in v.notes do lines := lines ++ [s!"  violation: {n}"]
+    if v.strong then lines := lines ++ [s!"  {v.renderClassified}"]
+    for n in v.classNotes do lines := lines ++ [s!"  classification: {n}"]
   let t1 ← IO.monoMsNow
   IO.eprintln s!"[properties] {sp.name}: {t1 - t0} ms"
   return (lines, verdicts)
@@ -116,6 +118,8 @@ def report (mode : String) (specs : List RunSpec) : IO (List String × Nat × Bo
   let mut violations := 0
   for v in totals do
     lines := lines ++ [v.render]
+    if v.strong then lines := lines ++ [v.renderClassified]
+    for n in v.classNotes do lines := lines ++ [s!"classification: {n}"]
     violations := violations + v.violations
   let allDetected := negs.all (·.detected)
   lines := lines ++ [s!"properties total: violations {violations}, checkers {totals.length}, negatives {negs.length} ({if allDetected then "all detected" else "NOT all detected"})"]

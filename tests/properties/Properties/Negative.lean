@@ -48,17 +48,31 @@ def strayBlock : Blocks.Block := .Node .Genesis 1 ⟨999⟩ [] [] [] (vid 0)
 
 def negatives : List Negative := Id.run do
   let mut out : List Negative := []
-  -- 1. hreadBound: FG root の読みを壊す(期限は 0 round に置いて判定に入れる)
+  -- 1. hreadBound(強い形): FG root の読みを壊す。違反の時刻は期限 a(D) より前だが、run は golden の一致の一覧に無いので
+  --    「期限の前の正常な挙動」に分けず違反として数える
   let tl := generate baseSpec
   let p := Premises.of tl
-  let v1 := hreadBound tl p (readFg := fun _ _ => strayBlock) (deadlineRounds := some 0)
-  out := out ++ [⟨"hreadBound(corrupted fg-root read)", v1.violations > 0 && v1.judged == 0,
-                  s!"judged {v1.judged} violations {v1.violations}; premises {p.render}"⟩]
-  -- 1b. hreadBound: 同じ run の本物の読みは期限 0 round で判定の経路を通る(対照。違反の数は診断として出すだけで、期限を外した bound の破れは
-  --     反例ではないので失敗にしない)
-  let v1c := hreadBound tl p (deadlineRounds := some 0)
-  out := out ++ [⟨"hreadBound(control: genuine read, deadline 0)", v1c.judged > 0,
-                  s!"judged {v1c.judged} violations {v1c.violations}"⟩]
+  let v1 := hreadBound tl p (readFg := fun _ _ => strayBlock)
+  out := out ++ [⟨"hreadBound(corrupted fg-root read)", v1.violations > 0 && v1.judged == 0 && v1.classified == 0,
+                  s!"judged {v1.judged} violations {v1.violations} classified {v1.classified}; premises {p.render}"⟩]
+  -- 1b. 分類の経路(対照): 同じ壊れた読みで、run が golden で一致したと仮定すると、期限の前の違反は「期限の前の正常な挙動」に分かれ、
+  --     違反に数えない
+  let v1c := hreadBound tl p (readFg := fun _ _ => strayBlock) (agreed := [baseSpec.name])
+  out := out ++ [⟨"hreadBound(control: pre-deadline classification with golden agreement)", v1c.classified > 0 && v1c.violations == 0,
+                  s!"classified {v1c.classified} violations {v1c.violations}"⟩]
+  -- 1c. a(D) 以後の読みに破れがある義務は、golden で一致しても分類しない(期限を 0 round に置く。a(0) より前に閉じる義務だけが分類に残る)
+  let v1d := hreadBound tl p (readFg := fun _ _ => strayBlock) (deadlineRounds := some 0) (agreed := [baseSpec.name])
+  out := out ++ [⟨"hreadBound(strong-form violation at or after the deadline is not classified)",
+                  v1d.violations > 0 && v1d.violations + v1d.classified == v1.violations && v1d.classified < v1c.classified,
+                  s!"violations {v1d.violations} classified {v1d.classified}"⟩]
+  -- 1e. 提案の親だけを壊す(投票の義務は本物のまま): 提案の義務の経路が違反を報告し、投票の義務は判定に残る
+  let v1p := hreadBound tl p (parentOf := fun _ => strayBlock)
+  out := out ++ [⟨"hreadBound(corrupted proposal parent)", v1p.violations > 0 && v1p.judged > 0 && v1p.classified == 0,
+                  s!"judged {v1p.judged} violations {v1p.violations}"⟩]
+  -- 1d. 本物の読みは強い形で判定の経路を通り、違反しない(対照)
+  let v1e := hreadBound tl p
+  out := out ++ [⟨"hreadBound(control: genuine read, strong form)", v1e.judged > 0 && v1e.violations == 0,
+                  s!"judged {v1e.judged} violations {v1e.violations}"⟩]
   -- 2. includedFrom(confirmed / stable): 出力の読みを genesis に壊す
   let v2 := includedFrom tl p .Confirmed (Spec.Constants.confirmationDelay tl.setup) (readOut := fun _ _ _ => .Genesis)
   out := out ++ [⟨"includedFrom(confirmed)(corrupted output read)", v2.violations > 0 && v2.judged == 0,

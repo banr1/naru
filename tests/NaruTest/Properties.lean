@@ -26,9 +26,16 @@ def expectedRuns : List String :=
 /-- byzantine を 1 人以上含む run(`judged >= 1` の要求はこの run の判定を数える)。 -/
 def byzantineRuns : List String := expectedRuns.filter fun n => n != "h3-sync"
 
+/-- 強い形を判定の形にした中間命題の検査器(判定の件数は強い形の判定件数。強い形の違反のうち「期限の前の正常な挙動」に分けたものは
+`classified <name>: pre-deadline normal behaviour N` の行に別に数え、exit を落とさない)。 -/
+def strongCheckers : List String := ["hreadBound"]
+
 /-- 負の検体の名前(`Properties.negatives`)。 -/
 def expectedNegatives : List String :=
-  [ "hreadBound(corrupted fg-root read)", "hreadBound(control: genuine read, deadline 0)", "includedFrom(confirmed)(corrupted output read)",
+  [ "hreadBound(corrupted fg-root read)", "hreadBound(control: pre-deadline classification with golden agreement)",
+    "hreadBound(strong-form violation at or after the deadline is not classified)", "hreadBound(corrupted proposal parent)",
+    "hreadBound(control: genuine read, strong form)",
+    "includedFrom(confirmed)(corrupted output read)",
     "includedFrom(stable)(corrupted output read)", "byzantine beyond one third", "withheld block delivery after GST", "unsorted events",
     "missing honest tick", "replay agrees with generation" ]
 
@@ -81,7 +88,8 @@ def checks : M Unit := do
   let lines := r1.stdout.splitOn "\n"
   for l in lines do
     if l.startsWith "run " || l.startsWith "  premises" || l.startsWith "  progress" || l.startsWith "  checker" || l.startsWith "  diag"
-        || l.startsWith "  violation" || l.startsWith "  outputAt" || l.startsWith "negative " || l.startsWith "checker " || l.startsWith "properties" then
+        || l.startsWith "  violation" || l.startsWith "  outputAt" || l.startsWith "negative " || l.startsWith "checker " || l.startsWith "properties"
+        || l.startsWith "  classified" || l.startsWith "classified " || l.startsWith "  classification" || l.startsWith "classification" then
       IO.println s!"  | {l}"
   -- 4. run ごとの行
   for n in expectedRuns do
@@ -116,8 +124,31 @@ def checks : M Unit := do
       if let some (name, j, _, _, _) := parseChecker l then
         judgedByz := judgedByz.map fun (n, k) => if n == name then (n, k + j) else (n, k)
   for (name, k) in judgedByz do
-    if k ≥ 1 then ok s!"checker {name}: {k} case(s) judged in runs with a byzantine validator (premises met, deadline within the horizon)"
-    else fail s!"checker {name}: no case judged in runs with a byzantine validator (premises met, deadline within the horizon)"
+    let form := if strongCheckers.contains name then " in the strong form" else ""
+    if k ≥ 1 then ok s!"checker {name}: {k} case(s) judged{form} in runs with a byzantine validator (premises met, deadline within the horizon)"
+    else fail s!"checker {name}: no case judged{form} in runs with a byzantine validator (premises met, deadline within the horizon)"
+  -- hreadBound の強い形は投票の義務と提案の親の義務の両方を byzantine を含む run で 1 件以上判定する(診断の行の内訳)
+  let mut cur := ""
+  let mut votesByz := 0
+  let mut propsByz := 0
+  for l in lines do
+    if l.startsWith "run " then cur := ((l.drop 4).toString.splitOn ":").head!
+    else if l.startsWith "  diag hreadBound: strong form" && byzantineRuns.contains cur then
+      let after := ((l.splitOn "judged ").getD 1 "")
+      votesByz := votesByz + ((after.splitOn " vote").head!.trimAscii.toString.toNat?.getD 0)
+      propsByz := propsByz + ((((after.splitOn "and ").getD 1 "").splitOn " proposal").head!.trimAscii.toString.toNat?.getD 0)
+  if votesByz ≥ 1 && propsByz ≥ 1 then
+    ok s!"checker hreadBound: the strong form judged {votesByz} vote obligation(s) and {propsByz} proposal-parent obligation(s) in runs with a byzantine validator"
+  else fail s!"checker hreadBound: vote obligations {votesByz} / proposal-parent obligations {propsByz} judged in runs with a byzantine validator (each must be >= 1)"
+  -- 強い形の違反のうち「期限の前の正常な挙動」に分けたもの: 総計の行があり、件数と根拠(run・命題・分類の根拠)を報告する(exit は落とさない)
+  for name in strongCheckers do
+    match lines.find? (·.startsWith s!"classified {name}: pre-deadline normal behaviour ") with
+    | some l =>
+      let n := ((l.splitOn "behaviour ").getLast!).trimAscii.toString.toNat?.getD 0
+      let reasons := lines.countP (·.startsWith "classification: ")
+      if reasons == n then ok s!"checker {name}: strong-form violations classified as pre-deadline normal behaviour: {n} (reported separately with run, proposition and reason; not counted as violations)"
+      else fail s!"checker {name}: {n} classified strong-form violation(s) but {reasons} reported reason line(s)"
+    | none => fail s!"checker {name}: no `classified` total line for the strong form"
   -- 6. 負の検体
   for n in expectedNegatives do
     match lines.find? (·.startsWith s!"negative {n}:") with

@@ -442,14 +442,14 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 **実行テストの結果は証明の代用にせず、`naru proofs` の証明状況の表示は変えない。** 違反が出たら、期待値の書き換えや検査器の弱化で通さず、
 用語「反例の分類」(検査器の誤り / 前提の判定の誤り / 移植の不一致)で原因を分ける。
 
-どの命題が実行テストでどこまで確かめられているか(最終実行は周回 197、固定設定 9 run。詳しい件数は docs/testing.md):
+どの命題が実行テストでどこまで確かめられているか(最終実行は周回 200、固定設定 9 run。詳しい件数は docs/testing.md):
 
 | 命題 | 検査器 | 判定 / 前提不成立 / 判定外 / 違反 | 備考 |
 |---|---|---|---|
-| 中間命題 `hreadBound`(honest な読みの FG root ⪯ honest な投票の head。手書き `fgRoot_preceq_previousHead_through_confirmation_after_GST`、`fgSafetyProgressDeadline` 以後。`proofs/Proofs/Consensus/ProposerRoot.lean` が残りとして挙げる上界) | `hreadBound` | 0 / 9 / 52 / 0 | 手書きの期限 `a(D)` は 3858〜9564 で固定設定の horizon を越え、期限内の読みは判定できない(生成 Model の tick の費用は tree の大きさの 3〜4 乗で、期限に届く run は予算の外)。期限を外した診断では全 run の全読みで bound は破れていない |
+| 中間命題 `hreadBound`(honest な読みの FG root ⪯ honest な投票の head・提案の親。手書き `fgRoot_preceq_previousHead_through_confirmation_after_GST`、`fgSafetyProgressDeadline` 以後。`proofs/Proofs/Consensus/ProposerRoot.lean` が残りとして挙げる上界) | `hreadBound`(強い形) | 1015 / 168 / 1055 / 0 | 手書きの期限 `a(D)`(3858〜9564)は固定設定の horizon を越えるので、用語「強い形」(GST 以後のすべての honest な読みで FG root ⪯ honest な投票の head・提案の親)で判定し、期限付きの形は判定外として併せて数える。強い形の違反 0(「期限の前の正常な挙動」に分けたもの 0)なので、round の帰納を強い形で回す筋は固定設定の run では反例が無い |
 | `IncludedFrom(s, rho, Output.Confirmed, 0, confirmationDelay)`(claim `available` の結論の項目。`Liveness.lean` の `liveFrom_of_includedFrom` の前提) | `includedFrom(confirmed)` | 60 / 58 / 14 / 0 | 前提は `SleepyRegime` を BFT の形 + genesis の枝で判定(`tGST > 0` と sleepy の run は前提不成立) |
 | `IncludedFrom(s, rho, Output.Stable, 0, stableInclusionDelay)`(同) | `includedFrom(stable)` | 22 / 58 / 52 / 0 | 同上。stable の期限が長いので判定外が多い |
 
 6 claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)の前提と結論の検査器、
-`WindowMajority` / `FreshMajority` / `SlashableBound` / `RecoveredBy` の有界版、他の中間命題(`IncludedFrom` の提案の親の上界、round の帰納の段の主張)、
+`WindowMajority` / `FreshMajority` / `SlashableBound` / `RecoveredBy` の有界版、他の中間命題(round の帰納の段の主張)、
 C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。

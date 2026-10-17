@@ -7,8 +7,9 @@ import Properties.Premises
 対応する生成 Statements の述語と手書きの補題名(中間命題は `proofs/` の定義名も)を記す。
 
 この周回の検査器は 2 つの中間命題(IDEAL.md「今回の周回の運び」の最優先):
-- `hreadBound`: honest な読みの FG root が honest な投票の head の祖先であること(手書き `ProposalAdoptionNamedClosed.lean` の局所仮定
+- `hreadBound`: honest な読みの FG root が honest な投票の head・提案の親の祖先であること(手書き `ProposalAdoptionNamedClosed.lean` の局所仮定
   `hreadBound` = `fgRoot_preceq_previousHead_through_confirmation_after_GST`(`FGSafetyRootNamed.lean`)、`fgSafetyProgressDeadline` 以後)。
+  期限が horizon を越えるので用語「強い形」(GST 以後のすべての読み)で判定し、期限付きの形は判定外として併せて数える。
 - `IncludedFrom`: honest の提案が期限内にすべての honest の読みに入ること(生成 Statements `Statements.Consensus.Spec.Properties.IncludedFrom`、
   claim `available` の結論 `AvailableAt` の 2 項目。`proofs/Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom` の前提)。
 -/
@@ -16,103 +17,45 @@ import Properties.Premises
 namespace Properties
 open Model.Consensus Model.Consensus.Objects Model.Consensus.Protocol Model.Consensus.Execution
 
-/-- 1 つの検査器の 1 つの run での判定の集計(用語「有界検査」の 4 区分)。 -/
+/-- 1 つの検査器の 1 つの run での判定の集計(用語「有界検査」の 4 区分)。強い形を判定の形にした中間命題では、強い形の違反のうち
+用語「反例の分類」の「期限の前の正常な挙動」に分けたものを `classified` に別に数える(違反には数えない)。 -/
 structure Verdict where
   name : String
   judged : Nat := 0
   unmet : Nat := 0
   outside : Nat := 0
   violations : Nat := 0
+  /-- 「期限の前の正常な挙動」に分けた強い形の違反の件数(強い形を判定の形にした検査器だけが使う)。 -/
+  classified : Nat := 0
+  /-- 強い形を判定の形にした検査器か(報告に分類の行を出す)。 -/
+  strong : Bool := false
   /-- 違反の説明(先頭の数件)。 -/
   notes : Array String := #[]
-  /-- 判定ではない補助の情報(期限や、期限を外したときに最後に破れた時刻)。 -/
+  /-- 分類の説明(run・命題・根拠。分類した件ごとに 1 行、切らない)。 -/
+  classNotes : Array String := #[]
+  /-- 判定ではない補助の情報(期限や、強い形の判定の内訳)。 -/
   diag : Option String := none
 deriving Repr
 
 def Verdict.render (v : Verdict) : String :=
   s!"checker {v.name}: judged {v.judged} / premise-unmet {v.unmet} / out-of-horizon {v.outside} / violations {v.violations}"
 
+/-- 分類の行(強い形を判定の形にした検査器だけ)。 -/
+def Verdict.renderClassified (v : Verdict) : String :=
+  s!"classified {v.name}: pre-deadline normal behaviour {v.classified}"
+
 def Verdict.combine (a b : Verdict) : Verdict :=
   { name := a.name, judged := a.judged + b.judged, unmet := a.unmet + b.unmet, outside := a.outside + b.outside,
-    violations := a.violations + b.violations, notes := (a.notes ++ b.notes).extract 0 8, diag := none }
+    violations := a.violations + b.violations, classified := a.classified + b.classified, strong := a.strong || b.strong,
+    notes := (a.notes ++ b.notes).extract 0 8, classNotes := a.classNotes ++ b.classNotes, diag := none }
 
 def Verdict.note (v : Verdict) (msg : String) : Verdict :=
   { v with violations := v.violations + 1, notes := if v.notes.size < 8 then v.notes.push msg else v.notes }
 
-/-! ## 中間命題 1: `hreadBound` -/
+def Verdict.classify (v : Verdict) (msg : String) : Verdict :=
+  { v with classified := v.classified + 1, classNotes := v.classNotes.push msg }
 
-/-- 手書き `fgSafetyProgressDeadline S rho rGST gap delayExtra = rGST + 1 + (1 + (D + K + 5) · progressLag' gap delayExtra)`、
-`progressLag' gap extra = (4 gap + 12 + 2 extra) + 3 gap + 10 + 2 extra = 7 gap + 22 + 4 extra`(手書き `HeightProgressCompose.lean`)。
-`rGST` は `tGST <= a(rGST)` を満たす最初の round(`nextRound`)。round 単位。 -/
-def hreadBoundDeadline (s : Setup.Setup) (gap extra : Nat) : Nat :=
-  let rGST := Spec.Constants.nextRound s s.e.tGST
-  rGST + 1 + (1 + (s.cfg.d + s.cfg.k + 5) * (7 * gap + 22 + 4 * extra))
-
-/-- `hreadBound` の検査器。手書き `fgRoot_preceq_previousHead_through_confirmation_after_GST`(`DecoupledConsensusProofs/Objects/FGSafetyRootNamed.lean`)の命題:
-honest な `u`, `v`、slot `s` と読みの時刻 `read` について、`a(D) <= read <= horizon`、`openingSlot(D) + 1 <= s`、`read <= confirmationTime(s)`、
-`voteTime(s) + Δ <= horizon` なら `preceq (getFgRoot (stateBeforeTime(u, read)).toHealing) (voteDutyHead v s)`。
-前提は手書きの仮定 `Admissible`(= `ExecutionValid` ∧ `PartialSynchrony` ∧ GST 以後の全 round で awake)、`HonestCommittees`、
-`BelowOneThird`、`MultiProposerRecurrence(gap)`、`TimeoutDelayBound(extra)`、`tGST <= a(rGST)`(`rGST` の取り方で常に成立)に、naru 側の
-`SetupWellFormed` / `RunDomain` を足したもの。`voteDutyHead` は実際に発行された票の head(`Timeline.voteHead`。票が無い `(v, s)` は数えない)。
-判定の単位は `(u, v, s)` の組。期限(`a(D)` か `voteTime(s) + Δ`)が horizon を越える組は判定外。`openingSlot(D) + 1 > s` の slot は命題の
-量化の外(空虚)なので数えず、票を出していない `(v, s)` も数えない(どちらも診断に件数を出す)。
-gap は naru の `MultiProposerRecurrence(tGST, gap)`(opening と 3 つの honest な提案者)の最小値で、手書きの round 単位の再発(`Internal.MultiProposerRecurrence`、
-窓は `[r, r + gap]`)より強い述語なので期限は手書きの値以上(保守的)。
-naru 側の対応: `proofs/Proofs/Consensus/ProposerRoot.lean` が残りとして挙げる「honest な読みの FG root を提案の親の祖先である共通の上界で抑えること」、
-読みの FG root の補題 `RootWitness.stateBeforeTime_fgRoot_named` / `JustifiedCarrier.stateBeforeTime_fgRoot_preceq_body` / `FinalizedSource.stateBeforeTime_fgRoot_justified_preceq`。
-`readFg` と `deadlineRounds` は負の検体のための差し替え(既定は run の読みと手書きの期限)。 -/
-def hreadBound (tl : Timeline) (p : Premises)
-    (readFg : Identifiers.ValidatorId → Int → Blocks.Block := tl.fgRootBeforeTime)
-    (deadlineRounds : Option Nat := none) : Verdict := Id.run do
-  let s := tl.setup
-  let horizon := tl.rho.horizon
-  let extra := Spec.Constants.extraRounds s
-  let premiseOk := p.setup.holds && p.runDomain.holds && p.executionValid && p.partialSync.holds && p.allAwake.holds
-    && p.honestCommittees.holds && p.belowOneThird.holds && p.recurrenceGap.isSome && tl.timeoutDelayBound extra
-  let gap := p.recurrenceGap.getD 1
-  let D := deadlineRounds.getD (hreadBoundDeadline s gap extra)
-  let aD := actionTime s D
-  let honest := tl.rho.honest.elems
-  let slots := List.range (maxSlot s horizon + 1)
-  let mut out : Verdict := { name := "hreadBound" }
-  let mut lastFail : Option Int := none
-  let mut vacuous := 0
-  let mut noVote := 0
-  let firstSlot := openingSlot s D + 1
-  -- 命題の slot の範囲(firstSlot 以上)がまるごと horizon の外なら、(u, v) の組ごとに 1 つの義務を判定外として数える
-  let domainOutside := voteTime s firstSlot + s.e.delta > horizon
-  -- 読みの FG root は (u, read) ごとに 1 回だけ計算する
-  let reads := intRange 0 horizon
-  for u in honest do
-    let fg : Array Blocks.Block := (reads.map fun r => readFg u r).toArray
-    let fgAt (r : Int) : Blocks.Block := fg[r.toNat]!
-    for v in honest do
-      if domainOutside && premiseOk then out := { out with outside := out.outside + 1 }
-      if domainOutside && !premiseOk then out := { out with unmet := out.unmet + 1 }
-      for k in slots do
-        if k < firstSlot then
-          vacuous := vacuous + 1
-        else
-          match tl.voteHead v k with
-          | none => noVote := noVote + 1
-          | some head =>
-            -- 補助: 期限を外したときに最後に破れる読みの時刻(判定ではない)
-            for r in intRange 0 (min horizon (confirmationTime s k)) do
-              if !Blocks.preceq (fgAt r) head then
-                lastFail := some (max r (lastFail.getD r))
-            if !premiseOk then out := { out with unmet := out.unmet + 1 }
-            else
-              let hi := min horizon (confirmationTime s k)
-              if voteTime s k + s.e.delta > horizon || aD > hi then out := { out with outside := out.outside + 1 }
-              else
-                match (intRange aD hi).find? (fun r => !Blocks.preceq (fgAt r) head) with
-                | none => out := { out with judged := out.judged + 1 }
-                | some r =>
-                  out := out.note s!"hreadBound: fgRoot of {u.value} at read t = {r} (root {(Blocks.root (fgAt r)).value}) is not an ancestor of the vote head of {v.value} at slot {k} (root {(Blocks.root head).value})"
-  let lf := match lastFail with | some t => s!"t = {t}" | none => "never"
-  return { out with diag := some s!"deadline a(D) = {aD} (D = {D} rounds, gap {gap}, extra {extra}, horizon {horizon}); the proposition quantifies over slots >= openingSlot(D) + 1 = {firstSlot}{if domainOutside then " (all beyond the horizon: one out-of-horizon obligation per honest pair)" else ""}; {vacuous} (u, v, s) below that slot, {noVote} without an emitted vote; without the deadline the bound fails last at {lf}" }
-
-/-! ## 中間命題 2: `IncludedFrom` -/
+/-! ## run の読み(`outputAt` / `proposedBlock`) -/
 
 /-- 生成 Statements の `outputAt(g, s, rho, v, t)` と同じ読み(`storeAt(s, rho, v, t).core` の `getConfirmed` / `getStable` / `f`)を
 時間軸から取る。 -/
@@ -142,6 +85,139 @@ def Timeline.proposedBlock (tl : Timeline) (k : Nat) : Option Blocks.Block :=
 def Timeline.proposedAgrees (tl : Timeline) (k : Nat) : Bool :=
   let I := tl.inputs
   tl.proposedBlock k == Spec.Interface.proposedBlock I.committee I.proposer I.awake I.newRoot tl.setup tl.rho k
+
+/-! ## 中間命題 1: `hreadBound`(強い形で判定し、期限付きの形は判定外として併せて数える) -/
+
+/-- 手書き `fgSafetyProgressDeadline S rho rGST gap delayExtra = rGST + 1 + (1 + (D + K + 5) · progressLag' gap delayExtra)`、
+`progressLag' gap extra = (4 gap + 12 + 2 extra) + 3 gap + 10 + 2 extra = 7 gap + 22 + 4 extra`(手書き `HeightProgressCompose.lean`)。
+`rGST` は `tGST <= a(rGST)` を満たす最初の round(`nextRound`)。round 単位。 -/
+def hreadBoundDeadline (s : Setup.Setup) (gap extra : Nat) : Nat :=
+  let rGST := Spec.Constants.nextRound s s.e.tGST
+  rGST + 1 + (1 + (s.cfg.d + s.cfg.k + 5) * (7 * gap + 22 + 4 * extra))
+
+/-- golden(C10)で両 Model(手書き / 生成)の読みと emitted objects が一致すると確かめた run の名前。用語「反例の分類」の
+「期限の前の正常な挙動」に分けてよいのは、違反の時刻が手書きの期限より前で、かつ run がこの一覧にあるときに限る(一覧に無い run の
+強い形の違反は、時刻によらず違反として数えて exit を落とす)。共通の run の記述から golden の fixture を作ったら(C10 の拡充)、その run を足す。 -/
+def goldenAgreedRuns : List String := []
+
+/-- `hreadBound` の検査器。手書き `fgRoot_preceq_previousHead_through_confirmation_after_GST`(`DecoupledConsensusProofs/Objects/FGSafetyRootNamed.lean`)の命題:
+honest な `u`, `v`、slot `s` と読みの時刻 `read` について、`a(D) <= read <= horizon`、`openingSlot(D) + 1 <= s`、`read <= confirmationTime(s)`、
+`voteTime(s) + Δ <= horizon` なら `preceq (getFgRoot (stateBeforeTime(u, read)).toHealing) (voteDutyHead v s)`(`D = fgSafetyProgressDeadline`)。
+手書き `ProposalAdoptionNamedClosed.lean` / `W4VoteStoreExtendsSlot.lean` の局所仮定 `hreadBound` はこれを投票の head の共通の上界へ持ち上げ、
+`read = proposalTime(start)` の提案者の読みに当てて提案の親を抑える。
+期限 `a(D)` は最小の設定でも 321 round = 時刻 3858 で、生成 Model の run の費用では届かない(周回197の計測)。そこで用語「強い形」
+(GST 以後のすべての honest な読みで FG root ⪯ honest な投票の head・提案の親)を判定の形にする:
+- 投票の義務 `(u, v, s)`: `v` が slot `s` の投票を発行したとき、`max(0, tGST) <= read <= min(horizon, confirmationTime(s))` のすべての読みで
+  `preceq (fgRootBeforeTime u read) (voteHead v s)`。`voteTime(s) + Δ > horizon` の義務は判定外(手書きの `hshor`)。
+- 提案の義務 `(u, s)`: `proposer(s)` が honest で提案 `b = proposedBlock(s)` があるとき、`max(0, tGST) <= read <= min(horizon, confirmationTime(s - 1))`
+  (slot 0 は `proposalTime(0)` まで。`proposalTime(s) <= confirmationTime(s - 1)`、手書きの `hproposalNext`)のすべての読みで
+  `preceq (fgRootBeforeTime u read) (parent b)`。`proposalTime(s) > horizon` の義務は判定外(手書きの `hproposalHor`)。
+読みの範囲が空の義務(`confirmationTime(s)` / `proposalTime(s)` が `tGST` より前)は量化の外なので数えない(診断に件数を出す)。
+期限付きの形(`a(D) <= read`、`openingSlot(D) + 1 <= s`)は強い形が含意するので別に判定せず、期限付きの形の範囲が horizon の中に無い義務を
+判定外として併せて数える(強い形で判定した義務も、期限付きの形では判定外に数える)。
+強い形の違反は、その義務の破れた読みがすべて `a(D)` より前で、かつ run が
+`goldenAgreedRuns` にあるときに限り「期限の前の正常な挙動」に分けて `classified` に数え(run・命題・根拠を `classNotes` に残す)、
+そうでなければ違反として数える。
+前提は手書きの仮定 `Admissible`(= `ExecutionValid` ∧ `PartialSynchrony` ∧ GST 以後の全 round で awake)、`HonestCommittees`、
+`BelowOneThird`、`MultiProposerRecurrence(gap)`、`TimeoutDelayBound(extra)`、`tGST <= a(rGST)`(`rGST` の取り方で常に成立)に、naru 側の
+`SetupWellFormed` / `RunDomain` を足したもの。`voteDutyHead` は実際に発行された票の head(`Timeline.voteHead`。票が無い `(v, s)` は数えない)。
+gap は naru の `MultiProposerRecurrence(tGST, gap)`(opening と 3 つの honest な提案者)の最小値で、手書きの round 単位の再発(`Internal.MultiProposerRecurrence`、
+窓は `[r, r + gap]`)より強い述語なので期限は手書きの値以上(保守的)。
+naru 側の対応: `proofs/Proofs/Consensus/ProposerRoot.lean` が残りとして挙げる「honest な読みの FG root を提案の親の祖先である共通の上界で抑えること」、
+読みの FG root の補題 `RootWitness.stateBeforeTime_fgRoot_named` / `JustifiedCarrier.stateBeforeTime_fgRoot_preceq_body` / `FinalizedSource.stateBeforeTime_fgRoot_justified_preceq`。
+`readFg` / `deadlineRounds` / `agreed` / `parentOf` は負の検体のための差し替え(既定は run の読み・手書きの期限・`goldenAgreedRuns`・提案の親)。 -/
+def hreadBound (tl : Timeline) (p : Premises)
+    (readFg : Identifiers.ValidatorId → Int → Blocks.Block := tl.fgRootBeforeTime)
+    (deadlineRounds : Option Nat := none) (agreed : List String := goldenAgreedRuns)
+    (parentOf : Blocks.Block → Blocks.Block := Blocks.parent) : Verdict := Id.run do
+  let s := tl.setup
+  let I := tl.inputs
+  let horizon := tl.rho.horizon
+  let extra := Spec.Constants.extraRounds s
+  let premiseOk := p.setup.holds && p.runDomain.holds && p.executionValid && p.partialSync.holds && p.allAwake.holds
+    && p.honestCommittees.holds && p.belowOneThird.holds && p.recurrenceGap.isSome && tl.timeoutDelayBound extra
+  let gap := p.recurrenceGap.getD 1
+  let D := deadlineRounds.getD (hreadBoundDeadline s gap extra)
+  let aD := actionTime s D
+  let lo : Int := max 0 s.e.tGST
+  let goldenOk := agreed.contains tl.spec.name
+  let honest := tl.rho.honest.elems
+  let slots := List.range (maxSlot s horizon + 1)
+  let mut out : Verdict := { name := "hreadBound", strong := true }
+  let mut vacuous := 0
+  let mut noVote := 0
+  let mut votesJudged := 0
+  let mut propsJudged := 0
+  let mut strongOutside := 0
+  let mut deadlineOutside := 0
+  -- 1 つの義務を強い形で判定する: 読みの範囲 [lo, hi] で `fgAt r ⪯ bound`。破れたら、`a(D)` 以後の読みにも破れがあるかで分類する
+  -- (あれば違反の時刻が期限より前とは言えないので、分類せず違反)
+  let judge (out : Verdict) (fgAt : Int → Blocks.Block) (hi : Int) (bound : Blocks.Block) (what : String) : Verdict × Bool :=
+    let bad (r : Int) : Bool := !Blocks.preceq (fgAt r) bound
+    match (intRange lo hi).find? bad with
+    | none => ({ out with judged := out.judged + 1 }, true)
+    | some r =>
+      let late := (intRange (max lo aD) hi).find? bad
+      let msg := s!"hreadBound (strong form): run {tl.spec.name}: the FG root of the read at t = {r} (root {(Blocks.root (fgAt r)).value}) is not an ancestor of {what} (root {(Blocks.root bound).value})"
+      match late with
+      | some r' => (out.note s!"{msg}; also broken at t = {r'} >= a(D) = {aD} (not before the deadline)", false)
+      | none =>
+        if goldenOk then
+          (out.classify s!"{msg}; pre-deadline normal behaviour: every broken read is before a(D) = {aD}, and both Models agree on this run in golden", false)
+        else
+          (out.note s!"{msg} (every broken read is before a(D) = {aD}, but the run is not confirmed by golden)", false)
+  -- 読みの FG root は (u, read) ごとに 1 回だけ計算する
+  let reads := intRange 0 horizon
+  for u in honest do
+    let fg : Array Blocks.Block := (reads.map fun r => readFg u r).toArray
+    let fgAt (r : Int) : Blocks.Block := fg[r.toNat]!
+    -- 投票の義務 (u, v, s)
+    for v in honest do
+      for k in slots do
+        match tl.voteHead v k with
+        | none => noVote := noVote + 1
+        | some head =>
+          let hi := min horizon (confirmationTime s k)
+          if hi < lo then vacuous := vacuous + 1
+          else if !premiseOk then out := { out with unmet := out.unmet + 1 }
+          else
+            if aD > hi || openingSlot s D + 1 > k then
+              deadlineOutside := deadlineOutside + 1
+              out := { out with outside := out.outside + 1 }
+            if voteTime s k + s.e.delta > horizon then
+              strongOutside := strongOutside + 1
+              out := { out with outside := out.outside + 1 }
+            else
+              let (o, ok) := judge out fgAt hi head s!"the vote head of {v.value} at slot {k} (read of {u.value})"
+              out := o
+              if ok then votesJudged := votesJudged + 1
+    -- 提案の義務 (u, s): honest な提案者の提案の親
+    for k in slots do
+      if tl.rho.honest.contains (I.proposer k) then
+        -- 読みの上端: 手書きは `hreadBound`(`read <= confirmationTime(d)`)と `E ⪯ parent(proposal(d + 1))` の 2 段で、slot `s = d + 1` の
+        -- 提案の親を `confirmationTime(s - 1)`(>= `proposalTime(s)`)までの読みで抑える。slot 0 は `proposalTime(0)`
+        let hi := if k == 0 then proposalTime s k else min horizon (max (proposalTime s k) (confirmationTime s (k - 1)))
+        if proposalTime s k > horizon then
+          if premiseOk then
+            strongOutside := strongOutside + 1
+            deadlineOutside := deadlineOutside + 1
+            out := { out with outside := out.outside + 2 }
+          else out := { out with unmet := out.unmet + 1 }
+        else if hi < lo then vacuous := vacuous + 1
+        else if !premiseOk then out := { out with unmet := out.unmet + 1 }
+        else
+          match tl.proposedBlock k with
+          | none => out := out.note s!"hreadBound (strong form): run {tl.spec.name}: no honest proposal computed at slot {k} (proposer {(I.proposer k).value})"
+          | some b =>
+            if aD > hi || openingSlot s D + 1 > k then
+              deadlineOutside := deadlineOutside + 1
+              out := { out with outside := out.outside + 1 }
+            let (o, ok) := judge out fgAt hi (parentOf b) s!"the parent of the honest proposal of {(I.proposer k).value} at slot {k} (read of {u.value})"
+            out := o
+            if ok then propsJudged := propsJudged + 1
+  return { out with diag := some s!"strong form (reads from max(0, tGST) = {lo}): judged {votesJudged} vote obligation(s) and {propsJudged} proposal-parent obligation(s), {strongOutside} out of the horizon, {vacuous} with an empty read range, {noVote} (u, v, s) without an emitted vote; deadline form a(D) = {aD} (D = {D} rounds, gap {gap}, extra {extra}, horizon {horizon}): {deadlineOutside} obligation(s) out of the horizon (counted in out-of-horizon together)" }
+
+/-! ## 中間命題 2: `IncludedFrom` -/
 
 def outputLabel : Spec.Interface.Output → String
   | .Confirmed => "confirmed"
