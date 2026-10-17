@@ -49,9 +49,10 @@
 - 有界検査(C73 / C74。[testing.md](testing.md)「有界検査」、`proofs/README.md` 10 節)の残り: 周回 197 で置いたのは共通の run の記述からの run の生成(`tests/properties/`)、
   前提の有界版(`SetupWellFormed` / `RunDomain` / `ExecutionValid` / `PartialSynchrony` / `FullParticipation` / `HonestCommittees` / `BelowOneThird` / `MultiProposerRecurrence`)、
   中間命題の検査器 2 つ(`hreadBound`: 手書きの期限 `a(D)` ≥ 3858 が horizon を越えるので周回 200 から用語「強い形」で判定し、判定 1015・違反 0・
-  「期限の前の正常な挙動」0。期限付きの形は判定外に併せて数える。`IncludedFrom`(confirmed / stable): 判定 60 / 22・違反 0)、負の検体 12 件、
-  `naru_test properties`(43 項目。周回 200 から回帰一式に入れた)。残るのは `IncludedFrom` の前提の `WindowMajority` / `RecoveredBy` の回復の枝、
-  6 claim の前提・結論の検査器と `WindowMajority` / `FreshMajority` / `SlashableBound` / `RecoveredBy` の有界版、他の中間命題、scenario が fn で公開する run、
+  「期限の前の正常な挙動」0。期限付きの形は判定外に併せて数える。`IncludedFrom`(confirmed / stable): 前提は周回 201 から `SleepyRegime` の本来の形
+  (`WindowMajority` / `RecoveredBy` の genesis と回復の枝、`SlashableBound`)の有界版で、判定 71 / 25・違反 0。`tGST > 0` の run は回復の枝の
+  `recoveryEnd` が horizon を越えるので前提不成立)、負の検体 17 件、`naru_test properties`(50 項目。周回 200 から回帰一式に入れた)。残るのは
+  6 claim の前提・結論の検査器と `FreshMajority` の有界版、他の中間命題、scenario が fn で公開する run、
   共通の run の記述からの手書き側(golden)への写しと C10 の拡充、C74 の theorem、C75(前提を満たす具体的な run の kernel 検査。native の FinalityLiveness は
   horizon 100 / 200 / 400 で 28 ms / 0.4 秒 / 7.4 秒と約 4 乗で増え、全 horizon 33,730 は実行不能)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)

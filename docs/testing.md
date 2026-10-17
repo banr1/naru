@@ -189,8 +189,13 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   (時刻は `[start, horizon − gap · period]` の整数、gap は 1 … 3 の最小)/ 手書き `TimeoutDelayBound(extraRounds)`。本物との差: 量化の範囲
   (slot・時刻・event)を run で切ったこと、`PartialSynchrony` の relay は受理された object(配送された object と、受理されたブロックが運ぶ object のうち
   `processed` が偽から真に変わったもの)に課し、`HandlesAt` の「自分の tick が出したブロックが運ぶ object」の枝は数えない(その分だけ強い = 前提不成立が増える側)、
-  `UnforgeableSignatures` は発行の記録を tick の出力から引く。`WindowMajority` / `FreshMajority` / `SlashableBound` / `RecoveredBy` の回復の枝はまだ判定しない
-  (後続の周回。`includedFrom` の前提はこの周回は BFT の形で判定する)。
+  `UnforgeableSignatures` は発行の記録を tick の出力から引く。周回 201 から `SleepyRegime` の欄も判定する: `WindowMajority(s, rho.honest, participationWindow(s), t)`
+  (`AwakeInExactly` が存在量化の集合を一意に決めるので、`[t − window, t)` に awake な honest の集合の重みと faulty の重みを比べて厳密に判定。窓の欄の `t` は
+  `[max(t0, lag), horizon + lag]` で有限)、`SlashableBound`(`InRun` は `DirectBlockInRun` のブロックの祖先で、`chainAttestations` は子孫へ増え、
+  `HasSlashableWeightBetween` は単調なので、直接のブロックのうち他の直接のブロックの真の祖先でないものの組で厳密に判定。存在量化の集合は
+  `SlashableBetween` を満たす validator 全体)、`RecoveredBy`(genesis の枝 `t = 0`、または回復の枝。回復の枝の `source`・`t0'`・`gap` は生成側の証人で判定し
+  (`検査器 = true → 述語` の向き)、証人が無くても `rho.horizon < recoveryEnd(s, tGST, 0)` ならどの証人でも成り立たない(`Continues` の
+  `recoveryEnd(t0', gap) <= horizon`、`BFTRegime` の `tGST <= t0'`、`recoveryEnd` の単調性)ので厳密に退ける)。`FreshMajority` はまだ判定しない(後続の周回)。
 - **検査器**(`Properties/Checkers.lean`)と 4 区分(判定 / 前提不成立 / 判定外 / 違反):
   - `hreadBound` — honest な読みの FG root が honest な投票の head・提案の親の祖先。手書き `ProposalAdoptionNamedClosed.lean` の局所仮定 `hreadBound` =
     `fgRoot_preceq_previousHead_through_confirmation_after_GST`(`FGSafetyRootNamed.lean`): honest な `u`, `v`、slot `s`、読み `read` について
@@ -215,8 +220,12 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   - `includedFrom(confirmed)` / `includedFrom(stable)` — 生成 Statements `Properties.IncludedFrom(s, rho, g, t0, d)`(claim `available` の結論 `AvailableAt` の
     2 項目。`d` は `confirmationDelay` / `stableInclusionDelay`): `t0 < proposalTime(k)`、`proposer(k)` が honest、`proposalTime(k) + d <= horizon` の各 slot で
     `proposedBlock(s, rho, k) = Some(b)` かつ honest な全 `v` で `preceq(b, outputAt(g, …, proposalTime(k) + d))`。期限が horizon を越える slot は判定外。
-    前提は `SleepyRegime(t0)` を BFT の形(`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧ `BelowOneThird` ∧ `FullParticipation`)と
-    `RecoveredBy` の genesis の枝(`t0 = 0`)で判定するので、`tGST > 0` の run は前提不成立に数える。
+    前提は `SetupWellFormed` ∧ `RunDomain` ∧ `SleepyRegime(t0)` の本来の形(`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧
+    窓の欄の `WindowMajority` ∧ `RecoveredBy(t0)`。周回 201 から。BFT の形の十分条件(`BelowOneThird` ∧ `FullParticipation`)では判定しない)。自由変数 `t0` は
+    genesis の枝の `0` と、生成側が回復の枝の証人を与えたときのその `recoveryEnd(s, t0', gap)` を列挙する。回復の枝の証人の `source` は horizon が
+    `prefixEnd(s, t0', gap)`(最小の設定でも 3500 前後から)の run で生成の予算に収まらないので、固定設定では与えない。`tGST > 0` の run は genesis の枝で
+    `tGST <= t0` を満たさず、回復の枝は `recoveryEnd(s, tGST, 0)`(固定設定で 3513 / 3525 / 7002)が horizon を越えてどの証人でも成り立たないので前提不成立に
+    数える(理由は `diag includedFrom(…)` の行)。sleepy の run は `FullParticipation` が破れても `WindowMajority` を満たすので判定に入る。
 - **固定設定**(`Properties/Report.lean` の `shortSpecs`。Δ = 1、`r = 3`、`etaSG = 2`、`k = 4`、`d = 2`、`timeoutDelay = 6`、重みは 3 validator の run だけ
   `[2, 2, 1]`(byzantine が 1/3 未満)):
 
@@ -232,19 +241,25 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   | `h4-gst24-twofaced` | 8 | 4 | 3(twoFaced) | 24 | 96 | GST の後の立ち直り(regime の `RecoveredBy` の回復の枝ではない)、複数ノードの finality の進行、配送順の入れ替え |
   | `h4-delta2-equivocate` | 10 | 4 | 3(equivocate) | 8 | 96 | Δ = 2(GST 後も `[0, Δ)` の遅れで配送順が入れ替わる) |
 
-  周回 200 の結果(`lake exe naru_test properties`: 43 項目 PASS、約 30 秒): 3 検査器とも違反 0。`hreadBound`(強い形)は判定 1015(投票の義務 746 と
+  周回 201 の結果(`lake exe naru_test properties`: 50 項目 PASS): 3 検査器とも違反 0。`hreadBound`(強い形)は判定 1015(投票の義務 746 と
   提案の親の義務 269。byzantine を含む run で 877 = 647 + 230)/ 前提不成立 168(sleepy の run)/ 判定外 1055(期限付きの形の判定外を含む)/ 違反 0、「期限の前の
-  正常な挙動」に分けたもの 0。`includedFrom(confirmed)` は判定 60 / 前提不成立 58 / 判定外 14、`includedFrom(stable)` は判定 22 / 58 / 52(前提不成立は
-  `tGST > 0` の 3 run と sleepy の 1 run)。配送順の入れ替えは 3 run で計 57 回。どの run でも timeout の行は 0。
+  正常な挙動」に分けたもの 0(周回 200 と同じ)。`includedFrom(confirmed)` は判定 71 / 前提不成立 45 / 判定外 16、`includedFrom(stable)` は判定 25 / 45 / 62
+  (前提不成立は `tGST > 0` の 3 run。sleepy の run は confirmed 11・stable 3 を判定。周回 200 の BFT の形では 60 / 58 / 14 と 22 / 58 / 52)。配送順の入れ替えは 3 run で計 57 回。どの run でも timeout の行は 0。
   `--mode probe` の計測: horizon 300 の run(1,171 event)は生成約 8 秒、600(約 2,300 event)は生成約 103 秒(生成 Model の tick の費用が tree の
   大きさの 3〜4 乗で増える)。`a(D) = 3858` を horizon に収める run は予算(`properties` の群 ≤ 5 分)に収まらない。
   `--mode finality` の計測(C75 の判断材料): golden の FinalityLiveness の fixture を native で horizon 100 / 200 / 400 まで畳み込むと 28 ms / 0.4 秒 / 7.4 秒
   (約 4 乗)。全 horizon 33,730 は native でも実行不能。
-- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、12 件): FG root の読みを head の祖先でないブロックに差し替えた `hreadBound`
+- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、17 件): FG root の読みを head の祖先でないブロックに差し替えた `hreadBound`
   (強い形で違反を報告し、期限の前の破れでも run が golden の一覧に無いので分類しない)、同じ壊れた読みで run が golden で一致したと仮定すると
   「期限の前の正常な挙動」に分かれて違反に数えないこと(対照)、期限を 0 round に置いて `a(D)` 以後の読みに破れがある義務は分類しないこと、
   提案の親だけを壊すと提案の義務の経路が違反を報告すること、本物の読みが強い形で判定の経路を通り違反しないこと(対照)、出力の読みを genesis に差し替えた
-  `includedFrom`(confirmed と stable)、3 人中 2 人が byzantine(`BelowOneThird` が破れ、判定ではなく前提不成立に数える)、GST 後にノード 1 へブロックを
+  `includedFrom`(confirmed と stable)、3 人中 2 人が byzantine(`BelowOneThird` と `WindowMajority` が破れ、判定ではなく前提不成立に数える)、
+  honest が round 1 以後すべて眠る(`WindowMajority` が破れ、`includedFrom` は前提不成立)、validator 0 の同じ高さで target の違う 2 行を運ぶ 2 つのブロック
+  (`SlashableBound` が破れる。本物の run では成り立つ対照つき)、`tGST = 6` の run の `RecoveredBy`(証人なしでは `recoveryEnd(tGST, 0)` が horizon を越えて
+  退け、run 自身を source にした証人は horizon が `prefixEnd` に届かないことで退け、`t = 0` は成り立ち、`includedFrom` は前提不成立)、
+  `AgreesUntil` の単体(同じ run どうしは成り立ち、最初の honest の tick を落とした source や honest が小さい source とは成り立たない)、別の seed の run を
+  source にした証人(同じ設定と入力の run でないので最初の項で退ける。回復の枝の証人の経路は固定設定では horizon の項より後ろが実行されないので、
+  `Continues` の前半はこの単体の検体で確かめる)、GST 後にノード 1 へブロックを
   配らない(`PartialSynchrony` が破れる)、整列の崩れた event 列、honest の tick の欠け、生成器の畳み込みと event 列の再畳み込み(`replay`)が同じ世界を与えること。
 - C74(`検査器 = true ↔ 述語` の theorem)はまだ無い(後続の周回。theorem は同じ `Properties` ライブラリに置き、`lake build Properties` が Lake target)。
 

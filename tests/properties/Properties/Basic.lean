@@ -107,7 +107,9 @@ structure RunSpec where
   preGstDelay : Nat := 0
   /-- 負の検体: この honest ノードへは GST 後もブロックを配送しない(`PartialSynchrony` を壊す)。 -/
   dropBlocksTo : Option Nat := none
-deriving Repr
+  /-- 負の検体: honest はこの round 以後すべて眠る(`WindowMajority` を壊す)。 -/
+  asleepFromRound : Option Nat := none
+deriving Repr, BEq
 
 def vid (n : Nat) : Identifiers.ValidatorId := ⟨n⟩
 
@@ -149,7 +151,8 @@ def RunSpec.inputs (sp : RunSpec) : Inputs :=
         else vid (honest.getD (slot % (max nHonest 1)) 0)
       | .honestOnly => vid (honest.getD (slot % (max nHonest 1)) 0)
     awake := fun v round =>
-      if sp.sleepy && round ≥ 1 && !byz.contains v.value then mix sp.seed v.value round % 3 != 0 else true
+      if sp.asleepFromRound.any (· ≤ round) && !byz.contains v.value then false
+      else if sp.sleepy && round ≥ 1 && !byz.contains v.value then mix sp.seed v.value round % 3 != 0 else true
     newRoot := fun v slot => ⟨slot * 8 + v.value + 1⟩ }
 
 /-! ## 時刻の補助(生成 Model の関数の短い名前) -/

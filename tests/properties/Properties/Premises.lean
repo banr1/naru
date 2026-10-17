@@ -158,10 +158,9 @@ partial def registerAncestors (b : NamedBlocks.NamedBlock) (seen : NaruStd.Table
     | .Genesis => (seen', none)
     | .Node p _ _ _ _ _ _ => registerAncestors p seen'
 
-/-- 生成 Statements `Idealization(s, rho)` = `NamedRootCollisionFree`: run の範囲のブロック(配送された payload と honest の bodies。bodies は
-増えるだけなので最後の世界のもの)の祖先の閉包の上で root が単射。 -/
-def idealization (tl : Timeline) : Judge := Id.run do
-  let mut seen : NaruStd.Table Identifiers.BlockId NamedBlocks.NamedBlock := NaruStd.Table.empty
+/-- 生成 Statements `DirectBlockInRun(s, rho, b)` を満たすブロック: 配送された payload(`runObjects`)と honest の bodies(bodies は
+増えるだけなので最後の世界のもの)。 -/
+def directBlocks (tl : Timeline) : List NamedBlocks.NamedBlock := Id.run do
   let mut blocks : List NamedBlocks.NamedBlock := []
   for ev in tl.events do
     match ev with
@@ -170,7 +169,12 @@ def idealization (tl : Timeline) : Judge := Id.run do
   let last := tl.worlds[tl.worlds.size - 1]!
   for v in tl.rho.honest.elems do
     blocks := blocks ++ (nodeIn last v).st.bodies.elems
-  for b in blocks do
+  return blocks
+
+/-- 生成 Statements `Idealization(s, rho)` = `NamedRootCollisionFree`: run の範囲のブロック(`directBlocks`)の祖先の閉包の上で root が単射。 -/
+def idealization (tl : Timeline) : Judge := Id.run do
+  let mut seen : NaruStd.Table Identifiers.BlockId NamedBlocks.NamedBlock := NaruStd.Table.empty
+  for b in tl.directBlocks do
     let (seen', clash) := registerAncestors b seen
     seen := seen'
     if let some r := clash then
@@ -284,7 +288,70 @@ def multiProposerRecurrence (tl : Timeline) (start : Int) (gap : Nat) : Bool :=
 def timeoutDelayBound (tl : Timeline) (extra : Nat) : Bool :=
   tl.setup.cfg.timeoutDelay == (2 + extra) * tl.setup.hc.r
 
+/-- 生成 Statements `AwakeInExactly(s, h, a, b, w)` を満たす唯一の集合 `w`: `h` のうち `[a, b)` のどこかで `envAwake` な validator
+(`AwakeIn` の `exists u: Time` は区間 `[a, b)` の整数で尽くせる)。`Set.of` が正規形にする。 -/
+def awakeIn (tl : Timeline) (a b : Int) : NaruStd.Set Identifiers.ValidatorId :=
+  NaruStd.Set.of (tl.rho.honest.elems.filter fun v =>
+    (intRange a (b - 1)).any fun u => Spec.Interface.envAwake tl.inputs.awake tl.setup v u)
+
+/-- 生成 Statements `WindowMajority(s, rho.honest, window, t)`。存在量化される `members` は `AwakeInExactly` で集合が一意に決まる
+(`awakeIn`)ので、その集合の重みと faulty の重みを比べれば厳密に判定できる(有界版ではない)。 -/
+def windowMajority (tl : Timeline) (window t : Int) : Bool :=
+  let e := tl.setup.e.electorate
+  Weights.weightOf e (Spec.Conditions.faulty tl.setup tl.rho.honest) < Weights.weightOf e (tl.awakeIn (t - window) t)
+
+/-- 生成 Statements `SleepyRegime` の窓の欄: `t0 <= t`、`participationLag(s) <= t`、`t - participationLag(s) <= rho.horizon` の各時刻 `t` で
+`WindowMajority(s, rho.honest, participationWindow(s), t)`。`t` の範囲は `[max(t0, lag), horizon + lag]` で有限なので厳密に判定できる。 -/
+def sleepyWindows (tl : Timeline) (t0 : Int) : Judge :=
+  let s := tl.setup
+  let lag := Spec.Constants.participationLag s
+  let window := Spec.Constants.participationWindow s
+  match (intRange (max t0 lag) (tl.rho.horizon + lag)).find? (fun t => !tl.windowMajority window t) with
+  | some t => Judge.no "WindowMajority" s!"t = {t}: awake honest weight in [{t - window}, {t}) is not above the faulty weight"
+  | none => Judge.ok "WindowMajority"
+
+/-- 生成 Statements `AgreesUntil(source, rho, cut)`: `rho.honest ⊆ source.honest`、`rho` の honest な各 `v` の `time < cut` の event の列が一致。 -/
+def agreesUntil (source rho : Timeline) (cut : Int) : Bool :=
+  let pre (tl : Timeline) (v : Identifiers.ValidatorId) : List Event :=
+    tl.rho.events.filter fun ev => eventNode ev == v && eventTime ev < cut
+  rho.rho.honest.subset source.rho.honest && rho.rho.honest.elems.all fun v => pre rho v == pre source v
+
 end Timeline
+
+/-! ## `SlashableBound` と `RecoveredBy` -/
+
+/-- 生成 Statements `HasSlashableWeightBetween(e, a1, a2)`。存在量化される集合 `w` は、各要素が `SlashableBetween(a1, a2, i)` を満たす
+ことと重みの下限 `HasIntersectionWeight` だけを求め、重みは集合について単調なので、`SlashableBetween` を満たす validator 全体の集合で
+判定すれば厳密。 -/
+def hasSlashableWeightBetween (e : Parameters.ProtocolEnv) (a1 a2 : List Blocks.CombinedAttestation) : Bool :=
+  let ids := a1.filterMap fun a => if a2.any (fun b => a.valIndex == b.valIndex && ChainState.slashable a b) then some a.valIndex else none
+  2 * Parameters.envQ e ≤ Parameters.envW e + Weights.weightOf e.electorate (NaruStd.Set.of ids)
+
+/-- 生成 Statements `SlashableBound(s, rho)` を、run の範囲のブロックの代表 `tips`(名前を消したもの)の組で判定する:
+`InRun(s, rho, c)` は `DirectBlockInRun` のあるブロックの祖先であることで、`chainAttestations` は祖先から子孫へ増え、
+`HasSlashableWeightBetween` は 2 つの attestation 集合について単調なので、`DirectBlockInRun` のブロックのうち他の直接のブロックの
+真の祖先でないもの(`tips`)の組(同じブロックの組を含む)だけを見れば厳密。組は `i <= j` だけを見る: `slashable`(`e1Fields` /
+`e2Fields` / `sameValidator`)は左右対称なので `HasSlashableWeightBetween(a1, a2)` と `(a2, a1)` は同値。 -/
+def slashableBoundOn (s : Setup.Setup) (tips : List Blocks.Block) : Judge := Id.run do
+  let ats := tips.map fun b => (Evidence.chainAttestations b).elems
+  for i in [0:tips.length] do
+    for j in [i:tips.length] do
+      if hasSlashableWeightBetween s.e ats[i]! ats[j]! then
+        return Judge.no "SlashableBound" s!"slashable weight between the chain attestations of blocks {(Blocks.root tips[i]!).value} and {(Blocks.root tips[j]!).value}"
+  return Judge.ok "SlashableBound"
+
+/-- 名前付きブロックの真の祖先(genesis を含む)。 -/
+def properAncestors : NamedBlocks.NamedBlock → List NamedBlocks.NamedBlock
+  | .Genesis => []
+  | .Node p _ _ _ _ _ _ => p :: properAncestors p
+
+/-- run の `DirectBlockInRun` のブロックから、重複と他の直接のブロックの真の祖先を除いたもの(名前を消す)。 -/
+def Timeline.blockTips (tl : Timeline) : List Blocks.Block := Id.run do
+  let direct := tl.directBlocks.eraseDups
+  let below := (direct.flatMap properAncestors).eraseDups
+  return (direct.filter fun b => !below.contains b).map NamedBlocks.eraseBlock
+
+def Timeline.slashableBound (tl : Timeline) : Judge := slashableBoundOn tl.setup tl.blockTips
 
 /-- 1 つの run の前提の判定の束。 -/
 structure Premises where
@@ -299,6 +366,10 @@ structure Premises where
   allAwake : Judge
   honestCommittees : Judge
   belowOneThird : Judge
+  /-- `SleepyRegime` の窓の欄(`t0 = 0` から。`WindowMajority`)。 -/
+  windows : Judge
+  /-- `SlashableBound(s, rho)`。 -/
+  slashable : Judge
   /-- GST から始まる `MultiProposerRecurrence` が成り立つ最小の gap(1 … 3)。 -/
   recurrenceGap : Option Nat
 
@@ -306,7 +377,7 @@ def Premises.of (tl : Timeline) : Premises :=
   { setup := tl.setupWellFormed, runDomain := tl.runDomain, schedule := tl.scheduleWellFormed, delivery := tl.deliveryWellFormed,
     unforgeable := tl.unforgeable, idealization := tl.idealization, partialSync := tl.partialSynchrony,
     fullParticipation := tl.fullParticipation, allAwake := tl.allAwakeRounds, honestCommittees := tl.honestCommittees,
-    belowOneThird := tl.belowOneThird,
+    belowOneThird := tl.belowOneThird, windows := tl.sleepyWindows 0, slashable := tl.slashableBound,
     recurrenceGap := [1, 2, 3].find? fun gap => tl.multiProposerRecurrence tl.setup.e.tGST gap }
 
 /-- 生成 Statements `ExecutionValid(s, rho)`。 -/
@@ -315,7 +386,55 @@ def Premises.executionValid (p : Premises) : Bool :=
 
 def Premises.render (p : Premises) : String :=
   " ".intercalate ([p.setup, p.runDomain, p.schedule, p.delivery, p.unforgeable, p.idealization, p.partialSync, p.fullParticipation,
-                    p.allAwake, p.honestCommittees, p.belowOneThird].map Judge.render)
+                    p.allAwake, p.honestCommittees, p.belowOneThird, p.windows, p.slashable].map Judge.render)
     ++ s!" MultiProposerRecurrence(gap)={match p.recurrenceGap with | some g => toString g | none => "none"}"
+
+/-- `RecoveredBy` の回復の枝の存在量化(`source`・`t0`・`gap`)に、run の生成側が与える証人。 -/
+structure RecoveryWitness where
+  source : Timeline
+  t0 : Int
+  gap : Nat
+
+/-- 生成 Statements `RecoveredBy(s, rho, t)`: genesis の枝 `t == 0`、または回復の枝(`RunDomain(s, source)`・
+`RecoveryRegime(s, source, t0', gap)`・`Continues(source, rho, prefixEnd(s, t0', gap), recoveryEnd(s, t0', gap))`・`SlashableBound(s, rho)`・
+`t == recoveryEnd(s, t0', gap)`)。回復の枝は生成側の証人 `w` で判定し、探索しない(`検査器 = true → 述語` の向き)。
+証人が無くても回復の枝が成り立たないと言える場合は厳密に退ける: `Continues` は `recoveryEnd(s, t0', gap) <= rho.horizon` を求め、
+`RecoveryRegime` の `BFTRegime` は `tGST <= t0'` を求め、`recoveryEnd` は `t0'` と `gap` について単調(`roundAt` と
+`boundedPhaseStartLag` が単調)なので、`rho.horizon < recoveryEnd(s, tGST, 0)` ならどの `source`・`t0'`・`gap` でも成り立たない。
+`slashable` は `rho` の `SlashableBound`(`Premises.slashable`)。証人の `source` は `rho` と同じ `s` と同じ入力のインタフェースの下の run で
+なければならない(生成 Statements の `RecoveredBy` は同じ `s` と input を量化の外に持つ)ので、run の記述が名前と horizon を除いて等しいことを
+先に確かめる。証人が無く `rho.horizon >= recoveryEnd(s, tGST, 0)` の run は回復の枝の成否が決まらないが前提不成立に数える(保守的。固定設定には無い)。 -/
+def Timeline.recoveredBy (tl : Timeline) (slashable : Judge) (t : Int) (w : Option RecoveryWitness) : Judge := Id.run do
+  let s := tl.setup
+  if t == 0 then return Judge.ok "RecoveredBy"
+  let lower := Spec.Constants.recoveryEnd s s.e.tGST 0
+  match w with
+  | none =>
+    if tl.rho.horizon < lower then
+      return Judge.no "RecoveredBy" s!"t = {t} is not 0 (genesis), and the recovered branch needs recoveryEnd(t0', gap) <= horizon {tl.rho.horizon}, but recoveryEnd(t0', gap) >= recoveryEnd(tGST, 0) = {lower} for every t0' >= tGST and gap"
+    return Judge.no "RecoveredBy" s!"t = {t} is not 0 (genesis), and the generator gives no source run for the recovered branch"
+  | some w =>
+    let src := w.source
+    let ps := Premises.of src
+    let pEnd := Spec.Constants.prefixEnd s w.t0 w.gap
+    let rEnd := Spec.Constants.recoveryEnd s w.t0 w.gap
+    -- source の `RecoveryRegime(s, source, t0', gap)` = `BFTRegime(s, source, t0')` ∧ `MultiProposerRecurrence(s, source, tGST, gap)` ∧
+    -- `source.horizon == prefixEnd(s, t0', gap)`
+    return firstFailure "RecoveredBy"
+      [ (src.setup == s && { src.spec with name := tl.spec.name, horizon := tl.spec.horizon } == tl.spec,
+          "source: not a run of the same setup and inputs (the run description differs beyond its name and horizon)"),
+        (ps.runDomain.holds, s!"source: {ps.runDomain.render}"),
+        (ps.executionValid, "source: ExecutionValid"),
+        (ps.partialSync.holds, s!"source: {ps.partialSync.render}"),
+        (s.e.tGST ≤ w.t0, s!"source: tGST > t0' = {w.t0}"),
+        (ps.honestCommittees.holds, s!"source: {ps.honestCommittees.render}"),
+        (ps.belowOneThird.holds, s!"source: {ps.belowOneThird.render}"),
+        (ps.fullParticipation.holds, s!"source: {ps.fullParticipation.render}"),
+        (src.multiProposerRecurrence s.e.tGST w.gap, s!"source: MultiProposerRecurrence(tGST, {w.gap}) fails"),
+        (src.rho.horizon == pEnd, s!"source: horizon {src.rho.horizon} != prefixEnd(t0', gap) = {pEnd}"),
+        (Timeline.agreesUntil src tl pEnd, "Continues: the honest events before prefixEnd differ from the source"),
+        (rEnd ≤ tl.rho.horizon, s!"Continues: recoveryEnd(t0', gap) = {rEnd} > horizon {tl.rho.horizon}"),
+        (slashable.holds, s!"SlashableBound: {slashable.reason}"),
+        (t == rEnd, s!"t = {t} != recoveryEnd(t0', gap) = {rEnd}") ]
 
 end Properties

@@ -82,13 +82,54 @@ def negatives : List Negative := Id.run do
   let v2s := includedFrom tlS pS .Stable (Spec.Constants.stableInclusionDelay tlS.setup) (readOut := fun _ _ _ => .Genesis)
   out := out ++ [⟨"includedFrom(stable)(corrupted output read)", v2s.violations > 0 && v2s.judged == 0,
                   s!"judged {v2s.judged} violations {v2s.violations}"⟩]
-  -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird が破れ、判定ではなく前提不成立に数える
+  -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
+  --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }
   let p3 := Premises.of tl3
   let v3 := includedFrom tl3 p3 .Confirmed (Spec.Constants.confirmationDelay tl3.setup)
   let v3h := hreadBound tl3 p3 (deadlineRounds := some 0)
-  out := out ++ [⟨"byzantine beyond one third", !p3.belowOneThird.holds && v3.judged == 0 && v3.unmet > 0 && v3h.judged == 0 && v3h.unmet > 0,
-                  s!"{p3.belowOneThird.render}; includedFrom judged {v3.judged} unmet {v3.unmet}; hreadBound judged {v3h.judged} unmet {v3h.unmet}"⟩]
+  out := out ++ [⟨"byzantine beyond one third", !p3.belowOneThird.holds && !p3.windows.holds && v3.judged == 0 && v3.unmet > 0 && v3h.judged == 0 && v3h.unmet > 0,
+                  s!"{p3.belowOneThird.render} {p3.windows.render}; includedFrom judged {v3.judged} unmet {v3.unmet}; hreadBound judged {v3h.judged} unmet {v3h.unmet}"⟩]
+  -- 3b. honest が round 1 以後すべて眠る(horizon 40 + lag 12 までの窓 [t − 24, t) が t >= 42 で全員眠る): SleepyRegime の窓の欄(WindowMajority)が破れ、includedFrom は前提不成立に数える
+  let tl3w := generate { baseSpec with name := "negative-asleep", asleepFromRound := some 1 }
+  let p3w := Premises.of tl3w
+  let v3w := includedFrom tl3w p3w .Confirmed (Spec.Constants.confirmationDelay tl3w.setup)
+  out := out ++ [⟨"WindowMajority broken (honest asleep)", !p3w.windows.holds && v3w.judged == 0 && v3w.unmet > 0,
+                  s!"{p3w.windows.render}; includedFrom judged {v3w.judged} unmet {v3w.unmet}"⟩]
+  -- 3c. SlashableBound: validator 0 の同じ高さで target の違う 2 行(E2)を運ぶ 2 つのブロック。重み 1 は 2q − W = 1 に届くので
+  --     slashable な証拠があり、判定器が捉える。本物の run(対照)は成り立つ
+  let row (target : Nat) : Blocks.CombinedAttestation := ⟨vid 0, 1, none, .Target 1 ⟨target⟩, none⟩
+  let blockWith (r : Nat) : Blocks.Block := .Node .Genesis 1 ⟨r⟩ [] [] [row r] (vid 0)
+  let js := slashableBoundOn tl.setup [blockWith 501, blockWith 502]
+  out := out ++ [⟨"SlashableBound(conflicting height targets)", !js.holds && p.slashable.holds,
+                  s!"{js.render}; control on the genuine run: {p.slashable.render}"⟩]
+  -- 3d. RecoveredBy の回復の枝: tGST > 0 の run では genesis の枝(t = 0)が SleepyRegime の tGST <= t0 と両立せず、回復の枝は
+  --     recoveryEnd(tGST, 0) が horizon を越えるのでどの証人でも成り立たない(証人なしで退ける)。証人を与えた経路は source の
+  --     horizon が prefixEnd に届かないことで退ける
+  let evs0 := tl.events.toList
+  let tlG := generate { baseSpec with name := "negative-gst", gst := 6, preGstDelay := 2 }
+  let pG := Premises.of tlG
+  let lower := Spec.Constants.recoveryEnd tlG.setup tlG.setup.e.tGST 0
+  let rNo := tlG.recoveredBy pG.slashable lower none
+  let rW := tlG.recoveredBy pG.slashable lower (some ⟨tlG, tlG.setup.e.tGST, 1⟩)
+  let vG := includedFrom tlG pG .Confirmed (Spec.Constants.confirmationDelay tlG.setup)
+  -- 3e. AgreesUntil(source, rho, cut)(Continues の前半。証人の経路は固定設定では horizon の項で止まるので単体で確かめる): 同じ run どうしは
+  --     成り立ち、honest の最初の tick を落とした source とは cut がその後なら成り立たず、rho の honest が source の honest に含まれないと成り立たない
+  let cut : Int := 20
+  let dropped := replay baseSpec (evs0.drop 1)
+  let fewer : Timeline := { tl with rho := ⟨NaruStd.Set.of [vid 0], tl.rho.horizon, tl.rho.events⟩ }
+  let a1 := Timeline.agreesUntil tl tl cut
+  let a2 := Timeline.agreesUntil dropped tl cut
+  let a3 := Timeline.agreesUntil fewer tl cut
+  out := out ++ [⟨"AgreesUntil(prefix agreement of the recovered branch)", a1 && !a2 && !a3,
+                  s!"same run {a1}; source without the first honest tick {a2}; rho.honest not within source.honest {a3}"⟩]
+  -- 3f. 証人の source は同じ記述(名前と horizon を除く)の run でなければならない: 別の seed の run を source にすると最初の項で退ける
+  let other := generate { baseSpec with name := "negative-gst-other", seed := 99, gst := 6, preGstDelay := 2 }
+  let rO := tlG.recoveredBy pG.slashable lower (some ⟨other, tlG.setup.e.tGST, 1⟩)
+  out := out ++ [⟨"RecoveredBy(source of another run description)", !rO.holds && (rO.reason.splitOn "same setup and inputs").length > 1, rO.render⟩]
+  out := out ++ [⟨"RecoveredBy(recovered branch out of reach)", !rNo.holds && !rW.holds && (tlG.recoveredBy pG.slashable 0 none).holds
+                    && vG.judged == 0 && vG.unmet > 0,
+                  s!"without a witness: {rNo.render}; with the run itself as the source: {rW.render}; includedFrom judged {vG.judged} unmet {vG.unmet}"⟩]
   -- 4. GST 後の配送の差し控え(ノード 1 へブロックを配らない): PartialSynchrony が破れる
   let tl4 := generate { baseSpec with name := "negative-withheld-blocks", dropBlocksTo := some 1 }
   let p4 := Premises.of tl4
@@ -96,7 +137,7 @@ def negatives : List Negative := Id.run do
   out := out ++ [⟨"withheld block delivery after GST", !p4.partialSync.holds && v4.judged == 0 && v4.unmet > 0,
                   s!"{p4.partialSync.render}; includedFrom judged {v4.judged} unmet {v4.unmet}"⟩]
   -- 5. 整列の崩れ: 先頭の event(時刻 0 の tick)を末尾に移す
-  let evs := tl.events.toList
+  let evs := evs0
   let swapped := match evs with
     | a :: rest => rest ++ [a]
     | _ => evs

@@ -227,18 +227,37 @@ def outputLabel : Spec.Interface.Output → String
 /-- `IncludedFrom(s, rho, g, t0, d)` の検査器(生成 Statements `Statements.Consensus.Spec.Properties.IncludedFrom`)。
 `t0 < proposalTime(k)`、`proposer(k)` が honest、`proposalTime(k) + d <= horizon` の各 slot `k` について、`proposedBlock(s, rho, k)` が
 `Some(b)` で、`InBy(s, rho, g, b, proposalTime(k) + d)`(honest な全 `v` で `preceq(b, outputAt(g, s, rho, v, …))`)。期限が horizon を越える slot は判定外。
-前提は claim `available` の `SleepyRegime(s, rho, t0)` を、この周回は BFT の形(`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧
-`HonestCommittees` ∧ `BelowOneThird` ∧ `FullParticipation`)と `RecoveredBy` の genesis の枝(`t0 = 0`)で判定する(`WindowMajority` /
-`RecoveredBy` の回復の枝の有界版は後続の周回)。`t0 = 0` を取るので `tGST > 0` の run は前提不成立(回復の枝を判定しないため)。
+前提は claim `available` の `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `SleepyRegime(s, rho, t0)` の本来の形の有界版:
+`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧ 窓の欄(`t0` 以後の各時刻の `WindowMajority`。`Timeline.sleepyWindows`)∧
+`RecoveredBy(s, rho, t0)`(genesis の枝 `t0 = 0`、または回復の枝。`Timeline.recoveredBy`)。`BelowOneThird` / `FullParticipation` は `SleepyRegime` に無いので見ない。
+自由変数 `t0` は run ごとに、genesis の枝の `0` と、生成側が回復の枝の証人 `recovery` を与えたときのその `recoveryEnd(s, t0', gap)` を列挙し、
+前提が成り立つ最初の値で判定する(どれも成り立たなければ、`proposalTime(k) > 0` の honest な提案の slot を前提不成立に数える)。
+回復の枝の証人(`source` の horizon は `prefixEnd(s, t0', gap)`)は、最小の設定でも `prefixEnd` が数千の時刻で生成の予算に収まらないので
+固定設定では与えない。`tGST > 0` の run は genesis の枝で `tGST <= 0` を満たさず、回復の枝は `rho.horizon < recoveryEnd(s, tGST, 0)` で
+どの証人でも成り立たないことを `recoveredBy` が厳密に退けるので前提不成立になる(理由は診断の行)。
 `readOut` は負の検体のための差し替え。 -/
 def includedFrom (tl : Timeline) (p : Premises) (g : Spec.Interface.Output) (delay : Int)
-    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt) : Verdict := Id.run do
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict := Id.run do
   let s := tl.setup
   let I := tl.inputs
   let horizon := tl.rho.horizon
-  let t0 : Int := 0
-  let premiseOk := p.setup.holds && p.runDomain.holds && p.executionValid && p.partialSync.holds && s.e.tGST ≤ t0
-    && p.honestCommittees.holds && p.belowOneThird.holds && p.fullParticipation.holds
+  -- `SleepyRegime(s, rho, t0)` を 1 つの t0 で判定する(最初の不成立の理由)
+  let sleepy (t0 : Int) : Judge :=
+    let windows := if t0 == 0 then p.windows else tl.sleepyWindows t0
+    let base := firstFailure "SleepyRegime"
+      [ (p.setup.holds, p.setup.render), (p.runDomain.holds, p.runDomain.render),
+        (p.executionValid, "ExecutionValid"), (p.partialSync.holds, p.partialSync.render),
+        (s.e.tGST ≤ t0, s!"tGST {s.e.tGST} > t0 = {t0}"), (p.honestCommittees.holds, p.honestCommittees.render),
+        (windows.holds, windows.render) ]
+    if !base.holds then base else
+      let r := tl.recoveredBy p.slashable t0 recovery
+      if r.holds then base else Judge.no "SleepyRegime" r.render
+  let candidates : List Int := 0 :: (recovery.map fun w => Spec.Constants.recoveryEnd s w.t0 w.gap).toList
+  let judged := candidates.map fun t0 => (t0, sleepy t0)
+  let chosen := judged.find? (·.2.holds)
+  let premiseOk := chosen.isSome
+  let t0 : Int := (chosen.map (·.1)).getD 0
   let honest := tl.rho.honest.elems
   let mut out : Verdict := { name := s!"includedFrom({outputLabel g})" }
   for k in List.range (maxSlot s horizon + 1) do
@@ -254,6 +273,14 @@ def includedFrom (tl : Timeline) (p : Premises) (g : Spec.Interface.Output) (del
           | none => out := { out with judged := out.judged + 1 }
           | some v =>
             out := out.note s!"includedFrom({outputLabel g}): the honest proposal of slot {k} (root {(Blocks.root b).value}) is not in the {outputLabel g} read of {v.value} at t = {t} (root {(Blocks.root (readOut g v t)).value})"
-  return { out with diag := some s!"delay {delay}, t0 = {t0}" }
+  let premiseDiag := match chosen with
+    | some (t0, _) => s!"SleepyRegime holds at t0 = {t0}"
+    | none =>
+      -- t0 > 0 は回復の枝でしか `RecoveredBy` を満たさない。証人が無ければ、その枝がどの証人でも成り立たないかを示す
+      let recovered := if recovery.isSome then "" else
+        let r := tl.recoveredBy p.slashable (Spec.Constants.recoveryEnd s s.e.tGST 0) none
+        s!"; every t0 > 0 needs the recovered branch: {r.reason}"
+      "SleepyRegime fails for every t0 candidate: " ++ "; ".intercalate (judged.map fun (q : Int × Judge) => s!"t0 = {q.1}: {q.2.reason}") ++ recovered
+  return { out with diag := some s!"delay {delay}, t0 = {t0}; {premiseDiag}" }
 
 end Properties

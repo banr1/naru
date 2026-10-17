@@ -36,7 +36,9 @@ def expectedNegatives : List String :=
     "hreadBound(strong-form violation at or after the deadline is not classified)", "hreadBound(corrupted proposal parent)",
     "hreadBound(control: genuine read, strong form)",
     "includedFrom(confirmed)(corrupted output read)",
-    "includedFrom(stable)(corrupted output read)", "byzantine beyond one third", "withheld block delivery after GST", "unsorted events",
+    "includedFrom(stable)(corrupted output read)", "byzantine beyond one third", "WindowMajority broken (honest asleep)",
+    "SlashableBound(conflicting height targets)", "RecoveredBy(recovered branch out of reach)",
+    "AgreesUntil(prefix agreement of the recovered branch)", "RecoveredBy(source of another run description)", "withheld block delivery after GST", "unsorted events",
     "missing honest tick", "replay agrees with generation" ]
 
 /-- `Properties` の import 閉包に許すモジュールのルート(生成 Model・NaruStd・Lean 本体だけ。mathlib・`Proofs`・`NaruSem`・コンパイラ・`NaruTest`・手書きは不可)。 -/
@@ -149,6 +151,29 @@ def checks : M Unit := do
       if reasons == n then ok s!"checker {name}: strong-form violations classified as pre-deadline normal behaviour: {n} (reported separately with run, proposition and reason; not counted as violations)"
       else fail s!"checker {name}: {n} classified strong-form violation(s) but {reasons} reported reason line(s)"
     | none => fail s!"checker {name}: no `classified` total line for the strong form"
+  -- 5b. includedFrom の前提は SleepyRegime の本来の形(WindowMajority の窓の欄と RecoveredBy。BFT の形の十分条件ではない): sleepy の run は
+  --     FullParticipation が破れても前提を満たして判定され、tGST > 0 の run は回復の枝がどの証人でも成り立たない理由を診断に出す
+  let mut cur2 := ""
+  let mut sleepyJudged := 0
+  let mut sleepyFullNo := false
+  let mut recoveredDiag := 0
+  let mut gstRuns := 0
+  for l in lines do
+    if l.startsWith "run " then
+      cur2 := ((l.drop 4).toString.splitOn ":").head!
+      if !(has l "gst 0,") then gstRuns := gstRuns + 1
+    else if cur2 == "h4-sleepy-equivocate" && l.startsWith "  premises: " then
+      sleepyFullNo := has l "FullParticipation=NO" && has l "WindowMajority=ok"
+    else if cur2 == "h4-sleepy-equivocate" && l.startsWith "  checker includedFrom(" then
+      if let some (_, j, _, _, _) := parseChecker l then sleepyJudged := sleepyJudged + j
+    else if l.startsWith "  diag includedFrom(" && has l "every t0 > 0 needs the recovered branch" && has l "recoveryEnd(tGST, 0) = " then
+      recoveredDiag := recoveredDiag + 1
+  if sleepyFullNo && sleepyJudged ≥ 1 then
+    ok s!"includedFrom judges the premise SleepyRegime in its own form: the sleepy run breaks FullParticipation but meets WindowMajority and is judged ({sleepyJudged} case(s))"
+  else fail s!"includedFrom on the sleepy run: FullParticipation=NO and WindowMajority=ok {sleepyFullNo}, judged {sleepyJudged} (expected >= 1)"
+  if gstRuns ≥ 1 && recoveredDiag == 2 * gstRuns then
+    ok s!"includedFrom reports why the recovered branch of RecoveredBy fails for every witness in the {gstRuns} run(s) with tGST > 0"
+  else fail s!"includedFrom: {recoveredDiag} diagnostic line(s) on the recovered branch for {gstRuns} run(s) with tGST > 0 (expected 2 per run)"
   -- 6. 負の検体
   for n in expectedNegatives do
     match lines.find? (·.startsWith s!"negative {n}:") with
