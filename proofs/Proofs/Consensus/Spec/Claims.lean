@@ -44,6 +44,7 @@ import Proofs.Consensus.AttestationSource
 import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.RootEntry
 import Proofs.Consensus.RootWitness
+import Proofs.Consensus.GradeSupporter
 import Mathlib.Tactic
 
 /-!
@@ -276,6 +277,7 @@ chain 状態に移した(務めの FG source `q` と FG root 自身の `(chainSt
 周回 193 の足場: その読みの時刻が 0 以上 horizon 以下の `RootWitness.grade2CandidateAt_domainTime_bounds_of_emits` と、担い手の前提に horizon の守りと tree への所属を足した `RootWitness.grade2CandidateAt_preceq_carrier_horizon_of_emits` を足した。
 周回 194 の足場: 務めの SG block `RootWitness.sgBlockAt` と担い手 `RootWitness.HonestWindowCarrierAt` を置き、担い手をそれに置いた `RootWitness.grade2CandidateAt_preceq_honestWindowCarrier_of_emits` を足した。
 周回 195 の足場: 担い手の行の `confirmed` を開く `RootWitness.honestWindowCarrierAt_confirmed` と、grade 2 の候補が窓の round の honest な行の `confirmed` の祖先 `RootWitness.grade2CandidateAt_preceq_windowConfirmed_of_emits` を足した。
+周回 196 の足場: grade の通った block には honest な支持者がいること(手書き `q20_graded_has_honest_supporter`)を `GradeSupporter.phase_graded_has_honest_supporter` として足した。
 残るのは `SleepyRegime` の下で `HonestSupport` の `vote` を示すこと(honest な committee の要素は `voteTime` に投票を発行し(投票者・slot まで `Voting.lean`)、その投票の head は
 `stateBefore i` の発行者の store に時計を合わせたものの fork choice の head で(`Voting.emits_gfVote_head`)、
 その head が honest な提案 `B` を延ばして slot が `s` 以下で、`ExecutionValid` / `PartialSynchrony` で投票とブロック `B` が honest な全ノードに

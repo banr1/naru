@@ -105,8 +105,10 @@ import Mathlib.Tactic
 26. 担い手の行の `confirmed` は担い手の根(`EventsNodup` の下で `honestWindowCarrierAt_confirmed`)。25 の結論を、窓の round の
    honest な行 `row2` で `row2.confirmed = some (root Y)` かつ `q ⪯ Y` の形に開いた
    (`grade2CandidateAt_preceq_windowConfirmed_of_emits`。周回 195)。
-   `RelativeGradeCarrierAt` を awake の窓の多数派と `hsg` から作る(手書き
-   `relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`)のは次の段。
+
+`RelativeGradeCarrierAt` を awake の窓の多数派と `hsg` から作る(手書き
+`relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`)のは次の段。その数え上げの核(grade の通った block には honest な
+支持者がいる。手書き `q20_graded_has_honest_supporter`)は `GradeSupporter.lean` にある(周回 196)。
 
 手書きでは `HealingSurface.processedJustification_confirmationWitness`(`Protocol/ChainState/FGRootWitness.lean`)の、
 根の単射で入口の checkpoint と FG root の名前付きブロックを同一視するところに当たる。
@@ -1617,8 +1619,9 @@ def HonestWindowCarrierAt (r : Nat) (Y : Block) : Prop :=
 
 /-- **grade の担い手の性質**: round `r` の phase `ph` の domain 時刻の読みで、honest な `w` の store の `gradeBool` が真の
 block `B` には、窓の round の honest な行の SG block `Y`(`HonestWindowCarrierAt r`)があって `B ⪯ Y`。手書き
-`RelativeGradeCarrierAt`(`Protocol/Grades/RelativeOneChain.lean`)に当たる(周回 194)。窓は読みの round `r` 自身の
-`latestWindow etaSG r`(手書きの `RelativeCarrierWindowAt` は `r + 1` で読む。周回 194 の reviewer の所見 B。周回 195)。 -/
+`RelativeGradeCarrierAt`(`Protocol/Grades/RelativeOneChain.lean`)に当たる(周回 194)。窓は手書きの
+`RelativeGradeCarrierAt` と同じく読みの round `r` 自身の `latestWindow etaSG r`。手書きの `RelativeCarrierWindowAt` は、
+引数 `r` の round の担い手を `r + 1` の phase の読みで述べる(周回 194 の reviewer の所見 B。周回 195 / 196)。 -/
 def RelativeGradeCarrierAt (r : Nat) (ph : Model.Consensus.Protocol.Grades.GradePhase) : Prop :=
   ∀ w ∈ rho.honest.elems, ∀ B : Block,
     Model.Consensus.Protocol.Grades.gradeBool s.e
