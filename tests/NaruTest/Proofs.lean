@@ -36,7 +36,7 @@ import NaruTest.Statements
   `### 穴の一覧` の行数と一致し、各一致箇所が `sorry` だけの行(穴の本体)で、含む theorem が一覧の theorem と一対一に対応し、その docstring が手書きの宣言名・
   ファイル・「閉じるのに要る」依存を書くこと、一覧の各行の義務が骨格の 7 件(`skeletonObligations`)のどれかで、手書きの宣言名がそのファイル
   (`third_party/verified-consensus/` からの相対)に実在し、置いた周回が数であることを確かめる。ホームの `naru proofs --json` の consensus の状況は
-  proved / sorry / missing だけ(stale / invalid 0、sorry は骨格の 7 件だけ。まだ置いていない義務の missing は許す)で、置いた義務の theorem の
+  proved / sorry だけ(missing / stale / invalid 0、sorry は骨格の 7 件だけ。骨格は周回 212 で 7 件すべて置いた)で、置いた義務の theorem の
   `#print axioms`(`lake env lean` で読む)が `propext` / `Classical.choice` / `Quot.sound` / `sorryAx` の部分集合、`sorryAx` に依存する義務は proved でない。
   HEAD の `proofs/README.md` の一覧との差(除いた数・足した数)を 1 行で表示する(FAIL の条件にしない)。
 - 最後にホームで `lake exe naru compile` と `lake exe naru proofs` を走らせ、Lake が読む link を元に戻す。
@@ -623,9 +623,9 @@ def checkHoles (proofsDir : System.FilePath) (results : List (String × String))
   let sorryOutside := results.filter fun (n, st) => st == "sorry" && !(skeletonObligations.contains n)
   let placed := skeletonObligations.filter fun n => (results.lookup n).any (· != "missing")
   let missing := results.filter fun (_, st) => st == "missing"
-  if staleOrInvalid.isEmpty && sorryOutside.isEmpty then
-    ok s!"C76 progress: the consensus obligations are proved / sorry / missing only (stale / invalid 0; sorry only on the skeleton obligations); skeleton placed for {placed.length} of {skeletonObligations.length} ({placed}), {missing.length} still missing"
-  else fail s!"C76: stale / invalid {staleOrInvalid}, sorry outside the skeleton obligations {sorryOutside}"
+  if staleOrInvalid.isEmpty && sorryOutside.isEmpty && missing.isEmpty && placed.length == skeletonObligations.length then
+    ok s!"C76: the {results.length} consensus obligations are proved or sorry only (missing / stale / invalid 0; sorry only on the skeleton obligations); skeleton placed for all {placed.length} of {skeletonObligations.length}"
+  else fail s!"C76: missing {missing.map (·.1)}, stale / invalid {staleOrInvalid}, sorry outside the skeleton obligations {sorryOutside}; skeleton placed for {placed.length} of {skeletonObligations.length}"
   -- 公理監査: 置いた義務の theorem の `#print axioms`
   let declared := (results.filter fun (_, st) => st != "missing").map (·.1)
   let script := "import Proofs\n" ++ String.join (declared.map fun n => s!"#print axioms Proofs.{n}\n")

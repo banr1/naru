@@ -6,6 +6,12 @@
 -- naru-obligation: Consensus.Spec.Claims.finalizedSafe sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.honestNeverSlashed sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.available sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.confirmedLive sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.stableLive sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.stableIncludedFast sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.finalized sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.stableAsynchronyResilient sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.Consensus sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Constants
 import Proofs.Consensus.Nested
@@ -47,6 +53,9 @@ import Proofs.Consensus.RootEntry
 import Proofs.Consensus.RootWitness
 import Proofs.Consensus.GradeSupporter
 import Proofs.Consensus.AvailableHoles
+import Proofs.Consensus.StableIncludedFastHoles
+import Proofs.Consensus.FinalizedHoles
+import Proofs.Consensus.PersistsHoles
 import Mathlib.Tactic
 
 /-!
@@ -78,10 +87,14 @@ E1 の slashable(`Slashing.lean`)、消去と `chainAttestations` の所属(`Nam
 carried)で、`v` の 2 つの発行の消去は slashable でない(`EmissionSafety.lean`: validator client の記録 `Record` の性質
 (`Records.lean`: target は書き込み 1 回、lock / timeout は増えるだけ、`LockCompatible` / `FinalitySafeAt`)と、記録を書くのは自分の tick の
 `namedCreate` だけであること(`Signing.lean`)から、同じ高さに名指す target は等しく finality pair と timeout は両立しない))。
-`available` は骨格(周回 211。`Proofs/Consensus/AvailableHoles.lean` の 5 つの穴に依存し、`lake exe naru proofs` は未証明(下書き)と表示する)。
-残りの 5 claims と bundle `Consensus` は未証明(`missing`)。穴の一覧は `proofs/README.md` の「骨格と穴」。手書き証明
+残りの 6 claims と bundle `Consensus` は骨格(IDEAL.md C76。`lake exe naru proofs` は未証明(下書き)と表示する):
+`available`(周回 211。`Proofs/Consensus/AvailableHoles.lean` の 5 つの穴)、`confirmedLive` / `stableLive`(周回 212。固有の穴を持たず、
+`Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で `available` の入口 `availableAt` に繋ぐ)、
+`stableIncludedFast`(周回 212。`Proofs/Consensus/StableIncludedFastHoles.lean` の穴 2 つと `available` の穴 `confirmedIncluded`)、`finalized`(周回 212。`Proofs/Consensus/FinalizedHoles.lean` の
+穴 1 つと証明済みの `finalizedLive_of_included`)、`stableAsynchronyResilient`(周回 212。`Proofs/Consensus/PersistsHoles.lean` の穴 1 つ)、
+bundle `Consensus`(周回 212。13 件の theorem を項目に置き、固有の穴を持たない)。穴の一覧は `proofs/README.md` の「骨格と穴」。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
-liveness 系の claim の共有の足場(周回 127。theorem はまだ無い): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`
+liveness 系の claim の共有の足場(周回 127。周回 212 から骨格の theorem が使う): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`
 (包含 `IncludedFrom` + 単調 `MonotoneFrom` + 未来の提案の不在 `NoFutureRead` + 再発 → 活性 `LiveFrom`)と、
 `confirmedLive_of_available` / `stableLive_of_available`(claim `available` の結論 `AvailableAt` から `confirmedLive` / `stableLive` の結論)、
 `finalizedLive_of_included`(finalized の包含から `finalized` の活性)。`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の
@@ -357,3 +370,74 @@ theorem Proofs.Consensus.Spec.Claims.available : ∀ (committee' : (Nat → (Nar
   intro h
   obtain ⟨⟨hwf, hdom⟩, hsleep⟩ := h
   exact Proofs.Consensus.AvailableHoles.availableAt committee' proposer' awake' newRoot' s rho t0 hwf hdom hsleep
+
+/-- claim `confirmedLive`(骨格): `SetupWellFormed ∧ RunDomain ∧ LiveSleepyRegime t0 gap` の下で、confirmed の読みが遅れ `growthDelay` で伸び続ける。
+`LiveSleepyRegime` の `SleepyRegime` で `available` の入口 `AvailableHoles.availableAt` を当て、その結論から `Liveness.confirmedLive_of_available` で出す
+(固有の穴を持たない)。手書き `concreteConsensus` の `confirmedLive` の枝(`available_confirmedSafe` / `available_confirmedIncluded` と
+`liveFrom_of_includedFrom`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.confirmedLive : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.confirmedLive committee' proposer' awake' newRoot' «s» «rho» «t0» «gap» := by
+  intro committee' proposer' awake' newRoot' s rho t0 gap
+  unfold Statements.Consensus.Spec.Claims.confirmedLive
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hreg⟩ := h
+  have hav := Proofs.Consensus.AvailableHoles.availableAt committee' proposer' awake' newRoot' s rho t0 hwf hdom hreg.1
+  exact Proofs.Consensus.Liveness.confirmedLive_of_available committee' proposer' awake' newRoot' s rho t0 gap hwf hreg hav
+
+/-- claim `stableLive`(骨格): `SetupWellFormed ∧ RunDomain ∧ LiveSleepyRegime t0 gap` の下で、stable の読みが遅れ `stableGrowthDelay` で伸び続ける。
+`confirmedLive` と同じく `availableAt` の結論から `Liveness.stableLive_of_available` で出す(固有の穴を持たない)。
+手書き `concreteConsensus` の `stableLive` の枝(`available_stableSafe` / `available_stableIncluded_any` と `liveFrom_of_includedFrom`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.stableLive : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.stableLive committee' proposer' awake' newRoot' «s» «rho» «t0» «gap» := by
+  intro committee' proposer' awake' newRoot' s rho t0 gap
+  unfold Statements.Consensus.Spec.Claims.stableLive
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hreg⟩ := h
+  have hav := Proofs.Consensus.AvailableHoles.availableAt committee' proposer' awake' newRoot' s rho t0 hwf hdom hreg.1
+  exact Proofs.Consensus.Liveness.stableLive_of_available committee' proposer' awake' newRoot' s rho t0 gap hwf hreg hav
+
+/-- claim `stableIncludedFast`(骨格): `SetupWellFormed ∧ RunDomain ∧ FreshSleepyRegime t0` の下で、honest な提案が `fastStableInclusionDelay` 以内に
+stable の出力に入る。入口 `StableIncludedFastHoles.stableIncludedFastAt`。手書き `stableIncludedFast_concrete` に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.stableIncludedFast : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int), Statements.Consensus.Spec.Claims.stableIncludedFast committee' proposer' awake' newRoot' «s» «rho» «t0» := by
+  intro committee' proposer' awake' newRoot' s rho t0
+  unfold Statements.Consensus.Spec.Claims.stableIncludedFast
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hreg⟩ := h
+  exact Proofs.Consensus.StableIncludedFastHoles.stableIncludedFastAt committee' proposer' awake' newRoot' s rho t0 hwf hdom hreg
+
+/-- claim `finalized`(骨格): `SetupWellFormed ∧ RunDomain ∧ FinalityRegime t0 gap` の下で `FinalizedAt (t0 + finalityStartup s gap) gap`。
+入口 `FinalizedHoles.finalizedAt`。手書き `concreteConsensus` の `finalized` の枝(`finalized_included` / `finalized_growth`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.finalized : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int) («gap» : Nat), Statements.Consensus.Spec.Claims.finalized committee' proposer' awake' newRoot' «s» «rho» «t0» «gap» := by
+  intro committee' proposer' awake' newRoot' s rho t0 gap
+  unfold Statements.Consensus.Spec.Claims.finalized
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hreg⟩ := h
+  exact Proofs.Consensus.FinalizedHoles.finalizedAt committee' proposer' awake' newRoot' s rho t0 gap hwf hdom hreg
+
+/-- claim `stableAsynchronyResilient`(骨格): `SetupWellFormed ∧ RunDomain ∧ OutageRegime tRead b0 b1` の下で `PersistsFrom … Stable tRead b0`。
+入口 `PersistsHoles.persistsFrom`。手書き `concreteConsensus` の `stableAsynchronyResilient` の枝(`outage_stablePersists`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.stableAsynchronyResilient : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («tRead» : Int) («b0» : Int) («b1» : Int), Statements.Consensus.Spec.Claims.stableAsynchronyResilient committee' proposer' awake' newRoot' «s» «rho» «tRead» «b0» «b1» := by
+  intro committee' proposer' awake' newRoot' s rho tRead b0 b1
+  unfold Statements.Consensus.Spec.Claims.stableAsynchronyResilient
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hreg⟩ := h
+  exact Proofs.Consensus.PersistsHoles.persistsFrom committee' proposer' awake' newRoot' s rho tRead b0 b1 hwf hdom hreg
+
+set_option linter.dupNamespace false in
+/-- claim bundle `Consensus`(骨格): 13 件の claim の theorem を項目に置く(固有の穴を持たない)。
+手書き `concreteConsensus`(`DecoupledConsensusProofs/ReviewTheorem.lean`)に当たる。
+名前は命名規則(`Statements.` → `Proofs.`)どおりで、`Consensus` が 2 度現れるので linter `dupNamespace` をこの宣言だけ切る。 -/
+theorem Proofs.Consensus.Spec.Claims.Consensus : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)), Statements.Consensus.Spec.Claims.Consensus committee' proposer' awake' newRoot' := by
+  intro committee' proposer' awake' newRoot'
+  exact
+    { constants := _root_.Proofs.Consensus.Spec.Claims.constants committee' proposer'
+      nested := _root_.Proofs.Consensus.Spec.Claims.nested committee' proposer' awake' newRoot'
+      certificatesAccountable := _root_.Proofs.Consensus.Spec.Claims.certificatesAccountable committee' proposer'
+      finalizedAccountable := _root_.Proofs.Consensus.Spec.Claims.finalizedAccountable committee' proposer' awake' newRoot'
+      finalizedMonotone := _root_.Proofs.Consensus.Spec.Claims.finalizedMonotone committee' proposer' awake' newRoot'
+      honestNeverSlashed := _root_.Proofs.Consensus.Spec.Claims.honestNeverSlashed committee' proposer' awake' newRoot'
+      finalizedSafe := _root_.Proofs.Consensus.Spec.Claims.finalizedSafe committee' proposer' awake' newRoot'
+      available := _root_.Proofs.Consensus.Spec.Claims.available committee' proposer' awake' newRoot'
+      confirmedLive := _root_.Proofs.Consensus.Spec.Claims.confirmedLive committee' proposer' awake' newRoot'
+      stableLive := _root_.Proofs.Consensus.Spec.Claims.stableLive committee' proposer' awake' newRoot'
+      stableIncludedFast := _root_.Proofs.Consensus.Spec.Claims.stableIncludedFast committee' proposer' awake' newRoot'
+      finalized := _root_.Proofs.Consensus.Spec.Claims.finalized committee' proposer' awake' newRoot'
+      stableAsynchronyResilient := _root_.Proofs.Consensus.Spec.Claims.stableAsynchronyResilient committee' proposer' awake' newRoot' }

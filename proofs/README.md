@@ -168,11 +168,11 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-`available` は骨格(周回 211。穴 5 件、`sorry` と表示。下の 11)、残り 5 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
-共有の足場は既にある(theorem はまだ無い): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`(property `IncludedFrom`(honest な提案が
+共有の足場(周回 212 から骨格の theorem が使う): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`(property `IncludedFrom`(honest な提案が
 期限 `D` 以内に包含される)と `MonotoneFrom`・`NoFutureRead`・`SingleProposerRecurrence` から `LiveFrom … (gap · period + D)`。手書き
 `Generic.liveFrom_of_includedFrom` の筋)、`confirmedLive_of_available` / `stableLive_of_available`(claim `available` の結論 `AvailableAt` から
 `confirmedLive` / `stableLive` の結論)、`finalizedLive_of_included`(finalized の `IncludedFrom … (t0 + finalityStartup) finalityDeadline` から
@@ -481,6 +481,13 @@ C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。
 骨格の運び(consensus): `available`(周回 211)は入口 `Proofs/Consensus/AvailableHoles.lean` の `availableAt` が `t0 = 0`(`RecoveredBy` の genesis)か否かで
 finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`)、`Available.lean` の `availableAt_of_fields` の残りの事実を 5 つの穴から取ります。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
+`confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
+`Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
+`stableIncludedFast`(周回 212)は入口 `StableIncludedFastHoles.lean` の `stableIncludedFastAt` が `FreshSleepyRegime` を `SleepyRegime` と新鮮な過半に分け、
+確認の出力への包含を `available` の穴 `confirmedIncluded` から取り(手書き `available_stableIncluded_fresh` と同じ依存)、`t0 = 0` か否かで stable の書き込みの
+穴 `stableWriteFresh_genesis` / `stableWriteFresh_recovered` に渡します。`finalized`(周回 212)は入口 `FinalizedHoles.lean` の `finalizedAt` が包含を穴 `finalizedIncluded` から取り、活性を
+証明済みの `finalizedLive_of_included` で包含から出します。`stableAsynchronyResilient`(周回 212)は入口 `PersistsHoles.lean` の `persistsFrom` が
+`PersistsFrom` の量化を開いてブロック・時刻ごとの穴 `stableInBy` に渡します。bundle `Consensus`(周回 212)は 13 件の theorem を項目に置き、固有の穴を持ちません。
 
 ### 穴の一覧
 
@@ -493,3 +500,7 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 | `Proofs.Consensus.AvailableHoles.finalizedAgree_genesis` | `Consensus.Spec.Claims.available` | `gstZeroGuarantees_of_weakGenesis` | `DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean` | 211 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
+| `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
+| `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_recovered` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_afterGST` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
+| `Proofs.Consensus.FinalizedHoles.finalizedIncluded` | `Consensus.Spec.Claims.finalized` | `finalized_included` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 212 |
+| `Proofs.Consensus.PersistsHoles.stableInBy` | `Consensus.Spec.Claims.stableAsynchronyResilient` | `outage_stablePersists` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 212 |
