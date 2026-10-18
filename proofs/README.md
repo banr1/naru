@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 12 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 11 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -504,7 +504,8 @@ tick の時刻は 0 以上。手書き `confirmationRead_g2_round_zero_no_root`)
 `confFrameRoot_preceq_anchor_positive` は手書きと同じく、g2 の root の active prefix `g`(filtered tree にあり g2 の root の祖先)から穴 `confFrameG2_g1Root_positive`
 (手書き `q10_g1_slot_of_g2_slot`)で g1 の root `root1`(`g ⪯ root1`)を取り、証明済みの `activePrefix_exists` / `activePrefix_dominates`(手書き `q10_activePrefix_dominates`)で
 anchor = `activePrefix … root1` が `g` を延ばすことを示します。naru の `activePrefix` は `Set` の表現のリストの `findUnique?` なので、存在には tree の要素の重複なし
-(穴 `preUpdateTree_nodup`。手書きの tree は `Finset` なので要らない)が要ります(周回 232)。回復の枝は穴
+(`preUpdateTree_nodup`。手書きの tree は `Finset` なので要らない)が要ります(周回 232)。これは `TreeInv` の欄 `nodup`(受理はまだ tree に無いブロックだけを
+`insertSorted` で入れるので重複が生じない)から出します(周回 233 に閉じた)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
@@ -522,7 +523,6 @@ anchor = `activePrefix … root1` が `g` を延ばすことを示します。na
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.confWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 224 |
-| `Proofs.Consensus.AvailableHoles.preUpdateTree_nodup` | `Consensus.Spec.Claims.available` | `q10_activePrefix_dominates` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 232 |
 | `Proofs.Consensus.AvailableHoles.confFrameG2_g1Root_positive` | `Consensus.Spec.Claims.available` | `q10_g1_slot_of_g2_slot` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 232 |
 | `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |

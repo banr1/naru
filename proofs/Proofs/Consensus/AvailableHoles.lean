@@ -31,11 +31,11 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    正の round は `confFrameRoot_preceq_confWalk_positive`(穴ではない)に渡す(周回 228)。これは g1 の frame の anchor が fork choice の SG root で
    walk がそこから歩くので、`confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor。穴ではない)から証明する(周回 230)。
    これは穴 `confFrameG2_g1Root_positive`(g2 の root の祖先で filtered tree にあるものは g1 の root の祖先)で g1 の root を取り、
-   `activePrefix_exists`(tree の重複なしの穴 `preUpdateTree_nodup` を使う)と `activePrefix_dominates` で anchor に移す(周回 232)。
+   `activePrefix_exists`(tree の重複なし `preUpdateTree_nodup` を使う。周回 233 に閉じた)と `activePrefix_dominates` で anchor に移す(周回 232)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(8 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG2_g1Root_positive` / `preUpdateTree_nodup`(手書き
-   `q10_g1_slot_of_g2_slot` / `q10_activePrefix_dominates`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+3. 穴(7 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG2_g1Root_positive`(手書き
+   `q10_g1_slot_of_g2_slot`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -209,15 +209,16 @@ theorem getFilteredBlockTree_nodup {hs : Model.Consensus.Protocol.ForkChoice.Gol
     Model.Consensus.Protocol.ForkChoice.Goldfish.finalizedDescendants NaruStd.Set.filter
   exact ((hnd.filter _).filter _).filter _
 
-/-- 穴: 確認の更新の前の段の store(`RootWitness.preUpdateStoreAt`)の tree の要素に重複は無い。tree を変えるのは初期 store の
-`Set.singleton Genesis` と受理の `Set.insert` だけ(`Handlers.naru`)で、stdlib の `Set` は昇順・重複なしの表現を保つ。
+/-- 確認の更新の前の段の store(`RootWitness.preUpdateStoreAt`)の tree の要素に重複は無い。tree を変えるのは初期 store の
+`Set.singleton Genesis` と受理の `Set.insert` だけ(`Handlers.naru`)で、受理はまだ tree に無いブロックだけを入れるので、
+`TreeInv` の欄 `nodup`(`Trees.nodup_insertSorted`)が run の帰納で保たれる。確認の更新の前の段は `tickDutyStore` と同じ運びで
+tick の前の store の `TreeInv` を受け継ぐ(`AttestationSource.tickPreUpdateStore_treeInv`)。
 手書き `q10_activePrefix_dominates`(`Protocol/Grades/Q10Frame.lean`)の存在の半分で、手書きの tree は `Finset` なのでこの事実は要らない
-(naru の `activePrefix` は表現のリストの `findUnique?` なので要る。周回 232)。
-閉じるのに要るもの: Block の `compare`(`Block.naruCompare`)の推移律と `Set.insertSorted` が昇順(`compare = .lt` の `Pairwise`)を保つこと、
-昇順から重複なし(`Orders.block_compare_eq_iff` で `.lt` は自分自身に成り立たない)、run の帰納で store の tree が昇順のままであること。 -/
+(naru の `activePrefix` は表現のリストの `findUnique?` なので要る。周回 232 に穴として置き、周回 233 に閉じた)。 -/
 theorem preUpdateTree_nodup (w : ValidatorId) (i : Nat) (t : Int) :
-    (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.tree.elems.Nodup := by
-  sorry
+    (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.tree.elems.Nodup :=
+  (Proofs.Consensus.AttestationSource.tickPreUpdateStore_treeInv c p nr _ s.hc _ t (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i w)
+    (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i w)).nodup
 
 /-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round が正なら、その round の
 frame の g2 の root `raw` の祖先 `P` で filtered tree にあるものは、同じ frame の g1 の root `root1` の祖先でもある。

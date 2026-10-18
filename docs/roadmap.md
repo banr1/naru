@@ -9,7 +9,7 @@
   グラフに含めること、生成 Lean や Lean 側(compiler / semantics / stdlib / naru_test)の依存グラフ、グラフからのソース編集やエディタ統合、import 行を実際の参照に合わせて
   書き直すこと(差は報告するだけ)は対象外(IDEAL.md「対象外」)
 - プロトコル証明の分離基盤(C68〜C72)の基盤(C68〜C70: Lake ライブラリ `Proofs`、`obligations.json`、束縛 hash と失効、`naru proofs`)と書き手の案内(C72: `proofs/README.md`)は
-  実装済み([cli.md](cli.md)「証明状況」、[architecture.md](architecture.md)「Proofs」)。残るのは C71: consensus の 14 件の証明(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件が証明済みで、残り 7 件は骨格(C76。周回 211・212 で 7 件すべて置いた。穴 12 件、一覧は [proofs/README.md](../proofs/README.md)「骨格と穴」)として `naru proofs` が `sorry` と表示する。
+  実装済み([cli.md](cli.md)「証明状況」、[architecture.md](architecture.md)「Proofs」)。残るのは C71: consensus の 14 件の証明(いまは `constants` / `nested` / `finalizedMonotone` / `certificatesAccountable` / `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件が証明済みで、残り 7 件は骨格(C76。周回 211・212 で 7 件すべて置いた。穴 11 件、一覧は [proofs/README.md](../proofs/README.md)「骨格と穴」)として `naru proofs` が `sorry` と表示する。
   `naru_test proofs` は証明済みの件名が `proved` のままであることを検査し、証明が揃った周回で 14 件すべて証明済みの検査にする。残りの liveness 系の claim の
   共有の足場 — 包含から活性への generic な還元、未来の提案の不在、時計と tree の不変条件(`proofs/Proofs/Consensus/Liveness.lean` / `NoFutureRead.lean` /
   `Clocks.lean` / `TreeInv.lean`)と、`available` の結論 `SafeFrom` を欄の事実(記録の時刻をまたぐ一致・記録と finalized の交差の互換・finalized の一致)に

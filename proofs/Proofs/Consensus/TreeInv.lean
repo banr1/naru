@@ -214,6 +214,27 @@ theorem tree_closed {e : ProtocolEnv} {cfg : HeightConfig} {st : NamedStore} (h 
   rw [parent_eraseBlock]
   exact h.tree _ (h.closed D hD)
 
+/-- 重複のないリストに、含まれない要素を `insertSorted` で入れても重複は無い(並びの昇順は使わない)。 -/
+theorem nodup_insertSorted {α : Type} [Ord α] (heq : ∀ a b : α, compare a b = .eq ↔ a = b) (x : α) :
+    ∀ {l : List α}, l.Nodup → x ∉ l → (NaruStd.Set.insertSorted x l).Nodup
+  | [], _, _ => List.nodup_singleton x
+  | y :: ys, hnd, hx => by
+    obtain ⟨hy, hys⟩ := List.nodup_cons.mp hnd
+    cases hc : compare x y with
+    | lt =>
+      simp only [NaruStd.Set.insertSorted, hc]
+      exact List.nodup_cons.mpr ⟨hx, hnd⟩
+    | eq =>
+      simp only [NaruStd.Set.insertSorted, hc]
+      exact hnd
+    | gt =>
+      simp only [NaruStd.Set.insertSorted, hc]
+      refine List.nodup_cons.mpr ⟨?_, nodup_insertSorted heq x hys fun h => hx (List.mem_cons_of_mem y h)⟩
+      rw [mem_insertSorted heq]
+      rintro (rfl | h)
+      · exact hx (List.mem_cons_self ..)
+      · exact hy h
+
 /-! ## 不変条件 -/
 
 /-- 出力の元になる 4 つの欄と `liveConfirmed` は tree の要素。 -/
@@ -224,6 +245,8 @@ structure TreeInv (st : Store) : Prop where
   stable : st.latestStable ∈ st.tree.elems
   /-- `liveConfirmed`(確認の更新が書く fork choice の読み。grade の読みと attestation の務めの FG source の `deepestClear` の起点)も tree の要素。 -/
   live : st.liveConfirmed ∈ st.tree.elems
+  /-- tree の表現のリストに重複は無い(`activePrefix` は `findUnique?` で読むので要る。周回 233)。 -/
+  nodup : st.tree.elems.Nodup
 
 /-- tree と 4 つの欄と `liveConfirmed` が等しい。 -/
 structure SameOut (a b : Store) : Prop where
@@ -243,11 +266,11 @@ theorem SameOut.trans {a b c : Store} (h1 : SameOut a b) (h2 : SameOut b c) : Sa
 theorem TreeInv.congr {st : Store} (h : TreeInv st) {st' : Store} (hs : SameOut st' st) : TreeInv st' :=
   ⟨by rw [hs.f, hs.tree]; exact h.f, by rw [hs.j, hs.tree]; exact h.j,
    by rw [hs.confirmed, hs.tree]; exact h.confirmed, by rw [hs.stable, hs.tree]; exact h.stable,
-   by rw [hs.live, hs.tree]; exact h.live⟩
+   by rw [hs.live, hs.tree]; exact h.live, by rw [hs.tree]; exact h.nodup⟩
 
 theorem initial_treeInv : TreeInv initStore :=
   ⟨(mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl,
-   (mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl⟩
+   (mem_singleton_iff _ _).mpr rfl, (mem_singleton_iff _ _).mpr rfl, List.nodup_singleton _⟩
 
 /-! ## `Store` のハンドラ -/
 
@@ -342,9 +365,9 @@ theorem acceptBody_out (c : Nat → NaruStd.Set ValidatorId) (st : Store) (b : B
   · exact hc.trans (hu.confirmed.trans sc)
   · exact hs.trans (hu.stable.trans ss)
 
-/-- 受理の分岐は不変条件を保つ(受理後の tree が親について閉じていて、`post` の `f` / `j` が `b` の祖先なら)。 -/
+/-- 受理の分岐は不変条件を保つ(`b` がまだ tree に無く、受理後の tree が親について閉じていて、`post` の `f` / `j` が `b` の祖先なら)。 -/
 theorem acceptBody_treeInv (c : Nat → NaruStd.Set ValidatorId) {st : Store} (h : TreeInv st) {b : Block} {post : ChainState}
-    (hclosed : ∀ x, x ∈ (st.tree.insert b).elems → parent x ∈ (st.tree.insert b).elems)
+    (hnotin : b ∉ st.tree.elems) (hclosed : ∀ x, x ∈ (st.tree.insert b).elems → parent x ∈ (st.tree.insert b).elems)
     (hf : preceq post.f b = true) (hj : preceq post.j b = true) : TreeInv (acceptBody c st b post) := by
   obtain ⟨htree, hf', hj', hc', hs'⟩ := acceptBody_out c st b post
   have hsub : ∀ x, x ∈ st.tree.elems → x ∈ (acceptBody c st b post).tree.elems := fun x hx => by
@@ -356,7 +379,7 @@ theorem acceptBody_treeInv (c : Nat → NaruStd.Set ValidatorId) {st : Store} (h
   have hclosed' : ∀ x, x ∈ (acceptBody c st b post).tree.elems → parent x ∈ (acceptBody c st b post).tree.elems := by
     rw [htree]
     exact hclosed
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · rcases hf' with hf' | hf'
     · rw [hf']; exact hsub _ h.f
     · rw [hf']; exact ancestor_mem_tree hclosed' hf hb
@@ -366,6 +389,8 @@ theorem acceptBody_treeInv (c : Nat → NaruStd.Set ValidatorId) {st : Store} (h
   · rw [hc']; exact hsub _ h.confirmed
   · rw [hs']; exact hsub _ h.stable
   · rw [acceptBody_live]; exact hsub _ h.live
+  · rw [htree]
+    exact nodup_insertSorted block_compare_eq_iff b h.nodup hnotin
 
 /-- 確認の更新は 4 つの欄と `liveConfirmed` を tree の要素に保つ(`frameStableRoot` / `frameSgCandidate` / `ghost` / `getFgRoot` の結果の分類)。 -/
 theorem updateConfirmationWith_treeInv (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) {st : Store} (h : TreeInv st)
@@ -386,7 +411,7 @@ theorem updateConfirmationWith_treeInv (cache : Cache) (e : ProtocolEnv) (hc : H
       exact h.stable
   unfold updateConfirmationWith
   dsimp only
-  refine ⟨h.f, h.j, ?_, hstable, ?_⟩
+  refine ⟨h.f, h.j, ?_, hstable, ?_, h.nodup⟩
   swap
   · apply ite_mem (ghost_mem h.j h.f cache e hc (roundOf hc st.s) _ _)
     rcases getFgRoot_cases (storeToHealing st) with hr | hr
@@ -458,7 +483,7 @@ theorem processBlockCore_treeInv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat
           have hc' := hclosed
           simp only [acceptBody_tree] at hc'
           exact hc'
-        exact acceptBody_treeInv c h hclosed' (deriveNamed_inv e cfg B).f_preceq (deriveNamed_inv e cfg B).j_preceq
+        exact acceptBody_treeInv c h hnb hclosed' (deriveNamed_inv e cfg B).f_preceq (deriveNamed_inv e cfg B).j_preceq
     · rw [hafter, commitBlock_self]
       intro _
       exact h

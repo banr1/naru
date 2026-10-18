@@ -327,6 +327,25 @@ theorem tickDutyStore_eq_preUpdate (c : Nat → NaruStd.Set ValidatorId) (p : Na
         namedUpdateConfirmationWith cache e hc (tickPreUpdateStore c p nr cache e hc cfg nd st t) (slotOf e t - 1)
       else tickPreUpdateStore c p nr cache e hc cfg nd st t := rfl
 
+/-- 確認の更新の前の段も(`StoreInv` の下で)tick の前の store の `TreeInv` を受け継ぐ(周回 233)。 -/
+theorem tickPreUpdateStore_treeInv {e : ProtocolEnv} {cfg : HeightConfig} (c : Nat → NaruStd.Set ValidatorId)
+    (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
+    (cache : Model.Consensus.Protocol.Grades.Cache) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (nd : Model.Consensus.Protocol.Schedule.Node) {st : NamedStore} (t : Int) (hi : StoreInv e cfg st)
+    (ht : TreeInv st.core) : TreeInv (tickPreUpdateStore c p nr cache e hc cfg nd st t).core := by
+  have hinv0 : StoreInv e cfg { st with core := { st.core with t := t, s := slotOf e t } } :=
+    hi.congr rfl ⟨rfl, rfl, rfl⟩
+  have h0 : TreeInv { st with core := { st.core with t := t, s := slotOf e t } }.core :=
+    ht.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  unfold tickPreUpdateStore
+  dsimp only
+  split_ifs
+  all_goals first
+    | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd (proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0)
+    | with_reducible exact namedGoldfishVoteWith_treeInv c cache hc nd h0
+    | with_reducible exact proposeBlockWith_treeInv c p nr cache hc nd hinv0 h0
+    | with_reducible exact h0
+
 /-- 確認の更新の前の段は `liveConfirmed` を変えない。 -/
 theorem tickPreUpdateStore_live (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId)
     (nr : ValidatorId → Nat → BlockId) (cache : Model.Consensus.Protocol.Grades.Cache) (e : ProtocolEnv)
