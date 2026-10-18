@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 10 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -199,7 +199,8 @@ claim `available` の結論 `SafeFrom g t0 = AgreeFrom g t0 ∧ MonotoneFrom g t
 互換なら時刻 `t2 ≥ t` の値の接頭辞(`record_mono_of_compatible`。手書き `latest_confirmed_mono_of_agreement`))、`ShortHorizon.lean`(確認評価の時刻
 (`0 < slotOf e t` かつ `t = supportCutoff e (slotOf e t)`)でない tick は 2 つの記録を変えず(`tick_rec_of_noCutoff`)、正の slot の締切は
 `confirmationTime e 0` 以後なので、`horizon < confirmationTime e 0` の run ではどの読みでも確認の記録と stable の記録は genesis(`storeAt_rec_short`。
-手書き `latestConfirmedAt_eq_genesis_of_short_horizon`))、`Outputs.lean`(出力
+手書き `latestConfirmedAt_eq_genesis_of_short_horizon`)、finalized も genesis(読みの時計の slot は 1 以下で、tree の親の slot の不変条件
+`ParentSlot.stateBefore_parentInv` から finality carrier の担い手は genesis か親が genesis のブロック `storeAt_f_short`))、`Outputs.lean`(出力
 `getStable st = if f ⪯ latestStable then latestStable else f`、`getConfirmed st = if getStable ⪯ latestConfirmed then latestConfirmed else getStable` の
 単調性と一致を、欄の事実 — `f` の単調性(`EventsSorted`)、記録の時刻をまたぐ一致 `RecordAgreeFrom`、記録と finalized の交差の互換 `CrossAgreeFrom`、
 finalized の一致 `AgreeFrom … Finalized` — と、確認の出力では `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する
@@ -327,8 +328,8 @@ slot は提案者の slot、提案者は自分 `proposalWith_some` / `_parent` /
 round は提案者の round 以下で round の守りを通る `proposalWith_admissible`。tick が出すブロックは提案の務めが走った tick の、時計を合わせた store の `proposalWith` の出力 `tick_block_shape` で、slot は `slotOf e t`・
 提案者は `proposer' (slot)`・round の守りを通り・名前付きの親は tick の前の bodies にある `tick_block_fields`。run では発行されたブロックは slot の提案の時刻に発行される `emits_block_fields`、honest な受信者への
 発行より後の配送の直前の受信者の slot はブロックの slot 以上 `emits_block_slot_le`(`Admits.slot_le`)。親の slot が小さいことは次の `ParentSlot.lean`)。
-`ParentSlot.lean`(tree を育てるのは `onBlockUsing` の受理だけで、守り `st.s < slot b` を通ったブロックの slot は store の slot 以下 `onBlockUsing_step`、他のハンドラは tree と時計を変えず tick は時計を進めてから務めを走らせる
-`tick_fresh`、初期の tree `{Genesis}` の slot は 0 で時計の slot は単調 `slot_succ_ge` なので、run のどの添字でも tree のブロックの slot は store の slot 以下 `stateBefore_slotInv`。時計は初期の 0 か前の自分の tick の時刻
+`ParentSlot.lean`(tree を育てるのは `onBlockUsing` の受理だけで、守り `st.s < slot b` と `slot (parent b) < slot b` を通ったブロックの slot は store の slot 以下で親の slot より大きい `onBlockUsing_step`、他のハンドラは tree と時計を変えず tick は時計を進めてから務めを走らせる
+`tick_fresh`、初期の tree `{Genesis}` の slot は 0 で時計の slot は単調 `slot_succ_ge` なので、run のどの添字でも tree のブロックの slot は store の slot 以下 `stateBefore_slotInv`、genesis でない tree のブロックの親の slot はブロックの slot より小さい `stateBefore_parentInv`(前提なし。周回 220)。時計は初期の 0 か前の自分の tick の時刻
 `clock_origin` で、`EventsNodup` から同じ tick は 2 度現れないので正の時刻の tick の直前の時計はその時刻より前 `clock_lt_of_tick`、提案の時刻 `proposalTime k`(`0 < k`)の tick の直前の slot は `k` より小さい
 `slot_lt_of_tick`。発行されたブロックの名前付きの親は発行の直前の提案者の bodies にあり `emits_block_parent_mem`、その消去は tree にある(`Carrier.StoreInv.tree`)ので親の slot はブロックの slot より小さい
 `emits_block_parent_slot`(`Admits.parent_slot`)。親が受信者の tree / bodies にあることは次の `DeliveredBlock.lean`)。
@@ -487,7 +488,8 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 確認の記録の一致・交差の互換・確認の出力の一致は、どれも `commonUpper_genesis`(2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`)から
 証明済みの `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出します。`commonUpper_genesis` は
 最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら穴 `commonUpper_genesis_long`、より前に run が終わるなら確認の記録は genesis(証明済みの
-`ShortHorizon.storeAt_rec_short`)で finalized も genesis(穴 `finalized_genesis_short`)なので上界は genesis です(周回 218)。回復の枝は穴
+`ShortHorizon.storeAt_rec_short`)で finalized も genesis(証明済みの `ShortHorizon.storeAt_f_short`。tree の親の slot の不変条件
+`ParentSlot.stateBefore_parentInv` を使う)なので上界は genesis です(枝の分け方は周回 218、finalized の側は周回 220)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
@@ -505,7 +507,6 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.commonUpper_genesis_long` | `Consensus.Spec.Claims.available` | `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 218 |
-| `Proofs.Consensus.AvailableHoles.finalized_genesis_short` | `Consensus.Spec.Claims.available` | `confirmedOutputCompatibleFrom_of_weakGenesis_named` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 218 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |

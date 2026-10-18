@@ -16,11 +16,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`。手書きの後の投票の務めの head)から証明済みの
    `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出す(周回 216)。
    `commonUpper_genesis` は最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら穴 `commonUpper_genesis_long`、より前に run が終わるなら
-   確認の記録は genesis(証明済みの `ShortHorizon.storeAt_rec_short`)で finalized も genesis(穴 `finalized_genesis_short`)なので上界は genesis
-   (周回 218)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(6 件): `commonUpper_genesis_long`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
+   確認の記録は genesis(証明済みの `ShortHorizon.storeAt_rec_short`)で finalized も genesis(証明済みの `ShortHorizon.storeAt_f_short`)なので
+   上界は genesis(枝の分け方は周回 218、finalized の側は周回 220)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
+3. 穴(5 件): `commonUpper_genesis_long`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
-   `finalized_genesis_short`(手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named` の短い horizon の枝、同じファイル)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
    `stableIncluded`(手書き `available_stableIncluded_any`)。
@@ -60,23 +59,21 @@ theorem commonUpper_genesis_long (hwf : SetupWellFormed c p s) (hdom : RunDomain
     CommonUpperFrom c p a nr s rho 0 := by
   sorry
 
-/-- 穴: 最初の確認の時刻 `confirmationTime e 0` より前に終わる run では、どのノード・どの時刻の読みでも finalized は genesis。
-手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named`
-(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)の短い horizon の枝の局所の事実 `hfinalized` に当たる。
-閉じるのに要るもの: 読みの時刻が `confirmationTime e 0 = 6Δ` より前なので時計の slot は 1 以下で、tree のブロックの slot も 1 以下
-(`ParentSlot.SlotInv`)。tree のどのブロックも genesis か親の slot が小さい(受理の守り `slot (parent b) < slot b`。tree の不変条件として
-run に持ち上げる。手書き `NamedSlotFreshness.parent_slot_lt_of_mem_storeBeforeTime`)ので、bodies の `D`(`StoreInv.carrier` の
-`f` の担い手)は genesis か親が genesis のブロック。その導出の `f` は genesis の導出の `j` か `f`(`FinalizedSource.deriveNamed_f_node`)で
-genesis。 -/
-theorem finalized_genesis_short (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+/-- 最初の確認の時刻 `confirmationTime e 0` より前に終わる run では、どのノード・どの時刻の読みでも finalized は genesis
+(証明済みの `ShortHorizon.storeAt_f_short`。周回 220)。手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)の短い horizon の枝の局所の事実 `hfinalized` に当たる。 -/
+theorem finalized_genesis_short (hwf : SetupWellFormed c p s)
     (hsleep : SleepyRegime c p a nr s rho 0)
     (hshort : rho.horizon < Model.Consensus.Protocol.Schedule.confirmationTime s.e 0) (v : ValidatorId) (t : Int) :
     (storeAt c p a nr s rho v t).core.f = Block.Genesis := by
-  sorry
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  exact Proofs.Consensus.ShortHorizon.storeAt_f_short c p a nr s rho hexec.1.1.1
+    (Proofs.Consensus.Liveness.wf_facts hwf).1 hshort v t
 
 /-- GST-zero の枝(`t0 = 0`)の共通の上界: 最初の確認の時刻が `horizon` 以下なら穴 `commonUpper_genesis_long` から、
 そうでなければ確認の記録は genesis(`ShortHorizon.storeAt_rec_short`。手書き `latestConfirmedAt_eq_genesis_of_short_horizon`)で
-finalized も genesis(穴 `finalized_genesis_short`)なので、上界は genesis。 -/
+finalized も genesis(`finalized_genesis_short`)なので、上界は genesis。 -/
 theorem commonUpper_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) :
     CommonUpperFrom c p a nr s rho 0 := by
@@ -91,7 +88,7 @@ theorem commonUpper_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rh
     have hL (w : ValidatorId) (r : Int) : (storeAt c p a nr s rho w r).core.latestConfirmed = Block.Genesis :=
       (Proofs.Consensus.ShortHorizon.storeAt_rec_short c p a nr s rho hsch hδ hshort w r).1
     have hF (w : ValidatorId) (r : Int) : (storeAt c p a nr s rho w r).core.f = Block.Genesis :=
-      finalized_genesis_short c p a nr s rho hwf hdom hsleep hshort w r
+      finalized_genesis_short c p a nr s rho hwf hsleep hshort w r
     intro u v t t2 _ _ _ _ _ _
     refine ⟨Block.Genesis, ?_, ?_, ?_, ?_⟩
     all_goals first

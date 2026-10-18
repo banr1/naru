@@ -17,6 +17,8 @@ import Mathlib.Tactic
 したがって発行されたブロック `D` の名前付きの親の消去(`Carrier.StoreInv.tree`)は提案者の tick の直前の tree にあり、
 その slot は直前の時計の slot 以下、すなわちブロックの slot より小さい(`emits_block_parent_slot`)。
 あわせて名前付きの親が発行の添字の直前の提案者の bodies にあること(`emits_block_parent_mem`)も run に持ち上げる。
+受理の守り `slot (parent b) < slot b` も `Fresh` に載せるので、genesis でない tree のブロックの親の slot はブロックの slot より
+小さいこと(tree の不変条件 `ParentInv`)も run のどの添字でも成り立つ(`stateBefore_parentInv`。周回 220)。
 
 手書きでは `DecoupledConsensusProofs/Generic/SlotFreshness.lean` の `block_slot_lt_of_mem_beforeTime_of_le_proposal`
 (提案の時刻より前の読みの tree のブロックの slot は提案の slot より小さい)に当たり、`Protocol/ChainState/ProposalBridge.lean` の
@@ -37,9 +39,10 @@ open Proofs.Consensus.Clocks (SameClock)
 
 /-! ## 新しいブロックの slot -/
 
-/-- 新しいブロックの slot: `b` の tree のブロックは `a` の tree にもあったか、slot が `b` の slot 以下。 -/
+/-- 新しいブロックの slot: `b` の tree のブロックは `a` の tree にもあったか、slot が `b` の slot 以下で親の slot より大きい
+(受理の守り `st.s < slot b` と `slot (parent b) < slot b` を通った)。 -/
 def Fresh (a b : Store) : Prop :=
-  ∀ B, B ∈ b.tree.elems → B ∈ a.tree.elems ∨ slot B ≤ b.s
+  ∀ B, B ∈ b.tree.elems → B ∈ a.tree.elems ∨ (slot B ≤ b.s ∧ slot (parent B) < slot B)
 
 /-- 時計を変えないハンドラの 1 段: 新しいブロックの slot・時計の一致。 -/
 structure Step (a b : Store) : Prop where
@@ -53,7 +56,7 @@ theorem Step.trans {a b d : Store} (h1 : Step a b) (h2 : Step b d) : Step a d :=
   rcases h2.fresh B hB with hb | hd
   · rcases h1.fresh B hb with ha | hle
     · exact Or.inl ha
-    · exact Or.inr (by rw [h2.clock.s]; exact hle)
+    · exact Or.inr ⟨by rw [h2.clock.s]; exact hle.1, hle.2⟩
   · exact Or.inr hd
 
 /-- tree と時計が等しい store の間は 1 段。 -/
@@ -92,8 +95,8 @@ theorem goldfishVoteWith_step (c : Nat → NaruStd.Set ValidatorId) (cache : Cac
 
 /-! ## ブロックの受理 -/
 
-/-- **受理の守り `st.s < slot b` を通ったブロックだけが tree に入る**: `onBlockUsing` の後の tree のブロックは元の tree に
-あったか、slot が store の slot 以下。 -/
+/-- **受理の守り `st.s < slot b` と `slot (parent b) < slot b` を通ったブロックだけが tree に入る**: `onBlockUsing` の後の
+tree のブロックは元の tree にあったか、slot が store の slot 以下で親の slot より大きい。 -/
 theorem onBlockUsing_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (st : Store) (b : Block)
     (build : ChainState → ChainState) : Step st (onBlockUsing c p st b build) := by
   have hcl := Proofs.Consensus.Clocks.onBlockUsing_clock c p st b build
@@ -101,7 +104,7 @@ theorem onBlockUsing_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → Val
   rw [hcl.s]
   revert hB
   unfold onBlockUsing
-  split_ifs with h1
+  split_ifs with h1 h2 h3 h4
   · exact Or.inl
   · exact Or.inl
   · exact Or.inl
@@ -110,10 +113,11 @@ theorem onBlockUsing_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → Val
     have hle : slot b ≤ st.s := by
       simp only [Bool.or_eq_true, decide_eq_true_eq, not_or] at h1
       exact Nat.le_of_not_lt h1.1.1
+    have hps : slot (parent b) < slot b := by simpa using h4
     change B ∈ (acceptBody c st b _).tree.elems at hB
     rw [acceptBody_tree, mem_insert_iff block_compare_eq_iff] at hB
     rcases hB with rfl | hB
-    · exact Or.inr hle
+    · exact Or.inr ⟨hle, hps⟩
     · exact Or.inl hB
 
 theorem onBlockCheckedUsing_step (handle : Store → Store) (hh : ∀ s, Step s (handle s)) (hc : HealConfig) (st : Store)
@@ -287,7 +291,7 @@ def SlotInv (st : Store) : Prop :=
 theorem SlotInv.of_fresh {a b : Store} (h : SlotInv a) (hf : Fresh a b) (hs : a.s ≤ b.s) : SlotInv b := fun B hB => by
   rcases hf B hB with ha | hle
   · exact le_trans (h B ha) hs
-  · exact hle
+  · exact hle.1
 
 /-- 初期の store: tree は `{Genesis}` で、genesis の slot は 0。 -/
 theorem initial_slotInv : SlotInv initStore := fun B hB => by
@@ -295,6 +299,21 @@ theorem initial_slotInv : SlotInv initStore := fun B hB => by
   rw [mem_singleton_iff] at hB'
   subst hB'
   exact le_refl _
+
+/-- tree の親の slot の不変条件: genesis でない tree のブロックの親の slot はブロックの slot より小さい(受理の守り)。 -/
+def ParentInv (st : Store) : Prop :=
+  ∀ B, B ∈ st.tree.elems → B ≠ Block.Genesis → slot (parent B) < slot B
+
+theorem ParentInv.of_fresh {a b : Store} (h : ParentInv a) (hf : Fresh a b) : ParentInv b := fun B hB hne => by
+  rcases hf B hB with ha | hle
+  · exact h B ha hne
+  · exact hle.2
+
+/-- 初期の store: tree は `{Genesis}`。 -/
+theorem initial_parentInv : ParentInv initStore := fun B hB hne => by
+  have hB' : B ∈ (NaruStd.Set.singleton Block.Genesis).elems := hB
+  rw [mem_singleton_iff] at hB'
+  exact absurd hB' hne
 
 section Run
 
@@ -316,6 +335,19 @@ theorem stateBefore_slotInv (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.ev
   | i + 1, v => by
     have ih := stateBefore_slotInv hs hnn hδ i v
     refine ih.of_fresh ?_ (slot_succ_ge c p a nr s rho hs hnn hδ i v)
+    rw [Proofs.Consensus.Signing.stateBefore_succ]
+    cases rho.events[i]? with
+    | none => exact (Step.refl _).fresh
+    | some ev =>
+      show Fresh _ (worldAt (worldStep c p a nr s (stateBefore c p a nr s rho i) ev) v).st.core
+      exact worldStep_fresh c p a nr s _ ev v
+
+/-- **run のどの添字・どのノードでも、genesis でない tree のブロックの親の slot はブロックの slot より小さい**(前提なし)。
+手書き `NamedSlotFreshness.parent_slot_lt_of_mem_storeBeforeTime` に当たる。 -/
+theorem stateBefore_parentInv : ∀ (i : Nat) (v : ValidatorId), ParentInv (worldAt (stateBefore c p a nr s rho i) v).st.core
+  | 0, _ => initial_parentInv
+  | i + 1, v => by
+    refine (stateBefore_parentInv i v).of_fresh ?_
     rw [Proofs.Consensus.Signing.stateBefore_succ]
     cases rho.events[i]? with
     | none => exact (Step.refl _).fresh
