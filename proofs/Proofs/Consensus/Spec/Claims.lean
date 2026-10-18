@@ -5,6 +5,7 @@
 -- naru-obligation: Consensus.Spec.Claims.finalizedAccountable sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.finalizedSafe sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 -- naru-obligation: Consensus.Spec.Claims.honestNeverSlashed sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
+-- naru-obligation: Consensus.Spec.Claims.available sha256:9c0ca8f2de33f19fdf9e07c4d0df7b6e63a7cd67fb03e279ae0a17035426fe66
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Constants
 import Proofs.Consensus.Nested
@@ -45,6 +46,7 @@ import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.RootEntry
 import Proofs.Consensus.RootWitness
 import Proofs.Consensus.GradeSupporter
+import Proofs.Consensus.AvailableHoles
 import Mathlib.Tactic
 
 /-!
@@ -76,7 +78,8 @@ E1 の slashable(`Slashing.lean`)、消去と `chainAttestations` の所属(`Nam
 carried)で、`v` の 2 つの発行の消去は slashable でない(`EmissionSafety.lean`: validator client の記録 `Record` の性質
 (`Records.lean`: target は書き込み 1 回、lock / timeout は増えるだけ、`LockCompatible` / `FinalitySafeAt`)と、記録を書くのは自分の tick の
 `namedCreate` だけであること(`Signing.lean`)から、同じ高さに名指す target は等しく finality pair と timeout は両立しない))。
-残りの 6 claims と bundle `Consensus` は未証明(`lake exe naru proofs` が `missing` と表示する)。手書き証明
+`available` は骨格(周回 211。`Proofs/Consensus/AvailableHoles.lean` の 5 つの穴に依存し、`lake exe naru proofs` は未証明(下書き)と表示する)。
+残りの 5 claims と bundle `Consensus` は未証明(`missing`)。穴の一覧は `proofs/README.md` の「骨格と穴」。手書き証明
 (`third_party/verified-consensus/DecoupledConsensusProofs`、基準コミット)は構成・補題の分割・証明の筋を読んで参照するが import しない。
 liveness 系の claim の共有の足場(周回 127。theorem はまだ無い): `Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom`
 (包含 `IncludedFrom` + 単調 `MonotoneFrom` + 未来の提案の不在 `NoFutureRead` + 再発 → 活性 `LiveFrom`)と、
@@ -343,3 +346,14 @@ theorem Proofs.Consensus.Spec.Claims.finalizedSafe : ∀ (committee' : (Nat → 
 手書き `Consensus.honestNeverSlashed`(`validatorVoteSafety.attributed`)に当たる。 -/
 theorem Proofs.Consensus.Spec.Claims.honestNeverSlashed : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun), Statements.Consensus.Spec.Claims.honestNeverSlashed committee' proposer' awake' newRoot' «s» «rho» :=
   Proofs.Consensus.HonestNeverSlashed.honestNeverSlashed
+
+/-- claim `available`(骨格): `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0` の下で `AvailableAt t0`。
+入口 `AvailableHoles.availableAt` が `t0` の 2 枝で finalized の一致の出どころを分け、残りの事実を穴から取る。
+手書き `concreteConsensus` の `available` の枝(`available_confirmedSafe` / `available_confirmedIncluded` / `available_stableSafe` /
+`available_stableIncluded_any`)に当たる。 -/
+theorem Proofs.Consensus.Spec.Claims.available : ∀ (committee' : (Nat → (NaruStd.Set Model.Consensus.Objects.Identifiers.ValidatorId))) (proposer' : (Nat → Model.Consensus.Objects.Identifiers.ValidatorId)) (awake' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Bool)) (newRoot' : (Model.Consensus.Objects.Identifiers.ValidatorId → Nat → Model.Consensus.Objects.Identifiers.BlockId)) («s» : Model.Consensus.Execution.Setup.Setup) («rho» : Model.Consensus.Execution.Run.NamedRun) («t0» : Int), Statements.Consensus.Spec.Claims.available committee' proposer' awake' newRoot' «s» «rho» «t0» := by
+  intro committee' proposer' awake' newRoot' s rho t0
+  unfold Statements.Consensus.Spec.Claims.available
+  intro h
+  obtain ⟨⟨hwf, hdom⟩, hsleep⟩ := h
+  exact Proofs.Consensus.AvailableHoles.availableAt committee' proposer' awake' newRoot' s rho t0 hwf hdom hsleep

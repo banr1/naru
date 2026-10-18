@@ -60,6 +60,7 @@ theorem Proofs.Consensus.Spec.Claims.finalizedSafe : <obligations.json の type 
 
 証明の途中は `sorry` を置いて構いません(下書きとして許されます)。`naru proofs` は `sorry`(未証明)と表示し、exit code には影響しません。
 `sorry` が残る theorem は証明済みになりません。完成させたら `sorry` を消します(`proofs/` に `sorry` / `admit` が残らない状態が目標です)。
+大きな義務は、`sorry` を名前付きの穴に閉じ込めた骨格として先に置き、穴を 1 つずつ閉じます(下の 11)。
 
 ## 5. 失効(`stale`)したとき
 
@@ -120,7 +121,7 @@ lake exe naru_test proofs          # 証明基盤の検査(C68 / C69 / C70 / C72
 最後の行 `layer: …` が示すとおり、これはプロトコルの保証(生成 Statements に対する theorem)の層で、コンパイラの意味保存(`lake build NaruSem`)は別の層です。
 
 `naru_test proofs` は、`obligations.json` の決定性・束縛 hash の独立な再計算・検体 `tests/proofs/` での 5 つの状況・Lake の依存方向(`Proofs` の import 閉包に手書きライブラリ等が無いこと、逆依存が無いこと)・
-`proofs/` に `sorry` / `admit` が残らないこと・この README の内容を検査します。
+`proofs/` に `admit` が無く `sorry` が下の 11 の穴の一覧と一対一に対応すること・義務の theorem の公理監査・この README の内容を検査します。
 
 ## 9. consensus の義務
 
@@ -167,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残り 6 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+`available` は骨格(周回 211。穴 5 件、`sorry` と表示。下の 11)、残り 5 claims と bundle `Consensus` は `missing`。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -459,3 +460,36 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 `HealthyPrefixDelivery` は周回 207 から、`FreshMajority` は周回 205 から、`WindowMajority` / `SlashableBound` / `RecoveredBy` は周回 201 から判定する。
 他の中間命題(round の帰納の段の主張)、
 C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。
+
+## 11. 骨格と穴
+
+大きな義務は、いきなり完成した証明を書くのではなく、**骨格** — 義務の theorem を名前付きの中間補題に分解し、Lean の型検査を通した証明の計画 — を先に置き、
+まだ証明の無い中間補題(**穴**)を 1 つずつ閉じて上から下へ進めます。手書き証明を持たないプロトコルでも同じ手順です。
+
+1. 義務の theorem を置き、束縛行を付ける(義務の型・前提・結論は変えない)。本体は中間補題を組み立てるだけにする。
+2. 中間補題を、手書き証明があればその構成(入口の定理と主要補題の分割)に沿って切る。無ければ義務の結論の項目と前提の枝で切り、残る依存を docstring に書く。
+3. 証明できない中間補題は穴として残す: 本体は `sorry` の 1 行だけ、docstring に対応する手書きの宣言名とファイル(無ければ「なし」と、代わりの根拠)と
+   「閉じるのに要る」依存の要点を書き、下の一覧に 1 行ずつ載せる。`sorry` の語を穴の本体以外(コメント・docstring を含む)に書かない。
+4. 穴を閉じる(証明を完成させて `sorry` を消す)か、細分する(残りを新しい穴に切り出し、理由を周回記録に書く)。一覧の行も合わせて直す。
+5. `naru proofs` では穴に依存する義務は `sorry` と表示され、証明済みにならない。穴が 0 になった義務は `proved` になる。
+
+骨格は手で書きます(コンパイラや `naru proofs` に雛形の生成はありません)。`naru_test proofs` は、`grep -rnw sorry` の一致箇所とこの一覧の行が一対一に対応すること、
+一覧の手書きの宣言名がそのファイルに実在すること、穴の docstring の形、義務の theorem の `#print axioms` が `propext` / `Classical.choice` / `Quot.sound` / `sorryAx` の
+部分集合であること、HEAD の一覧との差を検査・表示します。consensus の骨格を置く義務は 7 件(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` /
+`finalized` / `stableAsynchronyResilient` と bundle `Consensus`)で、穴はこの 7 件の経路にだけ置き、証明済みの 7 件が依存する補題には置きません。
+
+骨格の運び(consensus): `available`(周回 211)は入口 `Proofs/Consensus/AvailableHoles.lean` の `availableAt` が `t0 = 0`(`RecoveredBy` の genesis)か否かで
+finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`)、`Available.lean` の `availableAt_of_fields` の残りの事実を 5 つの穴から取ります。
+手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
+
+### 穴の一覧
+
+手書きのファイルは `third_party/verified-consensus/` からの相対パスです。
+
+| 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
+|---|---|---|---|---|
+| `Proofs.Consensus.AvailableHoles.recordAgree` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.crossAgree` | `Consensus.Spec.Claims.available` | `latestConfirmed_compatible_finalized_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.finalizedAgree_genesis` | `Consensus.Spec.Claims.available` | `gstZeroGuarantees_of_weakGenesis` | `DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |

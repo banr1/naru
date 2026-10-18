@@ -21,7 +21,7 @@ import NaruTest.Statements
   `proofs/` を読まない)。ホームで `lake exe naru proofs` が exit 0 → `lake build Proofs` が exit 0、`Proofs` の import 閉包(`importModules` でモジュール名を列挙する
   Lean スクリプト)の全モジュールが `Proofs` / `Model` / `Statements` / `NaruStd` / Lean 本体 / mathlib とその依存パッケージのどれかに属し `DecoupledConsensus` / `NaruSem` /
   `Naru.` / `NaruTest` が 0 件、逆に `Model` / `Statements` / `NaruStd` / `NaruSem` / `Naru` の import 閉包(同じスクリプト。`lake build NaruSem` の後)に `Proofs` と
-  mathlib(とその依存パッケージ)が 0 件、`grep -rnwE 'sorry|admit'` が `proofs/` で 0 件(C71 の一部)。
+  mathlib(とその依存パッケージ)が 0 件。
 - C70(証明状況 `naru proofs`): 検体の複製で `naru proofs` が exit 1 で表示が `expected/proofs.txt` と一致し、`--json` が `expected/proofs.json` と byte 一致し、状況と件数
   (proved 2 / missing 3 / sorry 1 / stale 2 / invalid 5)が明示の期待と一致、`Proofs/Invalid.lean` を除いた複製では exit 0(`other` / `viaAxiom` / `mixed` / `coerced` が
   missing)、`naru.toml` の `proofs` を別名の複製ディレクトリに向けても同じ結果、実行の前後で生成先と証明ディレクトリの全ファイルの sha256 が同じ。ソースを変えて
@@ -32,6 +32,13 @@ import NaruTest.Statements
   `finalizedAccountable` / `finalizedSafe` / `honestNeverSlashed` の 7 件)が、ホームの `naru proofs --json` で `proved`
   であることを確かめる(`stale` / `sorry` / `invalid` に退行したら FAIL)。14 件すべて証明済みの検査は、証明が揃った周回でこの一覧を全件にして加える
   (未実装の検査を PASS にしない)。
+- C76(骨格と穴): C71 が met になるまでは `sorry` 0 件を要求せず、`grep -rnw admit` が `proofs/` で 0 件、`grep -rnw sorry` の件数が `proofs/README.md` の
+  `### 穴の一覧` の行数と一致し、各一致箇所が `sorry` だけの行(穴の本体)で、含む theorem が一覧の theorem と一対一に対応し、その docstring が手書きの宣言名・
+  ファイル・「閉じるのに要る」依存を書くこと、一覧の各行の義務が骨格の 7 件(`skeletonObligations`)のどれかで、手書きの宣言名がそのファイル
+  (`third_party/verified-consensus/` からの相対)に実在し、置いた周回が数であることを確かめる。ホームの `naru proofs --json` の consensus の状況は
+  proved / sorry / missing だけ(stale / invalid 0、sorry は骨格の 7 件だけ。まだ置いていない義務の missing は許す)で、置いた義務の theorem の
+  `#print axioms`(`lake env lean` で読む)が `propext` / `Classical.choice` / `Quot.sound` / `sorryAx` の部分集合、`sorryAx` に依存する義務は proved でない。
+  HEAD の `proofs/README.md` の一覧との差(除いた数・足した数)を 1 行で表示する(FAIL の条件にしない)。
 - 最後にホームで `lake exe naru compile` と `lake exe naru proofs` を走らせ、Lake が読む link を元に戻す。
 -/
 
@@ -68,6 +75,17 @@ def consensusProved : List String :=
    "Consensus.Spec.Claims.certificatesAccountable", "Consensus.Spec.Claims.finalizedAccountable",
    "Consensus.Spec.Claims.finalizedSafe", "Consensus.Spec.Claims.honestNeverSlashed"]
 def consensusObligations : Nat := 14
+/-- C76 の骨格を置く 7 件(IDEAL.md C76: refine 時点で未証明の 6 claims と bundle `Consensus`)。穴はこの 7 件の経路にだけ置く。 -/
+def skeletonObligations : List String :=
+  ["Consensus.Spec.Claims.available", "Consensus.Spec.Claims.confirmedLive", "Consensus.Spec.Claims.stableLive",
+   "Consensus.Spec.Claims.stableIncludedFast", "Consensus.Spec.Claims.finalized", "Consensus.Spec.Claims.stableAsynchronyResilient",
+   "Consensus.Spec.Claims.Consensus"]
+/-- 義務の theorem の `#print axioms` に許す公理(C76: 骨格の途中は `sorryAx` も許し、`sorryAx` に依存する義務は proved と表示しない)。 -/
+def skeletonAxioms : List String := ["propext", "Classical.choice", "Quot.sound", "sorryAx"]
+/-- 手書き証明の置き場(穴の一覧の「手書きのファイル」はここからの相対パス)。 -/
+def handwrittenRoot : System.FilePath := "third_party" / "verified-consensus"
+/-- `proofs/README.md` の穴の一覧の見出し。 -/
+def holesHeading : String := "### 穴の一覧"
 
 structure Env where
   root : System.FilePath
@@ -484,6 +502,165 @@ def checkProofsSample (env : Env) (dir : System.FilePath) (p : ParsedObligations
   if n.exitCode == 2 && contains n.stderr "Proofs.lean" then ok "C70 noroot: without the root module proofs/Proofs.lean naru proofs exits 2 and names it"
   else fail s!"C70 noroot: exit {n.exitCode}\n{tail (n.stdout ++ n.stderr) 400}"
 
+/-! ## C76: 骨格と穴(IDEAL.md 用語「骨格」「穴」) -/
+
+/-- 穴の一覧の 1 行: theorem 名・所属する義務・手書きの宣言名・手書きのファイル(`third_party/verified-consensus/` からの相対)・置いた周回。 -/
+structure HoleRow where
+  thm : String
+  obligation : String
+  handDecl : String
+  handFile : String
+  cycle : String
+deriving Inhabited, BEq, Repr
+
+def unquote (s : String) : String := ((s.trimAscii.toString.dropWhile (· == '`')).dropEndWhile (· == '`')).toString
+
+/-- `proofs/README.md` の `### 穴の一覧` の表(`| `Proofs.…` | … |` の行)を読む。見出しが無ければ none。 -/
+def parseHoleRows (text : String) : Option (List HoleRow) := Id.run do
+  let lines := text.splitOn "\n"
+  let some i := lines.findIdx? (·.trimAscii.toString == holesHeading) | return none
+  let mut rows : List HoleRow := []
+  for l in lines.drop (i + 1) do
+    if l.startsWith "#" then break
+    if !(l.startsWith "| `Proofs.") then continue
+    let cells := ((l.splitOn "|").drop 1).dropLast
+    match cells.map unquote with
+    | [thm, ob, decl, file, cyc] => rows := rows ++ [{ thm, obligation := ob, handDecl := decl, handFile := file, cycle := cyc }]
+    | _ => rows := rows ++ [{ thm := unquote (cells.headD ""), obligation := "", handDecl := "", handFile := "", cycle := "" }]
+  return some rows
+
+/-- `grep -rnw` の 1 行 `<path>:<line>:<text>`。 -/
+def parseGrepHit (l : String) : Option (String × Nat × String) :=
+  match l.splitOn ":" with
+  | path :: n :: rest => n.toNat?.map fun k => (path, k, ":".intercalate rest)
+  | _ => none
+
+/-- ファイルの `line` 行目(1 始まり)を含む theorem の修飾名(直前の `theorem` 行と、そこまでの `namespace` / `end` の入れ子から)と、
+その theorem の直前の docstring(`/-- … -/`)。 -/
+def enclosingTheorem (lines : Array String) (line : Nat) : Option (String × String) := Id.run do
+  let mut ns : List String := []
+  let mut found : Option (String × Nat) := none
+  for k in [0:min line lines.size] do
+    let l := lines[k]!
+    if l.startsWith "namespace " then ns := ns ++ [(l.drop "namespace ".length).toString.trimAscii.toString]
+    else if l.startsWith "end " then
+      let n := (l.drop "end ".length).toString.trimAscii.toString
+      if ns.getLast? == some n then ns := ns.dropLast
+    let body := l.trimAsciiStart.toString
+    let body := if body.startsWith "private " then (body.drop "private ".length).toString else body
+    if body.startsWith "theorem " then
+      let name := ((body.drop "theorem ".length).toString.splitOn " ").headD ""
+      let q := if name.startsWith "Proofs." || ns.isEmpty then name else ".".intercalate ns ++ "." ++ name
+      found := some (q, k)
+  let some (q, k) := found | return none
+  -- 直前の docstring: theorem 行の上の連続した行を `/--` まで遡る
+  let mut doc : List String := []
+  let mut j := k
+  if j > 0 && (lines[j - 1]!.trimAscii.toString.endsWith "-/") then
+    while j > 0 do
+      j := j - 1
+      doc := lines[j]! :: doc
+      if lines[j]!.trimAsciiStart.toString.startsWith "/--" then break
+  return some (q, "\n".intercalate doc)
+
+/-- C76: `proofs/` の `sorry` / `admit` と穴の一覧の整合、各義務の公理監査、HEAD の一覧との差。`results` はホームの `naru proofs --json` の義務ごとの状況。 -/
+def checkHoles (proofsDir : System.FilePath) (results : List (String × String)) : M Unit := do
+  let ad ← runProc "grep" #["-rnw", "admit", "--include=*.lean", proofsDir.toString]
+  if ad.exitCode == 1 then ok s!"C76: grep -rnw admit --include='*.lean' {proofsDir}/ finds nothing"
+  else fail s!"C76: admit under {proofsDir}/ (exit {ad.exitCode}):\n{tail ad.stdout 600}"
+  let readme := proofsDir / "README.md"
+  let some rows := parseHoleRows (← IO.FS.readFile readme)
+    | fail s!"C76: {readme} has no `{holesHeading}` section"; return
+  let g ← runProc "grep" #["-rnw", "sorry", "--include=*.lean", proofsDir.toString]
+  if g.exitCode > 1 then fail s!"C76: grep -rnw sorry {proofsDir}/ exit {g.exitCode}\n{tail g.stderr 400}"; return
+  let hits := ((g.stdout.splitOn "\n").filter (!·.isEmpty)).filterMap parseGrepHit
+  if hits.length == rows.length then
+    ok s!"C76: grep -rnw sorry --include='*.lean' {proofsDir}/ finds {hits.length} line(s), as many as the rows of the hole list in {readme}"
+  else fail s!"C76: {hits.length} `sorry` line(s) under {proofsDir}/ but {rows.length} row(s) in the hole list of {readme}"
+  -- 一致箇所ごとに: 行が `sorry` だけ(穴の本体)、含む theorem が一覧にあり、docstring が手書きの宣言名・ファイル・閉じるのに要る依存を書く
+  let mut hitThms : List String := []
+  let mut badLine : List String := []
+  let mut badDoc : List String := []
+  for (path, n, text) in hits do
+    if text.trimAscii.toString != "sorry" then badLine := badLine ++ [s!"{path}:{n}"]
+    let lines := (← IO.FS.readFile path).splitOn "\n" |>.toArray
+    match enclosingTheorem lines n with
+    | none => badLine := badLine ++ [s!"{path}:{n} (no enclosing theorem)"]
+    | some (q, doc) =>
+      hitThms := hitThms ++ [q]
+      match rows.find? (·.thm == q) with
+      | some r =>
+        let base := (r.handFile.splitOn "/").getLast!
+        if !(contains doc r.handDecl && contains doc base && contains doc "閉じるのに要る") then badDoc := badDoc ++ [q]
+      | none => pure ()
+  if badLine.isEmpty then ok s!"C76: every `sorry` under {proofsDir}/ is a hole body: a line of its own inside a named theorem (no `sorry` in comments or docstrings)"
+  else fail s!"C76: `sorry` outside a hole body: {badLine.take 5}"
+  let rowThms := rows.map (·.thm)
+  let dupHits := hitThms.filter fun q => (hitThms.filter (· == q)).length > 1
+  let dupRows := rowThms.filter fun q => (rowThms.filter (· == q)).length > 1
+  let unlisted := hitThms.filter (!rowThms.contains ·)
+  let absent := rowThms.filter (!hitThms.contains ·)
+  if dupHits.isEmpty && dupRows.isEmpty && unlisted.isEmpty && absent.isEmpty then
+    ok s!"C76: the {rows.length} hole(s) of the list correspond one-to-one to the `sorry` lines (each listed theorem exists under {proofsDir}/ with one `sorry`): {rowThms}"
+  else fail s!"C76: hole list vs sorry lines: duplicated in proofs {dupHits.eraseDups}, duplicated in the list {dupRows.eraseDups}, not listed {unlisted}, listed but no sorry in proofs {absent}"
+  if badDoc.isEmpty then ok "C76: every hole has a docstring naming its hand-written declaration and file and what it needs to be closed (閉じるのに要る…)"
+  else fail s!"C76: holes whose docstring lacks the hand-written name / file / 閉じるのに要る: {badDoc}"
+  -- 一覧の行: 所属する義務は C76 の 7 件、手書きの宣言名とファイルが実在、周回は数
+  let mut badRows : List String := []
+  for r in rows do
+    let f := handwrittenRoot / System.FilePath.mk r.handFile
+    let declOk ← if r.handDecl.isEmpty || !(← f.pathExists) then pure false else do
+      let short := (r.handDecl.splitOn ".").getLast!
+      let gr ← runProc "grep" #["-nE", s!"^(private |protected |noncomputable )*(theorem|lemma|def|abbrev|structure) ([A-Za-z0-9_.']*\\.)?{short}( |$)", f.toString]
+      pure (gr.exitCode == 0)
+    if !(skeletonObligations.contains r.obligation) || !declOk || r.cycle.toNat?.isNone then
+      badRows := badRows ++ [s!"{r.thm} (obligation {r.obligation}, {r.handDecl} in {f}: {declOk}, cycle {r.cycle})"]
+  if badRows.isEmpty then
+    ok s!"C76: every row of the hole list belongs to one of the {skeletonObligations.length} skeleton obligations and names a hand-written declaration that exists in its file under {handwrittenRoot}/, with the cycle it was placed"
+  else fail s!"C76: bad hole rows: {badRows.take 5}"
+  -- 義務の状況: stale / invalid 0、sorry は骨格の 7 件だけ、置いた件数
+  let staleOrInvalid := results.filter fun (_, st) => st == "stale" || st == "invalid"
+  let sorryOutside := results.filter fun (n, st) => st == "sorry" && !(skeletonObligations.contains n)
+  let placed := skeletonObligations.filter fun n => (results.lookup n).any (· != "missing")
+  let missing := results.filter fun (_, st) => st == "missing"
+  if staleOrInvalid.isEmpty && sorryOutside.isEmpty then
+    ok s!"C76 progress: the consensus obligations are proved / sorry / missing only (stale / invalid 0; sorry only on the skeleton obligations); skeleton placed for {placed.length} of {skeletonObligations.length} ({placed}), {missing.length} still missing"
+  else fail s!"C76: stale / invalid {staleOrInvalid}, sorry outside the skeleton obligations {sorryOutside}"
+  -- 公理監査: 置いた義務の theorem の `#print axioms`
+  let declared := (results.filter fun (_, st) => st != "missing").map (·.1)
+  let script := "import Proofs\n" ++ String.join (declared.map fun n => s!"#print axioms Proofs.{n}\n")
+  let scriptPath := workDir / "Axioms.lean"
+  IO.FS.createDirAll workDir
+  IO.FS.writeFile scriptPath script
+  let ax ← runProc "lake" #["env", "lean", scriptPath.toString]
+  let mut badAx : List String := []
+  let mut sorryProved : List String := []
+  let mut seen := 0
+  for n in declared do
+    let q := s!"Proofs.{n}"
+    -- `#print axioms` は公理の一覧を幅で折り返すので、名前の後の `[` から次の `]` までを(改行をまたいで)読む
+    match (ax.stdout.splitOn s!"'{q}' ").drop 1 |>.head? with
+    | none => badAx := badAx ++ [s!"{q}: no #print axioms output"]
+    | some rest =>
+      seen := seen + 1
+      let axs := if rest.startsWith "does not depend on any axioms" then [] else
+        match ((rest.splitOn "]").headD "").splitOn "[" with
+        | [_, inner] => ((inner.replace "\n" " ").splitOn ",").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+        | _ => ["?"]
+      let extra := axs.filter (!skeletonAxioms.contains ·)
+      if !extra.isEmpty then badAx := badAx ++ [s!"{q}: {extra}"]
+      if axs.contains "sorryAx" && results.lookup n == some "proved" then sorryProved := sorryProved ++ [n]
+  if ax.exitCode == 0 && badAx.isEmpty && sorryProved.isEmpty && seen == declared.length then
+    ok s!"C76: #print axioms of the {declared.length} declared obligation theorem(s) lies within {skeletonAxioms}, and no obligation depending on sorryAx is shown as proved"
+  else fail s!"C76: axiom audit (lake env lean exit {ax.exitCode}): {badAx.take 5}, sorryAx but proved {sorryProved}\n{tail (ax.stdout ++ ax.stderr) 600}"
+  -- HEAD の一覧との差(表示だけ。FAIL の条件にしない)
+  let h ← runProc "git" #["show", s!"HEAD:{readme}"]
+  let headRows := if h.exitCode == 0 then (parseHoleRows h.stdout).getD [] else []
+  let headThms := headRows.map (·.thm)
+  let removed := headThms.filter (!rowThms.contains ·)
+  let added := rowThms.filter (!headThms.contains ·)
+  ok s!"C76 holes: {rows.length} now, {headRows.length} in the hole list of HEAD; removed since HEAD (closed or split) {removed.length}, added {added.length} {added}"
+
 /-- C68 / C70(ホーム): `naru proofs`、`lake build Proofs`、import 閉包、逆依存、`sorry` / `admit`、束縛 hash の再計算。 -/
 def checkHome (proofsDir generated : System.FilePath) (consensus : Option ParsedObligations) : M Unit := do
   let p ← runProc "lake" #["exe", "naru", "proofs", "--json"]
@@ -500,6 +677,7 @@ def checkHome (proofsDir generated : System.FilePath) (consensus : Option Parsed
     if notProved.isEmpty && proved == consensusProved.length then
       ok s!"C71 progress: {consensusProved.length} of {consensusObligations} consensus obligations are proved ({consensusProved}); the other {consensusObligations - consensusProved.length} are not yet proved"
     else fail s!"C71 progress: expected exactly {consensusProved} to be proved, but not proved {notProved} and counts.proved = {proved}: {results.filter fun (_, s) => s == "proved"}"
+    checkHoles proofsDir results
   let b ← runProc "lake" #["build", "Proofs"]
   if b.exitCode == 0 then ok "C68: lake build Proofs exit 0" else fail s!"C68: lake build Proofs exit {b.exitCode}\n{tail b.stderr}"
   if let some c := consensus then checkHashRecomputation "C69 consensus" generated c
@@ -532,9 +710,6 @@ def checkHome (proofsDir generated : System.FilePath) (consensus : Option Parsed
       if proofs.isEmpty && mathlib.isEmpty then
         ok s!"C68: the import closure of {reverseRoots} ({names.length} modules) contains no Proofs module and no module of {mathlibRoots} (only Proofs uses mathlib)"
       else fail s!"C68: closure of {reverseRoots}: Proofs {proofs.take 3}, mathlib {mathlib.take 3}"
-  let g ← runProc "grep" #["-rnwE", "sorry|admit", "--include=*.lean", proofsDir.toString]
-  if g.exitCode == 1 then ok s!"C71: grep -rnwE 'sorry|admit' --include='*.lean' {proofsDir}/ finds nothing"
-  else fail s!"C71: sorry / admit under {proofsDir}/ (exit {g.exitCode}):\n{tail g.stdout 600}"
 
 /-- C72: 書き手の案内と文書。 -/
 def checkDocs : M Unit := do
