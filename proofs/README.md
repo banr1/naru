@@ -495,7 +495,7 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 `recordAt_preceq_laterVoteHead` は確認の記録の由来(`ConfirmedOrigin.lean` の `storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か
 grade の stable root。手書き `ConfirmationOrigin.stateBefore_latest_confirmed_origin`)で分け、`confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head。穴ではない。
 手書きと同じく walk が anchor のままか filtered tree の適格な要素か(`Goldfish.head_cases`)で分け、anchor は g1 の frame の raw の active prefix か FG root なので
-穴 `confG1Raw_preceq_laterVoteHead` / `confFgRoot_preceq_laterVoteHead` から `confAnchor_preceq_laterVoteHead` で、動いた walk は穴 `confEligibleWalk_preceq_laterVoteHead` から。周回 245)と
+`confG1Raw_preceq_laterVoteHead`(round 0 は凍結が空なので g1 の frame に root が無く矛盾(`confCache_g1_round_zero`: `FrameCapture.freezeRoot_zero` / `FrameCapture.stateBefore_phase_zero`。手書き `confirmationRead_g1_round_zero_no_root`)、正の round は穴 `confG1Raw_preceq_laterVoteHead_positive`。周回 246)と穴 `confFgRoot_preceq_laterVoteHead` から `confAnchor_preceq_laterVoteHead` で、動いた walk は穴 `confEligibleWalk_preceq_laterVoteHead` から。周回 245)と
 `confStableRoot_preceq_confWalk`(stable root ⪯ walk。穴ではない)から証明します(周回 224)。`confStableRoot_preceq_confWalk` は stable root が FG root に戻る枝を
 FG root ⪯ SG root ⪯ head(`ProposerRoot.getSgRootWith_extends_fgRoot` / `Goldfish.sgRoot_preceq_head`)で閉じ、g2 の frame の root がある枝を
 `confFrameRoot_preceq_confWalk`(穴ではない)に渡します(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、round 0 は
@@ -533,7 +533,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.confFgRoot_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedFGRoot_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 245 |
-| `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 245 |
+| `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead_positive` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 246 |
 | `Proofs.Consensus.AvailableHoles.confEligibleWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 245 |
 | `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |

@@ -23,6 +23,8 @@ domain 時刻の tick の前の store で凍結した `freezeRoot` を、いま�
    round `R` の domain 時刻なら、round `R` の欄を閉じたまま返す(`onPhaseTick_closed`。`completeOne` は閉じた欄を開かない)。
    run の帰納 `stateBefore_closed`: domain の tick の後、間の自分の tick の時計の round がどれも `R` なら、cache の round は `R` で欄は
    閉じている(配送の `clipCache` も欄を保つ)。手書き `FrameCompleted` の段 1・2(`phase_domain_cache` / `slot_some_index`。周回 244)。
+5. round 0: round 0 の SG 票の入力は空(`latestWindow etaSG 0 = []`)なので凍結は空(`freezeRoot_zero`)で、初期の cache の round 0 も
+   空で完了しているから、round 0 の結果はいつも空(`stateBefore_phase_zero`。周回 246)。
 
 手書き `NamedCacheProvenance.completed_phase_before_read` と、`FrameCompleted.frame_phase_completed_of_tick_in_round` の段 3
 (値の読み戻し)に当たる。手書きは node の不変条件(cache は自分の finalized で切り詰め済み)と時刻の strict read を経由するが、
@@ -180,6 +182,38 @@ theorem initialCache_phase_none {k : Nat} (hk : 0 < k) (P : GradePhase) :
     omega
   all_goals exact phaseResult_pendingFrame P
 
+/-- 初期の cache の round 0 の結果は完了していて空。 -/
+theorem initialCache_phase_zero (P : GradePhase) : phaseResult (cacheAtRound initialCache 0) P = some none := by
+  cases P <;> rfl
+
+/-- round 0 の SG 票の入力は空(`latestWindow etaSG 0` が空)。 -/
+theorem rawInputs_zero (gv : GradeView) (eta : Nat) (cutoff : Int) (v : ValidatorId) :
+    rawInputs gv eta 0 cutoff v = ⟨[]⟩ := by
+  unfold rawInputs latestWindow
+  simp only [Nat.zero_min, List.range_zero, List.map_nil]
+  rfl
+
+/-- round 0 ではどの validator も支持しない(入力が空なので `supports` の `any` が偽)。 -/
+theorem positive_zero (gv : GradeView) (f : Block) (eta : Nat) (early late : Int) (v : ValidatorId) (b : Block) :
+    positive gv f eta 0 early late v b = false := by
+  unfold positive readyView interpretedInputs
+  rw [rawInputs_zero]
+  rfl
+
+/-- round 0 の grade はどのブロックも通らない(支持の重みが 0)。 -/
+theorem gradeBool_zero (e : ProtocolEnv) (gv : GradeView) (f : Block) (eta : Nat) (early late : Int) (b : Block) :
+    gradeBool e gv f eta 0 early late b = false := by
+  unfold gradeBool
+  simp only [positive_zero]
+  simp [NaruStd.Set.filter, Model.Consensus.Objects.Weights.weightOf, NaruStd.Set.sum]
+
+/-- **round 0 の凍結は空**: round 0 の `freezeRoot` は `none`。手書き `relative_freezeRoot_zero`(`Protocol/Grades/WeakGenesis.lean` が使う)に当たる(周回 246)。 -/
+theorem freezeRoot_zero (e : ProtocolEnv) (gv : GradeView) (f : Block) (eta : Nat) (early late : Int) :
+    freezeRoot e gv f eta 0 early late = none := by
+  unfold freezeRoot
+  simp only [gradeBool_zero]
+  simp [NaruStd.Set.filter, deepest?, NaruStd.Set.findUnique?]
+
 /-- ノードの tick の後の cache は、tick の前の store で `onPhaseTick` を掛けた cache を、tick の後の store の finalized で
 `clipCache` したもの(`Grade2Capture.nodeTick_cache` の、finalized を名指しする版)。 -/
 theorem nodeTick_cache_eq (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
@@ -270,6 +304,57 @@ theorem stateBefore_phase_origin (n : Nat) (w : ValidatorId) {k : Nat} (hk : 0 <
             unfold worldStep
             dsimp only
             exact hw)
+
+/-- **round 0 の結果は空**(前提なし): `stateBefore n` の `w` の cache の round 0 の phase `P` の結果が `some x` なら `x = none`。
+`stateBefore_phase_origin` と同じ添字の帰納法で、初期の cache の round 0 は空で完了(`initialCache_phase_zero`)、tick の凍結は
+空(`freezeRoot_zero`)、切り詰めは空を空に写す。手書き `readFrame_g1_round_zero_no_root` の `completed_phase_before_read` と
+`round_zero_g1_capture_impossible` の組に当たる(手書きは G1 の domain 時刻 0 と読みの時刻の違いも使うが、生成 Model では凍結自体が空なので要らない。周回 246)。 -/
+theorem stateBefore_phase_zero (n : Nat) (w : ValidatorId) (P : GradePhase) {x : Option Block}
+    (h : phaseResult (cacheAtRound (worldAt (stateBefore c p a nr s rho n) w).cache 0) P = some x) : x = none := by
+  induction n generalizing x with
+  | zero =>
+    have h0 := (initialCache_phase_zero P).symm.trans h
+    simpa using h0.symm
+  | succ i ih =>
+    cases hev : rho.events[i]? with
+    | none =>
+      rw [Proofs.Consensus.Signing.stateBefore_succ_of_none c p a nr s rho hev] at h
+      exact ih h
+    | some ev =>
+      have hsucc := Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev
+      cases ev with
+      | Tick u t =>
+        rcases Proofs.Consensus.Runs.worldAt_insert (stateBefore c p a nr s rho i) u
+            (nodeTick c p a nr s u (worldAt (stateBefore c p a nr s rho i) u) t).1 w with ⟨rfl, hw⟩ | hw
+        · rw [hsucc] at h
+          unfold worldStep at h
+          dsimp only at h
+          rw [hw] at h
+          rw [nodeTick_cache_eq, cacheAtRound_clipCache, phaseResult_clipFrame] at h
+          obtain ⟨y, hy, rfl⟩ := clipResult_eq_some h
+          rcases onPhaseTick_phase_some hy with ⟨x0, hx0, rfl⟩ | ⟨-, rfl⟩
+          · rw [ih hx0]; rfl
+          · rw [freezeRoot_zero]; rfl
+        · rw [hsucc] at h
+          unfold worldStep at h
+          dsimp only at h
+          rw [hw] at h
+          exact ih h
+      | Deliver u o t =>
+        rcases Proofs.Consensus.Runs.worldAt_insert (stateBefore c p a nr s rho i) u
+            (nodeProcess c p s (worldAt (stateBefore c p a nr s rho i) u) o) w with ⟨rfl, hw⟩ | hw
+        · rw [hsucc] at h
+          unfold worldStep at h
+          dsimp only at h
+          rw [hw] at h
+          rw [nodeProcess_cache_eq, cacheAtRound_clipCache, phaseResult_clipFrame] at h
+          obtain ⟨y, hy, rfl⟩ := clipResult_eq_some h
+          rw [ih hy]; rfl
+        · rw [hsucc] at h
+          unfold worldStep at h
+          dsimp only at h
+          rw [hw] at h
+          exact ih h
 
 end Run
 
