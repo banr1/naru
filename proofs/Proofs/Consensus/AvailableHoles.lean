@@ -5,6 +5,7 @@ import Proofs.Consensus.Voting
 import Proofs.Consensus.ConfirmedOrigin
 import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.GradeSupporter
+import Proofs.Consensus.GradeTransport
 import Mathlib.Tactic
 
 /-!
@@ -35,13 +36,16 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `activePrefix_exists`(tree の重複なし `preUpdateTree_nodup` を使う。周回 233 に閉じた)と `activePrefix_dominates` で anchor に移す(周回 232)。
    `confFrameG2_g1Root_positive` は g2 の root の出どころ `confCache_g2_origin`、穴 `confFrameG1_slot_positive`(読みの G1 の欄)、
    `g1Freeze_of_g2Freeze_positive`(G1 の凍結は G2 の凍結以上。穴ではない)と `preceq_clipGrade_of_compatible` から証明する(周回 234)。
-   `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を穴 `g1Grade_of_g2Grade_positive`(grade の持ち越し)と `g1Tree_of_g2Tree`
+   `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を `g1Grade_of_g2Grade_positive`(grade の持ち越し。穴ではない)と `g1Tree_of_g2Tree`
    (tree の持ち越し。周回 236 に閉じた)で G1 の tick に運び、`freezeRoot_of_graded`(grade の通った tree の要素は凍結の root 以下)で G1 の凍結に移す(周回 235)。
+   `g1Grade_of_g2Grade_positive` は抽象的な持ち越し `GradeTransport.gradeBool_transport` に 2 つの tick の間の包含の穴
+   `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd` を渡す(周回 238)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(8 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+3. 穴(11 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
    `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
    `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
-   `g1Grade_of_g2Grade_positive`(手書き `q10_grade_cross`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+   `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd`(手書き `q10_rawInputs_back` /
+   `q10_interpreted_back` / `q10_localCovers_fwd` / `q10_interpreted_fwd_cover`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -416,12 +420,132 @@ theorem g1Tree_of_g2Tree (hwf : SetupWellFormed c p s) (hsleep : SleepyRegime c 
       (domainTime_G2_lt_G1 s.e s.hc (Proofs.Consensus.Liveness.wf_facts hwf).1 k)
   exact (Proofs.Consensus.BlockStamps.stateBefore_keep c p a nr s rho hlt.le w b hb).1
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で G2 の
+/-- run の添字 `j` の event の前の、ノード `w` の store の grade view。 -/
+def tickGradeView (j : Nat) (w : ValidatorId) : Model.Consensus.Protocol.Grades.GradeView :=
+  Model.Consensus.Protocol.Grades.gradeView
+    (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core)
+
+/-- run の添字 `j` の event の前の、ノード `w` の store の finalized。 -/
+def tickF (j : Nat) (w : ValidatorId) : Block :=
+  (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core).f
+
+/-- round `k` の G2 の late 時刻は G2 の domain 時刻(どちらも opening の `Δ` 前)。手書き `q10_late_g2_eq_domain_g2`。 -/
+theorem lateTime_G2_eq_domainTime (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (k : Nat) :
+    Model.Consensus.Protocol.Grades.lateTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 =
+      Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 := by
+  unfold Model.Consensus.Protocol.Grades.lateTime Model.Consensus.Protocol.Grades.domainTime
+  rfl
+
+/-- `0 ≤ Δ` なら round `k` の G1 の early / late 時刻は G2 の domain 時刻以下で、G2 の early 時刻は G1 の early 時刻以下。
+手書き `q10_early_g1_le_domain_g2` / `q10_late_g1_le_domain_g2` / `q10_early_g2_le_early_g1`。 -/
+theorem g1Times_le_domainTime_G2 (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (hc : Model.Consensus.Protocol.Grades.HealConfig) (hδ : 0 ≤ e.delta) (k : Nat) :
+    Model.Consensus.Protocol.Grades.earlyTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G1 ≤
+        Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 ∧
+      Model.Consensus.Protocol.Grades.lateTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G1 ≤
+        Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 ∧
+      Model.Consensus.Protocol.Grades.earlyTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 ≤
+        Model.Consensus.Protocol.Grades.earlyTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G1 := by
+  unfold Model.Consensus.Protocol.Grades.earlyTime Model.Consensus.Protocol.Grades.lateTime
+    Model.Consensus.Protocol.Grades.domainTime
+  simp only [Model.Consensus.Protocol.Grades.earlyOffset, Model.Consensus.Protocol.Grades.lateOffset,
+    Model.Consensus.Protocol.Grades.domainOffset]
+  refine ⟨?_, ?_, ?_⟩ <;> linarith
+
+/-- 穴: GST-zero の枝で、honest なノード `w` の正の round `k` の G2 / G1 の domain 時刻の tick(添字 `j2` / `j1`)について、
+G1 の early か late の時刻 `cut` で、G1 の tick の前の store の生の入力は G2 の tick の前の store の生の入力でもある
+(`cut` は G2 の domain 時刻以下)。手書き `NamedOutageClosure.q10_rawInputs_back`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
+閉じるのに要るもの: SG 票の受信の印が公の時刻 `cut` より前なら、その票は `cut` の strict read で既に受理されていた
+(手書き `q10_row_at_public_cut`: `sg_row_accepted_before_public_cut` と honest なノードの各公の時刻の tick `tick_total`)、
+票と印は run の添字について残る(手書き `strict_sg_row_carry`)、G1 の early / late 時刻は公の時刻(手書き `q10_early_g1_public` /
+`q10_late_g1_public`。`0 < k` を使う)。 -/
+theorem g1RawInputs_back (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
+    (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
+    (hj1 : rho.events[j1]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
+    {cut : Int}
+    (hcut : cut = Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1 ∨
+      cut = Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)
+    (v : ValidatorId) {y : Model.Consensus.Protocol.ForkChoice.Goldfish.SGVote}
+    (hy : y ∈ (Model.Consensus.Protocol.Grades.rawInputs (tickGradeView c p a nr s rho j1 w) s.hc.etaSG k cut v).elems) :
+    y ∈ (Model.Consensus.Protocol.Grades.rawInputs (tickGradeView c p a nr s rho j2 w) s.hc.etaSG k cut v).elems := by
+  sorry
+
+/-- 穴: `g1RawInputs_back` と同じ 2 つの tick と時刻 `cut` で、G1 の tick の前の store の解釈済みの入力(その store の finalized に
+対する)は、G2 の tick の前の store の解釈済みの入力(その store の finalized に対する)でもある。手書き
+`NamedOutageClosure.q10_interpreted_back`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
+閉じるのに要るもの: 生の入力は `g1RawInputs_back`、本体は受信の印が公の時刻 `cut` より前なら `cut` の strict read で既に tree に
+あり(手書き `body_mem_stateBeforeTime_of_public_stampedBefore`)印は変わらない(手書き `q10_strict_body_carry`)、tree の root の
+解決は root の衝突が無いので変わらない(手書き `held_find_at_strict`)、G1 の tick の finalized と互換なら G2 の tick の finalized
+(その祖先。`FinalizedMonotone`)とも互換(手書き `q10_compatible_back`)。 -/
+theorem g1Interpreted_back (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
+    (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
+    (hj1 : rho.events[j1]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
+    {cut : Int}
+    (hcut : cut = Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1 ∨
+      cut = Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)
+    (v : ValidatorId) {y : Model.Consensus.Protocol.ForkChoice.Goldfish.SGVote}
+    (hy : y ∈ (Model.Consensus.Protocol.Grades.interpretedInputs (tickGradeView c p a nr s rho j1 w)
+      (tickF c p a nr s rho j1 w) s.hc.etaSG k cut v).elems) :
+    y ∈ (Model.Consensus.Protocol.Grades.interpretedInputs (tickGradeView c p a nr s rho j2 w)
+      (tickF c p a nr s rho j2 w) s.hc.etaSG k cut v).elems := by
+  sorry
+
+/-- 穴: `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の tree で鍵 `key` の head が `b` を覆えば、G1 の tick の
+前の store の tree でも覆う。手書き `NamedOutageClosure.q10_localCovers_fwd`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
+閉じるのに要るもの: tree のブロックは残り(`BlockStamps.stateBefore_keep`)、root の解決 `findRoot?` は tree が育っても変わらない
+(手書き `q10_find_fwd`: run に root の衝突が無い `held_find_at_strict`)。 -/
+theorem g1LocalCovers_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat}
+    (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
+    (hj1 : rho.events[j1]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
+    (key : Option BlockId) {b : Block}
+    (h : Model.Consensus.Protocol.Grades.localCovers (tickGradeView c p a nr s rho j2 w) key b = true) :
+    Model.Consensus.Protocol.Grades.localCovers (tickGradeView c p a nr s rho j1 w) key b = true := by
+  sorry
+
+/-- 穴: `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の G2 の early 時刻の解釈済みの入力 `y` の鍵が、その store の
+tree で `b` を覆い、G1 の tick の前の store の finalized が `b` の祖先なら、`y` は G1 の tick の前の store の G1 の early 時刻の
+解釈済みの入力でもある。手書き `NamedOutageClosure.q10_interpreted_fwd_cover`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
+閉じるのに要るもの: 生の入力は票と印が残ることで前へ運べ(手書き `q10_rawInputs_fwd`: `strict_sg_row_carry` と
+`pool_view_mem`)、本体の head は tree に残り印も変わらず(手書き `q10_strict_body_carry`)root の解決も変わらない(手書き
+`q10_find_fwd`)、head は `b` の子孫なので G1 の tick の finalized ⪯ `b` ⪯ head で互換。 -/
+theorem g1InterpretedCover_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat}
+    (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
+    (hj1 : rho.events[j1]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
+    {b : Block} (hFB : preceq (tickF c p a nr s rho j1 w) b = true)
+    (v : ValidatorId) {y : Model.Consensus.Protocol.ForkChoice.Goldfish.SGVote}
+    (hy : y ∈ (Model.Consensus.Protocol.Grades.interpretedInputs (tickGradeView c p a nr s rho j2 w)
+      (tickF c p a nr s rho j2 w) s.hc.etaSG k
+      (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2) v).elems)
+    (hcov : Model.Consensus.Protocol.Grades.localCovers (tickGradeView c p a nr s rho j2 w) y.confirmed b = true) :
+    y ∈ (Model.Consensus.Protocol.Grades.interpretedInputs (tickGradeView c p a nr s rho j1 w)
+      (tickF c p a nr s rho j1 w) s.hc.etaSG k
+      (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1) v).elems := by
+  sorry
+
+/-- GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で G2 の
 `gradeBool` を満たすブロック `b` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、`b` は
 その store でも G1 の `gradeBool` を満たす。手書き `NamedOutageClosure.q10_grade_cross`(`Protocol/Grades/Q10Frame.lean`)に当たる
-(周回 235)。閉じるのに要るもの: G1 の early / late 時刻は G2 の domain 時刻以下(手書き `q10_early_g1_le_domain_g2` /
-`q10_late_g1_le_domain_g2`)、2 つの tick の間で cutoff 以前の票と受信の印・tree の head が保たれること、`supports` / `opposes` の
-持ち越し(手書き `q10_gradeBool_transport`: 反対は減り支持は増える)。 -/
+(周回 235 に穴として置き、周回 238 に手書きと同じ運びで証明した)。抽象的な持ち越し `GradeTransport.gradeBool_transport`
+(手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻は G2 の domain 時刻(= G2 の late 時刻)以下であること
+(`g1Times_le_domainTime_G2`)と、2 つの tick の間の包含(穴 `g1Interpreted_back` / `g1RawInputs_back` / `g1LocalCovers_fwd` /
+`g1InterpretedCover_fwd`)を渡す。 -/
 theorem g1Grade_of_g2Grade_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
@@ -443,7 +567,32 @@ theorem g1Grade_of_g2Grade_positive (hwf : SetupWellFormed c p s) (hdom : RunDom
       (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core).f s.hc.etaSG k
       (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)
       (Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1) b = true := by
-  sorry
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1.le
+  obtain ⟨hearly, hlate, hee⟩ := g1Times_le_domainTime_G2 s.e s.hc hδ k
+  rw [← lateTime_G2_eq_domainTime] at hearly hlate
+  refine Proofs.Consensus.GradeTransport.gradeBool_transport s.e
+    (Proofs.Consensus.JustificationCertificate.sorted_validators hwf)
+    (tickGradeView c p a nr s rho j2 w) (tickGradeView c p a nr s rho j1 w)
+    (tickF c p a nr s rho j2 w) (tickF c p a nr s rho j1 w) s.hc.etaSG k
+    (Proofs.Consensus.GradeSupporter.earlyTime_le_lateTime s.e s.hc k _ hδ)
+    (Proofs.Consensus.GradeSupporter.earlyTime_le_lateTime s.e s.hc k _ hδ) b
+    (fun v x hx => ?_) (fun v x hx => ?_) (fun v x hx => ?_) (fun v u hu hcov => ?_)
+    (fun key h => g1LocalCovers_fwd c p a nr s rho hwf hdom hsleep hw hj2 hj1 key h) hgrade
+  · obtain ⟨y, hy, rfl⟩ := (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mp hx
+    exact (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mpr
+      ⟨y, Proofs.Consensus.GradeSupporter.interpretedInputs_mono hearly
+        (g1Interpreted_back c p a nr s rho hwf hdom hsleep hw hk hj2 hj1 (Or.inl rfl) v hy), rfl⟩
+  · obtain ⟨y, hy, rfl⟩ := (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mp hx
+    exact (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mpr
+      ⟨y, Proofs.Consensus.GradeSupporter.interpretedInputs_mono hlate
+        (g1Interpreted_back c p a nr s rho hwf hdom hsleep hw hk hj2 hj1 (Or.inr rfl) v hy), rfl⟩
+  · obtain ⟨y, hy, rfl⟩ := (Proofs.Consensus.GradeTransport.mem_rawView_iff _ _ _ _ _ _).mp hx
+    exact (Proofs.Consensus.GradeTransport.mem_rawView_iff _ _ _ _ _ _).mpr
+      ⟨y, Proofs.Consensus.GradeTransport.rawInputs_mono hlate
+        (g1RawInputs_back c p a nr s rho hwf hdom hsleep hw hk hj2 hj1 (Or.inr rfl) v hy), rfl⟩
+  · obtain ⟨y, hy, rfl⟩ := (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mp hu
+    exact (Proofs.Consensus.GradeSupporter.mem_readyView_iff _ _ _ _ _ _ _).mpr
+      ⟨y, g1InterpretedCover_fwd c p a nr s rho hwf hdom hsleep hw hj2 hj1 hFB v hy hcov, rfl⟩
 
 /-- GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で凍結した
 G2 の root `g2v` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、その store でも G1 の
