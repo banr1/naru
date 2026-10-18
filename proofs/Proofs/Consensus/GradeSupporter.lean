@@ -302,4 +302,69 @@ theorem phase_graded_has_honest_supporter (e : ProtocolEnv) (hc : HealConfig) (h
         y.confirmed = some k ∧ findRoot? gv.tree k = some head ∧ preceq b head = true :=
   graded_has_honest_supporter_head e hv gv f hc.etaSG r (earlyTime_le_lateTime e hc r p hδ) hA hAH hmaj hgrade
 
+/-! ## grade の通った block 同士は互換 -/
+
+/-- 同じ token の key が覆う 2 つの block は互換(どちらも tree の同じ head の祖先)。手書き `q10_covers_compatible`。 -/
+theorem localCovers_compatible {gv : GradeView} {k : Option BlockId} {b b' : Block}
+    (h : localCovers gv k b = true) (h' : localCovers gv k b' = true) : compatible b b' = true := by
+  unfold localCovers headCovers at h h'
+  cases k with
+  | none => simp at h
+  | some r =>
+    simp only at h h'
+    cases hf : findRoot? gv.tree r with
+    | none => rw [hf] at h; simp at h
+    | some hd =>
+      rw [hf] at h h'
+      exact Proofs.Consensus.Blocks.compatible_of_preceq_common h h'
+
+/-- **支持は互換でない block への反対**(`early ≤ late`): `v` が `b` に `positive` なら、`b` と互換でない `b'` に `opposing`。
+支持の根拠の早い token `x`(round が早い token の中で最大で `b` を覆う)は遅い cutoff でも解釈済みで(`readyView_mono`)、
+`b'` を覆えば `b` と `b'` は互換になる。手書き `q10_opposing_of_positive`(`SGFromSupport.sg_opposing_of_positive`)。 -/
+theorem opposing_of_positive (gv : GradeView) (f : Block) (eta r : Nat) {early late : Int} (hel : early ≤ late)
+    (v : ValidatorId) {b b' : Block} (hne : compatible b b' = false)
+    (hpos : positive gv f eta r early late v b = true) : opposing gv f eta r early late v b' = true := by
+  unfold positive supports NaruStd.Set.any at hpos
+  rw [List.any_eq_true] at hpos
+  obtain ⟨x, hx, hsx⟩ := hpos
+  simp only [Bool.and_eq_true] at hsx
+  obtain ⟨⟨⟨hmax, hcov⟩, -⟩, -⟩ := hsx
+  unfold opposing opposes NaruStd.Set.any
+  rw [Bool.or_eq_true, List.any_eq_true]
+  refine Or.inl ⟨x, readyView_mono hel v x hx, ?_⟩
+  rw [Bool.and_eq_true]
+  refine ⟨hmax, ?_⟩
+  show (!localCovers gv x.key b') = true
+  cases hc : localCovers gv x.key b'
+  · rfl
+  · rw [localCovers_compatible hcov hc] at hne
+    exact absurd hne (by decide)
+
+/-- **grade の通った 2 つの block は互換**(`early ≤ late`): 互換でなければ、一方の支持は他方の反対に含まれ
+(`opposing_of_positive`)、重みが `支持(b) ≤ 反対(b') < 支持(b') ≤ 反対(b) < 支持(b)` と一周する。
+手書き `q10_graded_compatible`(`SGFromSupport.sg_graded_compatible`)。 -/
+theorem graded_compatible (e : ProtocolEnv) (hv : Sorted (validators e.electorate)) (gv : GradeView) (f : Block)
+    (eta r : Nat) {early late : Int} (hel : early ≤ late) {b b' : Block}
+    (hb : gradeBool e gv f eta r early late b = true) (hb' : gradeBool e gv f eta r early late b' = true) :
+    compatible b b' = true := by
+  by_contra hcon
+  have hne : compatible b b' = false := by simpa using hcon
+  have hne' : compatible b' b = false := by rw [Proofs.Consensus.Blocks.compatible_comm]; exact hne
+  have hsub : ∀ {x y : Block}, compatible x y = false →
+      weightOf e.electorate ((validators e.electorate).filter (fun v => positive gv f eta r early late v x)) ≤
+        weightOf e.electorate ((validators e.electorate).filter (fun v => opposing gv f eta r early late v y)) := by
+    intro x y hxy
+    apply Proofs.Consensus.JustificationCertificate.weightOf_le_of_sub (hv.filter _) (hv.filter _)
+    intro z hz
+    have hz' : z ∈ (validators e.electorate).elems.filter _ := hz
+    rw [List.mem_filter] at hz'
+    show z ∈ (validators e.electorate).elems.filter _
+    rw [List.mem_filter]
+    exact ⟨hz'.1, opposing_of_positive gv f eta r hel z hxy hz'.2⟩
+  have h1 := hsub hne
+  have h2 := hsub hne'
+  unfold gradeBool at hb hb'
+  rw [decide_eq_true_iff] at hb hb'
+  omega
+
 end Proofs.Consensus.GradeSupporter

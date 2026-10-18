@@ -121,7 +121,7 @@ lake exe naru_test proofs          # 証明基盤の検査(C68 / C69 / C70 / C72
 最後の行 `layer: …` が示すとおり、これはプロトコルの保証(生成 Statements に対する theorem)の層で、コンパイラの意味保存(`lake build NaruSem`)は別の層です。
 
 `naru_test proofs` は、`obligations.json` の決定性・束縛 hash の独立な再計算・検体 `tests/proofs/` での 5 つの状況・Lake の依存方向(`Proofs` の import 閉包に手書きライブラリ等が無いこと、逆依存が無いこと)・
-`proofs/` に `admit` が無く `sorry` が下の 12 の穴の一覧と一対一に対応すること・義務の theorem の公理監査・この README の内容を検査します。
+`proofs/` に `admit` が無く `sorry` が下の 13 の穴の一覧と一対一に対応すること・義務の theorem の公理監査・この README の内容を検査します。
 
 ## 9. consensus の義務
 
@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 12 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 13 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -507,8 +507,11 @@ anchor = `activePrefix … root1` が `g` を延ばすことを示します。na
 (`preUpdateTree_nodup`。手書きの tree は `Finset` なので要らない)が要ります(周回 232)。これは `TreeInv` の欄 `nodup`(受理はまだ tree に無いブロックだけを
 `insertSorted` で入れるので重複が生じない)から出します(周回 233 に閉じた)。`confFrameG2_g1Root_positive` は手書きと同じく、g2 の root の出どころ
 (`confCache_g2_origin`: G2 の domain 時刻の tick で凍結した root。`Grade2Capture.stateBefore_g2_origin`)、穴 `confFrameG1_slot_positive`(読みの G1 の欄は
-G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_completed_in_round`)、穴 `g1Freeze_of_g2Freeze_positive`(G2 の凍結の root 以上の G1 の凍結。
-手書き `q10_g1_of_g2_freeze`)と、切り詰めが finalized と互換な祖先を保つこと(`preceq_clipGrade_of_compatible`)から証明します(周回 234)。回復の枝は穴
+G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_completed_in_round`)、`g1Freeze_of_g2Freeze_positive`(G2 の凍結の root 以上の G1 の凍結。
+手書き `q10_g1_of_g2_freeze`。穴ではない)と、切り詰めが finalized と互換な祖先を保つこと(`preceq_clipGrade_of_compatible`)から証明します(周回 234)。
+`g1Freeze_of_g2Freeze_positive` は手書きと同じく、G2 の凍結の root を穴 `g1Grade_of_g2Grade_positive`(G1 の grade への持ち越し。手書き `q10_grade_cross`)と
+穴 `g1Tree_of_g2Tree`(G1 の tick の tree への持ち越し。手書き `q10_tree_fwd`)で G1 の tick に運び、証明済みの `freezeRoot_of_graded`(grade の通った要素は互いに互換
+`GradeSupporter.graded_compatible` なので最も深い要素が支配する。手書き `q10_freeze_of_graded`)で G1 の凍結に移します(周回 235)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
@@ -527,7 +530,8 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.confWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 224 |
 | `Proofs.Consensus.AvailableHoles.confFrameG1_slot_positive` | `Consensus.Spec.Claims.available` | `frame_phase_completed_in_round` | `DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean` | 234 |
-| `Proofs.Consensus.AvailableHoles.g1Freeze_of_g2Freeze_positive` | `Consensus.Spec.Claims.available` | `q10_g1_of_g2_freeze` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 234 |
+| `Proofs.Consensus.AvailableHoles.g1Tree_of_g2Tree` | `Consensus.Spec.Claims.available` | `q10_tree_fwd` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 235 |
+| `Proofs.Consensus.AvailableHoles.g1Grade_of_g2Grade_positive` | `Consensus.Spec.Claims.available` | `q10_grade_cross` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 235 |
 | `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
