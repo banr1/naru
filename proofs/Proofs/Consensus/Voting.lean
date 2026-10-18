@@ -88,6 +88,18 @@ def voteHead (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (st : Store) : 
       (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (storeToHealing st)) st.s)
     (st.s - 1))
 
+/-- `voteHead` の root を取る前のブロック(手書き `voterHeadAt` の本体と同じ式)。 -/
+def voteHeadBlock (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (st : Store) : Block :=
+  getHeadInTreeWith cache e hc st (voterFilteredBlockTree e st st.s)
+    (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (storeToHealing st)) st.s)
+    (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (storeToHealing st)) st.s)
+    (st.s - 1)
+
+theorem voteHead_eq_root (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (st : Store) :
+    voteHead cache e hc st = root (voteHeadBlock cache e hc st) := rfl
+
 /-- tick の投票の務めが読む store: 冒頭で時計を `(t, slotOf e t)` に合わせ、提案の時刻で自分が proposer なら提案の務めを済ませたもの。 -/
 def voteStore (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (nr : ValidatorId → Nat → BlockId)
     (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (cfg : Model.Consensus.Protocol.ChainState.HeightConfig)

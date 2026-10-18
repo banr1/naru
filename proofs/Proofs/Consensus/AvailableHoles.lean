@@ -1,6 +1,7 @@
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Available
 import Proofs.Consensus.ShortHorizon
+import Proofs.Consensus.Voting
 import Mathlib.Tactic
 
 /-!
@@ -15,10 +16,12 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 2. GST-zero の枝の 3 つの一致(確認の記録の一致・finalized との交差の互換・確認の出力の一致)は、どれも `commonUpper_genesis`
    (2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`。手書きの後の投票の務めの head)から証明済みの
    `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出す(周回 216)。
-   `commonUpper_genesis` は最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら穴 `commonUpper_genesis_long`、より前に run が終わるなら
+   `commonUpper_genesis` は最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら `commonUpper_genesis_long`、より前に run が終わるなら
    確認の記録は genesis(証明済みの `ShortHorizon.storeAt_rec_short`)で finalized も genesis(証明済みの `ShortHorizon.storeAt_f_short`)なので
-   上界は genesis(枝の分け方は周回 218、finalized の側は周回 220)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(5 件): `commonUpper_genesis_long`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
+   上界は genesis(枝の分け方は周回 218、finalized の側は周回 220)。`commonUpper_genesis_long` は、確認の記録と finalized がそれぞれ
+   ある slot 以後の投票の務めの head `voteDutyHeadAt` の祖先であることを言う穴 `recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead`
+   から、4 つの slot の最大で上界を揃えて証明する(周回 222)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
+3. 穴(6 件): `recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
@@ -44,20 +47,75 @@ section Holes
 variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
   (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun)
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下の run の、honest な 2 ノードの時刻 0 以後の
-2 つの読みの finalized と確認の記録 `latestConfirmed` が共通の上界を持つこと(`CommonUpperFrom`)。
-手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` と `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`
-(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`。上界は大きい方の slot の後の投票の務めの head
-`voterHeadAt`。どちらも前提 `hzero : confirmation_time S.E 0 ≤ rho.horizon`)に当たる。
-閉じるのに要るもの: `SleepyRegime … 0` を手書きの `WeakGenesis`(`tGST = 0`・`HonestCommittees`・窓の過半)として読み、
-FG root の確認の証人(手書き `WeakFG.fgRoot_confirmationWitness_at_read`)と、務めの出どころが後の投票の head の祖先であること
-(手書き `actionSources_preceq_voteDutyHead_of_gstZero`)を生成 Model の store で示すこと。
+/-- ノード `x` の slot `k` の投票の務めの head(手書き `voterHeadAt`): 投票の時刻 `voteTime e k` より前の event を畳んだ `x` の状態に
+時計を合わせ、`preparedCache`(tick の前の `onPhaseTick`)で読んだ fork choice の head(`Voting.voteHeadBlock`)。
+`Voting.clocked` は `setClock` と同じ式なので、読みは生成 Model の `confirmationReadAt x (voteTime e k)`(手書き `voteDutyRead`)と同じ。 -/
+def voteDutyHeadAt (x : ValidatorId) (k : Nat) : Block :=
+  let tv := Model.Consensus.Protocol.Schedule.voteTime s.e k
+  let n := worldAt (stateBeforeTime c p a nr s rho tv) x
+  Proofs.Consensus.Voting.voteHeadBlock (preparedCache s n tv) s.e s.hc
+    (Proofs.Consensus.Voting.clocked s.e n.st tv).core
+
+/-- 穴: GST-zero の枝で最初の確認の時刻が `horizon` 以下の run の、honest なノード `v` の時刻 `t` の読みの確認の記録 `latestConfirmed` は、
+ある slot `first`(確認の時刻が `horizon` 以下)以後の確認の時刻が `horizon` 以下のどの slot `last` についても、honest などのノードの
+slot `last + 1` の投票の務めの head の祖先。手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)に当たる。
+閉じるのに要るもの: 確認の記録の出どころ(genesis・確認の選択・stable root)の場合分けと、確認の walk が後の投票の head の祖先であること
+(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` / `protectedVoteSlots_of_gstZero_v2`)。 -/
+theorem recordAt_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    (hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon)
+    {v : ValidatorId} (hv : rho.honest.contains v = true) (t : Int) :
+    ∃ first : Nat, Model.Consensus.Protocol.Schedule.confirmationTime s.e first ≤ rho.horizon ∧
+      ∀ last, first ≤ last → Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon →
+        ∀ x, rho.honest.contains x = true →
+          preceq (storeAt c p a nr s rho v t).core.latestConfirmed (voteDutyHeadAt c p a nr s rho x (last + 1)) = true := by
+  sorry
+
+/-- 穴: `recordAt_preceq_laterVoteHead` の finalized の版。手書き `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)に当たる。
+閉じるのに要るもの: finalized が FG root の祖先であること、FG root の確認の証人(手書き `WeakFG.fgRoot_confirmationWitness_at_read`)、
+務めの出どころが後の投票の head の祖先であること(手書き `actionSources_preceq_voteDutyHead_of_gstZero`)を生成 Model の store で示すこと。
 genesis の枝は `SlashableBound` を与えないので `finalizedSafe` の本体は使えない。 -/
+theorem finalizedAt_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    (hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon)
+    {v : ValidatorId} (hv : rho.honest.contains v = true) (t : Int) :
+    ∃ first : Nat, Model.Consensus.Protocol.Schedule.confirmationTime s.e first ≤ rho.horizon ∧
+      ∀ last, first ≤ last → Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon →
+        ∀ x, rho.honest.contains x = true →
+          preceq (storeAt c p a nr s rho v t).core.f (voteDutyHeadAt c p a nr s rho x (last + 1)) = true := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)で最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下の run の、honest な 2 ノードの時刻 0 以後の
+2 つの読みの finalized と確認の記録 `latestConfirmed` の共通の上界(`CommonUpperFrom`): 穴 `finalizedAt_preceq_laterVoteHead` /
+`recordAt_preceq_laterVoteHead` の 4 つの `first` の最大を `last` とし、`u` の slot `last + 1` の投票の務めの head を上界にする
+(`last` は 4 つのどれかなので確認の時刻は `horizon` 以下)。手書き `latestConfirmed_compatible_finalized_of_weakGenesis` /
+`confirmedOutputCompatibleFrom_of_weakGenesis_named` の上界の揃え方。 -/
 theorem commonUpper_genesis_long (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     (hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon) :
     CommonUpperFrom c p a nr s rho 0 := by
-  sorry
+  intro u v t t2 hu hv _ _ _ _
+  obtain ⟨f1, h1, hb1⟩ := finalizedAt_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hzero hu t
+  obtain ⟨f2, h2, hb2⟩ := recordAt_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hzero hu t
+  obtain ⟨f3, h3, hb3⟩ := finalizedAt_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hzero hv t2
+  obtain ⟨f4, h4, hb4⟩ := recordAt_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hzero hv t2
+  have hmax : ∀ x y : Nat, Model.Consensus.Protocol.Schedule.confirmationTime s.e x ≤ rho.horizon →
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e y ≤ rho.horizon →
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e (max x y) ≤ rho.horizon := by
+    intro x y hx hy
+    rcases le_total x y with hxy | hyx
+    · rw [max_eq_right hxy]; exact hy
+    · rw [max_eq_left hyx]; exact hx
+  let last := max (max f1 f2) (max f3 f4)
+  have hlast : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon :=
+    hmax _ _ (hmax _ _ h1 h2) (hmax _ _ h3 h4)
+  refine ⟨voteDutyHeadAt c p a nr s rho u (last + 1), ?_, ?_, ?_, ?_⟩
+  · exact hb1 last (by omega) hlast u hu
+  · exact hb2 last (by omega) hlast u hu
+  · exact hb3 last (by omega) hlast u hu
+  · exact hb4 last (by omega) hlast u hu
 
 /-- 最初の確認の時刻 `confirmationTime e 0` より前に終わる run では、どのノード・どの時刻の読みでも finalized は genesis
 (証明済みの `ShortHorizon.storeAt_f_short`。周回 220)。手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named`
@@ -71,7 +129,7 @@ theorem finalized_genesis_short (hwf : SetupWellFormed c p s)
   exact Proofs.Consensus.ShortHorizon.storeAt_f_short c p a nr s rho hexec.1.1.1
     (Proofs.Consensus.Liveness.wf_facts hwf).1 hshort v t
 
-/-- GST-zero の枝(`t0 = 0`)の共通の上界: 最初の確認の時刻が `horizon` 以下なら穴 `commonUpper_genesis_long` から、
+/-- GST-zero の枝(`t0 = 0`)の共通の上界: 最初の確認の時刻が `horizon` 以下なら `commonUpper_genesis_long` から、
 そうでなければ確認の記録は genesis(`ShortHorizon.storeAt_rec_short`。手書き `latestConfirmedAt_eq_genesis_of_short_horizon`)で
 finalized も genesis(`finalized_genesis_short`)なので、上界は genesis。 -/
 theorem commonUpper_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)

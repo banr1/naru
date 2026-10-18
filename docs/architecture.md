@@ -286,7 +286,7 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statemen
 bodies が親について閉じていることを足し、bodies の genesis でないブロックはそのノードが処理したブロックで、`UnforgeableSignatures` の carried で発行に帰着)を与え、
 手書き `validatorVoteSafety`(`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` /
 `carriedByHonest_of_storeAt`)の筋)の 7 件が証明済みで、
-残り 7 件は骨格(C76。穴 9 件。`proofs/README.md`「骨格と穴」)で `naru proofs` は `sorry` と表示する(C71 が残る。[roadmap.md](roadmap.md))。残りの liveness 系の claim に向けた共有の足場
+残り 7 件は骨格(C76。穴 10 件。`proofs/README.md`「骨格と穴」)で `naru proofs` は `sorry` と表示する(C71 が残る。[roadmap.md](roadmap.md))。残りの liveness 系の claim に向けた共有の足場
 (骨格の theorem が使う): `Liveness.lean`(包含 `IncludedFrom` + 単調 `MonotoneFrom` + 未来の提案の不在 `NoFutureRead` + 再発 → 活性 `LiveFrom`
 の generic な補題と、`confirmedLive` / `stableLive` の結論を claim `available` の結論 `AvailableAt` に、`finalized` の活性を finalized の包含に
 還元する補題)、`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の honest な提案は入らない。`ExecutionValid` と Δ > 0 だけから
