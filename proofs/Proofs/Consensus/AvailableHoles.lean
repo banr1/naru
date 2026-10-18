@@ -35,13 +35,13 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `activePrefix_exists`(tree の重複なし `preUpdateTree_nodup` を使う。周回 233 に閉じた)と `activePrefix_dominates` で anchor に移す(周回 232)。
    `confFrameG2_g1Root_positive` は g2 の root の出どころ `confCache_g2_origin`、穴 `confFrameG1_slot_positive`(読みの G1 の欄)、
    `g1Freeze_of_g2Freeze_positive`(G1 の凍結は G2 の凍結以上。穴ではない)と `preceq_clipGrade_of_compatible` から証明する(周回 234)。
-   `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を穴 `g1Grade_of_g2Grade_positive`(grade の持ち越し)と穴 `g1Tree_of_g2Tree`
-   (tree の持ち越し)で G1 の tick に運び、`freezeRoot_of_graded`(grade の通った tree の要素は凍結の root 以下)で G1 の凍結に移す(周回 235)。
+   `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を穴 `g1Grade_of_g2Grade_positive`(grade の持ち越し)と `g1Tree_of_g2Tree`
+   (tree の持ち越し。周回 236 に閉じた)で G1 の tick に運び、`freezeRoot_of_graded`(grade の通った tree の要素は凍結の root 以下)で G1 の凍結に移す(周回 235)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(9 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+3. 穴(8 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
    `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
-   `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/ `g1Tree_of_g2Tree`(手書き
-   `q10_tree_fwd`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/ `g1Grade_of_g2Grade_positive`(手書き `q10_grade_cross`、同じファイル)/
+   `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
+   `g1Grade_of_g2Grade_positive`(手書き `q10_grade_cross`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -389,11 +389,21 @@ theorem freezeRoot_of_graded {e : Model.Consensus.Objects.Parameters.ProtocolEnv
   exact Proofs.Consensus.GradeSupporter.graded_compatible e hv gv f eta r hel
     ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hx).2 ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hy).2
 
-/-- 穴: ノード `w` の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store の tree の要素は、同じ round の G1 の domain 時刻の
-tick(添字 `j1`)の前の store の tree にもある。手書き `q10_tree_fwd`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 235)。
-閉じるのに要るもの: G2 の domain 時刻は G1 より `Δ` 前(`0 < Δ`)で run の event は時刻の順なので `j2 < j1`(`ScheduleWellFormed`)、
-各 handler は tree を保つか `Set.insert` で足すだけ(`TreeInv` と同じ run の帰納。手書き `q10_strict_body_carry`)。 -/
-theorem g1Tree_of_g2Tree (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+/-- G2 の domain 時刻は同じ round の G1 の domain 時刻より `Δ` 前(`0 < Δ` なら狭義に早い)。 -/
+theorem domainTime_G2_lt_G1 (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (hδ : 0 < e.delta) (k : Nat) :
+    Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G2 <
+      Model.Consensus.Protocol.Grades.domainTime e hc k Model.Consensus.Protocol.Grades.GradePhase.G1 := by
+  unfold Model.Consensus.Protocol.Grades.domainTime
+  simp only [Model.Consensus.Protocol.Grades.domainOffset]
+  linarith
+
+/-- ノード `w` の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store の tree の要素は、同じ round の G1 の domain 時刻の
+tick(添字 `j1`)の前の store の tree にもある。手書き `q10_tree_fwd`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 235 に穴として置き、
+周回 236 に証明した)。G2 の domain 時刻は G1 より `Δ` 前(`domainTime_G2_lt_G1`)で run の event は時刻の順(`SleepyRegime` の
+`ScheduleWellFormed`)なので `j2 < j1`(`Window.lt_of_time_lt`)、tree のブロックは run の添字について残る
+(`BlockStamps.stateBefore_keep`。手書き `q10_strict_body_carry`)。 -/
+theorem g1Tree_of_g2Tree (hwf : SetupWellFormed c p s) (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} {k j2 j1 : Nat}
     (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
       (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
@@ -401,7 +411,10 @@ theorem g1Tree_of_g2Tree (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
       (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
     {b : Block} (hb : b ∈ (worldAt (stateBefore c p a nr s rho j2) w).st.core.tree.elems) :
     b ∈ (worldAt (stateBefore c p a nr s rho j1) w).st.core.tree.elems := by
-  sorry
+  have hlt : j2 < j1 :=
+    Proofs.Consensus.Window.lt_of_time_lt (Proofs.Consensus.Available.sorted_nodup_of_sleepy c p a nr s rho hsleep).1 hj2 hj1
+      (domainTime_G2_lt_G1 s.e s.hc (Proofs.Consensus.Liveness.wf_facts hwf).1 k)
+  exact (Proofs.Consensus.BlockStamps.stateBefore_keep c p a nr s rho hlt.le w b hb).1
 
 /-- 穴: GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で G2 の
 `gradeBool` を満たすブロック `b` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、`b` は
@@ -436,7 +449,7 @@ theorem g1Grade_of_g2Grade_positive (hwf : SetupWellFormed c p s) (hdom : RunDom
 G2 の root `g2v` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、その store でも G1 の
 `freezeRoot` が `g2v` 以上の root `g1v` を凍結する。手書き `NamedOutageClosure.q10_g1_of_g2_freeze`(`Protocol/Grades/Q10Frame.lean`)に
 当たる(周回 234 に穴として置き、周回 235 に手書きと同じ運びで証明した)。`g2v` は tree にあり G2 の `gradeBool` を満たし
-(`Grade2Capture.freezeRoot_mem`)、穴 `g1Grade_of_g2Grade_positive` で G1 の grade に、穴 `g1Tree_of_g2Tree` で G1 の tick の tree に
+(`Grade2Capture.freezeRoot_mem`)、穴 `g1Grade_of_g2Grade_positive` で G1 の grade に、`g1Tree_of_g2Tree` で G1 の tick の tree に
 持ち越し、`freezeRoot_of_graded`(tree の重複なしは `TreeInv`、`early ≤ late` は `0 < Δ`)で G1 の凍結に移す。 -/
 theorem g1Freeze_of_g2Freeze_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
@@ -462,7 +475,7 @@ theorem g1Freeze_of_g2Freeze_positive (hwf : SetupWellFormed c p s) (hdom : RunD
       preceq g2v g1v = true := by
   obtain ⟨hmem2, hgrade2⟩ := Proofs.Consensus.Grade2Capture.freezeRoot_mem hfz2
   have hgrade1 := g1Grade_of_g2Grade_positive c p a nr s rho hwf hdom hsleep hw hk hj2 hj1 hFB hgrade2
-  have hmem1 := g1Tree_of_g2Tree c p a nr s rho hwf hdom hj2 hj1 hmem2
+  have hmem1 := g1Tree_of_g2Tree c p a nr s rho hwf hsleep hj2 hj1 hmem2
   exact freezeRoot_of_graded (Proofs.Consensus.JustificationCertificate.sorted_validators hwf)
     (Proofs.Consensus.GradeSupporter.earlyTime_le_lateTime s.e s.hc k _ (Proofs.Consensus.Liveness.wf_facts hwf).1.le)
     (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho j1 w).nodup hmem1 hgrade1
