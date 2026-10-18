@@ -29,11 +29,14 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `confFrameRoot_preceq_confWalk`(穴ではない)に渡す(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、
    round 0 は g2 の frame に root が無いので矛盾(`confCache_g2_round_zero`。G2 の round 0 の domain 時刻は `-Δ` で、run の event の時刻は 0 以上)、
    正の round は `confFrameRoot_preceq_confWalk_positive`(穴ではない)に渡す(周回 228)。これは g1 の frame の anchor が fork choice の SG root で
-   walk がそこから歩くので、穴 `confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor)から証明する(周回 230)。
+   walk がそこから歩くので、`confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor。穴ではない)から証明する(周回 230)。
+   これは穴 `confFrameG2_g1Root_positive`(g2 の root の祖先で filtered tree にあるものは g1 の root の祖先)で g1 の root を取り、
+   `activePrefix_exists`(tree の重複なしの穴 `preUpdateTree_nodup` を使う)と `activePrefix_dominates` で anchor に移す(周回 232)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `confWalk_preceq_laterVoteHead` / `confFrameRoot_preceq_anchor_positive`(手書き
-   `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` / `preparedStableRoot_preceq_confWalk_positive`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `finalizedAt_preceq_laterVoteHead`(手書き
+3. 穴(8 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG2_g1Root_positive` / `preUpdateTree_nodup`(手書き
+   `q10_g1_slot_of_g2_slot` / `q10_activePrefix_dominates`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+   `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
@@ -120,14 +123,137 @@ theorem confCache_g2_round_zero (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e
     exact hneg hj hu
   · exact hneg hev ht
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
+/-- 要素がすべて `m` で `m` を含む重複なしのリストは `[m]`。 -/
+theorem list_eq_singleton_of_nodup {α : Type} {l : List α} {m : α} (hnd : l.Nodup) (hall : ∀ x ∈ l, x = m)
+    (hm : m ∈ l) : l = [m] := by
+  cases l with
+  | nil => simp at hm
+  | cons a rest =>
+    have ha : a = m := hall a (List.mem_cons_self ..)
+    subst ha
+    cases rest with
+    | nil => rfl
+    | cons b rest' =>
+      have hb : b = a := hall b (by simp)
+      subst hb
+      simp at hnd
+
+/-- **active prefix の支配**: `g` が tree にあり `g ⪯ r` で、`activePrefix tree r = some d` なら `g ⪯ d`。
+`r` の祖先は鎖(`Blocks.preceq_linear`)で、`d` は tree の `r` の祖先のうち最も深い(`isDeepestIn`)ので、`d ⪯ g` なら深さが等しく
+`d = g`(`Goldfish.preceq_eq_of_depth_le`)。手書き `q10_activePrefix_dominates`(`Protocol/Grades/Q10Frame.lean`)の支配の半分(周回 232)。 -/
+theorem activePrefix_dominates {tree : NaruStd.Set Block} {r g d : Block} (hg : g ∈ tree.elems)
+    (hgr : preceq g r = true) (hd : Model.Consensus.Protocol.Grades.activePrefix tree r = some d) :
+    preceq g d = true := by
+  unfold Model.Consensus.Protocol.Grades.activePrefix deepest? at hd
+  obtain ⟨hdm, hdeep⟩ := Proofs.Consensus.Trees.findUnique?_mem hd
+  have hdr := ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hdm).2
+  have hgf : g ∈ (tree.filter fun b => preceq b r).elems :=
+    (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mpr ⟨hg, hgr⟩
+  unfold isDeepestIn NaruStd.Set.all at hdeep
+  have hnot := List.all_eq_true.mp hdeep g hgf
+  simp only [deeper, Bool.not_eq_true', Bool.or_eq_false_iff, decide_eq_false_iff_not] at hnot
+  rcases Proofs.Consensus.Blocks.preceq_linear hgr hdr with h | h
+  · exact h
+  · have := Proofs.Consensus.Goldfish.preceq_eq_of_depth_le h (by omega)
+    subst this
+    exact Proofs.Consensus.Blocks.preceq_self _
+
+/-- **active prefix の存在**: tree の要素に重複が無く、`g` が tree にあり `g ⪯ r` なら、`activePrefix tree r` は `some`。
+tree の `r` の祖先は鎖なので、最も深いもの `m` は `isDeepestIn` を満たす唯一の要素(同じ深さの 2 つの祖先は等しい)で、
+重複なしなので `findUnique?` が `m` を返す。手書き `q10_activePrefix_dominates` の存在の半分(手書きの tree は `Finset` なので
+重複なしは要らない。naru の `Set` は表現のリストを読むので要る。周回 232)。 -/
+theorem activePrefix_exists {tree : NaruStd.Set Block} {r g : Block} (hnd : tree.elems.Nodup)
+    (hg : g ∈ tree.elems) (hgr : preceq g r = true) :
+    ∃ d, Model.Consensus.Protocol.Grades.activePrefix tree r = some d := by
+  classical
+  let F := tree.filter fun b => preceq b r
+  have hgf : g ∈ F.elems := (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mpr ⟨hg, hgr⟩
+  have hFr : ∀ x ∈ F.elems, preceq x r = true := fun x hx => ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hx).2
+  obtain ⟨m, hmF, hmax⟩ := Finset.exists_max_image F.elems.toFinset depth ⟨g, List.mem_toFinset.mpr hgf⟩
+  rw [List.mem_toFinset] at hmF
+  have hmax' : ∀ x ∈ F.elems, depth x ≤ depth m := fun x hx => hmax x (List.mem_toFinset.mpr hx)
+  have hsame : ∀ x ∈ F.elems, ∀ y ∈ F.elems, depth x = depth y → x = y := by
+    intro x hx y hy hxy
+    rcases Proofs.Consensus.Blocks.preceq_linear (hFr x hx) (hFr y hy) with h | h
+    · exact Proofs.Consensus.Goldfish.preceq_eq_of_depth_le h (by omega)
+    · exact (Proofs.Consensus.Goldfish.preceq_eq_of_depth_le h (by omega)).symm
+  have hdeepm : isDeepestIn F m = true := by
+    unfold isDeepestIn NaruStd.Set.all
+    refine List.all_eq_true.mpr fun c hc => ?_
+    simp only [deeper, Bool.not_eq_true', Bool.or_eq_false_iff, decide_eq_false_iff_not]
+    refine ⟨by have := hmax' c hc; omega, ?_⟩
+    by_cases hdc : depth m = depth c
+    · have := hsame m hmF c hc hdc
+      subst this
+      have : compare (root m) (root m) = .eq := (Proofs.Consensus.Orders.bid_compare_eq_iff _ _).mpr rfl
+      simp [this]
+    · simp [hdc]
+  have hD : F.elems.filter (fun b => isDeepestIn F b) = [m] := by
+    refine list_eq_singleton_of_nodup ((hnd.filter _).filter _) ?_ (List.mem_filter.mpr ⟨hmF, hdeepm⟩)
+    intro x hx
+    obtain ⟨hxF, hxd⟩ := List.mem_filter.mp hx
+    unfold isDeepestIn NaruStd.Set.all at hxd
+    have hnot := List.all_eq_true.mp hxd m hmF
+    simp only [deeper, Bool.not_eq_true', Bool.or_eq_false_iff, decide_eq_false_iff_not] at hnot
+    exact hsame x hxF m hmF (by have := hmax' x hxF; omega)
+  refine ⟨m, ?_⟩
+  unfold Model.Consensus.Protocol.Grades.activePrefix deepest? NaruStd.Set.findUnique?
+  rw [hD]
+
+/-- filtered tree(store の tree の絞り込み)は、store の tree の要素に重複が無ければ重複が無い。 -/
+theorem getFilteredBlockTree_nodup {hs : Model.Consensus.Protocol.ForkChoice.Goldfish.FGStore} (hnd : hs.tree.elems.Nodup) :
+    (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree hs).elems.Nodup := by
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTreeFrom
+    Model.Consensus.Protocol.ForkChoice.Goldfish.viableTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.finalizedDescendants NaruStd.Set.filter
+  exact ((hnd.filter _).filter _).filter _
+
+/-- 穴: 確認の更新の前の段の store(`RootWitness.preUpdateStoreAt`)の tree の要素に重複は無い。tree を変えるのは初期 store の
+`Set.singleton Genesis` と受理の `Set.insert` だけ(`Handlers.naru`)で、stdlib の `Set` は昇順・重複なしの表現を保つ。
+手書き `q10_activePrefix_dominates`(`Protocol/Grades/Q10Frame.lean`)の存在の半分で、手書きの tree は `Finset` なのでこの事実は要らない
+(naru の `activePrefix` は表現のリストの `findUnique?` なので要る。周回 232)。
+閉じるのに要るもの: Block の `compare`(`Block.naruCompare`)の推移律と `Set.insertSorted` が昇順(`compare = .lt` の `Pairwise`)を保つこと、
+昇順から重複なし(`Orders.block_compare_eq_iff` で `.lt` は自分自身に成り立たない)、run の帰納で store の tree が昇順のままであること。 -/
+theorem preUpdateTree_nodup (w : ValidatorId) (i : Nat) (t : Int) :
+    (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.tree.elems.Nodup := by
+  sorry
+
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round が正なら、その round の
+frame の g2 の root `raw` の祖先 `P` で filtered tree にあるものは、同じ frame の g1 の root `root1` の祖先でもある。
+手書き `NamedOutageClosure.q10_g1_slot_of_g2_slot`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 232)。
+閉じるのに要るもの: 読みの時刻が round の G1 の domain 時刻より後で次の round の opening 以下であること(確認評価の tick の時刻)、
+G2 と G1 がそれぞれ domain 時刻の tick で凍結されること(`Grade2Capture.stateBefore_g2_origin`、形は `freezeRoot_mem`。手書き
+`FrameCompleted.frame_phase_completed_in_round`)、G2 の root が G1 の grade の条件 `gradeBool` を満たして G1 の最深の root の祖先になること。 -/
+theorem confFrameG2_g1Root_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) {P raw : Block}
+    (hg2 : (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g2 = some (some raw))
+    (hPraw : preceq P raw = true)
+    (hPtree : P ∈ (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)).elems) :
+    ∃ root1 : Block, (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 = some (some root1) ∧
+      preceq P root1 = true := by
+  sorry
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
 FG root に戻らない枝の値)は、確認の更新の前の段の store の round が正なら、同じ frame の g1 の anchor(`Grades.anchor`。
 fork choice の SG root `getSgRootWith` の値)の祖先。手書き `preparedStableRoot_preceq_confWalk_positive`
 (`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)の `hfinish` に渡す前の半分に当たる。
-閉じるのに要るもの: g2 の frame の root `raw` から、g1 の frame の root `root` で `g ⪯ root` のものを取る(手書き
-`NamedOutageClosure.q10_g1_slot_of_g2_slot`、`Protocol/Grades/Q10Frame.lean`。凍結した root の出どころは
-`Grade2Capture.stateBefore_g2_origin`、形は `freezeRoot_mem`)ことと、`g` が filtered tree にあり `g ⪯ root` なら
-`activePrefix tree root` が `g` を延ばすこと(手書き `q10_activePrefix_dominates`。naru では tree の要素の重複なしが要る)。 -/
+手書きと同じく、g2 の root `raw` の active prefix `g` は filtered tree にあり `g ⪯ raw` なので、穴 `confFrameG2_g1Root_positive` で
+g1 の root `root1` を取り(`g ⪯ root1`)、filtered tree の重複なし(穴 `preUpdateTree_nodup`)から `activePrefix_exists` で
+anchor が FG root に戻らないことを、`activePrefix_dominates` で `g` が anchor の祖先であることを示す(周回 232)。 -/
 theorem confFrameRoot_preceq_anchor_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
@@ -152,13 +278,24 @@ theorem confFrameRoot_preceq_anchor_positive (hwf : SetupWellFormed c p s) (hdom
         (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
         (Model.Consensus.Protocol.Grades.roundOf s.hc
           (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1) = true := by
-  sorry
+  obtain ⟨raw', hraw', hgraw⟩ := Option.bind_eq_some_iff.mp hg
+  obtain ⟨raw, hraw, hrr⟩ := Option.bind_eq_some_iff.mp hraw'
+  subst hrr
+  have hgT := Proofs.Consensus.Trees.activePrefix_mem hgraw
+  obtain ⟨root1, hg1, hgr1⟩ := confFrameG2_g1Root_positive c p a nr s rho hwf hdom hsleep hw ht hpos hraw
+    (Proofs.Consensus.Grade2Capture.activePrefix_preceq hgraw) hgT
+  have hnd := getFilteredBlockTree_nodup (hs := Model.Consensus.Protocol.Store.storeToHealing
+    (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core) (preUpdateTree_nodup c p a nr s rho w i t)
+  obtain ⟨d, hd⟩ := activePrefix_exists hnd hgT hgr1
+  rw [hg1]
+  simp only [Model.Consensus.Protocol.Grades.anchor, hd, Option.getD_some]
+  exact activePrefix_dominates hgT hgr1 hd
 
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
 FG root に戻らない枝の値)は、確認の更新の前の段の store の round が正なら、同じ tick の確認の walk の祖先。手書き
 `preparedStableRoot_preceq_confWalk_positive`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
 手書きの `hfinish` と同じく、g1 の anchor は fork choice の SG root(`getSgRootWith` は `frameGradeRead` の `anchor`)で、
-walk はそこから歩く(`Goldfish.sgRoot_preceq_head`)ので、穴 `confFrameRoot_preceq_anchor_positive` から(周回 230)。 -/
+walk はそこから歩く(`Goldfish.sgRoot_preceq_head`)ので、`confFrameRoot_preceq_anchor_positive` から(周回 230)。 -/
 theorem confFrameRoot_preceq_confWalk_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
