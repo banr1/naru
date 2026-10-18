@@ -7,6 +7,7 @@ import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.GradeSupporter
 import Proofs.Consensus.GradeTransport
 import Proofs.Consensus.SgStamps
+import Proofs.Consensus.FrameCapture
 import Mathlib.Tactic
 
 /-!
@@ -35,7 +36,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    walk がそこから歩くので、`confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor。穴ではない)から証明する(周回 230)。
    これは `confFrameG2_g1Root_positive`(g2 の root の祖先で filtered tree にあるものは g1 の root の祖先。穴ではない)で g1 の root を取り、
    `activePrefix_exists`(tree の重複なし `preUpdateTree_nodup` を使う。周回 233 に閉じた)と `activePrefix_dominates` で anchor に移す(周回 232)。
-   `confFrameG2_g1Root_positive` は g2 の root の出どころ `confCache_g2_origin`、穴 `confFrameG1_slot_positive`(読みの G1 の欄)、
+   `confFrameG2_g1Root_positive` は g2 の root の出どころ `confCache_g2_origin`、`confFrameG1_slot_positive`(読みの G1 の欄。穴ではない)、
    `g1Freeze_of_g2Freeze_positive`(G1 の凍結は G2 の凍結以上。穴ではない)と `preceq_clipGrade_of_compatible` から証明する(周回 234)。
    `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を `g1Grade_of_g2Grade_positive`(grade の持ち越し。穴ではない)と `g1Tree_of_g2Tree`
    (tree の持ち越し。周回 236 に閉じた)で G1 の tick に運び、`freezeRoot_of_graded`(grade の通った tree の要素は凍結の root 以下)で G1 の凍結に移す(周回 235)。
@@ -45,9 +46,12 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `g1InterpretedCover_fwd` は SG 票の行と受信の印が残ること(`SgStamps.stateBefore_sgKeep`)と同じ root の解決で閉じた(周回 241)。
    `g1RawInputs_back` / `g1Interpreted_back` は、G2 の tick より後に入った SG 票とブロックの受信の印がその tick の時刻以上
    (`SgStamps.stateBefore_sgFresh` / `BlockStamps.stateBefore_fresh`)で `cut` は G2 の domain 時刻以下なので閉じた(周回 242)。
+   `confFrameG1_slot_positive` は、欄が閉じていること(穴 `confFrameG1_closed_positive`)と、完了した phase の結果の値
+   (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
+   証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
 3. 穴(7 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_closed_positive`(手書き
    `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
@@ -284,14 +288,47 @@ theorem preUpdateTree_nodup (w : ValidatorId) (i : Nat) (t : Int) :
   (Proofs.Consensus.AttestationSource.tickPreUpdateStore_treeInv c p nr _ s.hc _ t (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i w)
     (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i w)).nodup
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、読みの frame の
+/-- 確認の更新の前の段 `tickPreUpdateStore` は `f` を延ばすだけ(時計合わせは `f` 不変、提案は `Stores.proposeBlockWith_f`、
+投票は `f` 不変)。 -/
+theorem tickPreUpdateStore_f (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (cfg : Model.Consensus.Protocol.ChainState.HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : Model.Consensus.Protocol.Handlers.NamedStore) (t : Int) :
+    preceq st.core.f (Proofs.Consensus.AttestationSource.tickPreUpdateStore c p nr cache e hc cfg nd st t).core.f = true := by
+  unfold Proofs.Consensus.AttestationSource.tickPreUpdateStore
+  dsimp only
+  split_ifs
+  all_goals simp only [Proofs.Consensus.Stores.namedGoldfishVoteWith_f]
+  all_goals first
+    | exact Proofs.Consensus.Stores.proposeBlockWith_f' c p nr cache e hc cfg nd rfl
+    | exact Proofs.Consensus.Blocks.preceq_self _
+
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、その tick が
+準備する cache(`ConfirmedOrigin.confCacheAt`)の round `R` の frame の G1 の結果は完了している(`none` でない)。
+手書き `FrameCompleted.frame_phase_completed_of_tick_in_round`(`Protocol/Grades/FrameCompleted.lean`)の段 1・2(domain の tick が欄を閉じ、読みまで残る)と、
+`frame_phase_completed_in_round` の domain の tick の存在(`tick_total`)に当たる(周回 243 に `confFrameG1_slot_positive` から切り出した)。
+閉じるのに要るもの: honest なノードは horizon までの各時刻に tick を持つこと(手書き `tick_total`)、確認評価の tick の時刻が round `R` の
+G1 の domain 時刻(opening)より後で次の round の opening 以下であること、その間の tick の `alignRound` が round `R` の frame を捨てないこと
+(cache の round はその tick の時計の round 以下。手書き `cache_round_le_tick` / `cacheAtRound_align` / `slot_some_index`)。 -/
+theorem confFrameG1_closed_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) :
+    (Model.Consensus.Protocol.Grades.cacheAtRound (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+      (Model.Consensus.Protocol.Grades.roundOf s.hc
+        (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 ≠ none := by
+  sorry
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、読みの frame の
 G1 の欄は閉じていて、添字 `j1 ≤ i` の event `Tick w (domainTime e hc R G1)` の前の store で凍結した `freezeRoot` を読みの store の
 finalized `F` で切り詰めたもの。その store の finalized は `F` の祖先。手書き `FrameCompleted.frame_phase_completed_in_round`
 (`Protocol/Grades/FrameCompleted.lean`)の G1 の枝と、手書き `q10_g1_slot_of_g2_slot` の `hFmono`(`stateBefore_F_mono`)に当たる(周回 234)。
-閉じるのに要るもの: honest なノードは horizon までの各時刻に tick を持つこと(手書き `tick_total`)、確認評価の tick の時刻が round `R` の
-G1 の domain 時刻(opening)より後で次の round の opening 以下であること、その間の tick の `alignRound` が round `R` の frame を捨てないこと、
-G1 の結果は凍結の後は切り詰めだけを受けること(`Grade2Capture.onPhaseTick_g2_cases` の G1 版)、finalized の単調性
-(`FinalizedMonotone.worldStep_f` と確認の更新の前の段の store)。 -/
+欄が閉じていることは穴 `confFrameG1_closed_positive`、値は確認評価の tick の phase tick の段 `FrameCapture.onPhaseTick_phase_some`
+(この tick の凍結か tick の前の結果)と run の帰納 `FrameCapture.stateBefore_phase_origin`(完了した結果は domain の tick の凍結を
+いまの finalized で切り詰めたもの)から、切り詰めを `FrameCapture.map_clip_clip` でまとめて出す。finalized の単調性は
+`ReceiverFinality.stateBefore_f_mono` と `tickPreUpdateStore_f`(周回 243)。 -/
 theorem confFrameG1_slot_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
@@ -327,7 +364,38 @@ theorem confFrameG1_slot_positive (hwf : SetupWellFormed c p s) (hdom : RunDomai
             Model.Consensus.Protocol.Grades.GradePhase.G1)).map
           (fun b => Model.Consensus.Protocol.Grades.clipGrade b
             (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core).f)) := by
-  sorry
+  have hcl := confFrameG1_closed_positive c p a nr s rho hwf hdom hsleep hw ht hpos
+  obtain ⟨y, hy⟩ := Option.ne_none_iff_exists'.mp hcl
+  have hfpre : preceq (worldAt (stateBefore c p a nr s rho i) w).st.core.f
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.f = true :=
+    tickPreUpdateStore_f c p nr _ s.e s.hc s.cfg _ _ t
+  have hy' : Model.Consensus.Protocol.Grades.phaseResult
+      (Model.Consensus.Protocol.Grades.cacheAtRound
+        (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core) t
+          (worldAt (stateBefore c p a nr s rho i) w).cache)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s))
+      Model.Consensus.Protocol.Grades.GradePhase.G1 = some y := hy
+  have hread : ∀ X : Model.Consensus.Protocol.Grades.Frame,
+      X.g1 = Model.Consensus.Protocol.Grades.phaseResult X Model.Consensus.Protocol.Grades.GradePhase.G1 := fun _ => rfl
+  rcases Proofs.Consensus.FrameCapture.onPhaseTick_phase_some hy' with ⟨x0, hx0, rfl⟩ | ⟨htd, rfl⟩
+  · obtain ⟨j1, hj1, hev1, rfl⟩ :=
+      Proofs.Consensus.FrameCapture.stateBefore_phase_origin c p a nr s rho i w hpos _ hx0
+    refine ⟨j1, hj1.le, hev1,
+      Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.ReceiverFinality.stateBefore_f_mono c p a nr s rho hj1.le w) hfpre, ?_⟩
+    rw [hread, Proofs.Consensus.FrameCapture.phaseResult_readFrame]
+    unfold Proofs.Consensus.ConfirmedOrigin.confCacheAt
+    rw [hy']
+    simp only [Model.Consensus.Protocol.Grades.clipResult, Option.map_some, Proofs.Consensus.FrameCapture.storeToHealing_f]
+    rw [Proofs.Consensus.FrameCapture.map_clip_clip (Proofs.Consensus.Blocks.preceq_self _),
+      Proofs.Consensus.FrameCapture.map_clip_clip hfpre]
+  · refine ⟨i, le_rfl, htd ▸ ht.1, hfpre, ?_⟩
+    rw [hread, Proofs.Consensus.FrameCapture.phaseResult_readFrame]
+    unfold Proofs.Consensus.ConfirmedOrigin.confCacheAt
+    rw [hy']
+    simp only [Model.Consensus.Protocol.Grades.clipResult, Option.map_some, Proofs.Consensus.FrameCapture.storeToHealing_f]
+    rw [Proofs.Consensus.FrameCapture.map_clip_clip hfpre]
 
 /-- **互換な要素の集合の最も深い要素**: 重複なしで要素が互いに互換な集合 `F` に `g` があれば、`deepest? F` は `some m` で
 `g ⪯ m`。深さが最大の `m` を取ると、互換な `x` は `x ⪯ m` か `m ⪯ x`(このとき深さが等しく `x = m`。`Goldfish.preceq_eq_of_depth_le`)で、
@@ -807,7 +875,7 @@ theorem g1Freeze_of_g2Freeze_positive (hwf : SetupWellFormed c p s) (hdom : RunD
 frame の g2 の root `raw` の祖先 `P` で filtered tree にあるものは、同じ frame の g1 の root `root1` の祖先でもある。
 手書き `NamedOutageClosure.q10_g1_slot_of_g2_slot`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 232 に穴として置き、周回 234 に
 手書きと同じ運びで証明した)。g2 の root の出どころ(`confCache_g2_origin`: G2 の domain 時刻の tick で凍結した `g2v`、`P ⪯ g2v`)と、
-読みの G1 の欄(穴 `confFrameG1_slot_positive`: G1 の domain 時刻の tick の凍結の切り詰め)を取り、`P` は filtered tree にあるので
+読みの G1 の欄(`confFrameG1_slot_positive`: G1 の domain 時刻の tick の凍結の切り詰め)を取り、`P` は filtered tree にあるので
 読みの finalized `F` を延ばす(`ProposerFinality.filtered_extends`)。G1 の tick の finalized は `F` の祖先なので `g2v` の祖先で、
 `g1Freeze_of_g2Freeze_positive` が G1 の凍結 `g1v`(`g2v ⪯ g1v`)を返す。`P` は `F` と互換なので切り詰めの後も `g1v` の切り詰めの祖先
 (`preceq_clipGrade_of_compatible`)。 -/

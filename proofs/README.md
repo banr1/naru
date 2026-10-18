@@ -506,8 +506,10 @@ tick の時刻は 0 以上。手書き `confirmationRead_g2_round_zero_no_root`)
 anchor = `activePrefix … root1` が `g` を延ばすことを示します。naru の `activePrefix` は `Set` の表現のリストの `findUnique?` なので、存在には tree の要素の重複なし
 (`preUpdateTree_nodup`。手書きの tree は `Finset` なので要らない)が要ります(周回 232)。これは `TreeInv` の欄 `nodup`(受理はまだ tree に無いブロックだけを
 `insertSorted` で入れるので重複が生じない)から出します(周回 233 に閉じた)。`confFrameG2_g1Root_positive` は手書きと同じく、g2 の root の出どころ
-(`confCache_g2_origin`: G2 の domain 時刻の tick で凍結した root。`Grade2Capture.stateBefore_g2_origin`)、穴 `confFrameG1_slot_positive`(読みの G1 の欄は
-G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_completed_in_round`)、`g1Freeze_of_g2Freeze_positive`(G2 の凍結の root 以上の G1 の凍結。
+(`confCache_g2_origin`: G2 の domain 時刻の tick で凍結した root。`Grade2Capture.stateBefore_g2_origin`)、`confFrameG1_slot_positive`(読みの G1 の欄は
+G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_completed_in_round`。周回 243 に、欄が閉じていることを穴 `confFrameG1_closed_positive` に切り出し、
+値を証明済みの `FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`(完了した phase の結果は domain の tick の凍結を
+いまの finalized で切り詰めたもの。手書き `completed_phase_before_read`)と切り詰めの合成 `FrameCapture.clipGrade_clipGrade` で出した)、`g1Freeze_of_g2Freeze_positive`(G2 の凍結の root 以上の G1 の凍結。
 手書き `q10_g1_of_g2_freeze`。穴ではない)と、切り詰めが finalized と互換な祖先を保つこと(`preceq_clipGrade_of_compatible`)から証明します(周回 234)。
 `g1Freeze_of_g2Freeze_positive` は手書きと同じく、G2 の凍結の root を `g1Grade_of_g2Grade_positive`(G1 の grade への持ち越し。手書き `q10_grade_cross`)と
 `g1Tree_of_g2Tree`(G1 の tick の tree への持ち越し。手書き `q10_tree_fwd`。G2 の domain 時刻は G1 より前なので添字も前で、tree のブロックは残る。周回 236 に閉じた)で G1 の tick に運び、証明済みの `freezeRoot_of_graded`(grade の通った要素は互いに互換
@@ -529,7 +531,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.confWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 224 |
-| `Proofs.Consensus.AvailableHoles.confFrameG1_slot_positive` | `Consensus.Spec.Claims.available` | `frame_phase_completed_in_round` | `DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean` | 234 |
+| `Proofs.Consensus.AvailableHoles.confFrameG1_closed_positive` | `Consensus.Spec.Claims.available` | `frame_phase_completed_in_round` | `DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean` | 243 |
 | `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
