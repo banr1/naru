@@ -143,6 +143,23 @@ def negatives : List Negative := Id.run do
                   recNo && tl.singleProposerRecurrence 0 1 && vNp.judged == 0 && vNp.unmet > 0
                     && ((vNp.diag.getD "").splitOn "SingleProposerRecurrence fails").length > 1,
                   s!"gaps {liveGaps tlNp 0}; control at gap 1: {tl.singleProposerRecurrence 0 1}; confirmedLive judged {vNp.judged} unmet {vNp.unmet}"⟩]
+  -- 2h. claim stableIncludedFast の結論 IncludedFrom(stable, fastStableInclusionDelay): stable の読みを genesis に壊す。本物の読み(対照)は
+  --     判定の経路を通り違反しない
+  let vf := stableIncludedFast tlS pS (readOut := fun _ _ _ => .Genesis)
+  out := out ++ [⟨"stableIncludedFast(corrupted stable read)", vf.violations > 0 && vf.judged == 0 && hasNote vf "includedFrom(stable",
+                  s!"judged {vf.judged} violations {vf.violations}; first note: {vf.notes[0]?.getD "-"}"⟩]
+  let vfOk := stableIncludedFast tlS pS
+  out := out ++ [⟨"stableIncludedFast(control: genuine reads)", vfOk.judged > 0 && vfOk.violations == 0 && vfOk.unmet == 0,
+                  s!"judged {vfOk.judged} out-of-horizon {vfOk.outside} violations {vfOk.violations}"⟩]
+  -- 2i. FreshMajority(FreshSleepyRegime の後半)の経路の単体: awake の入力だけを action round 2 で honest 全員が眠る値に差し替えると、
+  --     窓の過半数 WindowMajority(窓は etaSG 周期)は保たれるが、時刻 t − lag が round 2 の t で fresh な honest が空になり FreshMajority が破れ、
+  --     stableIncludedFast は前提不成立に数える。本物の入力(対照)は成り立つ
+  let tlF : Timeline := { tlS with inputs := { tlS.inputs with awake := fun v r => r != 2 && tlS.inputs.awake v r } }
+  let vF := stableIncludedFast tlF pS
+  out := out ++ [⟨"FreshMajority broken (honest asleep in one round)",
+                  (tlF.sleepyWindows 0).holds && !(tlF.freshWindows 0).holds && (tlS.freshWindows 0).holds && vF.judged == 0 && vF.unmet > 0
+                    && ((vF.diag.getD "").splitOn "but FreshSleepyRegime fails").length > 1,
+                  s!"{(tlF.sleepyWindows 0).render} {(tlF.freshWindows 0).render}; control {(tlS.freshWindows 0).render}; stableIncludedFast judged {vF.judged} unmet {vF.unmet}"⟩]
   -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
   --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }

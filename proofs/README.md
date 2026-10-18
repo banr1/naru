@@ -442,7 +442,7 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 **実行テストの結果は証明の代用にせず、`naru proofs` の証明状況の表示は変えない。** 違反が出たら、期待値の書き換えや検査器の弱化で通さず、
 用語「反例の分類」(検査器の誤り / 前提の判定の誤り / 移植の不一致)で原因を分ける。
 
-どの命題が実行テストでどこまで確かめられているか(最終実行は周回 203、固定設定 9 run。詳しい件数は docs/testing.md):
+どの命題が実行テストでどこまで確かめられているか(最終実行は周回 205、固定設定 9 run。詳しい件数は docs/testing.md):
 
 | 命題 | 検査器 | 判定 / 前提不成立 / 判定外 / 違反 | 備考 |
 |---|---|---|---|
@@ -451,7 +451,8 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 | `IncludedFrom(s, rho, Output.Stable, 0, stableInclusionDelay)`(同) | `includedFrom(stable)` | 25 / 45 / 62 / 0 | 同上。stable の期限が長いので判定外が多い |
 | claim `available`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `SleepyRegime(t0)`、結論 `AvailableAt(t0)` = confirmed / stable の `SafeFrom` と `IncludedFrom`。手書き `available_confirmedSafe` / `available_confirmedIncluded` / `available_stableSafe` / `available_stableIncluded_any`) | `available` | 136 / 114 / 78 / 0 | 前提は `includedFrom` と同じ `SleepyRegime` の本来の形の有界版。`SafeFrom`(`AgreeFrom` ∧ `MonotoneFrom`)は述語自身が `[t0, horizon]` と honest に切っているので有界版は本物と同じ範囲。前提不成立は `tGST > 0` の 3 run |
 | claim `confirmedLive` / `stableLive`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `LiveSleepyRegime(t0, gap)` = `SleepyRegime(t0)` ∧ `SingleProposerRecurrence(t0, gap)`、結論 `LiveFrom(confirmed, t0, growthDelay(gap))` / `LiveFrom(stable, t0, stableGrowthDelay(gap))`。手書き `Generic.liveFrom_of_includedFrom`、naru 側 `confirmedLive_of_available` / `stableLive_of_available`) | `confirmedLive` / `stableLive` | 866 / 255 / 1542 / 0 と 220 / 255 / 2188 / 0 | `t0` は `sleepyCandidates`、`gap` は `[1, (horizon - t0) / period]` を列挙し前提が成り立つ組をすべて判定。`SingleProposerRecurrence` は厳密。`LiveFrom` の存在量化の `b` は `maxSlot(horizon)` までの honest な提案で探す(違反を報告する側にしか働かない)。前提不成立は `tGST > 0` の 3 run |
+| claim `stableIncludedFast`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `FreshSleepyRegime(t0)` = `SleepyRegime(t0)` ∧ `FreshMajority`、結論 `IncludedFrom(stable, t0, fastStableInclusionDelay)`。手書き `stableIncludedFast_concrete`、`Bridge/StableIncludedFresh.lean`) | `stableIncludedFast` | 34 / 58 / 40 / 0 | `FreshMajority` は窓の集合が `AwakeInExactly` で一意に決まるので厳密。前提不成立は `tGST > 0` の 3 run と、`FreshMajority` が破れる sleepy の run |
 
-残り 3 claim(`stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)の前提と結論の検査器、
-`FreshMajority` の有界版(`WindowMajority` / `SlashableBound` / `RecoveredBy` は周回 201 から判定する)、他の中間命題(round の帰納の段の主張)、
+残り 2 claim(`finalized` / `stableAsynchronyResilient`)の前提と結論の検査器(`FreshMajority` は周回 205 から、
+`WindowMajority` / `SlashableBound` / `RecoveredBy` は周回 201 から判定する)、他の中間命題(round の帰納の段の主張)、
 C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。

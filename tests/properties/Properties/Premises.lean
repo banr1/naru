@@ -319,6 +319,26 @@ def sleepyWindows (tl : Timeline) (t0 : Int) : Judge :=
   | some t => Judge.no "WindowMajority" s!"t = {t}: awake honest weight in [{t - window}, {t}) is not above the faulty weight"
   | none => Judge.ok "WindowMajority"
 
+/-- 生成 Statements `FreshMajority(s, rho.honest, t)`(手書き `FreshMajority`): `fresh = awakeAt(s, h, t − lag)`、窓の集合 `w` は
+`AwakeInExactly(s, h, t − window, t − lag, w)` で、`weightOf(faulty(s, h) ∪ (w \ fresh)) < weightOf(fresh)`。存在量化される `members` は
+`AwakeInExactly` で集合が一意に決まる(`awakeIn`)ので、厳密に判定できる(有界版ではない)。 -/
+def freshMajority (tl : Timeline) (t : Int) : Bool :=
+  let s := tl.setup
+  let e := s.e.electorate
+  let lag := Spec.Constants.participationLag s
+  let fresh := Spec.Conditions.awakeAt tl.inputs.awake s tl.rho.honest (t - lag)
+  let stale := NaruStd.Set.diff (tl.awakeIn (t - Spec.Constants.participationWindow s) (t - lag)) fresh
+  Weights.weightOf e (NaruStd.Set.union (Spec.Conditions.faulty s tl.rho.honest) stale) < Weights.weightOf e fresh
+
+/-- 生成 Statements `FreshSleepyRegime` の後半の欄: `t0 <= t`、`participationLag(s) <= t`、`t - participationLag(s) <= rho.horizon` の各時刻 `t` で
+`FreshMajority(s, rho.honest, t)`。`t` の範囲は `[max(t0, lag), horizon + lag]` で有限なので厳密に判定できる。 -/
+def freshWindows (tl : Timeline) (t0 : Int) : Judge :=
+  let s := tl.setup
+  let lag := Spec.Constants.participationLag s
+  match (intRange (max t0 lag) (tl.rho.horizon + lag)).find? (fun t => !tl.freshMajority t) with
+  | some t => Judge.no "FreshMajority" s!"t = {t}: the faulty weight plus the honest awake in [{t - Spec.Constants.participationWindow s}, {t - lag}) but asleep at {t - lag} is not below the honest weight awake at {t - lag}"
+  | none => Judge.ok "FreshMajority"
+
 /-- 生成 Statements `AgreesUntil(source, rho, cut)`: `rho.honest ⊆ source.honest`、`rho` の honest な各 `v` の `time < cut` の event の列が一致。 -/
 def agreesUntil (source rho : Timeline) (cut : Int) : Bool :=
   let pre (tl : Timeline) (v : Identifiers.ValidatorId) : List Event :=

@@ -13,7 +13,8 @@ import Properties.Premises
 - `IncludedFrom`: honest の提案が期限内にすべての honest の読みに入ること(生成 Statements `Statements.Consensus.Spec.Properties.IncludedFrom`、
   claim `available` の結論 `AvailableAt` の 2 項目。`proofs/Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom` の前提)。
 
-claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)。
+claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)、
+`stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`)。
 -/
 
 namespace Properties
@@ -481,5 +482,40 @@ def stableLive (tl : Timeline) (p : Premises)
     (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
     (recovery : Option RecoveryWitness := none) : Verdict :=
   liveClaim "stableLive" .Stable (Spec.Constants.stableGrowthDelay tl.setup) tl p readOut recovery
+
+/-! ## claim `stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`) -/
+
+/-- 生成 Statements `Statements.Consensus.Spec.Regimes.FreshSleepyRegime(s, rho, t0)`(手書き `FreshSleepyRegime`)の判定を 1 つの `t0` で返す:
+`SleepyRegime(s, rho, t0)`(`sleepyAt`)∧ `t0` 以後の各時刻の `FreshMajority`(`Timeline.freshWindows`、厳密)。 -/
+def freshSleepyAt (tl : Timeline) (p : Premises) (recovery : Option RecoveryWitness) (t0 : Int) : Judge :=
+  let j := sleepyAt tl p recovery t0
+  if !j.holds then j else
+    let f := tl.freshWindows t0
+    if f.holds then Judge.ok "FreshSleepyRegime" else Judge.no "FreshSleepyRegime" f.render
+
+/-- claim `stableIncludedFast(s, rho, t0)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.stableIncludedFast`。手書き
+`Consensus.stableIncludedFast`): 前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `FreshSleepyRegime(s, rho, t0)`(`freshSleepyAt`)、
+結論 `IncludedFrom(s, rho, Stable, t0, fastStableInclusionDelay(s))`(`includedFromAt`。期限が horizon を越える slot は判定外)。
+自由変数 `t0` は `sleepyCandidates` の値のうち前提が成り立つものをすべて判定する(どれも成り立たなければ `t0 = 0` の義務を前提不成立に数える)。
+手書きの補題は `stableIncludedFast_concrete`(`DecoupledConsensusProofs/ReviewTheorem.lean` が claim に当てる)と、その中心の
+`Bridge/StableIncludedFresh.lean`(`FreshMajority` から参照標本の過半数を出す)。naru 側の `proofs/` の証明は未着手(C71 の残り)。
+`readOut` は負の検体のための差し替え。 -/
+def stableIncludedFast (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict := Id.run do
+  let delay := Spec.Constants.fastStableInclusionDelay tl.setup
+  let judged := (sleepyCandidates tl recovery).map fun t0 => (t0, freshSleepyAt tl p recovery t0)
+  let holding := judged.filter (·.2.holds)
+  let ts : List (Int × Bool) := if holding.isEmpty then [(0, false)] else holding.map fun q => (q.1, true)
+  let mut out : Verdict := { name := "stableIncludedFast" }
+  for (t0, ok) in ts do
+    out := includedFromAt tl .Stable delay readOut ok t0 out
+  let sleepy := sleepyChoices tl p recovery
+  let premiseDiag :=
+    if !holding.isEmpty then s!"FreshSleepyRegime holds at t0 in {(holding.map (·.1))}"
+    else if sleepy.all (!·.2.holds) then sleepyFailure tl p recovery sleepy
+    else "SleepyRegime holds at t0 in " ++ toString ((sleepy.filter (·.2.holds)).map (·.1)) ++ ", but FreshSleepyRegime fails: " ++
+      "; ".intercalate (judged.map fun (q : Int × Judge) => s!"t0 = {q.1}: {q.2.reason}")
+  return { out with diag := some s!"IncludedFrom(stable, fastStableInclusionDelay {delay}); {premiseDiag}" }
 
 end Properties
