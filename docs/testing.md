@@ -245,6 +245,17 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
     `freshMajority` / `freshWindows`: `fresh` = 時刻 `t − lag` に awake な honest、窓の集合は `AwakeInExactly` で一意に決まる `[t − window, t − lag)` の awake な honest で、
     `weightOf(faulty ∪ (窓 \ fresh)) < weightOf(fresh)`。厳密)。`t0` は `sleepyCandidates` のうち前提が成り立つものをすべて判定する。結論は
     `IncludedFrom(Stable, t0, fastStableInclusionDelay)`(`fastStableInclusionDelay = 8Δ + 2 · period`。`includedFrom` と同じ slot の義務)。
+  - `stableAsynchronyResilient` — claim `stableAsynchronyResilient`(生成 Statements `Claims.stableAsynchronyResilient`。周回 207 から)。前提は `SetupWellFormed` ∧
+    `RunDomain` ∧ `OutageRegime(tRead, b0, b1)` の有界版: run 全体の欄(`ExecutionValid` ∧ `PartialSynchrony` ∧ `HonestCommittees` ∧ `[lag, horizon + lag]` の各時刻の
+    `FreshMajority`(厳密)∧ `SlashableBound`)と、自由変数に掛かる欄 `tGST <= b1` ∧ `HealthyPrefixDelivery(b0)` ∧ `0 <= b0 <= b1 <= horizon` ∧ `PublicTime(b0)` ∧
+    `outageStart(tRead) <= b0` ∧ `b1 + Δ <= expiry(tRead)` ∧ `b1 + Δ <= horizon`。`HealthyPrefixDelivery(cut)`(`Premises.lean` の `healthyPrefixLimit`)は
+    `PartialSynchrony` と同じ broadcast / relay の要求を期限 `t + Δ`(GST を使わない)で `deadline <= cut` の範囲に課すもので、各要求の成否は `cut` によらないので、
+    event の順で最初に破れた要求の期限 `d` を 1 回求め「`cut < d`」で判定する(厳密)。自由変数は `tRead` が `[0, horizon]`(`tRead < 0` の読みは初期状態の
+    genesis で `PersistsFrom` が自明に成り立つことを診断に出す)、`b0` が `[outageStart(tRead), expiry(tRead) − Δ]` の public time、`b1` は結論に現れず
+    欄がすべて下限か上限なので最小の `max(b0, tGST)` で判定し、`(tRead, b0)` を 1 件の義務に数える(run 全体の欄・`b1 + Δ > expiry`・`HealthyPrefixDelivery(b0)` の破れは horizon を延ばしても直らないので前提不成立に先に数え、
+    残りのうち `b1 + Δ > horizon` は判定外。`HealthyPrefixDelivery` は期限が horizon 以下の要求だけを見る)。
+    結論は `PersistsFrom(Stable, tRead, b0)`: honest な `v` の `tRead` の読み `r` が `[b0, horizon]` のすべての honest な読みの接頭辞(述語の `b` は `r` の接頭辞すべてだが、
+    `preceq` は反射的で推移的なので `b = r` で足りる。厳密)。`tRead` ごとに破れる最後の時刻を 1 回求めて `b0` と比べる。
 - **固定設定**(`Properties/Report.lean` の `shortSpecs`。Δ = 1、`r = 3`、`etaSG = 2`、`k = 4`、`d = 2`、`timeoutDelay = 6`、重みは 3 validator の run だけ
   `[2, 2, 1]`(byzantine が 1/3 未満)):
 
@@ -273,11 +284,19 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   周回 205 の結果(`lake exe naru_test properties`): 7 検査器とも違反 0、上の 6 検査器の件数は周回 203 と同じ。`stableIncludedFast` は判定 34 / 前提不成立 58 /
   判定外 40(byzantine を含む run で判定 30。遅れ `fastStableInclusionDelay` は Δ = 1 で 32、Δ = 2 で 64)。前提不成立は `SleepyRegime` が成り立たない `tGST > 0` の 3 run と、
   `SleepyRegime` は成り立つが `FreshMajority` が破れる sleepy の run(`h4-sleepy-equivocate`、`t = 30` で時刻 18 に眠った honest が stale に回る)。
+  周回 207 の結果(`lake exe naru_test properties`): 8 検査器とも違反 0、上の 7 検査器の件数は周回 205 と同じ。`stableAsynchronyResilient` は判定 3012 /
+  前提不成立 2628 / 判定外 2100(byzantine を含む run で判定 2724。Δ = 1 で `outageStart(0) = 19`、`expiry(0) = 31`)。前提不成立は `HealthyPrefixDelivery` が
+  GST 前の遅延で破れる 2 run(`h4-gst-delay-twofaced` は `b0 >= 5`、`h4-gst24-twofaced` は `b0 >= 6` で破れる)と、`FreshMajority` が破れる sleepy の run の全義務
+  (窓が horizon に収まらない義務も含む)。
+  `h4-delta2-equivocate`(GST 8)は GST 前の遅れも Δ = 2 以内で `HealthyPrefixDelivery` が成り立ち判定に入る。
   `--mode probe` の計測: horizon 300 の run(1,171 event)は生成約 8 秒、600(約 2,300 event)は生成約 103 秒(生成 Model の tick の費用が tree の
   大きさの 3〜4 乗で増える)。`a(D) = 3858` を horizon に収める run は予算(`properties` の群 ≤ 5 分)に収まらない。
   `--mode finality` の計測(C75 の判断材料): golden の FinalityLiveness の fixture を native で horizon 100 / 200 / 400 まで畳み込むと 28 ms / 0.4 秒 / 7.4 秒
   (約 4 乗)。全 horizon 33,730 は native でも実行不能。
-- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、28 件。周回 205 に `stableIncludedFast` の 3 件を追加: stable の読みを genesis に
+- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、33 件。周回 207 に `stableAsynchronyResilient` の 5 件を追加: stable の読みを
+  horizon の時刻だけ genesis に戻すと `PersistsFrom` が破れる、途中の時刻 50 だけ genesis に戻すと `b0 <= 50` の義務だけが破れ `b0 > 50` は判定される(`b0` の境)、本物の読みでは義務が判定され違反しない(対照)、awake の入力を action round 2 で honest 全員が眠る値に
+  差し替えると `OutageRegime` の `FreshMajority` が破れて前提不成立に数える、GST 前に Δ を越えて遅れる配送のある run(GST 20、追加の遅れ 4)では `PartialSynchrony` は
+  成り立つまま `HealthyPrefixDelivery` が遅れた要求の期限以後の `b0` で破れてその義務を前提不成立に数える(件数 1 以上を要求。GST 前も Δ 以内の run では horizon までのどの `b0` でも成り立つ対照つき)。周回 205 に `stableIncludedFast` の 3 件を追加: stable の読みを genesis に
   壊すと `IncludedFrom` が破れる、本物の読みでは義務が判定され違反しない(対照)、awake の入力を action round 2 で honest 全員が眠る値に差し替えると
   `WindowMajority` は保たれたまま `FreshMajority` が破れて前提不成立に数える(本物の入力では成り立つ対照つき)。周回 203 に `confirmedLive` / `stableLive` の 5 件を追加: 出力の読みを
   genesis に止めると `t` の後の提案が `t + d` の読みに入らず `LiveFrom` が破れる(confirmed と stable)、読みをどの時刻でも horizon の読みに先取りさせると
@@ -297,7 +316,7 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   source にした証人(同じ設定と入力の run でないので最初の項で退ける。回復の枝の証人の経路は固定設定では horizon の項より後ろが実行されないので、
   `Continues` の前半はこの単体の検体で確かめる)、GST 後にノード 1 へブロックを
   配らない(`PartialSynchrony` が破れる)、整列の崩れた event 列、honest の tick の欠け、生成器の畳み込みと event 列の再畳み込み(`replay`)が同じ世界を与えること。
-- 残り 2 claim(`finalized` / `stableAsynchronyResilient`)の検査器はまだ無い。
+- 残り 1 claim(`finalized`)の検査器はまだ無い。
 - C74(`検査器 = true ↔ 述語` の theorem)はまだ無い(後続の周回。theorem は同じ `Properties` ライブラリに置き、`lake build Properties` が Lake target)。
 
 ## コンパイラ意味論保存(C39〜C47、C48〜C53、C54〜C59)

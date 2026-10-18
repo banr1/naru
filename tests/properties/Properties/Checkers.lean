@@ -14,7 +14,8 @@ import Properties.Premises
   claim `available` の結論 `AvailableAt` の 2 項目。`proofs/Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom` の前提)。
 
 claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)、
-`stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`)。
+`stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`)、
+`stableAsynchronyResilient`(前提 `OutageRegime`、結論 `PersistsFrom(Stable, tRead, b0)`)。
 -/
 
 namespace Properties
@@ -517,5 +518,92 @@ def stableIncludedFast (tl : Timeline) (p : Premises)
     else "SleepyRegime holds at t0 in " ++ toString ((sleepy.filter (·.2.holds)).map (·.1)) ++ ", but FreshSleepyRegime fails: " ++
       "; ".intercalate (judged.map fun (q : Int × Judge) => s!"t0 = {q.1}: {q.2.reason}")
   return { out with diag := some s!"IncludedFrom(stable, fastStableInclusionDelay {delay}); {premiseDiag}" }
+
+/-! ## claim `stableAsynchronyResilient`(前提 `OutageRegime`、結論 `PersistsFrom(Stable, tRead, b0)`) -/
+
+/-- `PersistsFrom(s, rho, g, tRead, b0)`(生成 Statements `Statements.Consensus.Spec.Properties.PersistsFrom`。手書き `PersistsFrom`)が成り立つ
+`b0` の境: honest な `v` の時刻 `tRead` の読み `r` と `[0, horizon]` の時刻 `t`、honest な `w` で `preceq(r, outputAt(g, w, t))` が破れる最後の
+`t`(と説明)。`PersistsFrom(tRead, b0)` はこの `t` より大きい `b0` で、またそのときに限り成り立つ: 述語の `b` は `preceq(b, r)` を満たす
+すべてのブロックだが、`preceq` は反射的(`b == c`)で推移的(祖先の関係)なので `b = r` を確かめれば足り、`r` 自身も `b` に入る(厳密)。
+`read v t` は honest の読み(前もって表にしたもの)。 -/
+def persistsBreak (tl : Timeline) (g : Spec.Interface.Output) (read : Identifiers.ValidatorId → Int → Blocks.Block) (tRead : Int) :
+    Option (Int × String) := Id.run do
+  let honest := tl.rho.honest.elems
+  let rs := (honest.map fun v => (v, read v tRead)).foldl (fun acc q => if acc.any (·.2 == q.2) then acc else acc ++ [q]) []
+  for t in (intRange 0 tl.rho.horizon).reverse do
+    for (v, r) in rs do
+      if let some w := honest.find? (fun w => !Blocks.preceq r (read w t)) then
+        return some (t, s!"the {outputLabel g} read of {v.value} at tRead = {tRead} (root {(Blocks.root r).value}) is not in the {outputLabel g} read of {w.value} at t = {t} (root {(Blocks.root (read w t)).value})")
+  return none
+
+/-- claim `stableAsynchronyResilient(s, rho, tRead, b0, b1)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.stableAsynchronyResilient`。
+手書き `Consensus.stableAsynchronyResilient`): 前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `OutageRegime(s, rho, tRead, b0, b1)`
+(生成 Statements `Statements.Consensus.Spec.Regimes.OutageRegime`。手書き `OutageRegime`)、結論 `PersistsFrom(s, rho, Stable, tRead, b0)`。
+`OutageRegime` の有界版: run 全体の欄 `ExecutionValid` ∧ `PartialSynchrony` ∧ `HonestCommittees` ∧ `[lag, horizon + lag]` の各時刻の
+`FreshMajority`(`Timeline.freshWindows 0`、厳密)∧ `SlashableBound` と、自由変数に掛かる欄 `tGST <= b1` ∧ `HealthyPrefixDelivery(s, rho, b0)`
+(`Timeline.healthyPrefixLimit`)∧ `0 <= b0 <= b1 <= horizon` ∧ `PublicTime(s.e, b0)` ∧ `outageStart(s, tRead) <= b0` ∧
+`b1 + Δ <= expiry(s, tRead)` ∧ `b1 + Δ <= horizon`。
+自由変数の列挙: `tRead` は `[0, horizon]`(`tRead < 0` の読みは event の前の初期状態のもので、その stable が genesis であることを診断の行に
+出す。genesis はどのブロックの祖先でもあるので、そこでは `PersistsFrom` は判定するまでもなく成り立つ。`tRead > horizon` は `b0 >= outageStart(tRead) > tRead > horizon` で区間の欄が偽)、
+`b0` は `[max(0, outageStart(tRead)), expiry(tRead) − Δ]` の public time(それ以外の `b0` は区間・`PublicTime`・窓の位置の欄が偽で前提が空虚に
+偽)。結論は `b1` を含まず、`b1` の欄はどれも下限(`b0`、`tGST`)か上限(`expiry − Δ`、`horizon − Δ`)なので、`(tRead, b0)` ごとに最小の
+`b1 = max(b0, tGST)` で前提を判定し、`(tRead, b0)` を 1 件の義務に数える。run 全体の欄・`b1 + Δ <= expiry(tRead)`・`HealthyPrefixDelivery(b0)` が破れる
+義務は(horizon を延ばしても成り立たないので)前提不成立に先に数え、残りのうち `b1 + Δ > horizon` の義務は判定外(窓が horizon に収まらない)。
+手書きの補題は `outage_stablePersists`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`。`ReviewTheorem.lean` が `outageRegime_of_generic` で前提を写して claim に当てる)。naru 側の
+`proofs/` の証明は未着手(C71 の残り)。`readOut` は負の検体のための差し替え。 -/
+def stableAsynchronyResilient (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt) : Verdict := Id.run do
+  let s := tl.setup
+  let horizon := tl.rho.horizon
+  let delta := s.e.delta
+  let fresh := tl.freshWindows 0
+  let base := firstFailure "OutageRegime"
+    [ (p.setup.holds, p.setup.render), (p.runDomain.holds, p.runDomain.render), (p.executionValid, "ExecutionValid"),
+      (p.partialSync.holds, p.partialSync.render), (p.honestCommittees.holds, p.honestCommittees.render),
+      (fresh.holds, fresh.render), (p.slashable.holds, p.slashable.render) ]
+  let healthy := tl.healthyPrefixLimit
+  -- 読みは (v, t) ごとに 1 回だけ計算する
+  let honest := tl.rho.honest.elems
+  let reads : List (Identifiers.ValidatorId × Array Blocks.Block) :=
+    honest.map fun v => (v, ((intRange 0 horizon).map fun t => readOut .Stable v t).toArray)
+  let read (v : Identifiers.ValidatorId) (t : Int) : Blocks.Block :=
+    match reads.find? (·.1 == v) with
+    | some (_, arr) => if 0 ≤ t && t ≤ horizon then arr[t.toNat]! else readOut .Stable v t
+    | none => readOut .Stable v t
+  let mut out : Verdict := { name := "stableAsynchronyResilient" }
+  let mut hpdUnmet := 0
+  let mut expiryUnmet := 0
+  let mut tReads := 0
+  for tRead in intRange 0 horizon do
+    let lo := max 0 (Spec.Constants.outageStart s tRead)
+    let ex := Spec.Constants.expiry s tRead
+    let b0s := (intRange lo (ex - delta)).filter (publicTime s)
+    let brk := if base.holds then persistsBreak tl .Stable read tRead else none
+    let mut any := false
+    for b0 in b0s do
+      let b1 := max b0 s.e.tGST
+      -- horizon を延ばしても成り立たない欄の破れを前提不成立として先に数え、窓が horizon に収まらない義務を判定外に数える
+      if !base.holds then out := { out with unmet := out.unmet + 1 }
+      else if b1 + delta > ex then
+        expiryUnmet := expiryUnmet + 1
+        out := { out with unmet := out.unmet + 1 }
+      else if healthy.any (·.1 ≤ b0) then
+        hpdUnmet := hpdUnmet + 1
+        out := { out with unmet := out.unmet + 1 }
+      else if b1 + delta > horizon then out := { out with outside := out.outside + 1 }
+      else
+        any := true
+        match brk with
+        | some (t, why) =>
+          if b0 ≤ t then out := out.note s!"PersistsFrom(stable, tRead = {tRead}, b0 = {b0}): {why}"
+          else out := { out with judged := out.judged + 1 }
+        | none => out := { out with judged := out.judged + 1 }
+    if any then tReads := tReads + 1
+  let hpd := match healthy with
+    | some (d, why) => s!"HealthyPrefixDelivery(b0) fails for b0 >= {d} ({why})"
+    | none => "HealthyPrefixDelivery(b0) holds for every b0 <= horizon"
+  let premiseDiag := if base.holds then s!"the run-wide fields of OutageRegime hold; {hpd}" else s!"OutageRegime fails: {base.reason}"
+  let initialGenesis := honest.all fun v => readOut .Stable v (-1) == .Genesis
+  return { out with diag := some s!"PersistsFrom(stable, tRead, b0) over tRead in [0, {horizon}] (the initial stable read for tRead < 0 is genesis: {initialGenesis}) and public b0 in [outageStart(tRead), expiry(tRead) - delta] (outageStart(0) = {Spec.Constants.outageStart s 0}, expiry(0) = {Spec.Constants.expiry s 0}), b1 = max(b0, tGST); judged at {tReads} tRead(s); premise-unmet by HealthyPrefixDelivery {hpdUnmet}, by b1 + delta > expiry {expiryUnmet}; {premiseDiag}" }
 
 end Properties

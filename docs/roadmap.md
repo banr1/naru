@@ -54,8 +54,9 @@
   `recoveryEnd` が horizon を越えるので前提不成立)、claim `available` の検査器(周回 202。前提 `SleepyRegime`、結論 `AvailableAt` = `SafeFrom` と `IncludedFrom`、
   判定 136・違反 0)、claim `confirmedLive` / `stableLive` の検査器(周回 203。前提 `LiveSleepyRegime` = `SleepyRegime` ∧ `SingleProposerRecurrence`、
   結論 `LiveFrom`、判定 866 / 220・違反 0)、claim `stableIncludedFast` の検査器(周回 205。前提 `FreshSleepyRegime` = `SleepyRegime` ∧ `FreshMajority`、
-  結論 `IncludedFrom(stable, fastStableInclusionDelay)`、判定 34・違反 0)、負の検体 28 件、`naru_test properties`(周回 200 から回帰一式に入れた)。残るのは
-  残り 2 claim(`finalized` / `stableAsynchronyResilient`)の前提・結論の検査器、他の中間命題、scenario が fn で公開する run、
+  結論 `IncludedFrom(stable, fastStableInclusionDelay)`、判定 34・違反 0)、claim `stableAsynchronyResilient` の検査器(周回 207。前提 `OutageRegime`
+  (`HealthyPrefixDelivery` / `FreshMajority` / `SlashableBound` と窓の位置)、結論 `PersistsFrom(stable, tRead, b0)`、判定 3012・違反 0)、負の検体 33 件、`naru_test properties`(周回 200 から回帰一式に入れた)。残るのは
+  残り 1 claim(`finalized`)の前提・結論の検査器、他の中間命題、scenario が fn で公開する run、
   共通の run の記述からの手書き側(golden)への写しと C10 の拡充、C74 の theorem、C75(前提を満たす具体的な run の kernel 検査。native の FinalityLiveness は
   horizon 100 / 200 / 400 で 28 ms / 0.4 秒 / 7.4 秒と約 4 乗で増え、全 horizon 33,730 は実行不能)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)

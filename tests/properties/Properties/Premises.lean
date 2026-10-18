@@ -211,19 +211,19 @@ def handledBy (tl : Timeline) (w : Identifiers.ValidatorId) (o : Obj) (t deadlin
       if w' == w && (tl.emitted[j]!).contains o then return true
   return false
 
-/-- 生成 Statements `PartialSynchrony(s, rho)` の有界版(broadcast と relay)。 -/
-def partialSynchrony (tl : Timeline) : Judge := Id.run do
-  let s := tl.setup
+/-- broadcast と relay の配送の保証(生成 Statements `PartialSynchrony` / `HealthyPrefixDelivery` の共通の形)の最初の破れ: 期限
+`deadlineOf(t)`(`t` は発行・受理の時刻)が `limit` 以下の要求を event の順に見て、破れた要求の期限と説明を返す。 -/
+def deliveryFailure (tl : Timeline) (deadlineOf : Int → Int) (limit : Int) : Option (Int × String) := Id.run do
   let honest := tl.rho.honest
   for i in [0:tl.events.size] do
     match tl.events[i]! with
     | Run.NamedEvent.Tick v t =>
       for o in tl.emitted[i]! do
-        let deadline := (max t s.e.tGST) + s.e.delta
-        if deadline ≤ tl.rho.horizon then
+        let deadline := deadlineOf t
+        if deadline ≤ limit then
           for w in honest.elems do
             if w != v && !Node.excludes (nodeIn (tl.stateBeforeTime deadline) w).st o && !tl.handledBy w o t deadline then
-              return Judge.no "PartialSynchrony" s!"broadcast: object emitted by {v.value} at t = {t} not handled by {w.value} before {deadline}"
+              return some (deadline, s!"broadcast: object emitted by {v.value} at t = {t} not handled by {w.value} before {deadline}")
     | Run.NamedEvent.Deliver v o t =>
       -- relay: 受理された object(配送された object 自身と、受理されたブロックが運ぶ object のうち `processed` が偽から真に変わったもの。
       -- `AcceptsAt` は `HandlesAt` の `BlockCall` の枝を含む)
@@ -231,13 +231,31 @@ def partialSynchrony (tl : Timeline) : Judge := Id.run do
       let after := (nodeIn tl.worlds[i + 1]! v).st
       let accepted := (o :: carried o).filter fun o2 => !Node.processed before o2 && Node.processed after o2
       for o2 in accepted do
-        let deadline := (max t s.e.tGST) + s.e.delta
-        if deadline ≤ tl.rho.horizon then
+        let deadline := deadlineOf t
+        if deadline ≤ limit then
           for w in honest.elems do
             if w != v && !Node.processed (nodeIn tl.worlds[i + 1]! w).st o2
                 && !Node.excludes (nodeIn (tl.stateBeforeTime deadline) w).st o2 && !tl.handledBy w o2 t deadline then
-              return Judge.no "PartialSynchrony" s!"relay: object accepted by {v.value} at t = {t} not handled by {w.value} before {deadline}"
-  return Judge.ok "PartialSynchrony"
+              return some (deadline, s!"relay: object accepted by {v.value} at t = {t} not handled by {w.value} before {deadline}")
+  return none
+
+/-- 生成 Statements `PartialSynchrony(s, rho)` の有界版(broadcast と relay。期限 `max(t, tGST) + Δ <= horizon`)。 -/
+def partialSynchrony (tl : Timeline) : Judge :=
+  let s := tl.setup
+  match tl.deliveryFailure (fun t => (max t s.e.tGST) + s.e.delta) tl.rho.horizon with
+  | some (_, why) => Judge.no "PartialSynchrony" why
+  | none => Judge.ok "PartialSynchrony"
+
+/-- 生成 Statements `HealthyPrefixDelivery(s, rho, cut)`(手書き `HealthyPrefixDelivery`)の有界版を、すべての `cut <= horizon` について
+一度に判定する: broadcast と relay の要求は期限 `t + Δ`(GST を使わない)で、`deadline <= cut` の要求だけが課される。各要求の成否は
+`cut` によらない(`excludes` は期限の時刻の状態、relay の未処理は受理の直後の状態で見る)ので、`HealthyPrefixDelivery(cut)` は
+「破れた要求の期限の最小値 > cut」と同値。event は時刻順(`ExecutionValid` の `EventsSorted`。検査器は `ExecutionValid` が成り立つときだけこの値を使う)で期限 `t + Δ` は `t` について
+単調なので、event の順で最初に破れた要求の期限がその最小値になる。期限が `horizon` 以下の要求だけを見る: その成否は run を延ばしても
+変わらない(扱いの event は期限より前、つまり horizon 以内に要る)。期限が `horizon` を越える要求は run の打ち切りで扱いが見えないだけなので
+見ない。それが効くのは `b0 > horizon` の義務だけで、検査器はそれを窓が horizon に収まらない判定外に数える。戻り値はその期限と説明
+(`none` なら `horizon` 以下のどの `cut` でも成り立つ)。 -/
+def healthyPrefixLimit (tl : Timeline) : Option (Int × String) :=
+  tl.deliveryFailure (fun t => t + tl.setup.e.delta) tl.rho.horizon
 
 /-- 生成 Statements `FullParticipation(s, rho)`: honest は GST から horizon まで awake(`envAwake`)。 -/
 def fullParticipation (tl : Timeline) : Judge :=

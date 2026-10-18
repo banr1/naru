@@ -72,7 +72,7 @@ def reportRun (sp : RunSpec) : IO (List String × List Verdict) := do
   let agreeP := tl.proposedAgrees (slotOfTime s (sp.horizon / 2))
   let verdicts := [ hreadBound tl p, includedFrom tl p .Confirmed (Spec.Constants.confirmationDelay s),
                     includedFrom tl p .Stable (Spec.Constants.stableInclusionDelay s), available tl p, confirmedLive tl p, stableLive tl p,
-                    stableIncludedFast tl p ]
+                    stableIncludedFast tl p, stableAsynchronyResilient tl p ]
   let mut lines : List String :=
     [ s!"run {sp.name}: seed {sp.seed}, validators {sp.validators}, honest {renderList sp.honestIds}, byzantine {renderList sp.byzantine} ({byzLabel sp.byz}), gst {sp.gst}, delta {sp.delta}, horizon {sp.horizon}, events {tl.events.size} (ticks {ticks}, deliveries {delivers}), injected {tl.injected}, dropped {tl.dropped}",
       s!"  premises: {p.render}",

@@ -160,6 +160,45 @@ def negatives : List Negative := Id.run do
                   (tlF.sleepyWindows 0).holds && !(tlF.freshWindows 0).holds && (tlS.freshWindows 0).holds && vF.judged == 0 && vF.unmet > 0
                     && ((vF.diag.getD "").splitOn "but FreshSleepyRegime fails").length > 1,
                   s!"{(tlF.sleepyWindows 0).render} {(tlF.freshWindows 0).render}; control {(tlS.freshWindows 0).render}; stableIncludedFast judged {vF.judged} unmet {vF.unmet}"⟩]
+  -- 2j. claim stableAsynchronyResilient の結論 PersistsFrom(stable, tRead, b0): stable の読みを horizon の時刻だけ genesis に戻すと、
+  --     genesis より深い tRead の読みは horizon の読みに入らず、b0 <= horizon のどの義務も破れる。本物の読み(対照)は判定の経路を通り違反しない
+  let deepAt := tlS.rho.honest.elems.any fun v => Blocks.depth (tlS.outputAt .Stable v (tlS.rho.horizon / 2)) > 0
+  let vpr := stableAsynchronyResilient tlS pS (readOut := fun g v t => if t == tlS.rho.horizon then .Genesis else tlS.outputAt g v t)
+  out := out ++ [⟨"stableAsynchronyResilient(stable read regressing at the horizon)",
+                  deepAt && vpr.violations > 0 && hasNote vpr "PersistsFrom(stable",
+                  s!"judged {vpr.judged} violations {vpr.violations}; first note: {vpr.notes[0]?.getD "-"}"⟩]
+  -- 2j'. b0 の境: stable の読みを途中の時刻 tStar だけ genesis に戻すと、tRead の読みが genesis より深い義務は b0 <= tStar で破れ、
+  --      b0 > tStar で判定される(`b0 <= t` の比較の一つずれを捉える)。報告の最初の破れの b0 が tStar 以下で、判定も残ることを確かめる
+  let tStar : Int := 50
+  let vpb := stableAsynchronyResilient tlS pS (readOut := fun g v t => if t == tStar then .Genesis else tlS.outputAt g v t)
+  let b0Of (n : String) : Int := ((((n.splitOn "b0 = ").getD 1 "").splitOn ")").headD "").toInt?.getD 0
+  let bad := vpb.notes.filter fun n => (n.splitOn "PersistsFrom(stable").length > 1
+  let vprOk0 := stableAsynchronyResilient tlS pS
+  out := out ++ [⟨"stableAsynchronyResilient(b0 boundary at a regressing read)",
+                  !bad.isEmpty && bad.all (fun n => b0Of n ≤ tStar) && vpb.judged > 0 && vpb.judged < vprOk0.judged
+                    && vpb.judged + vpb.violations == vprOk0.judged,
+                  s!"genesis at t = {tStar}; judged {vpb.judged} violations {vpb.violations} (control judged {vprOk0.judged}); first note: {vpb.notes[0]?.getD "-"}"⟩]
+  let vprOk := stableAsynchronyResilient tlS pS
+  out := out ++ [⟨"stableAsynchronyResilient(control: genuine reads)", vprOk.judged > 0 && vprOk.violations == 0,
+                  s!"judged {vprOk.judged} premise-unmet {vprOk.unmet} out-of-horizon {vprOk.outside} violations {vprOk.violations}"⟩]
+  -- 2k. OutageRegime の FreshMajority の欄: 2i と同じく awake の入力を round 2 で honest 全員が眠る値に差し替えると、stableAsynchronyResilient は
+  --     どの (tRead, b0) でも前提不成立に数える
+  let vpF := stableAsynchronyResilient tlF pS
+  out := out ++ [⟨"OutageRegime: FreshMajority broken (honest asleep in one round)",
+                  vpF.judged == 0 && vpF.unmet > 0 && ((vpF.diag.getD "").splitOn "OutageRegime fails: FreshMajority").length > 1,
+                  s!"judged {vpF.judged} unmet {vpF.unmet}; diag {vpF.diag.getD "-"}"⟩]
+  -- 2l. HealthyPrefixDelivery(OutageRegime の窓の前の配送の欄): GST 前に Δ を越えて遅れる配送のある run では、遅れた要求の期限以後の
+  --     b0 で破れ、その b0 の義務を前提不成立に数える(PartialSynchrony は GST 後の期限なので破れない)。GST 前も Δ 以内の run(対照)は
+  --     horizon までのどの b0 でも成り立つ
+  let tlH := generate { baseSpec with name := "negative-late-before-gst", gst := 20, preGstDelay := 4, horizon := 60 }
+  let pH := Premises.of tlH
+  let vH := stableAsynchronyResilient tlH pH
+  let hLimit := tlH.healthyPrefixLimit
+  let hpdN := ((((vH.diag.getD "").splitOn "by HealthyPrefixDelivery ").getD 1 "").splitOn ",").headD "" |>.toNat?.getD 0
+  out := out ++ [⟨"HealthyPrefixDelivery broken (late delivery before GST)",
+                  pH.partialSync.holds && hLimit.any (·.1 ≤ tlH.setup.e.tGST + tlH.setup.e.delta) && tlS.healthyPrefixLimit.isNone && hpdN > 0
+                    && ((vH.diag.getD "").splitOn "the run-wide fields of OutageRegime hold; HealthyPrefixDelivery(b0) fails for b0 >= ").length > 1,
+                  s!"{pH.partialSync.render}; limit {hLimit.map (·.1)}; premise-unmet by HealthyPrefixDelivery {hpdN}; control limit {tlS.healthyPrefixLimit.map (·.1)}; stableAsynchronyResilient judged {vH.judged} unmet {vH.unmet} out-of-horizon {vH.outside}"⟩]
   -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
   --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }
