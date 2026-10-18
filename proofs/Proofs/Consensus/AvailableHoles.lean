@@ -30,12 +30,15 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    round 0 は g2 の frame に root が無いので矛盾(`confCache_g2_round_zero`。G2 の round 0 の domain 時刻は `-Δ` で、run の event の時刻は 0 以上)、
    正の round は `confFrameRoot_preceq_confWalk_positive`(穴ではない)に渡す(周回 228)。これは g1 の frame の anchor が fork choice の SG root で
    walk がそこから歩くので、`confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor。穴ではない)から証明する(周回 230)。
-   これは穴 `confFrameG2_g1Root_positive`(g2 の root の祖先で filtered tree にあるものは g1 の root の祖先)で g1 の root を取り、
+   これは `confFrameG2_g1Root_positive`(g2 の root の祖先で filtered tree にあるものは g1 の root の祖先。穴ではない)で g1 の root を取り、
    `activePrefix_exists`(tree の重複なし `preUpdateTree_nodup` を使う。周回 233 に閉じた)と `activePrefix_dominates` で anchor に移す(周回 232)。
+   `confFrameG2_g1Root_positive` は g2 の root の出どころ `confCache_g2_origin`、穴 `confFrameG1_slot_positive`(読みの G1 の欄)、
+   穴 `g1Freeze_of_g2Freeze_positive`(G1 の凍結は G2 の凍結以上)と `preceq_clipGrade_of_compatible` から証明する(周回 234)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG2_g1Root_positive`(手書き
-   `q10_g1_slot_of_g2_slot`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+3. 穴(8 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
+   `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/ `g1Freeze_of_g2Freeze_positive`(手書き
+   `q10_g1_of_g2_freeze`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -122,6 +125,57 @@ theorem confCache_g2_round_zero (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e
   · obtain ⟨j, u, -, -, hj, hu, -, -⟩ := Proofs.Consensus.Grade2Capture.stateBefore_g2_origin c p a nr s rho i w 0 hold
     exact hneg hj hu
   · exact hneg hev ht
+
+/-- **g2 の frame の root の出どころ**: run の添字 `i` の event が `w` の時刻 `t` の tick なら、その tick が準備する cache
+(`ConfirmedOrigin.confCacheAt`)の round `k` の frame をどの store で読んでも、G2 の結果 `some (some raw)` の祖先 `P` は、
+添字 `j ≤ i` の event `Tick w (domainTime e hc k G2)` の前の store で `freezeRoot` が凍結した `g2v` の祖先。読みの切り詰めを
+`clipResult_some` で外し、この tick の凍結か tick の前の結果(`Grade2Capture.onPhaseTick_g2_cases`)、後者は run の帰納
+(`Grade2Capture.stateBefore_g2_origin`)に渡す。手書き `q10_g1_slot_of_g2_slot` の前半(`frame_phase_completed_in_round` の G2 の枝を
+祖先の関係に弱めた形)に当たる(周回 234)。 -/
+theorem confCache_g2_origin {w : ValidatorId} {i : Nat} {t : Int} (hev : rho.events[i]? = some (NamedEvent.Tick w t))
+    (st : Model.Consensus.Protocol.ForkChoice.Goldfish.FGStore) {k : Nat} {P raw : Block}
+    (h : (Model.Consensus.Protocol.Grades.readFrame (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t) st k).g2 =
+      some (some raw)) (hP : preceq P raw = true) :
+    ∃ (j : Nat) (g2v : Block), j ≤ i ∧
+      rho.events[j]? = some (NamedEvent.Tick w
+        (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)) ∧
+      Model.Consensus.Protocol.Grades.freezeRoot s.e
+          (Model.Consensus.Protocol.Grades.gradeView
+            (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core))
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core).f s.hc.etaSG k
+          (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)
+          (Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2) = some g2v ∧
+      preceq P g2v = true := by
+  change Model.Consensus.Protocol.Grades.clipResult st.f
+    (Model.Consensus.Protocol.Grades.cacheAtRound (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t) k).g2 =
+      some (some raw) at h
+  obtain ⟨b1, hb1, hPb1⟩ := Proofs.Consensus.Grade2Capture.clipResult_some h hP
+  unfold Proofs.Consensus.ConfirmedOrigin.confCacheAt at hb1
+  obtain ⟨b0, hb10, hold | ⟨ht, hfz⟩⟩ := Proofs.Consensus.Grade2Capture.onPhaseTick_g2_cases hb1
+  · obtain ⟨j, u, b2, hj, hju, hu, hfz, hb02⟩ := Proofs.Consensus.Grade2Capture.stateBefore_g2_origin c p a nr s rho i w k hold
+    subst hu
+    exact ⟨j, b2, hj.le, hju, hfz,
+      Proofs.Consensus.Blocks.preceq_trans hPb1 (Proofs.Consensus.Blocks.preceq_trans hb10 hb02)⟩
+  · subst ht
+    exact ⟨i, b0, le_rfl, hev, hfz, Proofs.Consensus.Blocks.preceq_trans hPb1 hb10⟩
+
+/-- **切り詰めは finalized と互換な祖先を保つ**: `P ⪯ g` で `P` が `f` と互換なら `P ⪯ clipGrade g f`。`g` の親を遡る帰納法で、
+`g` が `f` と互換なら `clipGrade` は `g` のまま、そうでなければ `P ≠ g`(`P` は互換)なので `P` は親の祖先。手書き `q10_retained_prefix`
+(`Protocol/Grades/Q10Frame.lean`)の向きの一方(周回 234)。 -/
+theorem preceq_clipGrade_of_compatible {P g f : Block} (hPg : preceq P g = true) (hPf : compatible P f = true) :
+    preceq P (Model.Consensus.Protocol.Grades.clipGrade g f) = true := by
+  induction g with
+  | Genesis =>
+    rw [Model.Consensus.Protocol.Grades.clipGrade]
+    exact hPg
+  | Node q sl r v sup ats i ih =>
+    rw [Model.Consensus.Protocol.Grades.clipGrade]
+    split_ifs with hc
+    · exact hPg
+    · simp only [preceq, Bool.or_eq_true, beq_iff_eq] at hPg
+      rcases hPg with rfl | hPq
+      · exact absurd hPf hc
+      · exact ih hPq
 
 /-- 要素がすべて `m` で `m` を含む重複なしのリストは `[m]`。 -/
 theorem list_eq_singleton_of_nodup {α : Type} {l : List α} {m : α} (hnd : l.Nodup) (hall : ∀ x ∈ l, x = m)
@@ -220,12 +274,89 @@ theorem preUpdateTree_nodup (w : ValidatorId) (i : Nat) (t : Int) :
   (Proofs.Consensus.AttestationSource.tickPreUpdateStore_treeInv c p nr _ s.hc _ t (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i w)
     (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i w)).nodup
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round が正なら、その round の
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、読みの frame の
+G1 の欄は閉じていて、添字 `j1 ≤ i` の event `Tick w (domainTime e hc R G1)` の前の store で凍結した `freezeRoot` を読みの store の
+finalized `F` で切り詰めたもの。その store の finalized は `F` の祖先。手書き `FrameCompleted.frame_phase_completed_in_round`
+(`Protocol/Grades/FrameCompleted.lean`)の G1 の枝と、手書き `q10_g1_slot_of_g2_slot` の `hFmono`(`stateBefore_F_mono`)に当たる(周回 234)。
+閉じるのに要るもの: honest なノードは horizon までの各時刻に tick を持つこと(手書き `tick_total`)、確認評価の tick の時刻が round `R` の
+G1 の domain 時刻(opening)より後で次の round の opening 以下であること、その間の tick の `alignRound` が round `R` の frame を捨てないこと、
+G1 の結果は凍結の後は切り詰めだけを受けること(`Grade2Capture.onPhaseTick_g2_cases` の G1 版)、finalized の単調性
+(`FinalizedMonotone.worldStep_f` と確認の更新の前の段の store)。 -/
+theorem confFrameG1_slot_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) :
+    ∃ j1 : Nat, j1 ≤ i ∧
+      rho.events[j1]? = some (NamedEvent.Tick w
+        (Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+          (Model.Consensus.Protocol.Grades.roundOf s.hc
+            (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+          Model.Consensus.Protocol.Grades.GradePhase.G1)) ∧
+      preceq (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core).f
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core).f = true ∧
+      (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 =
+        some ((Model.Consensus.Protocol.Grades.freezeRoot s.e
+          (Model.Consensus.Protocol.Grades.gradeView
+            (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core))
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core).f s.hc.etaSG
+          (Model.Consensus.Protocol.Grades.roundOf s.hc
+            (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+          (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc
+              (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G1)
+          (Model.Consensus.Protocol.Grades.lateTime s.e s.hc
+            (Model.Consensus.Protocol.Grades.roundOf s.hc
+              (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+            Model.Consensus.Protocol.Grades.GradePhase.G1)).map
+          (fun b => Model.Consensus.Protocol.Grades.clipGrade b
+            (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core).f)) := by
+  sorry
+
+/-- 穴: GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で凍結した
+G2 の root `g2v` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、その store でも G1 の
+`freezeRoot` が `g2v` 以上の root `g1v` を凍結する。手書き `NamedOutageClosure.q10_g1_of_g2_freeze`(`Protocol/Grades/Q10Frame.lean`)に
+当たる(周回 234)。閉じるのに要るもの: `g2v` は tree にあり G2 の `gradeBool` を満たす(`Grade2Capture.freezeRoot_mem`)、tree は 2 つの tick の
+間で縮まない(手書き `q10_tree_fwd`。G2 の domain 時刻は G1 より `Δ` 前で、run の event は時刻の順)、G2 の grade は G1 の tick に持ち越される
+(手書き `q10_grade_cross`)、tree にあり `gradeBool` を満たす要素があれば `freezeRoot` はそれ以上の root を返す(手書き `q10_freeze_of_graded`)。 -/
+theorem g1Freeze_of_g2Freeze_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
+    (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)))
+    (hj1 : rho.events[j1]? = some (NamedEvent.Tick w
+      (Model.Consensus.Protocol.Grades.domainTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)))
+    {g2v : Block}
+    (hfz2 : Model.Consensus.Protocol.Grades.freezeRoot s.e
+      (Model.Consensus.Protocol.Grades.gradeView
+        (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j2) w).st.core))
+      (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j2) w).st.core).f s.hc.etaSG k
+      (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2)
+      (Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G2) = some g2v)
+    (hFB : preceq (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core).f g2v = true) :
+    ∃ g1v : Block, Model.Consensus.Protocol.Grades.freezeRoot s.e
+        (Model.Consensus.Protocol.Grades.gradeView
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core))
+        (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho j1) w).st.core).f s.hc.etaSG k
+        (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1)
+        (Model.Consensus.Protocol.Grades.lateTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1) = some g1v ∧
+      preceq g2v g1v = true := by
+  sorry
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round が正なら、その round の
 frame の g2 の root `raw` の祖先 `P` で filtered tree にあるものは、同じ frame の g1 の root `root1` の祖先でもある。
-手書き `NamedOutageClosure.q10_g1_slot_of_g2_slot`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 232)。
-閉じるのに要るもの: 読みの時刻が round の G1 の domain 時刻より後で次の round の opening 以下であること(確認評価の tick の時刻)、
-G2 と G1 がそれぞれ domain 時刻の tick で凍結されること(`Grade2Capture.stateBefore_g2_origin`、形は `freezeRoot_mem`。手書き
-`FrameCompleted.frame_phase_completed_in_round`)、G2 の root が G1 の grade の条件 `gradeBool` を満たして G1 の最深の root の祖先になること。 -/
+手書き `NamedOutageClosure.q10_g1_slot_of_g2_slot`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 232 に穴として置き、周回 234 に
+手書きと同じ運びで証明した)。g2 の root の出どころ(`confCache_g2_origin`: G2 の domain 時刻の tick で凍結した `g2v`、`P ⪯ g2v`)と、
+読みの G1 の欄(穴 `confFrameG1_slot_positive`: G1 の domain 時刻の tick の凍結の切り詰め)を取り、`P` は filtered tree にあるので
+読みの finalized `F` を延ばす(`ProposerFinality.filtered_extends`)。G1 の tick の finalized は `F` の祖先なので `g2v` の祖先で、
+穴 `g1Freeze_of_g2Freeze_positive` が G1 の凍結 `g1v`(`g2v ⪯ g1v`)を返す。`P` は `F` と互換なので切り詰めの後も `g1v` の切り詰めの祖先
+(`preceq_clipGrade_of_compatible`)。 -/
 theorem confFrameG2_g1Root_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
@@ -246,7 +377,16 @@ theorem confFrameG2_g1Root_positive (hwf : SetupWellFormed c p s) (hdom : RunDom
         (Model.Consensus.Protocol.Grades.roundOf s.hc
           (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 = some (some root1) ∧
       preceq P root1 = true := by
-  sorry
+  obtain ⟨j2, g2v, -, hj2, hfz2, hPg2v⟩ := confCache_g2_origin c p a nr s rho ht.1 _ hg2 hPraw
+  obtain ⟨j1, -, hj1, hFmono, hg1⟩ := confFrameG1_slot_positive c p a nr s rho hwf hdom hsleep hw ht hpos
+  have hFP := Proofs.Consensus.ProposerFinality.filtered_extends hPtree
+  obtain ⟨g1v, hfz1, hg21⟩ := g1Freeze_of_g2Freeze_positive c p a nr s rho hwf hdom hsleep hw hpos hj2 hj1 hfz2
+    (Proofs.Consensus.Blocks.preceq_trans hFmono (Proofs.Consensus.Blocks.preceq_trans hFP hPg2v))
+  rw [hfz1] at hg1
+  refine ⟨_, hg1, preceq_clipGrade_of_compatible (Proofs.Consensus.Blocks.preceq_trans hPg2v hg21) ?_⟩
+  unfold compatible
+  rw [Bool.or_eq_true]
+  exact Or.inr hFP
 
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
 FG root に戻らない枝の値)は、確認の更新の前の段の store の round が正なら、同じ frame の g1 の anchor(`Grades.anchor`。
