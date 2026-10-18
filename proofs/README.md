@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 15 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 14 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -511,7 +511,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 手書き `q10_g1_of_g2_freeze`。穴ではない)と、切り詰めが finalized と互換な祖先を保つこと(`preceq_clipGrade_of_compatible`)から証明します(周回 234)。
 `g1Freeze_of_g2Freeze_positive` は手書きと同じく、G2 の凍結の root を穴 `g1Grade_of_g2Grade_positive`(G1 の grade への持ち越し。手書き `q10_grade_cross`)と
 `g1Tree_of_g2Tree`(G1 の tick の tree への持ち越し。手書き `q10_tree_fwd`。G2 の domain 時刻は G1 より前なので添字も前で、tree のブロックは残る。周回 236 に閉じた)で G1 の tick に運び、証明済みの `freezeRoot_of_graded`(grade の通った要素は互いに互換
-`GradeSupporter.graded_compatible` なので最も深い要素が支配する。手書き `q10_freeze_of_graded`)で G1 の凍結に移します(周回 235)。`g1Grade_of_g2Grade_positive` は手書きと同じく、抽象的な持ち越し `GradeTransport.gradeBool_transport`(支持は持ち越し反対は戻る。手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻が G2 の domain 時刻以下であることと、2 つの tick の間の包含の穴 `g1RawInputs_back` / `g1Interpreted_back`(G1 の tick の入力は公の時刻 `cut` より前に受信したので G2 の tick にもある。手書き `q10_rawInputs_back` / `q10_interpreted_back`)・`g1LocalCovers_fwd`(覆いは tree が育っても残る。手書き `q10_localCovers_fwd`)・`g1InterpretedCover_fwd`(`b` を覆う入力は G1 の tick に運べる。手書き `q10_interpreted_fwd_cover`)を渡して証明します(周回 238)。回復の枝は穴
+`GradeSupporter.graded_compatible` なので最も深い要素が支配する。手書き `q10_freeze_of_graded`)で G1 の凍結に移します(周回 235)。`g1Grade_of_g2Grade_positive` は手書きと同じく、抽象的な持ち越し `GradeTransport.gradeBool_transport`(支持は持ち越し反対は戻る。手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻が G2 の domain 時刻以下であることと、2 つの tick の間の包含の穴 `g1RawInputs_back` / `g1Interpreted_back`(G1 の tick の入力は公の時刻 `cut` より前に受信したので G2 の tick にもある。手書き `q10_rawInputs_back` / `q10_interpreted_back`)・`g1LocalCovers_fwd`(覆いは tree が育っても残る。手書き `q10_localCovers_fwd`。tree のブロックは残り、run に root の衝突が無いので root の解決も変わらない。周回 240 に閉じた)・`g1InterpretedCover_fwd`(`b` を覆う入力は G1 の tick に運べる。手書き `q10_interpreted_fwd_cover`)を渡して証明します(周回 238)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
@@ -532,7 +532,6 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | `Proofs.Consensus.AvailableHoles.confFrameG1_slot_positive` | `Consensus.Spec.Claims.available` | `frame_phase_completed_in_round` | `DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean` | 234 |
 | `Proofs.Consensus.AvailableHoles.g1RawInputs_back` | `Consensus.Spec.Claims.available` | `q10_rawInputs_back` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 238 |
 | `Proofs.Consensus.AvailableHoles.g1Interpreted_back` | `Consensus.Spec.Claims.available` | `q10_interpreted_back` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 238 |
-| `Proofs.Consensus.AvailableHoles.g1LocalCovers_fwd` | `Consensus.Spec.Claims.available` | `q10_localCovers_fwd` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 238 |
 | `Proofs.Consensus.AvailableHoles.g1InterpretedCover_fwd` | `Consensus.Spec.Claims.available` | `q10_interpreted_fwd_cover` | `DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean` | 238 |
 | `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |

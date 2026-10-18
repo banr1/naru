@@ -39,13 +39,14 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `g1Freeze_of_g2Freeze_positive` は G2 の凍結の root を `g1Grade_of_g2Grade_positive`(grade の持ち越し。穴ではない)と `g1Tree_of_g2Tree`
    (tree の持ち越し。周回 236 に閉じた)で G1 の tick に運び、`freezeRoot_of_graded`(grade の通った tree の要素は凍結の root 以下)で G1 の凍結に移す(周回 235)。
    `g1Grade_of_g2Grade_positive` は抽象的な持ち越し `GradeTransport.gradeBool_transport` に 2 つの tick の間の包含の穴
-   `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd` を渡す(周回 238)。
+   `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd` を渡す(周回 238)。`g1LocalCovers_fwd` は
+   tree のブロックが残り、run に root の衝突が無い(`tickTree_root_inj`)ので root の解決が変わらない(`findRoot?_of_subset`)ことで閉じた(周回 240)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(11 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+3. 穴(10 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
    `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
    `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
-   `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd`(手書き `q10_rawInputs_back` /
-   `q10_interpreted_back` / `q10_localCovers_fwd` / `q10_interpreted_fwd_cover`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+   `g1RawInputs_back` / `g1Interpreted_back` / `g1InterpretedCover_fwd`(手書き `q10_rawInputs_back` /
+   `q10_interpreted_back` / `q10_interpreted_fwd_cover`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -499,11 +500,46 @@ theorem g1Interpreted_back (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho
       (tickF c p a nr s rho j2 w) s.hc.etaSG k cut v).elems := by
   sorry
 
-/-- 穴: `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の tree で鍵 `key` の head が `b` を覆えば、G1 の tick の
-前の store の tree でも覆う。手書き `NamedOutageClosure.q10_localCovers_fwd`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
-閉じるのに要るもの: tree のブロックは残り(`BlockStamps.stateBefore_keep`)、root の解決 `findRoot?` は tree が育っても変わらない
-(手書き `q10_find_fwd`: run に root の衝突が無い `held_find_at_strict`)。 -/
-theorem g1LocalCovers_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+/-- honest なノード `w` の添字 `j` の前の store の tree では root が要素を決める: 2 つの要素の root が等しければ同じブロック。
+tree の要素は bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で、bodies のブロックは run の中のブロック(`BlockInRun`)なので、
+`SleepyRegime` の `Idealization`(= `NamedRootCollisionFree`)から `FinalizedAccountable.rootInjective_of_collisionFree` で取る。
+手書き `held_find_at_strict` の root の衝突なしの半分(周回 240)。 -/
+theorem tickTree_root_inj (hsleep : SleepyRegime c p a nr s rho 0) {w : ValidatorId} (hw : rho.honest.contains w = true) (j : Nat)
+    {x y : Block} (hx : x ∈ (worldAt (stateBefore c p a nr s rho j) w).st.core.tree.elems)
+    (hy : y ∈ (worldAt (stateBefore c p a nr s rho j) w).st.core.tree.elems)
+    (hr : root x = root y) : x = y := by
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho (Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep)).2
+  have hinv := Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho j w
+  have hin : ∀ D, D ∈ (worldAt (stateBefore c p a nr s rho j) w).st.bodies.elems →
+      Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho D := fun D hD =>
+    ⟨D, Or.inr ⟨w, hw, j, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hD⟩,
+      Proofs.Consensus.NamedBlocks.namedPreceq_self D⟩
+  obtain ⟨X, hX, rfl⟩ := hinv.named x hx
+  obtain ⟨Y, hY, rfl⟩ := hinv.named y hy
+  exact Proofs.Consensus.FinalizedAccountable.rootInjective_of_collisionFree c p a nr s rho hcf (hin X hX) (hin Y hY)
+    _ _ ⟨⟨Or.inl (Proofs.Consensus.Blocks.preceq_self _), Or.inr (Proofs.Consensus.Blocks.preceq_self _)⟩, hr⟩
+
+/-- root の解決は tree が育っても変わらない: `t2` の要素が `t1` にもあり、`t1` に重複が無く root が要素を決めるなら、`t2` で root `r` が
+`hd` に解決すれば `t1` でも `hd` に解決する。手書き `q10_find_fwd` の抽象的な半分(周回 240)。 -/
+theorem findRoot?_of_subset {t1 t2 : NaruStd.Set Block} (hnd : t1.elems.Nodup)
+    (hinj : ∀ x ∈ t1.elems, ∀ y ∈ t1.elems, root x = root y → x = y) (hsub : ∀ x ∈ t2.elems, x ∈ t1.elems)
+    {r : BlockId} {hd : Block} (h : findRoot? t2 r = some hd) : findRoot? t1 r = some hd := by
+  obtain ⟨hm, hroot⟩ := Proofs.Consensus.BlockStamps.findRoot?_mem h
+  have hm1 := hsub hd hm
+  unfold findRoot? NaruStd.Set.findUnique?
+  have hl : t1.elems.filter (fun b => root b == r) = [hd] :=
+    list_eq_singleton_of_nodup (hnd.filter _) (fun x hx => by
+      obtain ⟨hx1, hxr⟩ := List.mem_filter.mp hx
+      exact hinj x hx1 hd hm1 ((beq_iff_eq.mp hxr).trans hroot.symm))
+      (List.mem_filter.mpr ⟨hm1, beq_iff_eq.mpr hroot⟩)
+  rw [hl]
+
+/-- `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の tree で鍵 `key` の head が `b` を覆えば、G1 の tick の
+前の store の tree でも覆う。手書き `NamedOutageClosure.q10_localCovers_fwd`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238 に穴として
+置き、周回 240 に証明した)。tree のブロックは残り(`g1Tree_of_g2Tree`)、G1 の tick の tree は重複が無く(`TreeInv`)root が要素を決める
+(`tickTree_root_inj`)ので、root の解決 `findRoot?` は変わらない(`findRoot?_of_subset`。手書き `q10_find_fwd`)。 -/
+theorem g1LocalCovers_fwd (hwf : SetupWellFormed c p s) (_hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat}
     (hj2 : rho.events[j2]? = some (NamedEvent.Tick w
@@ -513,7 +549,20 @@ theorem g1LocalCovers_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (key : Option BlockId) {b : Block}
     (h : Model.Consensus.Protocol.Grades.localCovers (tickGradeView c p a nr s rho j2 w) key b = true) :
     Model.Consensus.Protocol.Grades.localCovers (tickGradeView c p a nr s rho j1 w) key b = true := by
-  sorry
+  unfold Model.Consensus.Protocol.Grades.localCovers Model.Consensus.Protocol.Grades.headCovers at h ⊢
+  simp only [tickGradeView, Model.Consensus.Protocol.Grades.gradeView, Model.Consensus.Protocol.Store.storeToHealing] at h ⊢
+  cases key with
+  | none => exact h
+  | some r =>
+    dsimp only at h ⊢
+    cases hf : findRoot? (worldAt (stateBefore c p a nr s rho j2) w).st.core.tree r with
+    | none => rw [hf] at h; simp at h
+    | some hd =>
+      rw [hf] at h
+      rw [findRoot?_of_subset (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho j1 w).nodup
+        (fun x hx y hy hr => tickTree_root_inj c p a nr s rho hsleep hw j1 hx hy hr)
+        (fun x hx => g1Tree_of_g2Tree c p a nr s rho hwf hsleep hj2 hj1 hx) hf]
+      exact h
 
 /-- 穴: `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の G2 の early 時刻の解釈済みの入力 `y` の鍵が、その store の
 tree で `b` を覆い、G1 の tick の前の store の finalized が `b` の祖先なら、`y` は G1 の tick の前の store の G1 の early 時刻の
@@ -544,8 +593,8 @@ theorem g1InterpretedCover_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s
 その store でも G1 の `gradeBool` を満たす。手書き `NamedOutageClosure.q10_grade_cross`(`Protocol/Grades/Q10Frame.lean`)に当たる
 (周回 235 に穴として置き、周回 238 に手書きと同じ運びで証明した)。抽象的な持ち越し `GradeTransport.gradeBool_transport`
 (手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻は G2 の domain 時刻(= G2 の late 時刻)以下であること
-(`g1Times_le_domainTime_G2`)と、2 つの tick の間の包含(穴 `g1Interpreted_back` / `g1RawInputs_back` / `g1LocalCovers_fwd` /
-`g1InterpretedCover_fwd`)を渡す。 -/
+(`g1Times_le_domainTime_G2`)と、2 つの tick の間の包含(穴 `g1Interpreted_back` / `g1RawInputs_back` / `g1InterpretedCover_fwd` と
+周回 240 に閉じた `g1LocalCovers_fwd`)を渡す。 -/
 theorem g1Grade_of_g2Grade_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
