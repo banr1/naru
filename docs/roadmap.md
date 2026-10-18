@@ -56,8 +56,8 @@
   結論 `LiveFrom`、判定 866 / 220・違反 0)、claim `stableIncludedFast` の検査器(周回 205。前提 `FreshSleepyRegime` = `SleepyRegime` ∧ `FreshMajority`、
   結論 `IncludedFrom(stable, fastStableInclusionDelay)`、判定 34・違反 0)、claim `stableAsynchronyResilient` の検査器(周回 207。前提 `OutageRegime`
   (`HealthyPrefixDelivery` / `FreshMajority` / `SlashableBound` と窓の位置)、結論 `PersistsFrom(stable, tRead, b0)`、判定 3012・違反 0)、claim `finalized` の検査器(周回 209。前提 `FinalityRegime`(`BFTRegime` と
-  `StrongMultiProposerRecurrence`)、結論 `FinalizedAt`。`finalityStartup` が前提を満たしうる最小の設定でも 2279 で horizon に届かず、判定 0・判定外 61・違反 0。判定 1 以上は人間の判断待ち)、負の検体 37 件、`naru_test properties`(周回 200 から回帰一式に入れた)。残るのは
-  `finalized` の判定件数(人間の判断待ち)、他の中間命題、scenario が fn で公開する run、
+  `StrongMultiProposerRecurrence`)、結論 `FinalizedAt`。`finalityStartup` が前提を満たしうる最小の設定でも 2279 で horizon に届かないので、周回 210 から強い形 `IncludedFrom(Finalized, tGST, 4 · period)` ∧ `LiveFrom` で判定し、判定 16・違反 0)、負の検体 41 件、`naru_test properties`(周回 200 から回帰一式に入れた)。残るのは
+  他の中間命題、scenario が fn で公開する run、
   共通の run の記述からの手書き側(golden)への写しと C10 の拡充、C74 の theorem、C75(前提を満たす具体的な run の kernel 検査。native の FinalityLiveness は
   horizon 100 / 200 / 400 で 28 ms / 0.4 秒 / 7.4 秒と約 4 乗で増え、全 horizon 33,730 は実行不能)
 - `protocol` 宣言の意味と stdlib の generic な `Event` / `Run`([language.md](language.md)「scenario と observer」)

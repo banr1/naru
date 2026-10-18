@@ -442,7 +442,7 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 **実行テストの結果は証明の代用にせず、`naru proofs` の証明状況の表示は変えない。** 違反が出たら、期待値の書き換えや検査器の弱化で通さず、
 用語「反例の分類」(検査器の誤り / 前提の判定の誤り / 移植の不一致)で原因を分ける。
 
-どの命題が実行テストでどこまで確かめられているか(最終実行は周回 209、固定設定 10 run。表の件数は各検査器を足した周回のもの。詳しい件数は docs/testing.md):
+どの命題が実行テストでどこまで確かめられているか(最終実行は周回 210、固定設定 10 run。表の件数は各検査器を足した周回のもの。詳しい件数は docs/testing.md):
 
 | 命題 | 検査器 | 判定 / 前提不成立 / 判定外 / 違反 | 備考 |
 |---|---|---|---|
@@ -454,8 +454,8 @@ tick の出力(`(tick …).2.2`)と記録(`.2.1`)を論じる補題(`Signing.lea
 | claim `stableIncludedFast`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `FreshSleepyRegime(t0)` = `SleepyRegime(t0)` ∧ `FreshMajority`、結論 `IncludedFrom(stable, t0, fastStableInclusionDelay)`。手書き `stableIncludedFast_concrete`、`Bridge/StableIncludedFresh.lean`) | `stableIncludedFast` | 34 / 58 / 40 / 0 | `FreshMajority` は窓の集合が `AwakeInExactly` で一意に決まるので厳密。前提不成立は `tGST > 0` の 3 run と、`FreshMajority` が破れる sleepy の run |
 | claim `stableAsynchronyResilient`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `OutageRegime(tRead, b0, b1)`、結論 `PersistsFrom(stable, tRead, b0)`。手書き `outage_stablePersists`) | `stableAsynchronyResilient` | 3012 / 2628 / 2100 / 0 | `HealthyPrefixDelivery(b0)` は破れた要求の最小の期限で厳密に判定、`FreshMajority` / `SlashableBound` も厳密。`tRead` は `[0, horizon]`、`b0` は窓の位置の範囲の public time、`b1` は最小の `max(b0, tGST)`。`PersistsFrom` は `b = r` に帰着して厳密。前提不成立は GST 前の遅延で `HealthyPrefixDelivery` が破れる 2 run と sleepy の run |
 
-| claim `finalized`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `FinalityRegime(t0, gap)` = `BFTRegime(t0)` ∧ `StrongMultiProposerRecurrence(tGST, gap)` ∧ `gap + 2 <= maxGap` ∧ `t0 + finalityStartup(gap) <= horizon`、結論 `FinalizedAt(t0 + finalityStartup(gap), gap)` = finalized の `IncludedFrom` と `LiveFrom`。手書き `finalized_included` / `finalized_growth`、naru 側 `finalizedLive_of_included`) | `finalized` | 0 / 1986 / 61 / 0 | `StrongMultiProposerRecurrence` は厳密。`finalityStartup` は前提を満たしうる最小の設定(gap 3、`k = 5`、`r = 1`)でも 2279、固定設定で 6159〜7863 で horizon に届かないので、前提の他の欄が成り立つ義務はすべて判定外(判定 1 以上は人間の判断待ち。周回 209)。結論の判定の経路は負の検体で startup と期限を差し替えて確かめる |
+| claim `finalized`(前提 `SetupWellFormed` ∧ `RunDomain` ∧ `FinalityRegime(t0, gap)` = `BFTRegime(t0)` ∧ `StrongMultiProposerRecurrence(tGST, gap)` ∧ `gap + 2 <= maxGap` ∧ `t0 + finalityStartup(gap) <= horizon`、結論 `FinalizedAt(t0 + finalityStartup(gap), gap)` = finalized の `IncludedFrom` と `LiveFrom`。手書き `finalized_included` / `finalized_growth`、naru 側 `finalizedLive_of_included`) | `finalized`(強い形) | 16 / 1995 / 122 / 0 | `StrongMultiProposerRecurrence` は厳密。`finalityStartup` は前提を満たしうる最小の設定(gap 3、`k = 5`、`r = 1`)でも 2279、固定設定で 6159〜7863 で horizon に届かないので、周回 210 から用語「強い形」(GST 以後の honest な提案は `4 · period` 以内に honest 全員の finalized の読みに入り、同じ期限で `LiveFrom`)で判定し、期限付きの形は判定外として併せて数える。判定は `h4-k5-honest-proposers` の包含 3・伸長 13。強い形の違反 0(「期限の前の正常な挙動」に分けたもの 0) |
 
 `HealthyPrefixDelivery` は周回 207 から、`FreshMajority` は周回 205 から、`WindowMajority` / `SlashableBound` / `RecoveredBy` は周回 201 から判定する。
-`finalized` の判定件数(期限が horizon に届かない)、他の中間命題(round の帰納の段の主張)、
+他の中間命題(round の帰納の段の主張)、
 C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。

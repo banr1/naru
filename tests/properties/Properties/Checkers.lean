@@ -16,7 +16,8 @@ import Properties.Premises
 claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)、
 `stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`)、
 `stableAsynchronyResilient`(前提 `OutageRegime`、結論 `PersistsFrom(Stable, tRead, b0)`)、
-`finalized`(前提 `FinalityRegime`、結論 `FinalizedAt`)。
+`finalized`(前提 `FinalityRegime`、結論 `FinalizedAt`。期限が horizon を越えるので強い形 `IncludedFrom(Finalized, tGST, 4 · period)` ∧
+`LiveFrom(Finalized, tGST, 4 · period)` で判定し、期限付きの形は判定外として併せて数える)。
 -/
 
 namespace Properties
@@ -40,6 +41,8 @@ structure Verdict where
   classNotes : Array String := #[]
   /-- 判定ではない補助の情報(期限や、強い形の判定の内訳)。 -/
   diag : Option String := none
+  /-- `notes` に残す説明の上限(強い形の違反を分類する検査器は、分類の根拠を 1 件ごとに残すために上げる)。 -/
+  noteCap : Nat := 8
 deriving Repr
 
 def Verdict.render (v : Verdict) : String :=
@@ -55,7 +58,7 @@ def Verdict.combine (a b : Verdict) : Verdict :=
     notes := (a.notes ++ b.notes).extract 0 8, classNotes := a.classNotes ++ b.classNotes, diag := none }
 
 def Verdict.note (v : Verdict) (msg : String) : Verdict :=
-  { v with violations := v.violations + 1, notes := if v.notes.size < 8 then v.notes.push msg else v.notes }
+  { v with violations := v.violations + 1, notes := if v.notes.size < v.noteCap then v.notes.push msg else v.notes }
 
 def Verdict.classify (v : Verdict) (msg : String) : Verdict :=
   { v with classified := v.classified + 1, classNotes := v.classNotes.push msg }
@@ -629,26 +632,40 @@ def finalizationLag (tl : Timeline) (read : Identifiers.ValidatorId → Int → 
         | none => notIn := notIn + 1
   return (worst, inN, notIn)
 
+/-- claim `finalized` の強い形の期限(IDEAL.md C73・用語「強い形」): `4 · period`(Δ = 1 で 48)。 -/
+def finalizedStrongDelay (s : Setup.Setup) : Int := 4 * period s
+
 /-- claim `finalized(s, rho, t0, gap)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.finalized`。手書き `Consensus.finalized`):
 前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `FinalityRegime(s, rho, t0, gap)`(生成 Statements `Statements.Consensus.Spec.Regimes.FinalityRegime`。
 手書き `FinalityRegime`)= `BFTRegime(s, rho, t0)`(`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧ `BelowOneThird` ∧
 `FullParticipation`)∧ `StrongMultiProposerRecurrence(s, rho, tGST, gap)`(`Timeline.strongMultiProposerBreak`、厳密)∧ `gap + 2 <= maxGap(s)` ∧
 `t0 + finalityStartup(s, gap) <= horizon`、結論 `FinalizedAt(s, rho, t1, gap)`(`t1 = t0 + finalityStartup(s, gap)`)=
 `IncludedFrom(Finalized, t1, finalityDeadline(s, gap))`(`includedFromAt`)∧ `LiveFrom(Finalized, t1, gap · period + finalityDeadline(s, gap))`(`liveFromAt`)。
-自由変数の列挙: `gap` は `gap + 2 <= maxGap(s)` を満たす `[0, maxGap − 2]`(それより大きい gap は前提が空虚に偽)、`t0` は `[tGST, horizon]` の整数
-(`t0 < tGST` は前提が偽、`t0 > horizon` は `t1 > horizon` で結論の義務がすべて horizon の外)。horizon を延ばしても成り立たない欄
-(`BFTRegime` の run 全体の欄、horizon 以内で破れた `StrongMultiProposerRecurrence`)が破れる `(t0, gap)` は 1 件の義務として前提不成立に先に数え、
-残りのうち `t1 > horizon` の `(t0, gap)` は 1 件の義務として判定外に数える(最後の欄 `t0 + finalityStartup <= horizon` は horizon の長さの欄で、
-`finalityStartup` は最小の設定でも数千の時刻なので、生成の予算の run ではここに入る)。`t1 <= horizon` なら結論の義務(slot と時刻)を数える。
+`finalityStartup` は前提を満たしうる最小の設定でも 2279 で生成 Model の run の費用では届かない(周回209の計測)ので、用語「強い形」を判定の形にする
+(周回209の問いへの人間の答え (A)):
+- 強い形: GST 以後の honest な提案は `4 · period`(`finalizedStrongDelay`)以内に honest 全員の finalized の読みに入り
+  (`IncludedFrom(Finalized, tGST, 4 · period)`)、同じ期限で `LiveFrom(Finalized, tGST, 4 · period)` が成り立つ。前提は `FinalityRegime` のうち
+  horizon によらない欄(`BFTRegime` の欄 ∧ 再発の欄 ∧ `gap + 2 <= maxGap`。`t0 = tGST`)が、ある `gap` で成り立つこと。結論は `t0` と `gap` を
+  含まないので 1 回だけ判定し(成り立つ gap は診断の行に出す)、どの gap でも成り立たなければ 1 件を前提不成立に数える。期限が horizon を越える
+  slot・時刻は判定外。`tGST <= t1` で `4 · period <= finalityDeadline` なので、強い形(と `MonotoneFrom(Finalized)`)は手書きの期限付きの形を含意する。
+- 期限付きの形: 自由変数 `gap` は `gap + 2 <= maxGap(s)` を満たす `[0, maxGap − 2]`(それより大きい gap は前提が空虚に偽)、`t0` は `[tGST, horizon]` の
+  整数(`t0 < tGST` は前提が偽、`t0 > horizon` は `t1 > horizon` で結論の義務がすべて horizon の外)。horizon を延ばしても成り立たない欄が破れる
+  `(t0, gap)` は 1 件の義務として前提不成立に先に数え、残りのうち `t1 > horizon` の `(t0, gap)` は 1 件の義務として判定外に併せて数える。
+  `t1 <= horizon` なら結論の義務(slot と時刻)をそのまま判定する。`gap + 2 <= maxGap` を満たす gap が無ければ 1 件を前提不成立に数える。
+強い形の違反は、期限付きの形の義務がどれも horizon の内側で判定されず(破れはすべて手書きの期限 `t1` より前)、かつ run が `goldenAgreedRuns` に
+あるときに限り用語「反例の分類」の「期限の前の正常な挙動」に分けて `classified` に数え(run・命題・根拠を `classNotes` に残す)、そうでなければ
+違反として数える。
 手書きの補題は `DecoupledConsensusProofs/ReviewTheorem.lean` の `finalized` の項が当てる `finalized_included`(`IncludedFrom`)と `finalized_growth`
 (`LiveFrom`)。naru 側の `proofs/` は `proofs/Proofs/Consensus/Liveness.lean` の `finalizedLive_of_included`(`IncludedFrom` から `LiveFrom` への帰着。
-`IncludedFrom` の証明は C71 の残り)。`gap + 2 <= maxGap` を満たす gap が無ければ 1 件を前提不成立に数える。
-診断の行に、honest な提案が finalized の読みに入るまでの実際の遅れ(`finalizationLag`)を出す。
-`readOut` / `startupOf` / `deadlineOf` は負の検体のための差し替え(結論の判定の経路を horizon の内側で通す)。 -/
+`IncludedFrom` の証明は C71 の残り)。診断の行に、honest な提案が finalized の読みに入るまでの実際の遅れ(`finalizationLag`)を出す。
+`readOut` / `startupOf` / `deadlineOf` / `strongDelay` / `agreed` は負の検体のための差し替え。`strongForm := false` は期限付きの形だけを判定する
+(負の検体が期限付きの形の経路を単独で確かめる)。 -/
 def finalized (tl : Timeline) (p : Premises)
     (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
     (startupOf : Nat → Int := Spec.Constants.finalityStartup tl.setup)
-    (deadlineOf : Nat → Int := Spec.Constants.finalityDeadline tl.setup) : Verdict := Id.run do
+    (deadlineOf : Nat → Int := Spec.Constants.finalityDeadline tl.setup)
+    (strongDelay : Int := finalizedStrongDelay tl.setup) (agreed : List String := goldenAgreedRuns)
+    (strongForm : Bool := true) : Verdict := Id.run do
   let s := tl.setup
   let I := tl.inputs
   let horizon := tl.rho.horizon
@@ -658,6 +675,7 @@ def finalized (tl : Timeline) (p : Premises)
       (p.belowOneThird.holds, p.belowOneThird.render), (p.fullParticipation.holds, p.fullParticipation.render) ]
   let gaps := List.range (Spec.Constants.maxGap s - 1)
   let recur := gaps.map fun gap => (gap, tl.strongMultiProposerBreak s.e.tGST gap)
+  let strongGaps := if base.holds then (recur.filter (·.2.isNone)).map (·.1) else []
   let t0s := intRange s.e.tGST horizon
   -- 読みと honest な提案は (v, t) / slot ごとに 1 回だけ計算する
   let honest := tl.rho.honest.elems
@@ -668,23 +686,52 @@ def finalized (tl : Timeline) (p : Premises)
     | some (_, arr) => if 0 ≤ t && t ≤ horizon then arr[t.toNat]! else readOut .Finalized v t
     | none => readOut .Finalized v t
   let inside := base.holds && recur.any fun (gap, b) => b.isNone && t0s.any fun t0 => t0 + startupOf gap ≤ horizon
-  let props : Array (Option Blocks.Block) := if !inside then #[] else (List.range (maxSlot s horizon + 1)).toArray.map fun k =>
-    if tl.rho.honest.contains (I.proposer k) then tl.proposedBlock k else none
-  let mut out : Verdict := { name := "finalized", unmet := if gaps.isEmpty then 1 else 0 }
+  let needProps := inside || (strongForm && !strongGaps.isEmpty)
+  let props : Array (Option Blocks.Block) := if !needProps then #[] else
+    (List.range (maxSlot s horizon + 1)).toArray.map fun k => if tl.rho.honest.contains (I.proposer k) then tl.proposedBlock k else none
+  let mut out : Verdict := { name := "finalized", unmet := if gaps.isEmpty then 1 else 0, strong := strongForm }
+  -- 期限付きの形
+  let mut deadlineOutside := 0
+  let mut deadlineJudged := 0
   for (gap, brk) in recur do
     for t0 in t0s do
       let t1 := t0 + startupOf gap
       if !base.holds || brk.isSome then out := { out with unmet := out.unmet + 1 }
-      else if t1 > horizon then out := { out with outside := out.outside + 1 }
+      else if t1 > horizon then
+        deadlineOutside := deadlineOutside + 1
+        out := { out with outside := out.outside + 1 }
       else
+        deadlineJudged := deadlineJudged + 1
         out := includedFromAt tl .Finalized (deadlineOf gap) (fun _ => read) true t1 out
         out := liveFromAt tl .Finalized ((gap : Int) * period s + deadlineOf gap) read props true t1 gap out
+  -- 強い形
+  let mut strongDiag := "strong form not judged (strongForm := false)"
+  if strongForm then
+    if strongGaps.isEmpty then
+      -- gap が 1 つも無ければ上で 1 件を数えたので足さない
+      if !gaps.isEmpty then out := { out with unmet := out.unmet + 1 }
+      strongDiag := s!"strong form IncludedFrom(finalized, tGST, {strongDelay}) ∧ LiveFrom(finalized, tGST, {strongDelay}): premise-unmet (no gap meets the fields of FinalityRegime other than t0 + finalityStartup <= horizon)"
+    else
+      let sv0 : Verdict := { name := "finalized", noteCap := 1000000 }
+      let svI := includedFromAt tl .Finalized strongDelay (fun _ => read) true s.e.tGST sv0
+      let sv := liveFromAt tl .Finalized strongDelay read props true s.e.tGST (strongGaps.headD 0) svI
+      -- 期限付きの形の義務が horizon の内側で 1 件も判定されていなければ、強い形の破れはすべて手書きの期限 t1 より前
+      let classifiable := agreed.contains tl.spec.name && deadlineJudged == 0
+      out := { out with judged := out.judged + sv.judged, outside := out.outside + sv.outside }
+      for n in sv.notes do
+        let msg := s!"finalized (strong form): run {tl.spec.name}: {n}"
+        if classifiable then
+          out := out.classify s!"{msg}; pre-deadline normal behaviour: no obligation of the deadline form lies within the horizon (t0 + finalityStartup > horizon), and both Models agree on this run in golden"
+        else if deadlineJudged == 0 then
+          out := out.note s!"{msg} (before every deadline of the deadline form, but the run is not confirmed by golden)"
+        else out := out.note s!"{msg} (the deadline form has {deadlineJudged} (t0, gap) within the horizon; not classified)"
+      strongDiag := s!"strong form IncludedFrom(finalized, tGST, {strongDelay}) ∧ LiveFrom(finalized, tGST, {strongDelay}) (the fields of FinalityRegime other than t0 + finalityStartup <= horizon hold at gap in {strongGaps}): judged {svI.judged} inclusion obligation(s) and {sv.judged - svI.judged} growth obligation(s), {sv.outside} out of the horizon, {sv.violations} broken"
   let recurDiag := ", ".intercalate (recur.map fun (gap, b) => match b with
     | some t => s!"gap {gap}: StrongMultiProposerRecurrence(tGST, {gap}) fails at t = {t}"
     | none => s!"gap {gap}: StrongMultiProposerRecurrence(tGST, {gap}) holds, finalityStartup {startupOf gap}, finalityDeadline {deadlineOf gap}")
   let premiseDiag := if base.holds then recurDiag else s!"BFTRegime fails: {base.reason}"
   let (worst, inN, notIn) := finalizationLag tl read
   let lag := match worst with | some w => toString w | none => "none"
-  return { out with diag := some s!"FinalizedAt(t0 + finalityStartup(gap), gap) over t0 in [tGST, {horizon}] and gap in {gaps} (gap + 2 <= maxGap {Spec.Constants.maxGap s}); {if gaps.isEmpty then "no gap meets gap + 2 <= maxGap" else premiseDiag}; observed finalization lag of honest proposals after GST: max {lag} over {inN} proposal(s) finalized by the horizon, {notIn} not finalized by the horizon" }
+  return { out with diag := some s!"{strongDiag}; deadline form FinalizedAt(t0 + finalityStartup(gap), gap) over t0 in [tGST, {horizon}] and gap in {gaps} (gap + 2 <= maxGap {Spec.Constants.maxGap s}): {deadlineOutside} (t0, gap) out of the horizon (counted in out-of-horizon together), {deadlineJudged} within; {if gaps.isEmpty then "no gap meets gap + 2 <= maxGap" else premiseDiag}; observed finalization lag of honest proposals after GST: max {lag} over {inN} proposal(s) finalized by the horizon, {notIn} not finalized by the horizon" }
 
 end Properties

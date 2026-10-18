@@ -205,19 +205,42 @@ def negatives : List Negative := Id.run do
   --     差し替えない本物の検査器は、前提の再発の欄が成り立つ gap 3 の義務をすべて判定外(t0 + finalityStartup > horizon)に数える
   let tlZ := generate { baseSpec with name := "negative-finality", proposers := .honestOnly, k := 5, horizon := 96 }
   let pZ := Premises.of tlZ
-  let vZ := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis) (startupOf := fun _ => 0) (deadlineOf := fun _ => 48)
-  let vZok := finalized tlZ pZ (startupOf := fun _ => 0) (deadlineOf := fun _ => 48)
+  --     (この 2 件は期限付きの形だけを判定する。強い形は下の 2m' の検体)
+  let vZ := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis) (startupOf := fun _ => 0) (deadlineOf := fun _ => 48) (strongForm := false)
+  let vZok := finalized tlZ pZ (startupOf := fun _ => 0) (deadlineOf := fun _ => 48) (strongForm := false)
   -- 壊した読みでは、本物の読みで判定される義務(IncludedFrom の slot と LiveFrom の時刻の両方)がすべて違反になる
   out := out ++ [⟨"finalized(corrupted finalized read)", vZ.violations > 0 && vZ.judged == 0 && hasNote vZ "includedFrom(finalized)"
                     && vZ.violations == vZok.judged,
                   s!"judged {vZ.judged} violations {vZ.violations} (genuine reads: judged {vZok.judged}); first note: {vZ.notes[0]?.getD "-"}"⟩]
   out := out ++ [⟨"finalized(control: genuine reads inside the horizon)", vZok.judged > 0 && vZok.violations == 0,
                   s!"judged {vZok.judged} premise-unmet {vZok.unmet} out-of-horizon {vZok.outside} violations {vZok.violations}; first note: {vZok.notes[0]?.getD "-"}"⟩]
-  let vZh := finalized tlZ pZ
+  let vZh := finalized tlZ pZ (strongForm := false)
   out := out ++ [⟨"finalized(finalityStartup beyond the horizon is out-of-horizon)",
                   (tlZ.strongMultiProposerBreak tlZ.setup.e.tGST 3).isNone && vZh.judged == 0 && vZh.violations == 0
                     && vZh.outside == (intRange tlZ.setup.e.tGST tlZ.rho.horizon).length,
                   s!"judged {vZh.judged} premise-unmet {vZh.unmet} out-of-horizon {vZh.outside}; finalityStartup(3) = {Spec.Constants.finalityStartup tlZ.setup 3}"⟩]
+  -- 2m'. 強い形(IncludedFrom(Finalized, tGST, 4 · period) ∧ LiveFrom(Finalized, tGST, 4 · period)): 本物の期限のまま(期限付きの形はすべて
+  --      判定外)、本物の読みは強い形で判定の経路を通り違反しない。判定外は期限付きの形の (t0, gap) と強い形の期限を越える義務を併せたもの
+  let vZs := finalized tlZ pZ
+  out := out ++ [⟨"finalized(control: genuine reads, strong form)",
+                  vZs.judged > 0 && vZs.violations == 0 && vZs.classified == 0 && vZs.outside > vZh.outside
+                    && ((vZs.diag.getD "").splitOn s!"strong form IncludedFrom(finalized, tGST, {finalizedStrongDelay tlZ.setup})").length > 1,
+                  s!"judged {vZs.judged} premise-unmet {vZs.unmet} out-of-horizon {vZs.outside} violations {vZs.violations}"⟩]
+  -- 読みを genesis に壊すと強い形の義務がすべて違反になる。run は golden の一致の一覧に無いので「期限の前の正常な挙動」に分けない
+  let vZsb := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis)
+  out := out ++ [⟨"finalized(strong form: corrupted finalized read)",
+                  vZsb.judged == 0 && vZsb.classified == 0 && vZsb.violations == vZs.judged && hasNote vZsb "finalized (strong form)",
+                  s!"judged {vZsb.judged} violations {vZsb.violations} classified {vZsb.classified}; first note: {vZsb.notes[0]?.getD "-"}"⟩]
+  -- 分類の経路(対照): run が golden で一致したと仮定すると、期限付きの形がすべて判定外の下での強い形の破れは「期限の前の正常な挙動」に分かれる
+  let vZsc := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis) (agreed := [tlZ.spec.name])
+  out := out ++ [⟨"finalized(control: strong-form pre-deadline classification with golden agreement)",
+                  vZsc.classified > 0 && vZsc.classified == vZsb.violations && vZsc.violations == 0 && vZsc.classNotes.size == vZsc.classified,
+                  s!"classified {vZsc.classified} violations {vZsc.violations}"⟩]
+  -- 期限付きの形の義務が horizon の内側にあれば(startup 0)、golden で一致しても強い形の破れを分類しない
+  let vZsd := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis) (startupOf := fun _ => 0) (deadlineOf := fun _ => 48) (agreed := [tlZ.spec.name])
+  out := out ++ [⟨"finalized(strong-form violation with the deadline form inside the horizon is not classified)",
+                  vZsd.classified == 0 && vZsd.violations == vZok.judged + vZs.judged && vZsd.violations > vZsb.violations,
+                  s!"classified {vZsd.classified} violations {vZsd.violations}"⟩]
   -- 2n. FinalityRegime の StrongMultiProposerRecurrence: byzantine を奇数 round の opening の提案者に置く(honestRounds)と、多提案者の窓の
   --     直前 2 period の opening に byzantine の提案者が入り、gap 3 でも破れる。最初の破れの時刻 tGST の窓には多提案者の opening があり
   --     (窓の欄だけなら成り立つ)、破れは直前 2 period の欄から来ることを確かめる。結論の経路を差し替えても前提不成立に数える
