@@ -16,7 +16,7 @@ store の SG 票の表 `sgVotes`(round を鍵にした `CombinedAttestation` の
 `sgVotes` は行の `sgVote` の集合)では、生の入力 `rawInputs` が後の store と遅い cutoff に持ち越せる(`rawInputs_of_keep`)。
 
 手書きでは `strict_sg_row_carry`(`Protocol/Grades/Q10Frame.lean`。SG 票の行と印が strict read の間で残る)に当たる。運びは
-`BlockStamps`(tree のブロックとその印)と同じ。
+`BlockStamps`(tree のブロックとその印)と同じ。自分の tick より後に入った票の印はその tick の時刻以上(`stateBefore_sgFresh`)。
 -/
 
 namespace Proofs.Consensus.SgStamps
@@ -28,7 +28,9 @@ open Model.Consensus.Protocol.Handlers Model.Consensus.Protocol.Duties.Proposals
 open Model.Consensus.Protocol.Schedule Model.Consensus.Protocol.Grades
 open Model.Consensus.Protocol.ForkChoice.Goldfish (SGVote)
 open Model.Consensus.Execution.Objects Model.Consensus.Execution.Node Model.Consensus.Execution.Run
+open Statements.Consensus.Spec.Conditions (EventsSorted)
 open Proofs.Consensus.Orders Proofs.Consensus.Tables Proofs.Consensus.Sets Proofs.Consensus.Carrier
+open Proofs.Consensus.Clocks (SameClock)
 
 /-! ## SG 票を鍵にした表 -/
 
@@ -51,6 +53,10 @@ theorem sgv_get?_insert_ne {ν : Type} (t : NaruStd.Table SGVote ν) (k : SGVote
   · exact absurd ((sgv_compare_eq_iff k k').mp hk) hne
   · simp [NaruStd.Table.get?, NaruStd.Table.insert, hf]
 
+theorem sgv_get?_insert_self {ν : Type} (t : NaruStd.Table SGVote ν) (k : SGVote) (v : ν) :
+    (t.insert k v).get? k = some v := by
+  simp [NaruStd.Table.get?, NaruStd.Table.insert, find?_insertSorted_self sgv_compare_eq_iff k v t.entries]
+
 /-! ## 行の不変条件と、行と印の保存 -/
 
 /-- 鍵 `k` の行(`sgVotes` の元のリスト)。 -/
@@ -63,10 +69,16 @@ def SgInv (st : Store) : Prop := ∀ k x, x ∈ rows st k → x.round = k
 def SgKeep (a b : Store) : Prop :=
   ∀ k x, x ∈ rows a k → x ∈ rows b k ∧ b.timestampSgVote.get? (sgVote x) = a.timestampSgVote.get? (sgVote x)
 
-/-- ハンドラの 1 段: 不変条件を運び、不変条件の下で行と印を保存する。 -/
+/-- 新しい票の印: `b` の行の attestation は `a` の同じ行にもあったか、その `sgVote` の受信の印が `b` の時計以上の時刻。 -/
+def SgFresh (a b : Store) : Prop :=
+  ∀ k x, x ∈ rows b k → x ∈ rows a k ∨ ∃ τ, b.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧ b.t ≤ τ
+
+/-- 時計を変えないハンドラの 1 段: 不変条件を運び、不変条件の下で行と印を保存し、新しい票の印は時計以上の時刻。 -/
 structure Step (a b : Store) : Prop where
   inv : SgInv a → SgInv b
   keep : SgInv a → SgKeep a b
+  fresh : SgInv a → SgFresh a b
+  clock : SameClock b a
 
 theorem SgKeep.refl (a : Store) : SgKeep a a := fun _ _ h => ⟨h, rfl⟩
 
@@ -75,22 +87,29 @@ theorem SgKeep.trans {a b d : Store} (h1 : SgKeep a b) (h2 : SgKeep b d) : SgKee
   obtain ⟨hd, hd'⟩ := h2 k x hb
   exact ⟨hd, hd'.trans hb'⟩
 
-theorem Step.refl (a : Store) : Step a a := ⟨id, fun _ => SgKeep.refl a⟩
+theorem Step.refl (a : Store) : Step a a := ⟨id, fun _ => SgKeep.refl a, fun _ _ _ h => Or.inl h, SameClock.refl a⟩
 
-theorem Step.trans {a b d : Store} (h1 : Step a b) (h2 : Step b d) : Step a d :=
-  ⟨fun h => h2.inv (h1.inv h), fun h => (h1.keep h).trans (h2.keep (h1.inv h))⟩
+theorem Step.trans {a b d : Store} (h1 : Step a b) (h2 : Step b d) : Step a d := by
+  refine ⟨fun h => h2.inv (h1.inv h), fun h => (h1.keep h).trans (h2.keep (h1.inv h)), fun h k x hx => ?_,
+    h2.clock.trans h1.clock⟩
+  rcases h2.fresh (h1.inv h) k x hx with hb | hd
+  · rcases h1.fresh h k x hb with ha | ⟨τ, hτ, hle⟩
+    · exact Or.inl ha
+    · exact Or.inr ⟨τ, ((h2.keep (h1.inv h)) k x hb).2.trans hτ, by rw [h2.clock.t]; exact hle⟩
+  · exact Or.inr hd
 
-/-- SG 票の表と印の表が等しい store の間は 1 段(何も変わらない)。 -/
-theorem Step.of_same {a b : Store} (hsv : b.sgVotes = a.sgVotes) (hts : b.timestampSgVote = a.timestampSgVote) :
-    Step a b := by
+/-- SG 票の表・印の表・時計が等しい store の間は 1 段(何も変わらない)。 -/
+theorem Step.of_same {a b : Store} (hsv : b.sgVotes = a.sgVotes) (hts : b.timestampSgVote = a.timestampSgVote)
+    (hc : SameClock b a) : Step a b := by
   have hr : ∀ k, rows b k = rows a k := fun k => by unfold rows; rw [hsv]
-  exact ⟨fun h k x hx => h k x (by rw [← hr]; exact hx), fun _ k x hx => ⟨by rw [hr]; exact hx, by rw [hts]⟩⟩
+  exact ⟨fun h k x hx => h k x (by rw [← hr]; exact hx), fun _ k x hx => ⟨by rw [hr]; exact hx, by rw [hts]⟩,
+    fun _ k x hx => Or.inl (by rw [← hr]; exact hx), hc⟩
 
 /-! ## `Store` のハンドラ -/
 
 theorem onGoldfishVote_step (st : Store) (x : GoldfishVote) : Step st (onGoldfishVote st x) := by
   unfold onGoldfishVote
-  split_ifs <;> exact Step.of_same rfl rfl
+  split_ifs <;> exact Step.of_same rfl rfl ⟨rfl, rfl⟩
 
 theorem onGoldfishVoteChecked_step (c : Nat → NaruStd.Set ValidatorId) (st : Store) (u : GoldfishVote) :
     Step st (onGoldfishVoteChecked c st u) := by
@@ -121,7 +140,17 @@ theorem onSgVote_step (hc : HealConfig) (st : Store) (a : CombinedAttestation) :
   dsimp only
   split_ifs with hg
   · exact Step.refl st
-  · refine ⟨fun hinv k x hx => ?_, fun hinv k x hx => ⟨?_, ?_⟩⟩
+  · refine ⟨fun hinv k x hx => ?_, fun hinv k x hx => ⟨?_, ?_⟩, fun _ k x hx => ?_, ⟨rfl, rfl⟩⟩
+    rotate_left 3
+    · change x ∈ NaruStd.Table.getOr (st.sgVotes.insert a.round _) k [] at hx
+      rw [rows_insert] at hx
+      split_ifs at hx with hk
+      · subst hk
+        rcases List.mem_append.mp hx with hx | hx
+        · exact Or.inl hx
+        · rw [List.mem_singleton.mp hx]
+          exact Or.inr ⟨st.t, sgv_get?_insert_self _ _ _, le_rfl⟩
+      · exact Or.inl hx
     · change x ∈ NaruStd.Table.getOr (st.sgVotes.insert a.round _) k [] at hx
       rw [rows_insert] at hx
       split_ifs at hx with hk
@@ -157,11 +186,11 @@ theorem onSgVote_step (hc : HealConfig) (st : Store) (a : CombinedAttestation) :
 theorem updateFinality_step (st : Store) (σ : ChainState) : Step st (updateFinality st σ) := by
   unfold updateFinality
   dsimp only
-  split_ifs <;> exact Step.of_same rfl rfl
+  split_ifs <;> exact Step.of_same rfl rfl ⟨rfl, rfl⟩
 
 theorem updateConfirmationWith_step (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (st : Store) (k : Nat) :
     Step st (updateConfirmationWith cache e hc st k) :=
-  Step.of_same rfl rfl
+  Step.of_same rfl rfl ⟨rfl, rfl⟩
 
 theorem goldfishVoteWith_step (c : Nat → NaruStd.Set ValidatorId) (cache : Cache) (e : ProtocolEnv) (hc : HealConfig)
     (nd : Node) (st : Store) : Step st (goldfishVoteWith c cache e hc nd st).1 := by
@@ -174,7 +203,7 @@ theorem goldfishVoteWith_step (c : Nat → NaruStd.Set ValidatorId) (cache : Cac
 /-! ## ブロックの受理 -/
 
 theorem storedOf_step (st : Store) (b : Block) (post : ChainState) : Step st (storedOf st b post) :=
-  Step.of_same rfl rfl
+  Step.of_same rfl rfl ⟨rfl, rfl⟩
 
 theorem acceptBody_step (c : Nat → NaruStd.Set ValidatorId) (st : Store) (b : Block) (post : ChainState) :
     Step st (acceptBody c st b post) :=
@@ -289,72 +318,98 @@ theorem attestWith_step' (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (nd
   split
   exact admitRow_step hc st _
 
-/-- 1 tick の務め `tick` は 1 段(時計合わせは SG 票の表を変えない。`BlockStamps.tick_grow` と同じ 16 経路)。 -/
-theorem tick_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+/-- 印の保存と新しい票の印(時計の一致は問わない。tick は時計を合わせるので)。 -/
+structure Grow (a b : Store) : Prop where
+  inv : SgInv a → SgInv b
+  keep : SgInv a → SgKeep a b
+  fresh : SgInv a → SgFresh a b
+
+theorem Step.grow {a b : Store} (h : Step a b) : Grow a b := ⟨h.inv, h.keep, h.fresh⟩
+
+theorem Grow.refl (a : Store) : Grow a a := (Step.refl a).grow
+
+/-- 1 tick の務め `tick` は印を保存し、新しい票の印は tick の後の時計以上(時計合わせの後の store からの `Step`。
+時計合わせは SG 票の表を変えない。`BlockStamps.tick_grow` と同じ 16 経路)。 -/
+theorem tick_grow (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
     (nr : ValidatorId → Nat → BlockId) (cache : Cache) (e : ProtocolEnv) (hc : HealConfig) (cfg : HeightConfig)
     (nd : Node) (st : NamedStore) (rec : Model.Consensus.Protocol.ValidatorClient.NamedRecord) (t : Int) :
-    Step st.core (tick c p a nr cache e hc cfg nd st rec t).1.core := by
-  have h0 : SStep st { st with core := { st.core with t := t, s := slotOf e t } } := Step.of_same rfl rfl
-  unfold tick
-  dsimp only
-  split_ifs
-  all_goals first
-    | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) _) rec
-    | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd h0) _) rec
-    | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (proposeBlockWith_step' c p nr cache e hc cfg nd h0) _) rec
-    | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc h0 _) rec
-    | with_reducible exact attestWith_step' cache e hc nd (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) rec
-    | with_reducible exact attestWith_step' cache e hc nd (namedGoldfishVoteWith_step' c cache e hc nd h0) rec
-    | with_reducible exact attestWith_step' cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0) rec
-    | with_reducible exact attestWith_step' cache e hc nd h0 rec
-    | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) _
-    | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd h0) _
-    | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (proposeBlockWith_step' c p nr cache e hc cfg nd h0) _
-    | with_reducible exact namedUpdateConfirmationWith_step' cache e hc h0 _
-    | with_reducible exact namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)
-    | with_reducible exact namedGoldfishVoteWith_step' c cache e hc nd h0
-    | with_reducible exact proposeBlockWith_step' c p nr cache e hc cfg nd h0
-    | with_reducible exact h0
+    Grow st.core (tick c p a nr cache e hc cfg nd st rec t).1.core := by
+  have h0 : SStep { st with core := { st.core with t := t, s := slotOf e t } }
+      { st with core := { st.core with t := t, s := slotOf e t } } := Step.refl _
+  have hfin : SStep { st with core := { st.core with t := t, s := slotOf e t } } (tick c p a nr cache e hc cfg nd st rec t).1 := by
+    unfold tick
+    dsimp only
+    split_ifs
+    all_goals first
+      | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) _) rec
+      | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd h0) _) rec
+      | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc (proposeBlockWith_step' c p nr cache e hc cfg nd h0) _) rec
+      | with_reducible exact attestWith_step' cache e hc nd (namedUpdateConfirmationWith_step' cache e hc h0 _) rec
+      | with_reducible exact attestWith_step' cache e hc nd (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) rec
+      | with_reducible exact attestWith_step' cache e hc nd (namedGoldfishVoteWith_step' c cache e hc nd h0) rec
+      | with_reducible exact attestWith_step' cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0) rec
+      | with_reducible exact attestWith_step' cache e hc nd h0 rec
+      | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)) _
+      | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (namedGoldfishVoteWith_step' c cache e hc nd h0) _
+      | with_reducible exact namedUpdateConfirmationWith_step' cache e hc (proposeBlockWith_step' c p nr cache e hc cfg nd h0) _
+      | with_reducible exact namedUpdateConfirmationWith_step' cache e hc h0 _
+      | with_reducible exact namedGoldfishVoteWith_step' c cache e hc nd (proposeBlockWith_step' c p nr cache e hc cfg nd h0)
+      | with_reducible exact namedGoldfishVoteWith_step' c cache e hc nd h0
+      | with_reducible exact proposeBlockWith_step' c p nr cache e hc cfg nd h0
+      | with_reducible exact h0
+  exact ⟨fun h => hfin.inv h, fun h => hfin.keep h, fun h => hfin.fresh h⟩
 
-theorem nodeTick_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+theorem nodeTick_grow (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
     (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (v : ValidatorId)
-    (n : NamedNodeState) (t : Int) : Step n.st.core (nodeTick c p a nr s v n t).1.st.core := by
+    (n : NamedNodeState) (t : Int) : Grow n.st.core (nodeTick c p a nr s v n t).1.st.core := by
   unfold nodeTick profileTick
   dsimp only
-  exact tick_step c p a nr _ s.e s.hc s.cfg _ n.st n.signing t
+  exact tick_grow c p a nr _ s.e s.hc s.cfg _ n.st n.signing t
 
 /-! ## world と run -/
 
-/-- 1 event の後、どのノードの store も 1 段。 -/
-theorem worldStep_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+/-- 1 event の後、どのノードの store も印を保存し、新しい票の印はその store の時計以上。 -/
+theorem worldStep_grow (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
     (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (w : NamedWorld) (ev : NamedEvent)
-    (v : ValidatorId) : Step (worldAt w v).st.core (worldAt (worldStep c p a nr s w ev) v).st.core := by
+    (v : ValidatorId) : Grow (worldAt w v).st.core (worldAt (worldStep c p a nr s w ev) v).st.core := by
   cases ev with
   | Tick u t =>
     unfold worldStep
     dsimp only
     rcases Proofs.Consensus.Runs.worldAt_insert w u (nodeTick c p a nr s u (worldAt w u) t).1 v with ⟨rfl, h⟩ | h
     · rw [h]
-      exact nodeTick_step c p a nr s u (worldAt w u) t
+      exact nodeTick_grow c p a nr s u (worldAt w u) t
     · rw [h]
-      exact Step.refl _
+      exact Grow.refl _
   | Deliver u o t =>
     unfold worldStep
     dsimp only
     rcases Proofs.Consensus.Runs.worldAt_insert w u (nodeProcess c p s (worldAt w u) o) v with ⟨rfl, h⟩ | h
     · rw [h]
-      exact nodeProcess_step c p s (worldAt w u) o
+      exact (nodeProcess_step c p s (worldAt w u) o).grow
     · rw [h]
-      exact Step.refl _
+      exact Grow.refl _
 
-theorem foldl_worldStep_step (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+/-- 不変条件を運び、不変条件の下で行と印を保存する(何段でも合成できる部分)。 -/
+structure Carry (a b : Store) : Prop where
+  inv : SgInv a → SgInv b
+  keep : SgInv a → SgKeep a b
+
+theorem Grow.carry {a b : Store} (h : Grow a b) : Carry a b := ⟨h.inv, h.keep⟩
+
+theorem Carry.refl (a : Store) : Carry a a := (Grow.refl a).carry
+
+theorem Carry.trans {a b d : Store} (h1 : Carry a b) (h2 : Carry b d) : Carry a d :=
+  ⟨fun h => h2.inv (h1.inv h), fun h => (h1.keep h).trans (h2.keep (h1.inv h))⟩
+
+theorem foldl_worldStep_carry (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
     (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) :
     ∀ (l : List NamedEvent) (w : NamedWorld) (v : ValidatorId),
-      Step (worldAt w v).st.core (worldAt (l.foldl (worldStep c p a nr s) w) v).st.core
-  | [], _, _ => Step.refl _
+      Carry (worldAt w v).st.core (worldAt (l.foldl (worldStep c p a nr s) w) v).st.core
+  | [], _, _ => Carry.refl _
   | ev :: l, w, v => by
     rw [List.foldl_cons]
-    exact (worldStep_step c p a nr s w ev v).trans (foldl_worldStep_step c p a nr s l _ v)
+    exact (worldStep_grow c p a nr s w ev v).carry.trans (foldl_worldStep_carry c p a nr s l _ v)
 
 /-- 初期の store は SG 票の表が空なので、行の不変条件を満たす。 -/
 theorem initial_sgInv : SgInv initStore := fun k x hx => by
@@ -370,30 +425,49 @@ variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : Va
 /-- 添字 `i` の前の world のどのノードの store も行の不変条件を満たす(run への前提なし)。 -/
 theorem stateBefore_sgInv (i : Nat) (v : ValidatorId) : SgInv (worldAt (stateBefore c p a nr s rho i) v).st.core := by
   unfold stateBefore
-  exact (foldl_worldStep_step c p a nr s _ _ v).inv initial_sgInv
+  exact (foldl_worldStep_carry c p a nr s _ _ v).inv initial_sgInv
 
-/-- 添字について、同じノードの store は 1 段。 -/
-theorem stateBefore_step {i j : Nat} (hij : i ≤ j) (v : ValidatorId) :
-    Step (worldAt (stateBefore c p a nr s rho i) v).st.core (worldAt (stateBefore c p a nr s rho j) v).st.core := by
-  induction j with
-  | zero =>
-    rw [Nat.le_zero.mp hij]
-    exact Step.refl _
-  | succ j ih =>
-    rcases Nat.lt_or_ge j i with hlt | hle
-    · have : i = j + 1 := by omega
-      rw [this]
-      exact Step.refl _
-    · refine (ih hle).trans ?_
-      rw [Proofs.Consensus.Signing.stateBefore_succ]
-      cases rho.events[j]? with
-      | none => exact Step.refl _
-      | some ev => exact worldStep_step c p a nr s _ ev v
+/-- 添字 `i` の event の前後で、同じノードの store は印を保存し、新しい票の印は後の時計以上。 -/
+theorem stateBefore_grow (i : Nat) (v : ValidatorId) :
+    Grow (worldAt (stateBefore c p a nr s rho i) v).st.core (worldAt (stateBefore c p a nr s rho (i + 1)) v).st.core := by
+  rw [Proofs.Consensus.Signing.stateBefore_succ]
+  cases rho.events[i]? with
+  | none => exact Grow.refl _
+  | some ev => exact worldStep_grow c p a nr s _ ev v
+
+/-- 添字について、同じノードの store は不変条件を運び行と印を保存する。 -/
+theorem stateBefore_carry {i j : Nat} (hij : i ≤ j) (v : ValidatorId) :
+    Carry (worldAt (stateBefore c p a nr s rho i) v).st.core (worldAt (stateBefore c p a nr s rho j) v).st.core := by
+  induction hij with
+  | refl => exact Carry.refl _
+  | step _ ih => exact ih.trans (stateBefore_grow c p a nr s rho _ v).carry
 
 /-- **添字について、同じノードの store は SG 票の行と受信の印を保存する**(手書き `strict_sg_row_carry`)。 -/
 theorem stateBefore_sgKeep {i j : Nat} (hij : i ≤ j) (v : ValidatorId) :
     SgKeep (worldAt (stateBefore c p a nr s rho i) v).st.core (worldAt (stateBefore c p a nr s rho j) v).st.core :=
-  (stateBefore_step c p a nr s rho hij v).keep (stateBefore_sgInv c p a nr s rho i v)
+  (stateBefore_carry c p a nr s rho hij v).keep (stateBefore_sgInv c p a nr s rho i v)
+
+/-- **自分の tick より後に入った票の印はその tick の時刻以上**: 添字 `j` の event が `v` の時刻 `τ0` の tick なら、`j` 以後の
+添字 `i` の `v` の行の attestation は、添字 `j` の前の行にもあったか、受信の印が `τ0` 以上の時刻(新しい票の印はその時点の
+時計で、時計は `j` の tick で `τ0` になり戻らない: `Window.tick_le_clock`)。手書き `q10_row_at_public_cut` の運びの半分。 -/
+theorem stateBefore_sgFresh (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    {j : Nat} {v : ValidatorId} {τ0 : Int} (hj : rho.events[j]? = some (NamedEvent.Tick v τ0)) {i : Nat} (hji : j ≤ i) :
+    ∀ k x, x ∈ rows (worldAt (stateBefore c p a nr s rho i) v).st.core k →
+      x ∈ rows (worldAt (stateBefore c p a nr s rho j) v).st.core k ∨
+        ∃ τ, (worldAt (stateBefore c p a nr s rho i) v).st.core.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧
+          τ0 ≤ τ := by
+  induction hji with
+  | refl => exact fun k x hx => Or.inl hx
+  | @step i hji ih =>
+    intro k x hx
+    have hg := stateBefore_grow c p a nr s rho i v
+    have hinv := stateBefore_sgInv c p a nr s rho i v
+    rcases hg.fresh hinv k x hx with hxi | ⟨τ, hτ, hle⟩
+    · rcases ih k x hxi with h0 | ⟨τ, hτ, hle⟩
+      · exact Or.inl h0
+      · exact Or.inr ⟨τ, (hg.keep hinv k x hxi).2.trans hτ, hle⟩
+    · exact Or.inr ⟨τ, hτ,
+        le_trans (Proofs.Consensus.Window.tick_le_clock c p a nr s rho hs hnn (Nat.lt_succ_of_le hji) hj) hle⟩
 
 end Run
 

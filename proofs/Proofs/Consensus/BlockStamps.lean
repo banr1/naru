@@ -13,7 +13,7 @@ store の受信の印の表 `timestampBlock` を書くのは `onBlockUsing` の�
 ブロック `b` を tree に入れるときに、`b` の印を現在の時計 `Stamp.At st.t` にする(`Carrier.onBlockUsing_eq` の `b ∉ tree`)。
 初期の store は tree が `{Genesis}` で、genesis の印は `Stamp.Bottom`(`genesisStamp`)。したがって
 - **印の保存** `Keep a b`: `a` の tree のブロックは `b` の tree にも残り、印は変わらない。
-- **新しいブロックの印** `Fresh a b`: `b` の tree に増えたブロックの印は `b` の時計以下の時刻。
+- **新しいブロックの印** `Fresh a b`: `b` の tree に増えたブロックの印は `b` の時計の時刻。
 どのハンドラも時計を変えずにこの 2 つを満たし(`Step`)、tick は時計を合わせた後の store からの `Step`(`Grow`)。運びは
 `Stamps` と同じで、run のどの添字の store でも tree のブロックの印は `Bottom` か時計以下の時刻(`StampInv`、
 `stateBefore_stampInv`)、`stateBefore (j + 1)` の tree にあるブロックは以後ずっと tree にあり、印は添字 `j` の event の
@@ -54,9 +54,9 @@ theorem bl_get?_insert_ne {ν : Type} (t : NaruStd.Table Block ν) (k : Block) (
 def Keep (a b : Store) : Prop :=
   ∀ B, B ∈ a.tree.elems → B ∈ b.tree.elems ∧ b.timestampBlock.get? B = a.timestampBlock.get? B
 
-/-- 新しいブロックの印: `b` の tree のブロックは `a` の tree にもあったか、受信の印が `b` の時計以下の時刻。 -/
+/-- 新しいブロックの印: `b` の tree のブロックは `a` の tree にもあったか、受信の印が `b` の時計の時刻。 -/
 def Fresh (a b : Store) : Prop :=
-  ∀ B, B ∈ b.tree.elems → B ∈ a.tree.elems ∨ ∃ τ, b.timestampBlock.get? B = some (Stamp.At τ) ∧ τ ≤ b.t
+  ∀ B, B ∈ b.tree.elems → B ∈ a.tree.elems ∨ ∃ τ, b.timestampBlock.get? B = some (Stamp.At τ) ∧ b.t = τ
 
 /-- 時計を変えないハンドラの 1 段: 印の保存・新しいブロックの印・時計の一致。 -/
 structure Step (a b : Store) : Prop where
@@ -140,7 +140,7 @@ theorem storedOf_step {st : Store} {b : Block} (hb : b ∉ st.tree.elems) (post 
     rintro rfl
     exact hb hB
   · rcases (mem_insert_iff block_compare_eq_iff st.tree b B).mp hB with rfl | hB
-    · exact Or.inr ⟨st.t, bl_get?_insert_self _ _ _, le_rfl⟩
+    · exact Or.inr ⟨st.t, bl_get?_insert_self _ _ _, rfl⟩
     · exact Or.inl hB
 
 theorem unpackedOf_step (c : Nat → NaruStd.Set ValidatorId) {st : Store} {b : Block} (hb : b ∉ st.tree.elems)
@@ -354,7 +354,7 @@ theorem StampInv.of_grow {a b : Store} (h : StampInv a) (hg : Grow a b) (ht : a.
   · obtain ⟨-, heq⟩ := hg.1 B ha
     rw [heq]
     exact (h B ha).mono ht
-  · exact Or.inr ⟨τ, hτ, hle⟩
+  · exact Or.inr ⟨τ, hτ, le_of_eq hle.symm⟩
 
 /-- 初期の store: tree は `{Genesis}` で、genesis の印は `Bottom`。 -/
 theorem initial_stampInv : StampInv initStore := fun B hB => by
@@ -425,6 +425,32 @@ theorem tree_stamped (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events �
       occurrenceBefore ((worldAt (stateBefore c p a nr s rho i) w).st.core.timestampBlock.get? B) γ = true := by
   obtain ⟨hm, hb⟩ := stamp_le_of_mem c p a nr s rho hs hnn hev hB hji
   exact ⟨hm, hb.before hγ⟩
+
+/-- **自分の tick より後に入ったブロックの印はその tick の時刻以上**: 添字 `j` の event が `v` の時刻 `τ0` の tick なら、`j` 以後の
+添字 `i` の `v` の tree のブロックは、添字 `j` の前の tree にもあったか、受信の印が `τ0` 以上の時刻(新しいブロックの印はその時点の
+時計で、時計は `j` の tick で `τ0` になり戻らない: `Window.tick_le_clock`)。手書き `body_mem_stateBeforeTime_of_public_stampedBefore`
+の運びの半分。 -/
+theorem stateBefore_fresh (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    {j : Nat} {v : ValidatorId} {τ0 : Int} (hj : rho.events[j]? = some (NamedEvent.Tick v τ0)) {i : Nat} (hji : j ≤ i) :
+    ∀ B, B ∈ (worldAt (stateBefore c p a nr s rho i) v).st.core.tree.elems →
+      B ∈ (worldAt (stateBefore c p a nr s rho j) v).st.core.tree.elems ∨
+        ∃ τ, (worldAt (stateBefore c p a nr s rho i) v).st.core.timestampBlock.get? B = some (Stamp.At τ) ∧ τ0 ≤ τ := by
+  induction hji with
+  | refl => exact fun B hB => Or.inl hB
+  | @step i hji ih =>
+    intro B hB
+    have hg : Grow (worldAt (stateBefore c p a nr s rho i) v).st.core
+        (worldAt (stateBefore c p a nr s rho (i + 1)) v).st.core := by
+      rw [Proofs.Consensus.Signing.stateBefore_succ]
+      cases rho.events[i]? with
+      | none => exact Grow.refl _
+      | some ev => exact worldStep_grow c p a nr s _ ev v
+    rcases hg.2 B hB with hBi | ⟨τ, hτ, hle⟩
+    · rcases ih B hBi with h0 | ⟨τ, hτ, hle⟩
+      · exact Or.inl h0
+      · exact Or.inr ⟨τ, (hg.1 B hBi).2.trans hτ, hle⟩
+    · exact Or.inr ⟨τ, hτ,
+        le_trans (Proofs.Consensus.Window.tick_le_clock c p a nr s rho hs hnn (Nat.lt_succ_of_le hji) hj) (le_of_eq hle)⟩
 
 end Run
 
