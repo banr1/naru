@@ -28,9 +28,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `confStableRoot_preceq_confWalk` は stable root が FG root に戻る枝を FG root ⪯ SG root ⪯ head で閉じ、g2 の frame の root がある枝を
    `confFrameRoot_preceq_confWalk`(穴ではない)に渡す(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、
    round 0 は g2 の frame に root が無いので矛盾(`confCache_g2_round_zero`。G2 の round 0 の domain 時刻は `-Δ` で、run の event の時刻は 0 以上)、
-   正の round は穴 `confFrameRoot_preceq_confWalk_positive` に渡す(周回 228)。
+   正の round は `confFrameRoot_preceq_confWalk_positive`(穴ではない)に渡す(周回 228)。これは g1 の frame の anchor が fork choice の SG root で
+   walk がそこから歩くので、穴 `confFrameRoot_preceq_anchor_positive`(g2 の frame の root の active prefix ⪯ g1 の anchor)から証明する(周回 230)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `confWalk_preceq_laterVoteHead` / `confFrameRoot_preceq_confWalk_positive`(手書き
+3. 穴(7 件): `confWalk_preceq_laterVoteHead` / `confFrameRoot_preceq_anchor_positive`(手書き
    `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` / `preparedStableRoot_preceq_confWalk_positive`、
    `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
@@ -120,10 +121,44 @@ theorem confCache_g2_round_zero (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e
   · exact hneg hev ht
 
 /-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
+FG root に戻らない枝の値)は、確認の更新の前の段の store の round が正なら、同じ frame の g1 の anchor(`Grades.anchor`。
+fork choice の SG root `getSgRootWith` の値)の祖先。手書き `preparedStableRoot_preceq_confWalk_positive`
+(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)の `hfinish` に渡す前の半分に当たる。
+閉じるのに要るもの: g2 の frame の root `raw` から、g1 の frame の root `root` で `g ⪯ root` のものを取る(手書き
+`NamedOutageClosure.q10_g1_slot_of_g2_slot`、`Protocol/Grades/Q10Frame.lean`。凍結した root の出どころは
+`Grade2Capture.stateBefore_g2_origin`、形は `freezeRoot_mem`)ことと、`g` が filtered tree にあり `g ⪯ root` なら
+`activePrefix tree root` が `g` を延ばすこと(手書き `q10_activePrefix_dominates`。naru では tree の要素の重複なしが要る)。 -/
+theorem confFrameRoot_preceq_anchor_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) {g : Block}
+    (hg : Option.bind (Option.bind (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g2 (fun x => x))
+        (fun r => Model.Consensus.Protocol.Grades.activePrefix
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+            (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
+          r) = some g) :
+    preceq g (Model.Consensus.Protocol.Grades.anchor s.e s.hc
+      (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+      (Model.Consensus.Protocol.Grades.roundOf s.hc
+        (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+      (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1) = true := by
+  sorry
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
 FG root に戻らない枝の値)は、確認の更新の前の段の store の round が正なら、同じ tick の確認の walk の祖先。手書き
 `preparedStableRoot_preceq_confWalk_positive`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
-閉じるのに要るもの: grade 2 の候補の active prefix が walk の anchor に支配されること(凍結した root の出どころは
-`Grade2Capture.stateBefore_g2_origin`)。 -/
+手書きの `hfinish` と同じく、g1 の anchor は fork choice の SG root(`getSgRootWith` は `frameGradeRead` の `anchor`)で、
+walk はそこから歩く(`Goldfish.sgRoot_preceq_head`)ので、穴 `confFrameRoot_preceq_anchor_positive` から(周回 230)。 -/
 theorem confFrameRoot_preceq_confWalk_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
@@ -139,8 +174,10 @@ theorem confFrameRoot_preceq_confWalk_positive (hwf : SetupWellFormed c p s) (hd
           (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
             (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
           r) = some g) :
-    preceq g (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) = true := by
-  sorry
+    preceq g (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) = true :=
+  Proofs.Consensus.Blocks.preceq_trans
+    (confFrameRoot_preceq_anchor_positive c p a nr s rho hwf hdom hsleep hw ht hpos hg)
+    (Proofs.Consensus.Goldfish.sgRoot_preceq_head _ _ _ _ _)
 
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の g2 の frame の root の active prefix(`frameStableRoot` が
 FG root に戻らない枝の値)は、同じ tick の確認の walk の祖先。手書き `preparedStableRoot_preceq_confWalk_of_gstZero_clean`
