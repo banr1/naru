@@ -6,6 +6,7 @@ import Proofs.Consensus.ConfirmedOrigin
 import Proofs.Consensus.ProposerRoot
 import Proofs.Consensus.GradeSupporter
 import Proofs.Consensus.GradeTransport
+import Proofs.Consensus.SgStamps
 import Mathlib.Tactic
 
 /-!
@@ -41,12 +42,13 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `g1Grade_of_g2Grade_positive` は抽象的な持ち越し `GradeTransport.gradeBool_transport` に 2 つの tick の間の包含の穴
    `g1RawInputs_back` / `g1Interpreted_back` / `g1LocalCovers_fwd` / `g1InterpretedCover_fwd` を渡す(周回 238)。`g1LocalCovers_fwd` は
    tree のブロックが残り、run に root の衝突が無い(`tickTree_root_inj`)ので root の解決が変わらない(`findRoot?_of_subset`)ことで閉じた(周回 240)。
+   `g1InterpretedCover_fwd` は SG 票の行と受信の印が残ること(`SgStamps.stateBefore_sgKeep`)と同じ root の解決で閉じた(周回 241)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(10 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+3. 穴(9 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
    `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_slot_positive`(手書き
    `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
-   `g1RawInputs_back` / `g1Interpreted_back` / `g1InterpretedCover_fwd`(手書き `q10_rawInputs_back` /
-   `q10_interpreted_back` / `q10_interpreted_fwd_cover`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
+   `g1RawInputs_back` / `g1Interpreted_back`(手書き `q10_rawInputs_back` /
+   `q10_interpreted_back`、`DecoupledConsensusProofs/Protocol/Grades/Q10Frame.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -564,12 +566,13 @@ theorem g1LocalCovers_fwd (hwf : SetupWellFormed c p s) (_hdom : RunDomain s rho
         (fun x hx => g1Tree_of_g2Tree c p a nr s rho hwf hsleep hj2 hj1 hx) hf]
       exact h
 
-/-- 穴: `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の G2 の early 時刻の解釈済みの入力 `y` の鍵が、その store の
+/-- `g1RawInputs_back` と同じ 2 つの tick で、G2 の tick の前の store の G2 の early 時刻の解釈済みの入力 `y` の鍵が、その store の
 tree で `b` を覆い、G1 の tick の前の store の finalized が `b` の祖先なら、`y` は G1 の tick の前の store の G1 の early 時刻の
-解釈済みの入力でもある。手書き `NamedOutageClosure.q10_interpreted_fwd_cover`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238)。
-閉じるのに要るもの: 生の入力は票と印が残ることで前へ運べ(手書き `q10_rawInputs_fwd`: `strict_sg_row_carry` と
-`pool_view_mem`)、本体の head は tree に残り印も変わらず(手書き `q10_strict_body_carry`)root の解決も変わらない(手書き
-`q10_find_fwd`)、head は `b` の子孫なので G1 の tick の finalized ⪯ `b` ⪯ head で互換。 -/
+解釈済みの入力でもある。手書き `NamedOutageClosure.q10_interpreted_fwd_cover`(`Protocol/Grades/Q10Frame.lean`)に当たる(周回 238 に穴として
+置き、周回 241 に証明した)。生の入力は SG 票の行と受信の印が残る(`SgStamps.stateBefore_sgKeep`。手書き `strict_sg_row_carry`)ので
+前へ運べ(`SgStamps.rawInputs_of_keep`。手書き `q10_rawInputs_fwd`)、本体の head は tree に残り印も変わらず(`BlockStamps.stateBefore_keep`。
+手書き `q10_strict_body_carry`)root の解決も変わらない(`findRoot?_of_subset`。手書き `q10_find_fwd`)、head は `b` の子孫なので
+G1 の tick の finalized ⪯ `b` ⪯ head で互換。G2 の early 時刻は G1 の early 時刻以下(`g1Times_le_domainTime_G2`)。 -/
 theorem g1InterpretedCover_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat}
@@ -586,15 +589,48 @@ theorem g1InterpretedCover_fwd (hwf : SetupWellFormed c p s) (hdom : RunDomain s
     y ∈ (Model.Consensus.Protocol.Grades.interpretedInputs (tickGradeView c p a nr s rho j1 w)
       (tickF c p a nr s rho j1 w) s.hc.etaSG k
       (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc k Model.Consensus.Protocol.Grades.GradePhase.G1) v).elems := by
-  sorry
+  have hlt : j2 < j1 :=
+    Proofs.Consensus.Window.lt_of_time_lt (Proofs.Consensus.Available.sorted_nodup_of_sleepy c p a nr s rho hsleep).1 hj2 hj1
+      (domainTime_G2_lt_G1 s.e s.hc (Proofs.Consensus.Liveness.wf_facts hwf).1 k)
+  have hee := (g1Times_le_domainTime_G2 s.e s.hc (Proofs.Consensus.Liveness.wf_facts hwf).1.le k).2.2
+  obtain ⟨hraw, hready⟩ := (Proofs.Consensus.GradeSupporter.mem_interpretedInputs_iff _ _ _ _ _ _ _).mp hy
+  refine (Proofs.Consensus.GradeSupporter.mem_interpretedInputs_iff _ _ _ _ _ _ _).mpr
+    ⟨Proofs.Consensus.SgStamps.rawInputs_of_keep (Proofs.Consensus.SgStamps.stateBefore_sgKeep c p a nr s rho hlt.le w)
+      hee hraw, ?_⟩
+  unfold Model.Consensus.Protocol.Grades.bodyReady at hready ⊢
+  unfold Model.Consensus.Protocol.Grades.localCovers Model.Consensus.Protocol.Grades.headCovers at hcov
+  simp only [tickGradeView, tickF, Model.Consensus.Protocol.Grades.gradeView, Model.Consensus.Protocol.Store.storeToHealing]
+    at hready hcov hFB ⊢
+  cases hconf : y.confirmed with
+  | none => rfl
+  | some r =>
+    rw [hconf] at hready hcov
+    dsimp only at hready hcov ⊢
+    cases hf : findRoot? (worldAt (stateBefore c p a nr s rho j2) w).st.core.tree r with
+    | none => rw [hf] at hcov; simp at hcov
+    | some hd =>
+      rw [hf] at hready hcov
+      simp only [Bool.and_eq_true] at hready
+      rw [findRoot?_of_subset (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho j1 w).nodup
+        (fun x hx y hy hr => tickTree_root_inj c p a nr s rho hsleep hw j1 hx hy hr)
+        (fun x hx => g1Tree_of_g2Tree c p a nr s rho hwf hsleep hj2 hj1 hx) hf]
+      simp only [Bool.and_eq_true]
+      obtain ⟨-, hstamp⟩ := Proofs.Consensus.BlockStamps.stateBefore_keep c p a nr s rho hlt.le w hd
+        (Proofs.Consensus.BlockStamps.findRoot?_mem hf).1
+      refine ⟨?_, ?_⟩
+      · rw [hstamp]
+        exact Proofs.Consensus.GradeSupporter.occurrenceBefore_mono hready.1 hee
+      · rw [Proofs.Consensus.Blocks.compatible_comm]
+        exact Proofs.Consensus.Blocks.compatible_of_preceq_common (Proofs.Consensus.Blocks.preceq_trans hFB hcov)
+          (Proofs.Consensus.Blocks.preceq_self hd)
 
 /-- GST-zero の枝で、honest なノード `w` の正の round `k` の G2 の domain 時刻の tick(添字 `j2`)の前の store で G2 の
 `gradeBool` を満たすブロック `b` を、同じ round の G1 の domain 時刻の tick(添字 `j1`)の前の store の finalized が延ばすなら、`b` は
 その store でも G1 の `gradeBool` を満たす。手書き `NamedOutageClosure.q10_grade_cross`(`Protocol/Grades/Q10Frame.lean`)に当たる
 (周回 235 に穴として置き、周回 238 に手書きと同じ運びで証明した)。抽象的な持ち越し `GradeTransport.gradeBool_transport`
 (手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻は G2 の domain 時刻(= G2 の late 時刻)以下であること
-(`g1Times_le_domainTime_G2`)と、2 つの tick の間の包含(穴 `g1Interpreted_back` / `g1RawInputs_back` / `g1InterpretedCover_fwd` と
-周回 240 に閉じた `g1LocalCovers_fwd`)を渡す。 -/
+(`g1Times_le_domainTime_G2`)と、2 つの tick の間の包含(穴 `g1Interpreted_back` / `g1RawInputs_back` と
+周回 240 / 241 に閉じた `g1LocalCovers_fwd` / `g1InterpretedCover_fwd`)を渡す。 -/
 theorem g1Grade_of_g2Grade_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {k j2 j1 : Nat} (hk : 0 < k)
