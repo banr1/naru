@@ -2,6 +2,7 @@ import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Available
 import Proofs.Consensus.ShortHorizon
 import Proofs.Consensus.Voting
+import Proofs.Consensus.ConfirmedOrigin
 import Mathlib.Tactic
 
 /-!
@@ -19,9 +20,14 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `commonUpper_genesis` は最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら `commonUpper_genesis_long`、より前に run が終わるなら
    確認の記録は genesis(証明済みの `ShortHorizon.storeAt_rec_short`)で finalized も genesis(証明済みの `ShortHorizon.storeAt_f_short`)なので
    上界は genesis(枝の分け方は周回 218、finalized の側は周回 220)。`commonUpper_genesis_long` は、確認の記録と finalized がそれぞれ
-   ある slot 以後の投票の務めの head `voteDutyHeadAt` の祖先であることを言う穴 `recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead`
-   から、4 つの slot の最大で上界を揃えて証明する(周回 222)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(6 件): `recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
+   ある slot 以後の投票の務めの head `voteDutyHeadAt` の祖先であることを言う `recordAt_preceq_laterVoteHead` / 穴 `finalizedAt_preceq_laterVoteHead`
+   から、4 つの slot の最大で上界を揃えて証明する(周回 222)。`recordAt_preceq_laterVoteHead` は確認の記録の由来(証明済みの
+   `ConfirmedOrigin.storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か grade の stable root)で分け、穴
+   `confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head)/ `confStableRoot_preceq_confWalk`(stable root ⪯ walk)から証明する(周回 224)。
+   回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
+3. 穴(7 件): `confWalk_preceq_laterVoteHead` / `confStableRoot_preceq_confWalk`(手書き
+   `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` / `preparedStableRoot_preceq_confWalk_of_gstZero_clean`、
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
@@ -56,12 +62,42 @@ def voteDutyHeadAt (x : ValidatorId) (k : Nat) : Block :=
   Proofs.Consensus.Voting.voteHeadBlock (preparedCache s n tv) s.e s.hc
     (Proofs.Consensus.Voting.clocked s.e n.st tv).core
 
-/-- 穴: GST-zero の枝で最初の確認の時刻が `horizon` 以下の run の、honest なノード `v` の時刻 `t` の読みの確認の記録 `latestConfirmed` は、
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の確認の walk
+(`ConfirmedOrigin.confWalkAt`: 確認の更新の前の段の fork choice の head)は、`q < d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)の
+honest などのノードの slot `d` の投票の務めの head の祖先。手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`
+(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+閉じるのに要るもの: walk が anchor から動かなければ prepared anchor の上界(手書き `preparedConfirmationAnchor_preceq_voteDutyHead_of_gstZero`。
+FG root の枝と G1 の raw の枝)、動けば genuine な確認で、保護された投票の slot(手書き `protectedVoteSlots_of_gstZero_v2`)の `heads`。 -/
+theorem confWalk_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
+    preceq (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) (voteDutyHeadAt c p a nr s rho x d) = true := by
+  sorry
+
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の grade の stable root(`ConfirmedOrigin.confStableRootAt`。
+grade の候補が無ければ FG root)は、同じ tick の確認の walk の祖先。手書き `preparedStableRoot_preceq_confWalk_of_gstZero_clean`
+(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+閉じるのに要るもの: round 0 の空の frame の枝(stable root は FG root で walk の anchor の祖先)と、正の round の枝(手書き
+`preparedStableRoot_preceq_confWalk_positive`: grade 2 の候補の active prefix が walk の anchor に支配される)。 -/
+theorem confStableRoot_preceq_confWalk (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t) {g : Block}
+    (hg : Proofs.Consensus.ConfirmedOrigin.confStableRootAt c p a nr s rho w i t = some g) :
+    preceq g (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) = true := by
+  sorry
+
+/-- GST-zero の枝で最初の確認の時刻が `horizon` 以下の run の、honest なノード `v` の時刻 `t` の読みの確認の記録 `latestConfirmed` は、
 ある slot `first`(確認の時刻が `horizon` 以下)以後の確認の時刻が `horizon` 以下のどの slot `last` についても、honest などのノードの
 slot `last + 1` の投票の務めの head の祖先。手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero`
-(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)に当たる。
-閉じるのに要るもの: 確認の記録の出どころ(genesis・確認の選択・stable root)の場合分けと、確認の walk が後の投票の head の祖先であること
-(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` / `protectedVoteSlots_of_gstZero_v2`)。 -/
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)と、その本体の
+`latestConfirmed_preceq_laterVoteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+確認の記録の由来(証明済みの `ConfirmedOrigin.storeAt_confirmed_origin`。周回 224)で分け、genesis なら `first = 0`、確認評価の tick
+(slot `q`)の walk か stable root なら `first = q` とし、穴 `confWalk_preceq_laterVoteHead`(と stable root は穴
+`confStableRoot_preceq_confWalk`)から。 -/
 theorem recordAt_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     (hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon)
@@ -70,7 +106,26 @@ theorem recordAt_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunD
       ∀ last, first ≤ last → Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon →
         ∀ x, rho.honest.contains x = true →
           preceq (storeAt c p a nr s rho v t).core.latestConfirmed (voteDutyHeadAt c p a nr s rho x (last + 1)) = true := by
-  sorry
+  have hsch : ScheduleWellFormed s rho := by
+    have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+    unfold ExecutionValid at hexec
+    exact hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  rcases Proofs.Consensus.ConfirmedOrigin.storeAt_confirmed_origin c p a nr s rho hs v t with
+    hgen | ⟨i, t', -, hct, hB⟩
+  · refine ⟨0, hzero, ?_⟩
+    intro last _ _ x _
+    rw [hgen]
+    exact Proofs.Consensus.Blocks.preceq_genesis _
+  · refine ⟨_, Proofs.Consensus.ConfirmedOrigin.confTick_horizon s rho hsch hct, ?_⟩
+    intro last hql hlast x hx
+    have hwalk := confWalk_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hlast hv hx hct
+      (Nat.lt_succ_of_le hql) le_rfl
+    rcases hB with hB | hB
+    · rw [hB]
+      exact hwalk
+    · exact Proofs.Consensus.Blocks.preceq_trans
+        (confStableRoot_preceq_confWalk c p a nr s rho hwf hdom hsleep hv hct hB) hwalk
 
 /-- 穴: `recordAt_preceq_laterVoteHead` の finalized の版。手書き `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`
 (`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)に当たる。
