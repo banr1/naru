@@ -311,6 +311,21 @@ def singleProposerRecurrence (tl : Timeline) (t0 : Int) (gap : Nat) : Bool :=
   (intRange t0 (tl.rho.horizon - span)).all fun t =>
     slots.any fun k => t < proposalTime s k && proposalTime s k ≤ t + span && tl.rho.honest.contains (tl.inputs.proposer k)
 
+/-- 生成 Statements `StrongMultiProposerRecurrence(s, rho, start, gap)`(手書き `StrongMultiProposerRecurrence`)が破れる最初の時刻(`none` なら成り立つ)。
+時刻 `t` は `[start, horizon - gap · period]` の整数(述語の範囲そのもの)で、窓 `[t + 2 period, t + gap · period]` の提案時刻は horizon 以内なので
+slot `k` は `maxSlot(horizon)` までで尽き、`Opening(s, k2)` の `k2` は `proposalTime(k2) < proposalTime(k)`(slot の時刻は単調)なので `k2 < k` で尽きる
+(Δ > 0(`SetupWellFormed`)の下で、有界版ではなく厳密)。 -/
+def strongMultiProposerBreak (tl : Timeline) (start : Int) (gap : Nat) : Option Int :=
+  let s := tl.setup
+  let per := period s
+  let span : Int := (gap : Int) * per
+  let slots := List.range (maxSlot s tl.rho.horizon + 1)
+  let precededByHonest (k : Nat) : Bool := (List.range k).all fun k2 =>
+    !(k2 % s.hc.r == 0 && proposalTime s k - 2 * per ≤ proposalTime s k2 && proposalTime s k2 < proposalTime s k)
+      || tl.rho.honest.contains (tl.inputs.proposer k2)
+  (intRange start (tl.rho.horizon - span)).find? fun t =>
+    !(slots.any fun k => t + 2 * per ≤ proposalTime s k && proposalTime s k ≤ t + span && tl.multiProposerAt k && precededByHonest k)
+
 /-- 手書き `TimeoutDelayBound S extra`: `timeoutDelay = (2 + extra) · R`。 -/
 def timeoutDelayBound (tl : Timeline) (extra : Nat) : Bool :=
   tl.setup.cfg.timeoutDelay == (2 + extra) * tl.setup.hc.r

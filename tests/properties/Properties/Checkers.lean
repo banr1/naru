@@ -15,7 +15,8 @@ import Properties.Premises
 
 claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)、
 `stableIncludedFast`(前提 `FreshSleepyRegime`、結論 `IncludedFrom(Stable, fastStableInclusionDelay)`)、
-`stableAsynchronyResilient`(前提 `OutageRegime`、結論 `PersistsFrom(Stable, tRead, b0)`)。
+`stableAsynchronyResilient`(前提 `OutageRegime`、結論 `PersistsFrom(Stable, tRead, b0)`)、
+`finalized`(前提 `FinalityRegime`、結論 `FinalizedAt`)。
 -/
 
 namespace Properties
@@ -605,5 +606,85 @@ def stableAsynchronyResilient (tl : Timeline) (p : Premises)
   let premiseDiag := if base.holds then s!"the run-wide fields of OutageRegime hold; {hpd}" else s!"OutageRegime fails: {base.reason}"
   let initialGenesis := honest.all fun v => readOut .Stable v (-1) == .Genesis
   return { out with diag := some s!"PersistsFrom(stable, tRead, b0) over tRead in [0, {horizon}] (the initial stable read for tRead < 0 is genesis: {initialGenesis}) and public b0 in [outageStart(tRead), expiry(tRead) - delta] (outageStart(0) = {Spec.Constants.outageStart s 0}, expiry(0) = {Spec.Constants.expiry s 0}), b1 = max(b0, tGST); judged at {tReads} tRead(s); premise-unmet by HealthyPrefixDelivery {hpdUnmet}, by b1 + delta > expiry {expiryUnmet}; {premiseDiag}" }
+
+/-! ## claim `finalized`(前提 `FinalityRegime`、結論 `FinalizedAt`) -/
+
+/-- honest な提案(`proposalTime(k) >= tGST`、horizon 以内)が honest な全 `v` の finalized の読みに入るまでの遅れ(判定ではない。期限の判断材料):
+`(遅れの最大, 入った提案の数, horizon までに入らなかった提案の数)`。 -/
+def finalizationLag (tl : Timeline) (read : Identifiers.ValidatorId → Int → Blocks.Block) : Option Int × Nat × Nat := Id.run do
+  let s := tl.setup
+  let horizon := tl.rho.horizon
+  let honest := tl.rho.honest.elems
+  let mut worst : Option Int := none
+  let mut inN := 0
+  let mut notIn := 0
+  for k in List.range (maxSlot s horizon + 1) do
+    let pt := proposalTime s k
+    if s.e.tGST ≤ pt && pt ≤ horizon && tl.rho.honest.contains (tl.inputs.proposer k) then
+      if let some b := tl.proposedBlock k then
+        match (intRange pt horizon).find? (fun t => honest.all fun v => Blocks.preceq b (read v t)) with
+        | some t =>
+          inN := inN + 1
+          worst := some (max (worst.getD 0) (t - pt))
+        | none => notIn := notIn + 1
+  return (worst, inN, notIn)
+
+/-- claim `finalized(s, rho, t0, gap)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.finalized`。手書き `Consensus.finalized`):
+前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧ `FinalityRegime(s, rho, t0, gap)`(生成 Statements `Statements.Consensus.Spec.Regimes.FinalityRegime`。
+手書き `FinalityRegime`)= `BFTRegime(s, rho, t0)`(`ExecutionValid` ∧ `PartialSynchrony` ∧ `tGST <= t0` ∧ `HonestCommittees` ∧ `BelowOneThird` ∧
+`FullParticipation`)∧ `StrongMultiProposerRecurrence(s, rho, tGST, gap)`(`Timeline.strongMultiProposerBreak`、厳密)∧ `gap + 2 <= maxGap(s)` ∧
+`t0 + finalityStartup(s, gap) <= horizon`、結論 `FinalizedAt(s, rho, t1, gap)`(`t1 = t0 + finalityStartup(s, gap)`)=
+`IncludedFrom(Finalized, t1, finalityDeadline(s, gap))`(`includedFromAt`)∧ `LiveFrom(Finalized, t1, gap · period + finalityDeadline(s, gap))`(`liveFromAt`)。
+自由変数の列挙: `gap` は `gap + 2 <= maxGap(s)` を満たす `[0, maxGap − 2]`(それより大きい gap は前提が空虚に偽)、`t0` は `[tGST, horizon]` の整数
+(`t0 < tGST` は前提が偽、`t0 > horizon` は `t1 > horizon` で結論の義務がすべて horizon の外)。horizon を延ばしても成り立たない欄
+(`BFTRegime` の run 全体の欄、horizon 以内で破れた `StrongMultiProposerRecurrence`)が破れる `(t0, gap)` は 1 件の義務として前提不成立に先に数え、
+残りのうち `t1 > horizon` の `(t0, gap)` は 1 件の義務として判定外に数える(最後の欄 `t0 + finalityStartup <= horizon` は horizon の長さの欄で、
+`finalityStartup` は最小の設定でも数千の時刻なので、生成の予算の run ではここに入る)。`t1 <= horizon` なら結論の義務(slot と時刻)を数える。
+手書きの補題は `DecoupledConsensusProofs/ReviewTheorem.lean` の `finalized` の項が当てる `finalized_included`(`IncludedFrom`)と `finalized_growth`
+(`LiveFrom`)。naru 側の `proofs/` は `proofs/Proofs/Consensus/Liveness.lean` の `finalizedLive_of_included`(`IncludedFrom` から `LiveFrom` への帰着。
+`IncludedFrom` の証明は C71 の残り)。`gap + 2 <= maxGap` を満たす gap が無ければ 1 件を前提不成立に数える。
+診断の行に、honest な提案が finalized の読みに入るまでの実際の遅れ(`finalizationLag`)を出す。
+`readOut` / `startupOf` / `deadlineOf` は負の検体のための差し替え(結論の判定の経路を horizon の内側で通す)。 -/
+def finalized (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (startupOf : Nat → Int := Spec.Constants.finalityStartup tl.setup)
+    (deadlineOf : Nat → Int := Spec.Constants.finalityDeadline tl.setup) : Verdict := Id.run do
+  let s := tl.setup
+  let I := tl.inputs
+  let horizon := tl.rho.horizon
+  let base := firstFailure "BFTRegime"
+    [ (p.setup.holds, p.setup.render), (p.runDomain.holds, p.runDomain.render), (p.executionValid, "ExecutionValid"),
+      (p.partialSync.holds, p.partialSync.render), (p.honestCommittees.holds, p.honestCommittees.render),
+      (p.belowOneThird.holds, p.belowOneThird.render), (p.fullParticipation.holds, p.fullParticipation.render) ]
+  let gaps := List.range (Spec.Constants.maxGap s - 1)
+  let recur := gaps.map fun gap => (gap, tl.strongMultiProposerBreak s.e.tGST gap)
+  let t0s := intRange s.e.tGST horizon
+  -- 読みと honest な提案は (v, t) / slot ごとに 1 回だけ計算する
+  let honest := tl.rho.honest.elems
+  let reads : List (Identifiers.ValidatorId × Array Blocks.Block) :=
+    honest.map fun v => (v, ((intRange 0 horizon).map fun t => readOut .Finalized v t).toArray)
+  let read (v : Identifiers.ValidatorId) (t : Int) : Blocks.Block :=
+    match reads.find? (·.1 == v) with
+    | some (_, arr) => if 0 ≤ t && t ≤ horizon then arr[t.toNat]! else readOut .Finalized v t
+    | none => readOut .Finalized v t
+  let inside := base.holds && recur.any fun (gap, b) => b.isNone && t0s.any fun t0 => t0 + startupOf gap ≤ horizon
+  let props : Array (Option Blocks.Block) := if !inside then #[] else (List.range (maxSlot s horizon + 1)).toArray.map fun k =>
+    if tl.rho.honest.contains (I.proposer k) then tl.proposedBlock k else none
+  let mut out : Verdict := { name := "finalized", unmet := if gaps.isEmpty then 1 else 0 }
+  for (gap, brk) in recur do
+    for t0 in t0s do
+      let t1 := t0 + startupOf gap
+      if !base.holds || brk.isSome then out := { out with unmet := out.unmet + 1 }
+      else if t1 > horizon then out := { out with outside := out.outside + 1 }
+      else
+        out := includedFromAt tl .Finalized (deadlineOf gap) (fun _ => read) true t1 out
+        out := liveFromAt tl .Finalized ((gap : Int) * period s + deadlineOf gap) read props true t1 gap out
+  let recurDiag := ", ".intercalate (recur.map fun (gap, b) => match b with
+    | some t => s!"gap {gap}: StrongMultiProposerRecurrence(tGST, {gap}) fails at t = {t}"
+    | none => s!"gap {gap}: StrongMultiProposerRecurrence(tGST, {gap}) holds, finalityStartup {startupOf gap}, finalityDeadline {deadlineOf gap}")
+  let premiseDiag := if base.holds then recurDiag else s!"BFTRegime fails: {base.reason}"
+  let (worst, inN, notIn) := finalizationLag tl read
+  let lag := match worst with | some w => toString w | none => "none"
+  return { out with diag := some s!"FinalizedAt(t0 + finalityStartup(gap), gap) over t0 in [tGST, {horizon}] and gap in {gaps} (gap + 2 <= maxGap {Spec.Constants.maxGap s}); {if gaps.isEmpty then "no gap meets gap + 2 <= maxGap" else premiseDiag}; observed finalization lag of honest proposals after GST: max {lag} over {inN} proposal(s) finalized by the horizon, {notIn} not finalized by the horizon" }
 
 end Properties

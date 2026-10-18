@@ -12,7 +12,8 @@ namespace Properties
 open Model.Consensus Model.Consensus.Objects Model.Consensus.Protocol Model.Consensus.Execution
 
 /-- 回帰の固定設定。3〜4 validator、byzantine を 1 人以上含む run、GST 前の遅延と配送順の入れ替え、sleepy、timeout と height の進行、
-複数ノードの finality の進行、回復(GST 後)を覆う 8 本。 -/
+複数ノードの finality の進行、回復(GST 後)を覆う 9 本と、claim `finalized` の前提 `StrongMultiProposerRecurrence`(gap 3)と
+`gap + 2 <= maxGap` を満たす 1 本(`k = 5`、byzantine は提案者にならない)。 -/
 def shortSpecs : List RunSpec :=
   [ { name := "h3-sync", seed := 1, validators := 3, horizon := 48 },
     { name := "h3-byz-equivocate", seed := 2, validators := 3, byzantine := [2], weights := [2, 2, 1], byz := .equivocate, horizon := 48 },
@@ -22,7 +23,8 @@ def shortSpecs : List RunSpec :=
     { name := "h4-sleepy-equivocate", seed := 6, validators := 4, byzantine := [3], byz := .equivocate, sleepy := true, horizon := 60 },
     { name := "h3-long-equivocate", seed := 7, validators := 3, byzantine := [2], weights := [2, 2, 1], byz := .equivocate, horizon := 120 },
     { name := "h4-gst24-twofaced", seed := 8, validators := 4, byzantine := [3], byz := .twoFaced, gst := 24, preGstDelay := 4, horizon := 96 },
-    { name := "h4-delta2-equivocate", seed := 10, validators := 4, byzantine := [3], byz := .equivocate, delta := 2, gst := 8, preGstDelay := 3, horizon := 96 } ]
+    { name := "h4-delta2-equivocate", seed := 10, validators := 4, byzantine := [3], byz := .equivocate, delta := 2, gst := 8, preGstDelay := 3, horizon := 96 },
+    { name := "h4-k5-honest-proposers", seed := 12, validators := 4, byzantine := [3], byz := .equivocate, proposers := .honestOnly, k := 5, horizon := 60 } ]
 
 /-- run の進み(timeout と height の進行、finality の進行の観測。判定ではない): honest ごとの horizon での 3 出力の深さ、発行された attestation の行と
 timeout の行の数、依存待ちで次の時刻へ送った配送の数(配送順の入れ替えが起きた印)。 -/
@@ -72,7 +74,7 @@ def reportRun (sp : RunSpec) : IO (List String × List Verdict) := do
   let agreeP := tl.proposedAgrees (slotOfTime s (sp.horizon / 2))
   let verdicts := [ hreadBound tl p, includedFrom tl p .Confirmed (Spec.Constants.confirmationDelay s),
                     includedFrom tl p .Stable (Spec.Constants.stableInclusionDelay s), available tl p, confirmedLive tl p, stableLive tl p,
-                    stableIncludedFast tl p, stableAsynchronyResilient tl p ]
+                    stableIncludedFast tl p, stableAsynchronyResilient tl p, finalized tl p ]
   let mut lines : List String :=
     [ s!"run {sp.name}: seed {sp.seed}, validators {sp.validators}, honest {renderList sp.honestIds}, byzantine {renderList sp.byzantine} ({byzLabel sp.byz}), gst {sp.gst}, delta {sp.delta}, horizon {sp.horizon}, events {tl.events.size} (ticks {ticks}, deliveries {delivers}), injected {tl.injected}, dropped {tl.dropped}",
       s!"  premises: {p.render}",

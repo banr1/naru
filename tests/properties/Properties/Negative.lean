@@ -199,6 +199,38 @@ def negatives : List Negative := Id.run do
                   pH.partialSync.holds && hLimit.any (·.1 ≤ tlH.setup.e.tGST + tlH.setup.e.delta) && tlS.healthyPrefixLimit.isNone && hpdN > 0
                     && ((vH.diag.getD "").splitOn "the run-wide fields of OutageRegime hold; HealthyPrefixDelivery(b0) fails for b0 >= ").length > 1,
                   s!"{pH.partialSync.render}; limit {hLimit.map (·.1)}; premise-unmet by HealthyPrefixDelivery {hpdN}; control limit {tlS.healthyPrefixLimit.map (·.1)}; stableAsynchronyResilient judged {vH.judged} unmet {vH.unmet} out-of-horizon {vH.outside}"⟩]
+  -- 2m. claim finalized の結論 FinalizedAt: finalityStartup は最小の設定でも数千の時刻で horizon に届かないので、結論の判定の経路は
+  --     startup を 0、deadline を 48 に差し替えて horizon の内側で通す(k = 5、提案者は honest だけで StrongMultiProposerRecurrence(tGST, 3) が成り立つ run)。
+  --     finalized の読みを genesis に壊すと IncludedFrom / LiveFrom が違反を報告し、本物の読み(対照)は判定の経路を通り違反しない。
+  --     差し替えない本物の検査器は、前提の再発の欄が成り立つ gap 3 の義務をすべて判定外(t0 + finalityStartup > horizon)に数える
+  let tlZ := generate { baseSpec with name := "negative-finality", proposers := .honestOnly, k := 5, horizon := 96 }
+  let pZ := Premises.of tlZ
+  let vZ := finalized tlZ pZ (readOut := fun _ _ _ => .Genesis) (startupOf := fun _ => 0) (deadlineOf := fun _ => 48)
+  let vZok := finalized tlZ pZ (startupOf := fun _ => 0) (deadlineOf := fun _ => 48)
+  -- 壊した読みでは、本物の読みで判定される義務(IncludedFrom の slot と LiveFrom の時刻の両方)がすべて違反になる
+  out := out ++ [⟨"finalized(corrupted finalized read)", vZ.violations > 0 && vZ.judged == 0 && hasNote vZ "includedFrom(finalized)"
+                    && vZ.violations == vZok.judged,
+                  s!"judged {vZ.judged} violations {vZ.violations} (genuine reads: judged {vZok.judged}); first note: {vZ.notes[0]?.getD "-"}"⟩]
+  out := out ++ [⟨"finalized(control: genuine reads inside the horizon)", vZok.judged > 0 && vZok.violations == 0,
+                  s!"judged {vZok.judged} premise-unmet {vZok.unmet} out-of-horizon {vZok.outside} violations {vZok.violations}; first note: {vZok.notes[0]?.getD "-"}"⟩]
+  let vZh := finalized tlZ pZ
+  out := out ++ [⟨"finalized(finalityStartup beyond the horizon is out-of-horizon)",
+                  (tlZ.strongMultiProposerBreak tlZ.setup.e.tGST 3).isNone && vZh.judged == 0 && vZh.violations == 0
+                    && vZh.outside == (intRange tlZ.setup.e.tGST tlZ.rho.horizon).length,
+                  s!"judged {vZh.judged} premise-unmet {vZh.unmet} out-of-horizon {vZh.outside}; finalityStartup(3) = {Spec.Constants.finalityStartup tlZ.setup 3}"⟩]
+  -- 2n. FinalityRegime の StrongMultiProposerRecurrence: byzantine を奇数 round の opening の提案者に置く(honestRounds)と、多提案者の窓の
+  --     直前 2 period の opening に byzantine の提案者が入り、gap 3 でも破れる。最初の破れの時刻 tGST の窓には多提案者の opening があり
+  --     (窓の欄だけなら成り立つ)、破れは直前 2 period の欄から来ることを確かめる。結論の経路を差し替えても前提不成立に数える
+  let tlR := generate { baseSpec with name := "negative-strong-recurrence", validators := 4, byzantine := [3], byz := .silent, k := 5, horizon := 96 }
+  let pR := Premises.of tlR
+  let vR := finalized tlR pR (startupOf := fun _ => 0) (deadlineOf := fun _ => 48)
+  let tR := tlR.setup.e.tGST
+  let perR := period tlR.setup
+  let windowHasMulti := (List.range (maxSlot tlR.setup tlR.rho.horizon + 1)).any fun k =>
+    tR + 2 * perR ≤ proposalTime tlR.setup k && proposalTime tlR.setup k ≤ tR + 3 * perR && tlR.multiProposerAt k
+  out := out ++ [⟨"StrongMultiProposerRecurrence broken (byzantine opening proposer before the window)",
+                  pR.belowOneThird.holds && tlR.strongMultiProposerBreak tR 3 == some tR && windowHasMulti && vR.judged == 0 && vR.unmet > 0 && vR.violations == 0,
+                  s!"{pR.belowOneThird.render}; break at {tlR.strongMultiProposerBreak tlR.setup.e.tGST 3}; finalized judged {vR.judged} unmet {vR.unmet}"⟩]
   -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
   --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }
