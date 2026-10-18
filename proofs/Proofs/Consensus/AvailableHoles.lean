@@ -8,11 +8,12 @@ import Mathlib.Tactic
 claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → AvailableAt t0`。`Available.lean` の `availableAt_of_fields` が結論を
 5 つの事実に還元しているので、骨格の上位 2 段は次のとおり(入口は `Proofs/Consensus/Spec/Claims.lean` の theorem `available`):
 
-1. 入口 `availableAt`: `t0 = 0`(GST-zero の枝。`RecoveredBy` の `genesis`)なら finalized の一致を穴 `finalizedAgree_genesis` から、
+1. 入口 `availableAt`: `t0 = 0`(GST-zero の枝。`RecoveredBy` の `genesis`)なら finalized の一致を `finalizedAgree_genesis`(確認の出力の一致の
+   穴 `confirmedAgree_genesis` から `agreeFrom_finalized_of_confirmed` で下ろす。周回 214)から、
    `t0 ≠ 0`(回復の枝)なら証明済みの `agreeFrom_finalized_of_recovered` から取り、残る 4 つの事実を穴から取って `availableAt_of_fields` で組み立てる。
 2. 穴(5 件。手書き `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` の `available_confirmedSafe` / `available_confirmedIncluded` /
    `available_stableSafe` と `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` の `available_stableIncluded_any` に当たる):
-   `recordAgree` / `crossAgree` / `finalizedAgree_genesis` / `confirmedIncluded` / `stableIncluded`。
+   `recordAgree` / `crossAgree` / `confirmedAgree_genesis` / `confirmedIncluded` / `stableIncluded`。
 
 手書きはどの穴も `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
@@ -52,15 +53,25 @@ theorem crossAgree {t0 : Int} (hwf : SetupWellFormed c p s) (hdom : RunDomain s 
     CrossAgreeFrom c p a nr s rho (fun st => st.latestConfirmed) t0 := by
   sorry
 
-/-- 穴: GST-zero の枝(`t0 = 0`)の finalized の一致。回復の枝は `agreeFrom_finalized_of_recovered`(証明済み)。
-手書き `gstZeroGuarantees_of_weakGenesis`(`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)の `outputCompatible` から
-`available_stableSafe` の `finalized_compatible_of_confirmed_compatible` で finalized に下ろす筋に当たる。
-閉じるのに要るもの: `t0 = 0` の `RecoveredBy` の genesis の枝は `SlashableBound` を与えないので `finalizedSafe` の本体は使えず、確認の出力の一致
-(`recordAgree` / `crossAgree` の `genesis` の枝)と finalized ⪯ 確認の出力(`Nested.lean`)から出す。 -/
+/-- 穴: GST-zero の枝(`t0 = 0`)の確認の出力の honest な 2 ノード・時刻 0 以後の読みの一致。
+手書き `gstZeroGuarantees_of_weakGenesis`(`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)の欄 `outputCompatible` に当たる
+(`available_confirmedSafe` の `genesis` の枝が `confirmed_agree_bridge` で使う)。
+閉じるのに要るもの: `SleepyRegime … 0` を手書きの `WeakGenesis`(`tGST = 0`・`HonestCommittees`・窓の過半)として読み、手書き `gstZeroSafety` の
+4 つの欄(`availableConfirmationsFrom_of_weakGenesis_named` / `liveConfirmed_mono_of_weakGenesis_named` /
+`liveConfirmed_preceq_at_confirmation_of_weakGenesis_named` / `honestProposalReadSafety_of_weakGenesis_named`)を生成 Model の store で示すこと。
+genesis の枝は `SlashableBound` を与えないので `finalizedSafe` の本体は使えない。 -/
+theorem confirmedAgree_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) :
+    AgreeFrom c p a nr s rho Output.Confirmed 0 := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)の finalized の一致: 確認の出力の一致(穴 `confirmedAgree_genesis`)を `agreeFrom_finalized_of_confirmed` で
+finalized に下ろす。手書き `available_stableSafe` の `genesis` の枝の `finalized_compatible_of_confirmed_compatible` の筋。
+回復の枝は `agreeFrom_finalized_of_recovered`(証明済み)。 -/
 theorem finalizedAgree_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) :
-    AgreeFrom c p a nr s rho Output.Finalized 0 := by
-  sorry
+    AgreeFrom c p a nr s rho Output.Finalized 0 :=
+  agreeFrom_finalized_of_confirmed c p a nr s rho (confirmedAgree_genesis c p a nr s rho hwf hdom hsleep)
 
 /-- 穴: honest な提案の確認の出力への期限 `confirmationDelay` 以内の包含。
 手書き `available_confirmedIncluded`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)に当たる。

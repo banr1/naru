@@ -479,7 +479,8 @@ C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。
 `finalized` / `stableAsynchronyResilient` と bundle `Consensus`)で、穴はこの 7 件の経路にだけ置き、証明済みの 7 件が依存する補題には置きません。
 
 骨格の運び(consensus): `available`(周回 211)は入口 `Proofs/Consensus/AvailableHoles.lean` の `availableAt` が `t0 = 0`(`RecoveredBy` の genesis)か否かで
-finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`)、`Available.lean` の `availableAt_of_fields` の残りの事実を 5 つの穴から取ります。
+finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`、`t0 = 0` は確認の出力の一致の穴 `confirmedAgree_genesis` から
+証明済みの `agreeFrom_finalized_of_confirmed` で下ろす。周回 214 に穴 `finalizedAgree_genesis` をこの形に替えた)、`Available.lean` の `availableAt_of_fields` の残りの事実を 5 つの穴から取ります。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -497,7 +498,7 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.recordAgree` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
 | `Proofs.Consensus.AvailableHoles.crossAgree` | `Consensus.Spec.Claims.available` | `latestConfirmed_compatible_finalized_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 211 |
-| `Proofs.Consensus.AvailableHoles.finalizedAgree_genesis` | `Consensus.Spec.Claims.available` | `gstZeroGuarantees_of_weakGenesis` | `DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.confirmedAgree_genesis` | `Consensus.Spec.Claims.available` | `gstZeroGuarantees_of_weakGenesis` | `DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean` | 214 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |

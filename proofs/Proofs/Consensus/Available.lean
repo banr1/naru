@@ -16,7 +16,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
   stable の記録についての同じ 2 つは、記録の順序 `latestStable ⪯ latestConfirmed` からこれらに従う(`RecordOrder.lean`)。
 - finalized の一致 `AgreeFrom … Finalized t0`。`t0 ≠ 0` なら `SleepyRegime` の `RecoveredBy` は回復の枝(`t0 = recoveryEnd …`)に
   限られ、その枝は `SlashableBound` を持つので `finalizedSafe` の本体から従う(`agreeFrom_finalized_of_recovered`)。
-  GST-zero の枝(`t0 = 0`)は未証明。
+  GST-zero の枝(`t0 = 0`)は確認の出力の一致から従う(`agreeFrom_finalized_of_confirmed`。確認の出力の一致自体は未証明)。
 - 期限内の包含 `IncludedFrom` ×2(未証明。手書き `available_confirmedIncluded` / `available_stableIncluded_any`)。
 手書き `DecoupledConsensusProofs/ReviewTheorem.lean`(`concreteConsensus` の `available` の枝: `available_confirmedSafe` /
 `available_confirmedIncluded` / `available_stableSafe` / `available_stableIncluded_any`)の筋。
@@ -81,6 +81,30 @@ theorem agreeFrom_finalized_of_recovered (hwf : SetupWellFormed c p s) (hdom : R
   rcases hrec with h0 | ⟨_, _, _, ⟨⟨-, hsb⟩, -⟩⟩
   · exact absurd h0 hne
   · exact agreeFrom_finalized_of_slashableBound c p a nr s rho hwf hdom hexec hsb (hgst0.trans hgst)
+
+/-- `X ⪯ Y` で `Y` が `Z` と互換なら `X` も `Z` と互換。手書き `Protocol.compatible_of_preceq_of_compatible`。 -/
+theorem compatible_of_preceq_of_compatible {X Y Z : Block} (hXY : preceq X Y = true) (hYZ : compatible Y Z = true) :
+    compatible X Z = true := by
+  unfold compatible at hYZ
+  rw [Bool.or_eq_true] at hYZ
+  rcases hYZ with hYZ | hZY
+  · unfold compatible
+    rw [Bool.or_eq_true]
+    exact Or.inl (Proofs.Consensus.Blocks.preceq_trans hXY hYZ)
+  · exact Proofs.Consensus.Blocks.compatible_of_preceq_common hXY hZY
+
+/-- 確認の出力が `t0` 以後で一致すれば finalized も一致する(finalized は確認の出力の接頭辞 `f_preceq_getConfirmed`。regime の前提なし)。
+手書き `finalized_compatible_of_confirmed_compatible`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)。 -/
+theorem agreeFrom_finalized_of_confirmed {t0 : Int} (hC : AgreeFrom c p a nr s rho Output.Confirmed t0) :
+    AgreeFrom c p a nr s rho Output.Finalized t0 := by
+  unfold AgreeFrom ConsistentFrom at hC ⊢
+  intro u v t t2 h
+  have hcc := hC u v t t2 h
+  rw [outputAt_confirmed, outputAt_confirmed] at hcc
+  rw [outputAt_finalized, outputAt_finalized]
+  have hU := compatible_of_preceq_of_compatible (f_preceq_getConfirmed _) hcc
+  rw [Proofs.Consensus.Blocks.compatible_comm] at hU ⊢
+  exact compatible_of_preceq_of_compatible (f_preceq_getConfirmed _) hU
 
 /-- claim `available` の結論 `AvailableAt t0` を、残る 5 つの事実(確認の記録の一致と finalized との交差の互換、finalized の一致、
 2 つの包含)から組み立てる。run への前提は event 列の整列と重複なしだけ(regime に依らない形)。 -/
