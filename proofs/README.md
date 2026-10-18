@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 12 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 11 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -491,7 +491,11 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 `ShortHorizon.storeAt_rec_short`)で finalized も genesis(証明済みの `ShortHorizon.storeAt_f_short`。tree の親の slot の不変条件
 `ParentSlot.stateBefore_parentInv` を使う)なので上界は genesis です(枝の分け方は周回 218、finalized の側は周回 220)。`commonUpper_genesis_long` は、
 確認の記録と finalized がそれぞれある slot 以後の投票の務めの head `voteDutyHeadAt`(手書き `voterHeadAt`)の祖先であることを言う
-`recordAt_preceq_laterVoteHead` / 穴 `finalizedAt_preceq_laterVoteHead` から、4 つの slot の最大で上界を揃えて証明します(周回 222)。
+`recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead` から、4 つの slot の最大で上界を揃えて証明します(周回 222)。
+`finalizedAt_preceq_laterVoteHead`(穴ではない。周回 248)は手書きと同じく、時刻 `t` の読みを時刻 `< t + 1` の読みに移して finalized ⪯ FG root
+(`ReceiverFinality.store_fgRoot_extends`)とし、FG root を `RootWitness.stateBeforeTime_fgRoot_confirmationWitness` で genesis(`first = 0`)か honest な行の
+務めの確認の証人に分け、後者は行の時刻が行の round の action 時刻 = opening slot の確認の時刻なので `first` を opening slot にとり、穴
+`fgWitness_preceq_laterVoteHead` に渡します。
 `recordAt_preceq_laterVoteHead` は確認の記録の由来(`ConfirmedOrigin.lean` の `storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か
 grade の stable root。手書き `ConfirmationOrigin.stateBefore_latest_confirmed_origin`)で分け、`confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head。穴ではない。
 手書きと同じく walk が anchor のままか filtered tree の適格な要素か(`Goldfish.head_cases`)で分け、anchor は g1 の frame の raw の active prefix か FG root なので
@@ -535,7 +539,6 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | `Proofs.Consensus.AvailableHoles.fgWitness_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `actionSources_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 247 |
 | `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead_positive` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 246 |
 | `Proofs.Consensus.AvailableHoles.confEligibleWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 245 |
-| `Proofs.Consensus.AvailableHoles.finalizedAt_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `finalizedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 222 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
