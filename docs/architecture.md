@@ -286,7 +286,7 @@ theorem の入口は `proofs/Proofs/Consensus/Spec/Claims.lean`(`import Statemen
 bodies が親について閉じていることを足し、bodies の genesis でないブロックはそのノードが処理したブロックで、`UnforgeableSignatures` の carried で発行に帰着)を与え、
 手書き `validatorVoteSafety`(`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` /
 `carriedByHonest_of_storeAt`)の筋)の 7 件が証明済みで、
-残り 7 件は骨格(C76。穴 9 件。`proofs/README.md`「骨格と穴」)で `naru proofs` は `sorry` と表示する(C71 が残る。[roadmap.md](roadmap.md))。残りの liveness 系の claim に向けた共有の足場
+残り 7 件は骨格(C76。穴 10 件。`proofs/README.md`「骨格と穴」)で `naru proofs` は `sorry` と表示する(C71 が残る。[roadmap.md](roadmap.md))。残りの liveness 系の claim に向けた共有の足場
 (骨格の theorem が使う): `Liveness.lean`(包含 `IncludedFrom` + 単調 `MonotoneFrom` + 未来の提案の不在 `NoFutureRead` + 再発 → 活性 `LiveFrom`
 の generic な補題と、`confirmedLive` / `stableLive` の結論を claim `available` の結論 `AvailableAt` に、`finalized` の活性を finalized の包含に
 還元する補題)、`NoFutureRead.lean`(時刻 `t` の読みに提案時刻が `t` より後の honest な提案は入らない。`ExecutionValid` と Δ > 0 だけから
@@ -296,7 +296,8 @@ claim `available` の結論 `SafeFrom`(一致 ∧ 単調)に向けた足場(theo
 `latestConfirmed` / `latestStable` を書くのは `updateConfirmationWith` だけで、`advanceConfirmed` / `floorOnStable` は古い記録の接頭辞を、新しい記録と互換なら
 新しい記録の接頭辞のまま保つ(`Keeps`)。他のハンドラは記録を変えず、1 tick は高々 1 回の更新)、`RecordGrowth.lean`(run に沿って: 記録が変わるのは自分の
 tick の添字だけ、時刻 `t` の読みは `filter (≤ t)` の長さの `stateBefore`、tick の直後の記録は同じ時刻の読みの記録、記録の時刻をまたぐ一致 → 単調
-`record_mono_of_compatible`)、`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を、欄 `f` / 記録の事実と、確認の出力では
+`record_mono_of_compatible`)、`ShortHorizon.lean`(確認評価の時刻でない tick は記録を変えず、最初の確認の時刻より前に終わる run では
+確認の記録と stable の記録が genesis のまま。`storeAt_rec_short`)、`Outputs.lean`(出力 `getStable` / `getConfirmed` の単調性と一致を、欄 `f` / 記録の事実と、確認の出力では
 `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する `safeFrom_stable_of_fields` / `safeFrom_confirmed_of_fields`)、
 `RecordOrder.lean`(`StableBelowConfirmed` は regime の事実ではなく store の不変条件: `updateConfirmationWith` は `latestConfirmed := floorOnStable stable …`
 と書き、`floorOnStable` はどの分岐でも `stable` を延ばす。他のハンドラは記録を変えないので、run のどの読みでも前提なしに成り立つ `stableBelowConfirmedFrom`。

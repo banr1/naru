@@ -1,5 +1,6 @@
 import Statements.Consensus.Spec.Claims
 import Proofs.Consensus.Available
+import Proofs.Consensus.ShortHorizon
 import Mathlib.Tactic
 
 /-!
@@ -11,12 +12,15 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 1. 入口 `availableAt`: `t0 = 0`(GST-zero の枝。`RecoveredBy` の `genesis`)なら finalized の一致を `finalizedAgree_genesis`(確認の出力の一致
    `confirmedAgree_genesis` から `agreeFrom_finalized_of_confirmed` で下ろす。周回 214)から、
    `t0 ≠ 0`(回復の枝)なら証明済みの `agreeFrom_finalized_of_recovered` から取り、残る 4 つの事実を `availableAt_of_fields` で組み立てる。
-2. GST-zero の枝の 3 つの一致(確認の記録の一致・finalized との交差の互換・確認の出力の一致)は、どれも穴 `commonUpper_genesis`
+2. GST-zero の枝の 3 つの一致(確認の記録の一致・finalized との交差の互換・確認の出力の一致)は、どれも `commonUpper_genesis`
    (2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`。手書きの後の投票の務めの head)から証明済みの
    `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出す(周回 216)。
-   回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(5 件): `commonUpper_genesis`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
+   `commonUpper_genesis` は最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら穴 `commonUpper_genesis_long`、より前に run が終わるなら
+   確認の記録は genesis(証明済みの `ShortHorizon.storeAt_rec_short`)で finalized も genesis(穴 `finalized_genesis_short`)なので上界は genesis
+   (周回 218)。回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
+3. 穴(6 件): `commonUpper_genesis_long`(手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` /
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
+   `finalized_genesis_short`(手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named` の短い horizon の枝、同じファイル)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
    `stableIncluded`(手書き `available_stableIncluded_any`)。
@@ -25,7 +29,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
 `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致の穴はすでに枝ごとに分けた(`commonUpper_genesis` は
 `t0 = 0`、`_recovered` の 2 件は `hne : t0 ≠ 0` を受け取る)。包含の穴 2 件は義務の前提(`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)を
-そのまま受け取り、細分するときはこの 2 枝から切る。
+そのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
 
 namespace Proofs.Consensus.AvailableHoles
@@ -41,19 +45,58 @@ section Holes
 variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
   (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun)
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、honest な 2 ノードの時刻 0 以後の 2 つの読みの finalized と確認の記録 `latestConfirmed` が
-共通の上界を持つこと(`CommonUpperFrom`)。手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` と
-`finalizedAt_preceq_laterVoteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`。
-上界は大きい方の slot の後の投票の務めの head `voterHeadAt`)に当たり、最初の確認より前に run が終わる場合は
-`latestConfirmedAt_eq_genesis_of_short_horizon` と finalized = genesis(上界は genesis)。
+/-- 穴: GST-zero の枝(`t0 = 0`)で最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下の run の、honest な 2 ノードの時刻 0 以後の
+2 つの読みの finalized と確認の記録 `latestConfirmed` が共通の上界を持つこと(`CommonUpperFrom`)。
+手書き `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` と `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`。上界は大きい方の slot の後の投票の務めの head
+`voterHeadAt`。どちらも前提 `hzero : confirmation_time S.E 0 ≤ rho.horizon`)に当たる。
 閉じるのに要るもの: `SleepyRegime … 0` を手書きの `WeakGenesis`(`tGST = 0`・`HonestCommittees`・窓の過半)として読み、
 FG root の確認の証人(手書き `WeakFG.fgRoot_confirmationWitness_at_read`)と、務めの出どころが後の投票の head の祖先であること
 (手書き `actionSources_preceq_voteDutyHead_of_gstZero`)を生成 Model の store で示すこと。
 genesis の枝は `SlashableBound` を与えないので `finalizedSafe` の本体は使えない。 -/
+theorem commonUpper_genesis_long (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    (hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon) :
+    CommonUpperFrom c p a nr s rho 0 := by
+  sorry
+
+/-- 穴: 最初の確認の時刻 `confirmationTime e 0` より前に終わる run では、どのノード・どの時刻の読みでも finalized は genesis。
+手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)の短い horizon の枝の局所の事実 `hfinalized` に当たる。
+閉じるのに要るもの: 読みの時刻が `confirmationTime e 0 = 6Δ` より前なので時計の slot は 1 以下で、tree のブロックの slot も 1 以下
+(`ParentSlot.SlotInv`)。tree のどのブロックも genesis か親の slot が小さい(受理の守り `slot (parent b) < slot b`。tree の不変条件として
+run に持ち上げる。手書き `NamedSlotFreshness.parent_slot_lt_of_mem_storeBeforeTime`)ので、bodies の `D`(`StoreInv.carrier` の
+`f` の担い手)は genesis か親が genesis のブロック。その導出の `f` は genesis の導出の `j` か `f`(`FinalizedSource.deriveNamed_f_node`)で
+genesis。 -/
+theorem finalized_genesis_short (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0)
+    (hshort : rho.horizon < Model.Consensus.Protocol.Schedule.confirmationTime s.e 0) (v : ValidatorId) (t : Int) :
+    (storeAt c p a nr s rho v t).core.f = Block.Genesis := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)の共通の上界: 最初の確認の時刻が `horizon` 以下なら穴 `commonUpper_genesis_long` から、
+そうでなければ確認の記録は genesis(`ShortHorizon.storeAt_rec_short`。手書き `latestConfirmedAt_eq_genesis_of_short_horizon`)で
+finalized も genesis(穴 `finalized_genesis_short`)なので、上界は genesis。 -/
 theorem commonUpper_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) :
     CommonUpperFrom c p a nr s rho 0 := by
-  sorry
+  by_cases hzero : Model.Consensus.Protocol.Schedule.confirmationTime s.e 0 ≤ rho.horizon
+  · exact commonUpper_genesis_long c p a nr s rho hwf hdom hsleep hzero
+  · have hshort := lt_of_not_ge hzero
+    have hsch : ScheduleWellFormed s rho := by
+      have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+      unfold ExecutionValid at hexec
+      exact hexec.1.1.1
+    have hδ : 0 ≤ s.e.delta := (Proofs.Consensus.Liveness.wf_facts hwf).1.le
+    have hL (w : ValidatorId) (r : Int) : (storeAt c p a nr s rho w r).core.latestConfirmed = Block.Genesis :=
+      (Proofs.Consensus.ShortHorizon.storeAt_rec_short c p a nr s rho hsch hδ hshort w r).1
+    have hF (w : ValidatorId) (r : Int) : (storeAt c p a nr s rho w r).core.f = Block.Genesis :=
+      finalized_genesis_short c p a nr s rho hwf hdom hsleep hshort w r
+    intro u v t t2 _ _ _ _ _ _
+    refine ⟨Block.Genesis, ?_, ?_, ?_, ?_⟩
+    all_goals first
+      | rw [hF]; exact Proofs.Consensus.Blocks.preceq_self _
+      | rw [hL]; exact Proofs.Consensus.Blocks.preceq_self _
 
 /-- 穴: 回復の枝(`t0 ≠ 0`。`RecoveredBy` の `recovered`)の確認の記録 `latestConfirmed` の honest な 2 ノード・`t0` 以後の読みの一致。
 手書き `available_confirmedSafe`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)の `recovered` の枝に当たる。

@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 10 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -196,7 +196,10 @@ claim `available` の結論 `SafeFrom g t0 = AgreeFrom g t0 ∧ MonotoneFrom g t
 `storeAt v t` は `filter (eventTime ≤ t)` の長さ `idx t` の `stateBefore`(`EventsSorted`)、`idx` より前の event の時刻は `t` 以下・以降は `t` より後、
 `v` の tick の直後の記録は同じ時刻の読みの記録(`recAt_tick_eq_storeAt`。同じ時刻の後続の event に `v` の tick が無いことに event の重複の無さ
 `EventsNodup` が要る)、よって記録の時刻 `t` の値が `t` 以後のどの時刻の値とも
-互換なら時刻 `t2 ≥ t` の値の接頭辞(`record_mono_of_compatible`。手書き `latest_confirmed_mono_of_agreement`))、`Outputs.lean`(出力
+互換なら時刻 `t2 ≥ t` の値の接頭辞(`record_mono_of_compatible`。手書き `latest_confirmed_mono_of_agreement`))、`ShortHorizon.lean`(確認評価の時刻
+(`0 < slotOf e t` かつ `t = supportCutoff e (slotOf e t)`)でない tick は 2 つの記録を変えず(`tick_rec_of_noCutoff`)、正の slot の締切は
+`confirmationTime e 0` 以後なので、`horizon < confirmationTime e 0` の run ではどの読みでも確認の記録と stable の記録は genesis(`storeAt_rec_short`。
+手書き `latestConfirmedAt_eq_genesis_of_short_horizon`))、`Outputs.lean`(出力
 `getStable st = if f ⪯ latestStable then latestStable else f`、`getConfirmed st = if getStable ⪯ latestConfirmed then latestConfirmed else getStable` の
 単調性と一致を、欄の事実 — `f` の単調性(`EventsSorted`)、記録の時刻をまたぐ一致 `RecordAgreeFrom`、記録と finalized の交差の互換 `CrossAgreeFrom`、
 finalized の一致 `AgreeFrom … Finalized` — と、確認の出力では `StableBelowConfirmed`(stable の記録 ⪯ 確認の記録)に還元する
@@ -481,8 +484,10 @@ C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。
 骨格の運び(consensus): `available`(周回 211)は入口 `Proofs/Consensus/AvailableHoles.lean` の `availableAt` が `t0 = 0`(`RecoveredBy` の genesis)か否かで
 finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`、`t0 = 0` は確認の出力の一致 `confirmedAgree_genesis` から
 証明済みの `agreeFrom_finalized_of_confirmed` で下ろす。周回 214)、`Available.lean` の `availableAt_of_fields` の残りの事実を取ります。GST-zero の枝の
-確認の記録の一致・交差の互換・確認の出力の一致は、どれも穴 `commonUpper_genesis`(2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`)から
-証明済みの `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出し、回復の枝は穴
+確認の記録の一致・交差の互換・確認の出力の一致は、どれも `commonUpper_genesis`(2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`)から
+証明済みの `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出します。`commonUpper_genesis` は
+最初の確認の時刻 `confirmationTime e 0` が `horizon` 以下なら穴 `commonUpper_genesis_long`、より前に run が終わるなら確認の記録は genesis(証明済みの
+`ShortHorizon.storeAt_rec_short`)で finalized も genesis(穴 `finalized_genesis_short`)なので上界は genesis です(周回 218)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
@@ -499,7 +504,8 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.commonUpper_genesis` | `Consensus.Spec.Claims.available` | `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 216 |
+| `Proofs.Consensus.AvailableHoles.commonUpper_genesis_long` | `Consensus.Spec.Claims.available` | `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 218 |
+| `Proofs.Consensus.AvailableHoles.finalized_genesis_short` | `Consensus.Spec.Claims.available` | `confirmedOutputCompatibleFrom_of_weakGenesis_named` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 218 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
