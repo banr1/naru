@@ -106,6 +106,45 @@ theorem agreeFrom_finalized_of_confirmed {t0 : Int} (hC : AgreeFrom c p a nr s r
   rw [Proofs.Consensus.Blocks.compatible_comm] at hU ⊢
   exact compatible_of_preceq_of_compatible (f_preceq_getConfirmed _) hU
 
+/-- honest な 2 ノードの `t0` 以後の 2 つの読みの finalized と確認の記録 `latestConfirmed` の 4 つが、共通の上界 `X` を持つ。
+手書きの GST-zero の枝が `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` / `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`
+(後の投票の務めの head `voterHeadAt` を上界にする)と、最初の確認の前に run が終わる場合(4 つとも genesis)から作る形。 -/
+def CommonUpperFrom (t0 : Int) : Prop :=
+  ∀ u v t t2, rho.honest.contains u = true → rho.honest.contains v = true →
+    t0 ≤ t → t ≤ rho.horizon → t0 ≤ t2 → t2 ≤ rho.horizon →
+    ∃ X : Block, preceq (storeAt c p a nr s rho u t).core.f X = true ∧
+      preceq (storeAt c p a nr s rho u t).core.latestConfirmed X = true ∧
+      preceq (storeAt c p a nr s rho v t2).core.f X = true ∧
+      preceq (storeAt c p a nr s rho v t2).core.latestConfirmed X = true
+
+/-- 共通の上界から確認の記録の一致。 -/
+theorem recordAgreeFrom_of_commonUpper {t0 : Int} (h : CommonUpperFrom c p a nr s rho t0) :
+    RecordAgreeFrom c p a nr s rho (fun st => st.latestConfirmed) t0 := by
+  intro u v t t2 hu hv h1 h2 h3 h4
+  obtain ⟨X, -, hLu, -, hLv⟩ := h u v t t2 hu hv h1 h2 h3 h4
+  exact Proofs.Consensus.Blocks.compatible_of_preceq_common hLu hLv
+
+/-- 共通の上界から確認の記録と finalized の交差の互換。手書き `latestConfirmed_compatible_finalized_of_weakGenesis` の筋。 -/
+theorem crossAgreeFrom_of_commonUpper {t0 : Int} (h : CommonUpperFrom c p a nr s rho t0) :
+    CrossAgreeFrom c p a nr s rho (fun st => st.latestConfirmed) t0 := by
+  intro u v t t2 hu hv h1 h2 h3 h4
+  obtain ⟨X, -, hLu, hFv, -⟩ := h u v t t2 hu hv h1 h2 h3 h4
+  exact Proofs.Consensus.Blocks.compatible_of_preceq_common hLu hFv
+
+/-- 共通の上界から確認の出力の一致: 確認の出力は finalized と確認の記録の上界の下にある(`getConfirmed_preceq`)。
+手書き `confirmedOutputCompatibleFrom_of_weakGenesis_named`(`confirmedOutputAt_preceq_laterVoteDutyHead_of_gstZero` の 2 つの上界を
+大きい方の slot で揃える)の筋。 -/
+theorem agreeFrom_confirmed_of_commonUpper {t0 : Int} (h : CommonUpperFrom c p a nr s rho t0) :
+    AgreeFrom c p a nr s rho Output.Confirmed t0 := by
+  unfold AgreeFrom ConsistentFrom
+  intro u v t t2 hh
+  obtain ⟨⟨⟨⟨⟨hu, hv⟩, h1⟩, h2⟩, h3⟩, h4⟩ := hh
+  obtain ⟨X, hFu, hLu, hFv, hLv⟩ := h u v t t2 hu hv h1 h2 h3 h4
+  rw [outputAt_confirmed, outputAt_confirmed]
+  exact Proofs.Consensus.Blocks.compatible_of_preceq_common
+    (getConfirmed_preceq (storeAt_sbc c p a nr s rho u t) hFu hLu)
+    (getConfirmed_preceq (storeAt_sbc c p a nr s rho v t2) hFv hLv)
+
 /-- claim `available` の結論 `AvailableAt t0` を、残る 5 つの事実(確認の記録の一致と finalized との交差の互換、finalized の一致、
 2 つの包含)から組み立てる。run への前提は event 列の整列と重複なしだけ(regime に依らない形)。 -/
 theorem availableAt_of_records (hs : EventsSorted rho) (hnd : EventsNodup rho) {t0 : Int}

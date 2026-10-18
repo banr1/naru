@@ -479,8 +479,11 @@ C74 の `検査器 = true ↔ 述語` の theorem は後続の周回。
 `finalized` / `stableAsynchronyResilient` と bundle `Consensus`)で、穴はこの 7 件の経路にだけ置き、証明済みの 7 件が依存する補題には置きません。
 
 骨格の運び(consensus): `available`(周回 211)は入口 `Proofs/Consensus/AvailableHoles.lean` の `availableAt` が `t0 = 0`(`RecoveredBy` の genesis)か否かで
-finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`、`t0 = 0` は確認の出力の一致の穴 `confirmedAgree_genesis` から
-証明済みの `agreeFrom_finalized_of_confirmed` で下ろす。周回 214 に穴 `finalizedAgree_genesis` をこの形に替えた)、`Available.lean` の `availableAt_of_fields` の残りの事実を 5 つの穴から取ります。
+finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agreeFrom_finalized_of_recovered`、`t0 = 0` は確認の出力の一致 `confirmedAgree_genesis` から
+証明済みの `agreeFrom_finalized_of_confirmed` で下ろす。周回 214)、`Available.lean` の `availableAt_of_fields` の残りの事実を取ります。GST-zero の枝の
+確認の記録の一致・交差の互換・確認の出力の一致は、どれも穴 `commonUpper_genesis`(2 つの読みの finalized と確認の記録の共通の上界 `CommonUpperFrom`)から
+証明済みの `recordAgreeFrom_of_commonUpper` / `crossAgreeFrom_of_commonUpper` / `agreeFrom_confirmed_of_commonUpper` で出し、回復の枝は穴
+`recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -496,9 +499,9 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.recordAgree` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
-| `Proofs.Consensus.AvailableHoles.crossAgree` | `Consensus.Spec.Claims.available` | `latestConfirmed_compatible_finalized_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 211 |
-| `Proofs.Consensus.AvailableHoles.confirmedAgree_genesis` | `Consensus.Spec.Claims.available` | `gstZeroGuarantees_of_weakGenesis` | `DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean` | 214 |
+| `Proofs.Consensus.AvailableHoles.commonUpper_genesis` | `Consensus.Spec.Claims.available` | `latestConfirmedAt_preceq_laterVoteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean` | 216 |
+| `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
+| `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
