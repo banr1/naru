@@ -284,6 +284,15 @@ def multiProposerRecurrence (tl : Timeline) (start : Int) (gap : Nat) : Bool :=
   (intRange start (tl.rho.horizon - span)).all fun t =>
     slots.any fun k => t < proposalTime s k && proposalTime s k ≤ t + span && tl.multiProposerAt k
 
+/-- 生成 Statements `SingleProposerRecurrence(s, rho, t0, gap)`(手書き `SingleProposerRecurrence`)。時刻 `t` は `[t0, horizon - gap · period]` の整数で、
+窓 `(t, t + gap · period]` の提案時刻は horizon 以内なので slot は `maxSlot(horizon)` までで尽きる(有界版ではなく厳密)。 -/
+def singleProposerRecurrence (tl : Timeline) (t0 : Int) (gap : Nat) : Bool :=
+  let s := tl.setup
+  let span : Int := (gap : Int) * period s
+  let slots := List.range (maxSlot s tl.rho.horizon + 1)
+  (intRange t0 (tl.rho.horizon - span)).all fun t =>
+    slots.any fun k => t < proposalTime s k && proposalTime s k ≤ t + span && tl.rho.honest.contains (tl.inputs.proposer k)
+
 /-- 手書き `TimeoutDelayBound S extra`: `timeoutDelay = (2 + extra) · R`。 -/
 def timeoutDelayBound (tl : Timeline) (extra : Nat) : Bool :=
   tl.setup.cfg.timeoutDelay == (2 + extra) * tl.setup.hc.r

@@ -232,6 +232,14 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
     `SafeFrom` = `AgreeFrom` ∧ `MonotoneFrom` は述語自身が時刻を `[t0, horizon]`、ノードを honest に切っているので、有界版は本物と同じ範囲を尽くす:
     `AgreeFrom` は全読みの異なる値の順序対の `compatible`(1 件の義務)、`MonotoneFrom` は honest ごとに読みの列を同じ値の連なりで縮めた `i <= j` の対の
     `preceq`(honest ごとに 1 件)。`IncludedFrom` の 2 項目は `includedFrom` と同じ slot の義務(期限が horizon を越える slot は判定外)。
+  - `confirmedLive` / `stableLive` — claim `confirmedLive` / `stableLive`(生成 Statements `Claims.confirmedLive` / `Claims.stableLive`。周回 203 から)。前提は
+    `SetupWellFormed` ∧ `RunDomain` ∧ `LiveSleepyRegime(t0, gap)` = `SleepyRegime(t0)`(`sleepyAt`)∧ `SingleProposerRecurrence(t0, gap)`(`Premises.lean` の
+    `singleProposerRecurrence`: `[t0, horizon - gap · period]` の各時刻の窓 `(t, t + gap · period]` に honest な提案者の slot があるか。厳密)。
+    自由変数は `t0` が `sleepyCandidates`、`gap` が `[1, (horizon - t0) / period]`(`liveGaps`。それより大きい gap は結論の義務がすべて判定外)で、前提が
+    成り立つ組をすべて判定する(件数は `(t0, gap, t)` の延べ数。`SingleProposerRecurrence` は gap について単調なので、最小の gap より大きい gap も数える)。結論は `LiveFrom(g, t0, d)`(`confirmedLive` は confirmed と `growthDelay = gap · period + confirmationDelay`、`stableLive` は
+    stable と `stableGrowthDelay = gap · period + stableInclusionDelay`): `[t0, horizon]` の各時刻 `t` が義務で、`t + d > horizon` は判定外、そうでなければ
+    `t` より後の honest な提案 `b`(`HonestAfter`)のうち、honest な全読みの時刻 `t` の値より厳密に上(`prec`)にあり、時刻 `t + d` の honest な全読みに
+    含まれる(`InBy`)ものがあるか。存在量化の `b` の候補は `maxSlot(horizon)` までの slot の honest な提案(それより後の提案を外すのは違反を報告する側にしか働かない)。
 - **固定設定**(`Properties/Report.lean` の `shortSpecs`。Δ = 1、`r = 3`、`etaSG = 2`、`k = 4`、`d = 2`、`timeoutDelay = 6`、重みは 3 validator の run だけ
   `[2, 2, 1]`(byzantine が 1/3 未満)):
 
@@ -253,11 +261,19 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   (前提不成立は `tGST > 0` の 3 run。sleepy の run は confirmed 11・stable 3 を判定。周回 200 の BFT の形では 60 / 58 / 14 と 22 / 58 / 52)。配送順の入れ替えは 3 run で計 57 回。どの run でも timeout の行は 0。
   周回 202 の結果(`lake exe naru_test properties`: 55 項目 PASS): 4 検査器とも違反 0、上の 3 検査器の件数は周回 201 と同じ。`available` は判定 136 / 前提不成立 114 /
   判定外 78(byzantine を含む run で判定 117。前提不成立は `includedFrom` と同じ `tGST > 0` の 3 run)。
+  周回 203 の結果(`lake exe naru_test properties`: 64 項目 PASS): 6 検査器とも違反 0、上の 4 検査器の件数は周回 202 と同じ。`confirmedLive` は判定 866 / 前提不成立 255 /
+  判定外 1542(byzantine を含む run で判定 809)、`stableLive` は判定 220 / 前提不成立 255 / 判定外 2188(byzantine を含む run で判定 220。遅れ
+  `stableGrowthDelay(1) = 56` が horizon 48 の run では収まらない)。`period` は Δ = 1 で 12、Δ = 2 で 24。前提不成立は `SleepyRegime` が成り立たない `tGST > 0` の 3 run で、
+  `SleepyRegime` が成り立つ run ではどれも `SingleProposerRecurrence` が gap 1 から成り立つ。
   `--mode probe` の計測: horizon 300 の run(1,171 event)は生成約 8 秒、600(約 2,300 event)は生成約 103 秒(生成 Model の tick の費用が tree の
   大きさの 3〜4 乗で増える)。`a(D) = 3858` を horizon に収める run は予算(`properties` の群 ≤ 5 分)に収まらない。
   `--mode finality` の計測(C75 の判断材料): golden の FinalityLiveness の fixture を native で horizon 100 / 200 / 400 まで畳み込むと 28 ms / 0.4 秒 / 7.4 秒
   (約 4 乗)。全 horizon 33,730 は native でも実行不能。
-- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、20 件。周回 202 に `available` の 3 件を追加: validator 0 の confirmed の読みを
+- **負の検体**(`Properties/Negative.lean`。報告の `negative <名前>: detected`、25 件。周回 203 に `confirmedLive` / `stableLive` の 5 件を追加: 出力の読みを
+  genesis に止めると `t` の後の提案が `t + d` の読みに入らず `LiveFrom` が破れる(confirmed と stable)、読みをどの時刻でも horizon の読みに先取りさせると
+  時刻 `t` の読みより厳密に上(`prec`)で `t + d` の読みに入る提案が無く破れる(`prec` を `preceq` に弱めた検査器では検出されないことを周回 203 に確かめた)、本物の読みでは両検査器の義務が判定され違反しない(対照)、
+  どの slot の提案者も honest でない入力では `SingleProposerRecurrence` が `liveGaps` の範囲のどの gap でも成り立たず前提不成立に数える(本物の入力は gap 1 で成り立つ対照つき)。
+  honest がすべて眠る検体では `confirmedLive` も前提不成立に数える。周回 202 に `available` の 3 件を追加: validator 0 の confirmed の読みを
   `t >= 20` で genesis の別の子に壊すと `AgreeFrom` が破れる、stable の読みをどの slot の包含の期限にも当たらない 1 つの時刻だけ genesis に戻すと `AgreeFrom` と `IncludedFrom` は保ったまま `MonotoneFrom` だけが破れる、
   本物の読みでは全義務が判定され違反しない(対照)。honest がすべて眠る検体では `available` も前提不成立に数える): FG root の読みを head の祖先でないブロックに差し替えた `hreadBound`
   (強い形で違反を報告し、期限の前の破れでも run が golden の一覧に無いので分類しない)、同じ壊れた読みで run が golden で一致したと仮定すると
@@ -271,7 +287,7 @@ lake exe naru_test properties                # ドライバ(上の表)。約 30 
   source にした証人(同じ設定と入力の run でないので最初の項で退ける。回復の枝の証人の経路は固定設定では horizon の項より後ろが実行されないので、
   `Continues` の前半はこの単体の検体で確かめる)、GST 後にノード 1 へブロックを
   配らない(`PartialSynchrony` が破れる)、整列の崩れた event 列、honest の tick の欠け、生成器の畳み込みと event 列の再畳み込み(`replay`)が同じ世界を与えること。
-- 残り 5 claim(`confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)の検査器はまだ無い。
+- 残り 3 claim(`stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)の検査器はまだ無い。
 - C74(`検査器 = true ↔ 述語` の theorem)はまだ無い(後続の周回。theorem は同じ `Properties` ライブラリに置き、`lake build Properties` が Lake target)。
 
 ## コンパイラ意味論保存(C39〜C47、C48〜C53、C54〜C59)

@@ -12,6 +12,8 @@ import Properties.Premises
   期限が horizon を越えるので用語「強い形」(GST 以後のすべての読み)で判定し、期限付きの形は判定外として併せて数える。
 - `IncludedFrom`: honest の提案が期限内にすべての honest の読みに入ること(生成 Statements `Statements.Consensus.Spec.Properties.IncludedFrom`、
   claim `available` の結論 `AvailableAt` の 2 項目。`proofs/Proofs/Consensus/Liveness.lean` の `liveFrom_of_includedFrom` の前提)。
+
+claim の検査器は `available`(前提 `SleepyRegime`、結論 `AvailableAt`)と `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`)。
 -/
 
 namespace Properties
@@ -382,5 +384,102 @@ def available (tl : Timeline) (p : Premises)
   let premiseDiag := if holding.isEmpty then sleepyFailure tl p recovery judged
     else s!"SleepyRegime holds at t0 in {(holding.map (·.1))}"
   return { out with diag := some s!"AvailableAt = SafeFrom(confirmed) ∧ IncludedFrom(confirmed, confirmationDelay {Spec.Constants.confirmationDelay s}) ∧ SafeFrom(stable) ∧ IncludedFrom(stable, stableInclusionDelay {Spec.Constants.stableInclusionDelay s}); {premiseDiag}" }
+
+/-! ## claim `confirmedLive` / `stableLive`(前提 `LiveSleepyRegime`、結論 `LiveFrom`) -/
+
+/-- 自由変数 `gap` の候補 `[1, (horizon - t0) / period]`。`gap = 0` の `SingleProposerRecurrence` は窓 `(t, t]` が空で、`t0 <= horizon` なら
+成り立たない。`gap · period > horizon - t0` の `gap` は `SingleProposerRecurrence` が空虚に成り立つが、結論の遅れ `gap · period + …` も
+horizon を越えて `LiveFrom` の義務がすべて判定外になるので列挙しない。 -/
+def liveGaps (tl : Timeline) (t0 : Int) : List Nat :=
+  let per := period tl.setup
+  if per ≤ 0 then [] else (List.range ((tl.rho.horizon - t0) / per).toNat.succ).filter (· ≥ 1)
+
+/-- `LiveFrom(s, rho, g, t0, d)`(生成 Statements `Statements.Consensus.Spec.Properties.LiveFrom`。手書き `LiveFrom`)の義務(時刻 `t`)を
+1 つの `(t0, d)` で判定して `out` に足す。`[t0, horizon]` の各 `t` について、`t + d > horizon` なら判定外、そうでなければ
+`HonestAfter(s, rho, t, b)`(`t < proposalTime(k)` の honest な提案 `proposedBlock(s, rho, k) = Some(b)`)∧ honest な全 `v` で
+`prec(outputAt(g, v, t), b)` ∧ `InBy(s, rho, g, b, t + d)` を満たす `b` を探す。存在量化の `b` は `HonestAfter` が honest な提案に限るので、
+候補は slot `k <= maxSlot(horizon)` の提案(`props`)で尽くす(それより後の slot の提案を候補から外すのは、見つからないときに違反を報告する側に
+しか働かない)。`read v t` は honest の読み(前もって表にしたもの)。`premiseOk` が偽なら義務を前提不成立に数える。 -/
+def liveFromAt (tl : Timeline) (g : Spec.Interface.Output) (d : Int) (read : Identifiers.ValidatorId → Int → Blocks.Block)
+    (props : Array (Option Blocks.Block)) (premiseOk : Bool) (t0 gap : Int) (out : Verdict) : Verdict := Id.run do
+  let s := tl.setup
+  let horizon := tl.rho.horizon
+  let honest := tl.rho.honest.elems
+  let mut out := out
+  for t in intRange t0 horizon do
+    if !premiseOk then out := { out with unmet := out.unmet + 1 }
+    else if t + d > horizon then out := { out with outside := out.outside + 1 }
+    else
+      let cands := (List.range props.size).filterMap fun k => if t < proposalTime s k then props[k]! else none
+      let above (b : Blocks.Block) : Bool := honest.all fun v => Blocks.prec (read v t) b
+      let inBy (b : Blocks.Block) : Bool := honest.all fun v => Blocks.preceq b (read v (t + d))
+      if cands.any fun b => above b && inBy b then out := { out with judged := out.judged + 1 }
+      else
+        let nAbove := (cands.filter above).length
+        let nIn := (cands.filter inBy).length
+        out := out.note s!"LiveFrom({outputLabel g}, t0 = {t0}, gap {gap}, d = {d}): at t = {t} no honest proposal after t is strictly above every honest {outputLabel g} read at t and in every honest read at t + d = {t + d} ({cands.length} candidate(s): {nAbove} strictly above the reads at t, {nIn} in the reads at t + d)"
+  return out
+
+/-- claim `confirmedLive(s, rho, t0, gap)` / `stableLive(s, rho, t0, gap)` の検査器(生成 Statements `Statements.Consensus.Spec.Claims.confirmedLive` /
+`stableLive`。手書き `Consensus.confirmedLive` / `Consensus.stableLive`): 前提 `SetupWellFormed(s)` ∧ `RunDomain(s, rho)` ∧
+`LiveSleepyRegime(s, rho, t0, gap)`(生成 Statements `Statements.Consensus.Spec.Regimes.LiveSleepyRegime` = `SleepyRegime(s, rho, t0)`(`sleepyAt`)∧
+`SingleProposerRecurrence(s, rho, t0, gap)`(`Timeline.singleProposerRecurrence`、厳密))、結論 `LiveFrom(s, rho, g, t0, delay(gap))`
+(`confirmedLive` は `g = Confirmed`、`delay = growthDelay(s, gap) = gap · period + confirmationDelay`、`stableLive` は `g = Stable`、
+`delay = stableGrowthDelay(s, gap) = gap · period + stableInclusionDelay`。`liveFromAt`)。自由変数 `t0` は `sleepyCandidates`、`gap` は `liveGaps` の値の
+うち前提が成り立つ組をすべて判定する(どれも成り立たなければ `(t0, gap) = (0, 1)` の義務を前提不成立に数える)。手書きの補題は
+`Generic.liveFrom_of_includedFrom`(`DecoupledConsensusProofs/Generic/Lemmas.lean`。`MonotoneFrom` ∧ `NoFutureRead` ∧ `IncludedFrom` ∧
+`SingleProposerRecurrence` から `LiveFrom`)で、`DecoupledConsensusProofs/ReviewTheorem.lean` が `confirmedLive` には `available_confirmedIncluded`、
+`stableLive` には `available_stableIncluded_any` を `IncludedFrom` に当てる。naru 側の `proofs/` は `proofs/Proofs/Consensus/Liveness.lean` の
+`liveFrom_of_includedFrom` / `confirmedLive_of_available` / `stableLive_of_available`(`AvailableAt` からの帰着。claim の theorem は C71 の残り)。
+`readOut` は負の検体のための差し替え。 -/
+def liveClaim (name : String) (g : Spec.Interface.Output) (delayOf : Nat → Int) (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict := Id.run do
+  let s := tl.setup
+  let I := tl.inputs
+  let horizon := tl.rho.horizon
+  let judged := sleepyChoices tl p recovery
+  let mut pairs : List (Int × Nat) := []
+  for (t0, j) in judged do
+    if j.holds then
+      pairs := pairs ++ ((liveGaps tl t0).filter (tl.singleProposerRecurrence t0)).map (t0, ·)
+  let ts : List (Int × Nat × Bool) := if pairs.isEmpty then [(0, 1, false)] else pairs.map fun (t0, gap) => (t0, gap, true)
+  let mut out : Verdict := { name := name }
+  if !pairs.isEmpty then
+    -- 読みと honest な提案は (v, t) / slot ごとに 1 回だけ計算する
+    let honest := tl.rho.honest.elems
+    let reads : List (Identifiers.ValidatorId × Array Blocks.Block) :=
+      honest.map fun v => (v, ((intRange 0 horizon).map fun t => readOut g v t).toArray)
+    let read (v : Identifiers.ValidatorId) (t : Int) : Blocks.Block :=
+      match reads.find? (·.1 == v) with
+      | some (_, arr) => arr[t.toNat]!
+      | none => readOut g v t
+    let props : Array (Option Blocks.Block) := (List.range (maxSlot s horizon + 1)).toArray.map fun k =>
+      if tl.rho.honest.contains (I.proposer k) then tl.proposedBlock k else none
+    for (t0, gap, ok) in ts do
+      out := liveFromAt tl g (delayOf gap) read props ok t0 gap out
+  else
+    for (t0, gap, ok) in ts do
+      out := liveFromAt tl g (delayOf gap) (readOut g) #[] ok t0 gap out
+  let premiseDiag :=
+    if !pairs.isEmpty then s!"LiveSleepyRegime holds at (t0, gap) in {pairs}"
+    else
+      let sleepy := judged.filter (·.2.holds)
+      if sleepy.isEmpty then sleepyFailure tl p recovery judged
+      else s!"SleepyRegime holds at t0 in {sleepy.map (·.1)}, but SingleProposerRecurrence fails for every gap in " ++
+        ", ".intercalate (sleepy.map fun (q : Int × Judge) => s!"{liveGaps tl q.1} (t0 = {q.1})")
+  return { out with diag := some s!"LiveFrom({outputLabel g}, t0, delay(gap)), delay(1) = {delayOf 1}, period {period s}; {premiseDiag}" }
+
+/-- claim `confirmedLive`: `LiveFrom(Confirmed, t0, growthDelay(s, gap))`。 -/
+def confirmedLive (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict :=
+  liveClaim "confirmedLive" .Confirmed (Spec.Constants.growthDelay tl.setup) tl p readOut recovery
+
+/-- claim `stableLive`: `LiveFrom(Stable, t0, stableGrowthDelay(s, gap))`。 -/
+def stableLive (tl : Timeline) (p : Premises)
+    (readOut : Spec.Interface.Output → Identifiers.ValidatorId → Int → Blocks.Block := tl.outputAt)
+    (recovery : Option RecoveryWitness := none) : Verdict :=
+  liveClaim "stableLive" .Stable (Spec.Constants.stableGrowthDelay tl.setup) tl p readOut recovery
 
 end Properties

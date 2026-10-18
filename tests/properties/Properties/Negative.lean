@@ -109,6 +109,40 @@ def negatives : List Negative := Id.run do
   let vok := available tlS pS
   out := out ++ [⟨"available(control: genuine reads)", vok.judged > 0 && vok.violations == 0 && vok.unmet == 0,
                   s!"judged {vok.judged} out-of-horizon {vok.outside} violations {vok.violations}"⟩]
+  -- 2e. claim confirmedLive / stableLive の結論 LiveFrom: 出力の読みを genesis に止めると、t の後の honest な提案は読みより上にあっても
+  --     t + d の読みに入らず、どの時刻の義務にも証人が無い
+  let vlc := confirmedLive tl p (readOut := fun _ _ _ => .Genesis)
+  out := out ++ [⟨"confirmedLive(stuck confirmed read)", vlc.violations > 0 && vlc.judged == 0 && hasNote vlc "LiveFrom(confirmed",
+                  s!"judged {vlc.judged} violations {vlc.violations}; first note: {vlc.notes[0]?.getD "-"}"⟩]
+  let vls := stableLive tlS pS (readOut := fun _ _ _ => .Genesis)
+  out := out ++ [⟨"stableLive(stuck stable read)", vls.violations > 0 && vls.judged == 0 && hasNote vls "LiveFrom(stable",
+                  s!"judged {vls.judged} violations {vls.violations}; first note: {vls.notes[0]?.getD "-"}"⟩]
+  -- 2e'. LiveFrom の前半(時刻 t の読みより厳密に上 `prec`): 読みをどの時刻でも horizon の読みに先取りさせると、t + d の読みに入る b は
+  --     t の読み(= horizon の読み)の接頭辞で厳密に上にはならず、上にある b は t + d の読みに入らない。`prec` を `preceq` に弱めた検査器なら
+  --     horizon の読みそのものを証人に拾って判定に流すので、この検体は前半の判定を確かめる
+  let ahead (g : Spec.Interface.Output) (v : Identifiers.ValidatorId) (_ : Int) : Blocks.Block := tl.outputAt g v tl.rho.horizon
+  let vla := confirmedLive tl p (readOut := ahead)
+  let finalHonest := tl.rho.honest.elems.all fun v => (List.range (maxSlot tl.setup tl.rho.horizon + 1)).any fun k =>
+    0 < proposalTime tl.setup k && tl.rho.honest.contains (tl.inputs.proposer k) && tl.proposedBlock k == some (ahead .Confirmed v 0)
+  out := out ++ [⟨"confirmedLive(read ahead of time: nothing strictly above the read)",
+                  finalHonest && vla.violations > 0 && vla.judged == 0 && hasNote vla "LiveFrom(confirmed",
+                  s!"horizon read is an honest proposal {finalHonest}; judged {vla.judged} violations {vla.violations}; first note: {vla.notes[0]?.getD "-"}"⟩]
+  -- 2f. 本物の読みでは confirmedLive / stableLive の義務が判定の経路を通り、違反しない(対照)
+  let vlcOk := confirmedLive tl p
+  let vlsOk := stableLive tlS pS
+  out := out ++ [⟨"confirmedLive / stableLive(control: genuine reads)",
+                  vlcOk.judged > 0 && vlcOk.violations == 0 && vlcOk.unmet == 0 && vlsOk.judged > 0 && vlsOk.violations == 0 && vlsOk.unmet == 0,
+                  s!"confirmedLive judged {vlcOk.judged} out-of-horizon {vlcOk.outside} violations {vlcOk.violations}; stableLive judged {vlsOk.judged} out-of-horizon {vlsOk.outside} violations {vlsOk.violations}"⟩]
+  -- 2g. SingleProposerRecurrence(LiveSleepyRegime の後半)の経路の単体: 提案者の入力だけをどの slot も honest でない値に差し替えると、
+  --     `liveGaps` の範囲のどの gap でも成り立たず(それより大きい gap は空虚に成り立つが結論の義務がすべて判定外)、前提の束は元の run の
+  --     もの(SleepyRegime は成り立つ)のまま confirmedLive は前提不成立に数える。本物の入力(対照)は gap 1 で成り立つ
+  let tlNp : Timeline := { tl with inputs := { tl.inputs with proposer := fun _ => vid 7 } }
+  let vNp := confirmedLive tlNp p
+  let recNo := (liveGaps tlNp 0).all fun gap => !tlNp.singleProposerRecurrence 0 gap
+  out := out ++ [⟨"SingleProposerRecurrence broken (no honest proposer)",
+                  recNo && tl.singleProposerRecurrence 0 1 && vNp.judged == 0 && vNp.unmet > 0
+                    && ((vNp.diag.getD "").splitOn "SingleProposerRecurrence fails").length > 1,
+                  s!"gaps {liveGaps tlNp 0}; control at gap 1: {tl.singleProposerRecurrence 0 1}; confirmedLive judged {vNp.judged} unmet {vNp.unmet}"⟩]
   -- 3. しきい値を超える byzantine(3 人中 2 人): BelowOneThird(hreadBound の前提)と WindowMajority(includedFrom の前提 SleepyRegime)が
   --    破れ、判定ではなく前提不成立に数える
   let tl3 := generate { baseSpec with name := "negative-two-thirds-byzantine", byzantine := [1, 2], byz := .equivocate }
@@ -122,8 +156,10 @@ def negatives : List Negative := Id.run do
   let p3w := Premises.of tl3w
   let v3w := includedFrom tl3w p3w .Confirmed (Spec.Constants.confirmationDelay tl3w.setup)
   let v3a := available tl3w p3w
-  out := out ++ [⟨"WindowMajority broken (honest asleep)", !p3w.windows.holds && v3w.judged == 0 && v3w.unmet > 0 && v3a.judged == 0 && v3a.unmet > 0,
-                  s!"{p3w.windows.render}; includedFrom judged {v3w.judged} unmet {v3w.unmet}; available judged {v3a.judged} unmet {v3a.unmet}"⟩]
+  let v3l := confirmedLive tl3w p3w
+  out := out ++ [⟨"WindowMajority broken (honest asleep)", !p3w.windows.holds && v3w.judged == 0 && v3w.unmet > 0 && v3a.judged == 0 && v3a.unmet > 0
+                    && v3l.judged == 0 && v3l.unmet > 0,
+                  s!"{p3w.windows.render}; includedFrom judged {v3w.judged} unmet {v3w.unmet}; available judged {v3a.judged} unmet {v3a.unmet}; confirmedLive judged {v3l.judged} unmet {v3l.unmet}"⟩]
   -- 3c. SlashableBound: validator 0 の同じ高さで target の違う 2 行(E2)を運ぶ 2 つのブロック。重み 1 は 2q − W = 1 に届くので
   --     slashable な証拠があり、判定器が捉える。本物の run(対照)は成り立つ
   let row (target : Nat) : Blocks.CombinedAttestation := ⟨vid 0, 1, none, .Target 1 ⟨target⟩, none⟩
