@@ -27,8 +27,11 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    上界は genesis(枝の分け方は周回 218、finalized の側は周回 220)。`commonUpper_genesis_long` は、確認の記録と finalized がそれぞれ
    ある slot 以後の投票の務めの head `voteDutyHeadAt` の祖先であることを言う `recordAt_preceq_laterVoteHead` / 穴 `finalizedAt_preceq_laterVoteHead`
    から、4 つの slot の最大で上界を揃えて証明する(周回 222)。`recordAt_preceq_laterVoteHead` は確認の記録の由来(証明済みの
-   `ConfirmedOrigin.storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か grade の stable root)で分け、穴
-   `confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head)と `confStableRoot_preceq_confWalk`(stable root ⪯ walk。穴ではない)から証明する(周回 224)。
+   `ConfirmedOrigin.storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か grade の stable root)で分け、
+   `confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head。穴ではない)と `confStableRoot_preceq_confWalk`(stable root ⪯ walk。穴ではない)から証明する(周回 224)。
+   `confWalk_preceq_laterVoteHead` は walk が anchor のままか filtered tree の適格な要素か(`Goldfish.head_cases`)で分け、anchor の枝は
+   `confAnchor_preceq_laterVoteHead`(g1 の frame の raw の active prefix か FG root なので穴 `confG1Raw_preceq_laterVoteHead` /
+   `confFgRoot_preceq_laterVoteHead` から)、動いた枝は穴 `confEligibleWalk_preceq_laterVoteHead` から証明する(周回 245)。
    `confStableRoot_preceq_confWalk` は stable root が FG root に戻る枝を FG root ⪯ SG root ⪯ head で閉じ、g2 の frame の root がある枝を
    `confFrameRoot_preceq_confWalk`(穴ではない)に渡す(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、
    round 0 は g2 の frame に root が無いので矛盾(`confCache_g2_round_zero`。G2 の round 0 の domain 時刻は `-Δ` で、run の event の時刻は 0 以上)、
@@ -51,8 +54,9 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(6 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/
+3. 穴(8 件): `confFgRoot_preceq_laterVoteHead` / `confG1Raw_preceq_laterVoteHead` / `confEligibleWalk_preceq_laterVoteHead`(手書き
+   `preparedFGRoot_preceq_voteDutyHead_of_gstZero` / `preparedG1Raw_preceq_voteDutyHead_of_gstZero` /
+   `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` の genuine な枝、`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -88,12 +92,104 @@ def voteDutyHeadAt (x : ValidatorId) (k : Nat) : Block :=
   Proofs.Consensus.Voting.voteHeadBlock (preparedCache s n tv) s.e s.hc
     (Proofs.Consensus.Voting.clocked s.e n.st tv).core
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の確認の walk
+/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の確認の更新の前の段の
+store の FG root は、`q < d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)の honest などのノードの slot `d` の投票の務めの head の祖先。
+手書き `preparedFGRoot_preceq_voteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+閉じるのに要るもの: FG root の確認の証人(手書き `WeakFG.fgRoot_confirmationWitness_at_read`: genesis か、確認の時刻までに出た
+attestation の target)と、務めの出どころが後の投票の head の祖先であること(手書き `actionSources_preceq_voteDutyHead_of_gstZero`)。 -/
+theorem confFgRoot_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
+    preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
+      (voteDutyHeadAt c p a nr s rho x d) = true := by
+  sorry
+
+/-- 穴: `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の更新の前の段の store の round の g1 の frame の raw ブロックは、
+slot `d` の投票の務めの head の祖先。手書き `preparedG1Raw_preceq_voteDutyHead_of_gstZero`
+(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+閉じるのに要るもの: round 0 は g1 の frame に root が無いこと(手書き `confirmationRead_g1_round_zero_no_root`)、正の round は
+raw が G1 の grade を通ること(手書き `WeakSG.phaseGrade_of_preparedFrame_g1`)と、grade の carrier(手書き
+`relativeGradeCarrierAt_of_awakeWindowMajority`)の honest な投票の務めの出どころ(手書き `actionSources_preceq_voteDutyHead_of_gstZero`)。 -/
+theorem confG1Raw_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) {raw : Block}
+    (hraw : (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 = some (some raw)) :
+    preceq raw (voteDutyHeadAt c p a nr s rho x d) = true := by
+  sorry
+
+/-- 穴: `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の walk が anchor から動いた(filtered tree の要素で、得点の 2 倍が
+遅い投票の参加者の数を超える。genuine な確認)なら、walk は slot `d` の投票の務めの head の祖先。手書き
+`preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` の genuine な枝(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+閉じるのに要るもの: 保護された投票の slot(手書き `protectedVoteSlots_of_gstZero_v2`)の `heads`。 -/
+theorem confEligibleWalk_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1)
+    (hmem : Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t ∈
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)).elems)
+    (hel : Proofs.Consensus.Goldfish.lateCount s.e (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core
+        (Model.Consensus.Objects.Parameters.slotOf s.e t - 1) <
+      2 * Proofs.Consensus.Goldfish.score s.e (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core
+        (Model.Consensus.Objects.Parameters.slotOf s.e t - 1) (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t)) :
+    preceq (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) (voteDutyHeadAt c p a nr s rho x d) = true := by
+  sorry
+
+/-- GST-zero の枝で、確認評価の tick の確認の walk の anchor(確認の更新の前の段の store の SG root)は、slot `d` の投票の務めの head の祖先。
+手書き `preparedConfirmationAnchor_preceq_voteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+anchor は g1 の frame の raw の active prefix(`Grade2Capture.activePrefix_preceq` で raw の祖先)か FG root なので、穴
+`confG1Raw_preceq_laterVoteHead` / `confFgRoot_preceq_laterVoteHead` から。 -/
+theorem confAnchor_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
+    preceq (Proofs.Consensus.Goldfish.sgRoot (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t) s.e s.hc
+        (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+      (voteDutyHeadAt c p a nr s rho x d) = true := by
+  have hfg := confFgRoot_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper
+  show preceq (Model.Consensus.Protocol.Grades.anchor s.e s.hc
+      (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+      (Model.Consensus.Protocol.Grades.roundOf s.hc
+        (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+      (Model.Consensus.Protocol.Grades.readFrame
+        (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1)
+    (voteDutyHeadAt c p a nr s rho x d) = true
+  unfold Model.Consensus.Protocol.Grades.anchor
+  split
+  · rename_i raw hraw
+    have hhead := confG1Raw_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hraw
+    cases hA : Model.Consensus.Protocol.Grades.activePrefix
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+          (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
+        raw with
+    | none => exact hfg
+    | some A => exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.Grade2Capture.activePrefix_preceq hA) hhead
+  · exact hfg
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の確認の walk
 (`ConfirmedOrigin.confWalkAt`: 確認の更新の前の段の fork choice の head)は、`q < d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)の
 honest などのノードの slot `d` の投票の務めの head の祖先。手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`
 (`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
-閉じるのに要るもの: walk が anchor から動かなければ prepared anchor の上界(手書き `preparedConfirmationAnchor_preceq_voteDutyHead_of_gstZero`。
-FG root の枝と G1 の raw の枝)、動けば genuine な確認で、保護された投票の slot(手書き `protectedVoteSlots_of_gstZero_v2`)の `heads`。 -/
+walk は anchor のままか(`Goldfish.head_cases`)、filtered tree の適格な要素なので、`confAnchor_preceq_laterVoteHead` と穴
+`confEligibleWalk_preceq_laterVoteHead` から(周回 245)。 -/
 theorem confWalk_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -101,7 +197,13 @@ theorem confWalk_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunD
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
     (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
     preceq (Proofs.Consensus.ConfirmedOrigin.confWalkAt c p a nr s rho w i t) (voteDutyHeadAt c p a nr s rho x d) = true := by
-  sorry
+  rcases Proofs.Consensus.Goldfish.head_cases (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t) s.e s.hc
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core
+      (Model.Consensus.Objects.Parameters.slotOf s.e t - 1) with h | ⟨hmem, hel⟩
+  · unfold Proofs.Consensus.ConfirmedOrigin.confWalkAt
+    rw [h]
+    exact confAnchor_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper
+  · exact confEligibleWalk_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hmem hel
 
 /-- round 0 の G2 の domain 時刻は `-Δ`(round 0 の opening slot は 0)。 -/
 theorem domainTime_zero_G2 (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig) :
@@ -1131,7 +1233,7 @@ slot `last + 1` の投票の務めの head の祖先。手書き `latestConfirme
 (`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)と、その本体の
 `latestConfirmed_preceq_laterVoteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
 確認の記録の由来(証明済みの `ConfirmedOrigin.storeAt_confirmed_origin`。周回 224)で分け、genesis なら `first = 0`、確認評価の tick
-(slot `q`)の walk か stable root なら `first = q` とし、穴 `confWalk_preceq_laterVoteHead`(と stable root は
+(slot `q`)の walk か stable root なら `first = q` とし、`confWalk_preceq_laterVoteHead`(と stable root は
 `confStableRoot_preceq_confWalk`)から。 -/
 theorem recordAt_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
