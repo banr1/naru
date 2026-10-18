@@ -46,13 +46,13 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `g1InterpretedCover_fwd` は SG 票の行と受信の印が残ること(`SgStamps.stateBefore_sgKeep`)と同じ root の解決で閉じた(周回 241)。
    `g1RawInputs_back` / `g1Interpreted_back` は、G2 の tick より後に入った SG 票とブロックの受信の印がその tick の時刻以上
    (`SgStamps.stateBefore_sgFresh` / `BlockStamps.stateBefore_fresh`)で `cut` は G2 の domain 時刻以下なので閉じた(周回 242)。
-   `confFrameG1_slot_positive` は、欄が閉じていること(穴 `confFrameG1_closed_positive`)と、完了した phase の結果の値
+   `confFrameG1_slot_positive` は、欄が閉じていること(`confFrameG1_closed_positive`。周回 244 に閉じた: G1 の domain 時刻の tick は tick の網羅性で確認評価の tick より前にあり、
+   間の tick の時計の round は同じなので欄が残る。`FrameCapture.stateBefore_closed` / `FrameCapture.onPhaseTick_closed`)と、完了した phase の結果の値
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
-   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/ `confFrameG1_closed_positive`(手書き
-   `frame_phase_completed_in_round`、`DecoupledConsensusProofs/Protocol/Grades/FrameCompleted.lean`)/
+3. 穴(6 件): `confWalk_preceq_laterVoteHead`(手書き `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero`、
+   `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/
    `finalizedAt_preceq_laterVoteHead`(手書き
    `finalizedAt_preceq_laterVoteDutyHead_of_gstZero`、`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -303,13 +303,43 @@ theorem tickPreUpdateStore_f (cache : Model.Consensus.Protocol.Grades.Cache)
     | exact Proofs.Consensus.Stores.proposeBlockWith_f' c p nr cache e hc cfg nd rfl
     | exact Proofs.Consensus.Blocks.preceq_self _
 
-/-- 穴: GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、その tick が
+open Proofs.Consensus.Clocks in
+/-- 確認の更新の前の段 `tickPreUpdateStore` の後の時計は `(t, slotOf e t)`(冒頭で合わせた時計を提案と投票が変えない)。 -/
+theorem tickPreUpdateStore_clockIs (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (cfg : Model.Consensus.Protocol.ChainState.HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : Model.Consensus.Protocol.Handlers.NamedStore) (t : Int) :
+    Proofs.Consensus.Clocks.ClockIs (Proofs.Consensus.AttestationSource.tickPreUpdateStore c p nr cache e hc cfg nd st t) t
+      (Model.Consensus.Objects.Parameters.slotOf e t) := by
+  have h0 : Proofs.Consensus.Clocks.ClockIs { st with core := { st.core with t := t, s := Model.Consensus.Objects.Parameters.slotOf e t } }
+      t (Model.Consensus.Objects.Parameters.slotOf e t) := ⟨rfl, rfl⟩
+  unfold Proofs.Consensus.AttestationSource.tickPreUpdateStore
+  dsimp only
+  split_ifs
+  all_goals first
+    | with_reducible exact namedGoldfishVoteWith_clockIs c cache hc nd (proposeBlockWith_clockIs c p nr cache hc nd h0)
+    | with_reducible exact namedGoldfishVoteWith_clockIs c cache hc nd h0
+    | with_reducible exact proposeBlockWith_clockIs c p nr cache hc nd h0
+    | with_reducible exact h0
+
+/-- round `R` の G1 の domain 時刻は round `R` の opening slot の開始(`domainOffset G1 = 0`)。 -/
+theorem domainTime_G1 (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (R : Nat) :
+    Model.Consensus.Protocol.Grades.domainTime e hc R Model.Consensus.Protocol.Grades.GradePhase.G1 =
+      Model.Consensus.Protocol.Schedule.proposalTime e (Model.Consensus.Protocol.Grades.openingSlot hc R) := by
+  unfold Model.Consensus.Protocol.Grades.domainTime Model.Consensus.Protocol.Grades.openingTime
+  simp [Model.Consensus.Protocol.Grades.domainOffset]
+
+/-- GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、その tick が
 準備する cache(`ConfirmedOrigin.confCacheAt`)の round `R` の frame の G1 の結果は完了している(`none` でない)。
 手書き `FrameCompleted.frame_phase_completed_of_tick_in_round`(`Protocol/Grades/FrameCompleted.lean`)の段 1・2(domain の tick が欄を閉じ、読みまで残る)と、
-`frame_phase_completed_in_round` の domain の tick の存在(`tick_total`)に当たる(周回 243 に `confFrameG1_slot_positive` から切り出した)。
-閉じるのに要るもの: honest なノードは horizon までの各時刻に tick を持つこと(手書き `tick_total`)、確認評価の tick の時刻が round `R` の
-G1 の domain 時刻(opening)より後で次の round の opening 以下であること、その間の tick の `alignRound` が round `R` の frame を捨てないこと
-(cache の round はその tick の時計の round 以下。手書き `cache_round_le_tick` / `cacheAtRound_align` / `slot_some_index`)。 -/
+`frame_phase_completed_in_round` の domain の tick の存在(`tick_total`)に当たる(周回 243 に `confFrameG1_slot_positive` から切り出し、周回 244 に閉じた)。
+確認の更新の前の段の slot は確認評価の tick の slot `S = slotOf e t`(`tickPreUpdateStore_clockIs`)で、`R = roundOf hc S`。
+G1 の domain 時刻 `T1 = proposalTime (R * r)`(`domainTime_G1`)は公開時刻で `0 ≤ T1 < t ≤ horizon`(`t = supportCutoff S`)なので、
+`ScheduleWellFormed` の tick の網羅性から `w` の tick `Tick w T1` が添字 `j < i` にある(`Window.honest_tick_index` / `Window.lt_of_time_lt`)。
+`j` と `i` の間の `w` の tick の時刻は `T1` 以上 `t` 以下(event の整列)なので、その slot は `R * r` 以上 `S` 以下で round は `R`。
+よって `FrameCapture.stateBefore_closed` で tick の前の cache の round は `R` で G1 の欄は閉じていて、確認評価の tick の
+`onPhaseTick` も同じ round なので欄を残す(`FrameCapture.onPhaseTick_closed`)。 -/
 theorem confFrameG1_closed_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
@@ -319,13 +349,73 @@ theorem confFrameG1_closed_positive (hwf : SetupWellFormed c p s) (hdom : RunDom
     (Model.Consensus.Protocol.Grades.cacheAtRound (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
       (Model.Consensus.Protocol.Grades.roundOf s.hc
         (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)).g1 ≠ none := by
-  sorry
+  have hsch : ScheduleWellFormed s rho := by
+    have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+    unfold ExecutionValid at hexec
+    exact hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  obtain ⟨hδ, -, hr⟩ := Proofs.Consensus.Liveness.wf_facts hwf
+  have hS : (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s =
+      Model.Consensus.Objects.Parameters.slotOf s.e t :=
+    (tickPreUpdateStore_clockIs c p nr _ s.e s.hc s.cfg _ _ t).2
+  rw [hS]
+  set S := Model.Consensus.Objects.Parameters.slotOf s.e t with hSdef
+  set R := Model.Consensus.Protocol.Grades.roundOf s.hc S with hRdef
+  set T1 := Model.Consensus.Protocol.Grades.domainTime s.e s.hc R Model.Consensus.Protocol.Grades.GradePhase.G1 with hT1def
+  have hT1 : T1 = Model.Consensus.Protocol.Schedule.proposalTime s.e (R * s.hc.r) := domainTime_G1 s.e s.hc R
+  have hRS : R * s.hc.r ≤ S := Nat.div_mul_le_self S s.hc.r
+  -- 時刻の範囲: `0 ≤ T1 < t ≤ horizon`
+  have hT1nn : 0 ≤ T1 := hT1 ▸ Proofs.Consensus.Window.proposalTime_nonneg s.e hδ.le _
+  have hT1t : T1 < t := by
+    have h1 := Proofs.Consensus.Clocks.proposalTime_mono s.e hδ hRS
+    have h2 : t = Model.Consensus.Protocol.Schedule.proposalTime s.e S + 2 * s.e.delta := ht.2.2
+    rw [hT1]
+    linarith
+  have hth : t ≤ rho.horizon := (Proofs.Consensus.Window.eventTime_bounds hsch (List.mem_of_getElem? ht.1)).2
+  -- domain の tick
+  obtain ⟨j, hj⟩ := Proofs.Consensus.Window.honest_tick_index hsch hw
+    (hT1 ▸ Proofs.Consensus.Window.publicTime_proposalTime s.e _) hT1nn (by linarith)
+  have hji : j < i := Proofs.Consensus.Window.lt_of_time_lt hs hj ht.1 hT1t
+  have hr0 : 0 < s.hc.r := by omega
+  have hround : ∀ x : Nat, R * s.hc.r ≤ x → x ≤ S → Model.Consensus.Protocol.Grades.roundOf s.hc x = R := by
+    intro x h1 h2
+    unfold Model.Consensus.Protocol.Grades.roundOf
+    have h3 : x / s.hc.r ≤ S / s.hc.r := Nat.div_le_div_right h2
+    have h4 : R * s.hc.r / s.hc.r ≤ x / s.hc.r := Nat.div_le_div_right h1
+    rw [Nat.mul_div_cancel _ hr0] at h4
+    exact le_antisymm h3 h4
+  have hτR : Model.Consensus.Protocol.Grades.roundOf s.hc (Model.Consensus.Objects.Parameters.slotOf s.e T1) = R := by
+    rw [hT1, Proofs.Consensus.Clocks.slotOf_proposalTime s.e hδ]
+    exact hround _ le_rfl hRS
+  -- 間の tick の round は `R`
+  have hmid : ∀ (m : Nat) (u : Int), j < m → m < i →
+      rho.events[m]? = some (NamedEvent.Tick w u) →
+      Model.Consensus.Protocol.Grades.roundOf s.hc (Model.Consensus.Objects.Parameters.slotOf s.e u) = R := by
+    intro m u hjm hmi hm
+    have hle1 : T1 ≤ u := by
+      have h := hs j m hjm
+      simp only [hj, hm] at h
+      exact Proofs.Consensus.Runs.time_le_of_key_ne_gt h
+    have hle2 : u ≤ t := by
+      have h := hs m i hmi
+      simp only [hm, ht.1] at h
+      exact Proofs.Consensus.Runs.time_le_of_key_ne_gt h
+    refine hround _ ?_ (Proofs.Consensus.Clocks.slotOf_mono s.e hδ hle2)
+    have h := Proofs.Consensus.Clocks.slotOf_mono s.e hδ hle1
+    rwa [hT1, Proofs.Consensus.Clocks.slotOf_proposalTime s.e hδ] at h
+  obtain ⟨hc1, hc2⟩ := Proofs.Consensus.FrameCapture.stateBefore_closed c p a nr s rho w hj hτR hT1def hji hmid
+  obtain ⟨hc3, hc4⟩ := Proofs.Consensus.FrameCapture.onPhaseTick_closed
+    (st := Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho i) w).st.core)
+    (P := Model.Consensus.Protocol.Grades.GradePhase.G1) (R := R) rfl (Or.inl ⟨hc1, hc2⟩)
+  unfold Proofs.Consensus.ConfirmedOrigin.confCacheAt
+  rw [Proofs.Consensus.FrameCapture.cacheAtRound_self hc3]
+  exact hc4
 
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick の、確認の更新の前の段の store の round `R` が正なら、読みの frame の
 G1 の欄は閉じていて、添字 `j1 ≤ i` の event `Tick w (domainTime e hc R G1)` の前の store で凍結した `freezeRoot` を読みの store の
 finalized `F` で切り詰めたもの。その store の finalized は `F` の祖先。手書き `FrameCompleted.frame_phase_completed_in_round`
 (`Protocol/Grades/FrameCompleted.lean`)の G1 の枝と、手書き `q10_g1_slot_of_g2_slot` の `hFmono`(`stateBefore_F_mono`)に当たる(周回 234)。
-欄が閉じていることは穴 `confFrameG1_closed_positive`、値は確認評価の tick の phase tick の段 `FrameCapture.onPhaseTick_phase_some`
+欄が閉じていることは `confFrameG1_closed_positive`(周回 244 に閉じた)、値は確認評価の tick の phase tick の段 `FrameCapture.onPhaseTick_phase_some`
 (この tick の凍結か tick の前の結果)と run の帰納 `FrameCapture.stateBefore_phase_origin`(完了した結果は domain の tick の凍結を
 いまの finalized で切り詰めたもの)から、切り詰めを `FrameCapture.map_clip_clip` でまとめて出す。finalized の単調性は
 `ReceiverFinality.stateBefore_f_mono` と `tickPreUpdateStore_f`(周回 243)。 -/

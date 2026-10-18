@@ -19,6 +19,10 @@ domain 時刻の tick の前の store で凍結した `freezeRoot` を、いま�
    切り詰めたもの(`stateBefore_phase_origin`)。ノードの tick と配送の後の cache は、新しい store の finalized で `clipCache` を掛けたもの
    (`nodeTick_cache_eq` / `nodeProcess_cache_eq`)で、finalized は縮まない(`Stores.nodeTick_f` / `Stores.nodeProcess_f`)ので 1 で
    切り詰めが 1 回にまとまる。初期の cache の正の round の結果は未完了(`initialCache_phase_none`)。
+4. 欄が閉じていること: phase tick は、時計の round が `R` で、tick の前の cache の round が `R` で欄が閉じているか、tick の時刻が
+   round `R` の domain 時刻なら、round `R` の欄を閉じたまま返す(`onPhaseTick_closed`。`completeOne` は閉じた欄を開かない)。
+   run の帰納 `stateBefore_closed`: domain の tick の後、間の自分の tick の時計の round がどれも `R` なら、cache の round は `R` で欄は
+   閉じている(配送の `clipCache` も欄を保つ)。手書き `FrameCompleted` の段 1・2(`phase_domain_cache` / `slot_some_index`。周回 244)。
 
 手書き `NamedCacheProvenance.completed_phase_before_read` と、`FrameCompleted.frame_phase_completed_of_tick_in_round` の段 3
 (値の読み戻し)に当たる。手書きは node の不変条件(cache は自分の finalized で切り詰め済み)と時刻の strict read を経由するが、
@@ -268,5 +272,155 @@ theorem stateBefore_phase_origin (n : Nat) (w : ValidatorId) {k : Nat} (hk : 0 <
             exact hw)
 
 end Run
+
+/-! ## 欄が閉じていること -/
+
+/-- `completeOne` は完了した欄を未完了に戻さない。 -/
+theorem completeOne_ne_none {e : ProtocolEnv} {hc : HealConfig} {st : FGStore} {r : Nat} {t : Int} {P Q : GradePhase}
+    {fr : Frame} (h : phaseResult fr Q ≠ none) : phaseResult (completeOne e hc st r t P fr) Q ≠ none := by
+  by_cases hQ : Q = P
+  · subst hQ
+    unfold completeOne
+    split
+    · exact h
+    · next hn => exact absurd hn h
+  · rw [completeOne_other fr hQ]
+    exact h
+
+/-- phase `P` の `completeOne` の後、`P` の欄は、元から閉じていたか tick の時刻が domain 時刻なら閉じている。 -/
+theorem completeOne_closed {e : ProtocolEnv} {hc : HealConfig} {st : FGStore} {r : Nat} {t : Int} {P : GradePhase}
+    {fr : Frame} (h : phaseResult fr P ≠ none ∨ t = domainTime e hc r P) :
+    phaseResult (completeOne e hc st r t P fr) P ≠ none := by
+  rcases h with h | ht
+  · exact completeOne_ne_none h
+  · unfold completeOne
+    split
+    · next x hx => rw [hx]; simp
+    · rw [ite_eq_left (by simp [ht])]
+      cases P <;> simp [putPhase, phaseResult]
+
+/-- `completeFrame` の後、phase `P` の欄は、元から閉じていたか tick の時刻が domain 時刻なら閉じている。 -/
+theorem completeFrame_closed {e : ProtocolEnv} {hc : HealConfig} {st : FGStore} {r : Nat} {t : Int} {P : GradePhase}
+    {fr : Frame} (h : phaseResult fr P ≠ none ∨ t = domainTime e hc r P) :
+    phaseResult (completeFrame e hc st r t fr) P ≠ none := by
+  unfold completeFrame
+  cases P with
+  | G0 =>
+    refine completeOne_closed ?_
+    rcases h with h | h
+    · exact Or.inl (completeOne_ne_none (completeOne_ne_none h))
+    · exact Or.inr h
+  | G1 => exact completeOne_ne_none (completeOne_closed (h.imp_left completeOne_ne_none))
+  | G2 => exact completeOne_ne_none (completeOne_ne_none (completeOne_closed h))
+
+theorem clipResult_ne_none {f : Block} {r : Option (Option Block)} (h : r ≠ none) : clipResult f r ≠ none := by
+  rcases r with _ | y
+  · exact absurd rfl h
+  · simp [clipResult]
+
+theorem alignRound_round (c : Cache) (r : Nat) : (alignRound c r).round = r := by
+  unfold alignRound
+  split_ifs with h1
+  · simp only [beq_iff_eq] at h1
+    exact h1.symm
+  all_goals rfl
+
+theorem alignRound_self {c : Cache} {r : Nat} (h : c.round = r) : alignRound c r = c := by
+  unfold alignRound
+  rw [ite_eq_left (by simp [h])]
+
+theorem cacheAtRound_self {c : Cache} {r : Nat} (h : c.round = r) : cacheAtRound c r = c.current := by
+  unfold cacheAtRound
+  rw [ite_eq_left (by simp [h])]
+
+/-- **phase tick は round `R` の欄を閉じる**: tick の時計の round が `R` で、tick の前の cache の round が `R` でその phase `P` の欄が
+閉じているか、tick の時刻が round `R` の phase `P` の domain 時刻なら、tick の後の cache の round は `R` で、`P` の欄は閉じている。
+手書き `FrameCompleted` の `phase_domain_cache`(domain の tick が欄を閉じる)と `cacheAtRound_align`(同じ round の tick は frame を残す)。 -/
+theorem onPhaseTick_closed {e : ProtocolEnv} {hc : HealConfig} {st : FGStore} {t : Int} {c : Cache} {R : Nat}
+    {P : GradePhase} (hR : roundOf hc (slotOf e t) = R)
+    (h : (c.round = R ∧ phaseResult c.current P ≠ none) ∨ t = domainTime e hc R P) :
+    (onPhaseTick e hc st t c).round = R ∧ phaseResult (onPhaseTick e hc st t c).current P ≠ none := by
+  have hround : (onPhaseTick e hc st t c).round = R := by
+    show (alignRound c (roundOf hc (slotOf e t))).round = R
+    rw [alignRound_round, hR]
+  have hcur : (onPhaseTick e hc st t c).current =
+      clipFrame st.f (completeFrame e hc st R t (alignRound c (roundOf hc (slotOf e t))).current) := by
+    show clipFrame st.f (completeFrame e hc st (alignRound c (roundOf hc (slotOf e t))).round t _) = _
+    rw [alignRound_round, hR]
+  refine ⟨hround, ?_⟩
+  rw [hcur, phaseResult_clipFrame]
+  refine clipResult_ne_none (completeFrame_closed ?_)
+  rcases h with ⟨hc0, hc1⟩ | ht
+  · left
+    rw [hR, alignRound_self hc0]
+    exact hc1
+  · exact Or.inr ht
+
+theorem clipCache_round (f : Block) (c : Cache) : (clipCache f c).round = c.round := rfl
+
+theorem clipCache_current_ne_none {f : Block} {c : Cache} {P : GradePhase} (h : phaseResult c.current P ≠ none) :
+    phaseResult (clipCache f c).current P ≠ none := by
+  show phaseResult (clipFrame f c.current) P ≠ none
+  rw [phaseResult_clipFrame]
+  exact clipResult_ne_none h
+
+section Closed
+
+variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+  (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun)
+
+/-- **閉じた欄は残る**(run の帰納): 添字 `j` の event が `w` の round `R` の phase `P` の domain 時刻の tick(その時刻の時計の
+round は `R`)で、`j` と `n` の間の `w` の tick の時計の round がどれも `R` なら、`stateBefore n`(`j < n`)の `w` の cache の round は
+`R` で、`P` の欄は閉じている。tick は `onPhaseTick_closed`、配送は `clipCache` で欄を保ち、他のノードの event は `w` を変えない。
+手書き `FrameCompleted.frame_phase_completed_of_tick_in_round` の段 1・2(`phase_domain_cache` / `slot_some_index`)に当たる(周回 244)。 -/
+theorem stateBefore_closed (w : ValidatorId) {R : Nat} {P : GradePhase} {j : Nat} {τ : Int}
+    (hj : rho.events[j]? = some (NamedEvent.Tick w τ)) (hτR : roundOf s.hc (slotOf s.e τ) = R)
+    (hτ : τ = domainTime s.e s.hc R P)
+    {n : Nat} (hjn : j < n)
+    (hmid : ∀ (m : Nat) (u : Int), j < m → m < n → rho.events[m]? = some (NamedEvent.Tick w u) →
+      roundOf s.hc (slotOf s.e u) = R) :
+    (worldAt (stateBefore c p a nr s rho n) w).cache.round = R ∧
+      phaseResult (worldAt (stateBefore c p a nr s rho n) w).cache.current P ≠ none := by
+  induction n, hjn using Nat.le_induction with
+  | base =>
+    rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hj]
+    unfold worldStep
+    dsimp only
+    rw [Proofs.Consensus.Signing.worldAt_insert_self, nodeTick_cache_eq]
+    obtain ⟨h1, h2⟩ := onPhaseTick_closed (st := storeToHealing (worldAt (stateBefore c p a nr s rho j) w).st.core)
+      (c := (worldAt (stateBefore c p a nr s rho j) w).cache) hτR (Or.inr hτ)
+    exact ⟨h1, clipCache_current_ne_none h2⟩
+  | succ n hjn ih =>
+    obtain ⟨ih1, ih2⟩ := ih (fun m u hjm hmn hm => hmid m u hjm (Nat.lt_succ_of_lt hmn) hm)
+    cases hev : rho.events[n]? with
+    | none =>
+      rw [Proofs.Consensus.Signing.stateBefore_succ_of_none c p a nr s rho hev]
+      exact ⟨ih1, ih2⟩
+    | some ev =>
+      rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev]
+      cases ev with
+      | Tick u t =>
+        unfold worldStep
+        dsimp only
+        by_cases huw : u = w
+        · subst huw
+          rw [Proofs.Consensus.Signing.worldAt_insert_self, nodeTick_cache_eq]
+          obtain ⟨h1, h2⟩ := onPhaseTick_closed (st := storeToHealing (worldAt (stateBefore c p a nr s rho n) u).st.core)
+            (c := (worldAt (stateBefore c p a nr s rho n) u).cache) (P := P)
+            (hmid n t hjn (Nat.lt_succ_self n) hev) (Or.inl ⟨ih1, ih2⟩)
+          exact ⟨h1, clipCache_current_ne_none h2⟩
+        · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ huw]
+          exact ⟨ih1, ih2⟩
+      | Deliver u o t =>
+        unfold worldStep
+        dsimp only
+        by_cases huw : u = w
+        · subst huw
+          rw [Proofs.Consensus.Signing.worldAt_insert_self, nodeProcess_cache_eq]
+          exact ⟨ih1, clipCache_current_ne_none ih2⟩
+        · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ huw]
+          exact ⟨ih1, ih2⟩
+
+end Closed
 
 end Proofs.Consensus.FrameCapture
