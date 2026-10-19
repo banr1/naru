@@ -494,12 +494,17 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 `recordAt_preceq_laterVoteHead` / `finalizedAt_preceq_laterVoteHead` から、4 つの slot の最大で上界を揃えて証明します(周回 222)。
 `finalizedAt_preceq_laterVoteHead`(穴ではない。周回 248)は手書きと同じく、時刻 `t` の読みを時刻 `< t + 1` の読みに移して finalized ⪯ FG root
 (`ReceiverFinality.store_fgRoot_extends`)とし、FG root を `RootWitness.stateBeforeTime_fgRoot_confirmationWitness` で genesis(`first = 0`)か honest な行の
-務めの確認の証人に分け、後者は行の時刻が行の round の action 時刻 = opening slot の確認の時刻なので `first` を opening slot にとり、穴
-`fgWitness_preceq_laterVoteHead` に渡します。
+務めの確認の証人に分け、後者は行の時刻が行の round の action 時刻 = opening slot の確認の時刻なので `first` を opening slot にとり、
+`fgWitness_preceq_laterVoteHead` に渡します。`fgWitness_preceq_laterVoteHead`(穴ではない。周回 250)は手書き
+`actionSources_preceq_voteDutyHead_of_gstZero` と同じく、round の同時帰納 `RootWitness.dutyStoreAt_jointRoundInduction_of_prior`(手書き
+`WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`・行の時刻 `< voteTime (d + 1)`・行ごとの性質 SG block ⪯ head で掛け、
+段の genuine な確認(行を出した tick は確認評価の tick で slot は `d` 未満。`emits_confTick` / `emits_slot_lt_of_lt_nextVote`)を穴
+`genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`)から、SG block と grade 2 の候補を穴
+`fgStep_preceq_laterVoteHead`(手書きの帰納の段の `hroots` の後。round 0 の枝と `hformation` の枝)から供給します。
 `recordAt_preceq_laterVoteHead` は確認の記録の由来(`ConfirmedOrigin.lean` の `storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か
 grade の stable root。手書き `ConfirmationOrigin.stateBefore_latest_confirmed_origin`)で分け、`confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head。穴ではない。
 手書きと同じく walk が anchor のままか filtered tree の適格な要素か(`Goldfish.head_cases`)で分け、anchor は g1 の frame の raw の active prefix か FG root なので
-`confG1Raw_preceq_laterVoteHead`(round 0 は凍結が空なので g1 の frame に root が無く矛盾(`confCache_g1_round_zero`: `FrameCapture.freezeRoot_zero` / `FrameCapture.stateBefore_phase_zero`。手書き `confirmationRead_g1_round_zero_no_root`)、正の round は穴 `confG1Raw_preceq_laterVoteHead_positive`。周回 246)と `confFgRoot_preceq_laterVoteHead`(穴ではない。FG root を tick の時刻の読みの FG root に移し(`confPreUpdate_fgRoot`: 確認の締切は提案時刻ではない)、証明済みの `RootWitness.stateBeforeTime_fgRoot_confirmationWitness`(手書き `WeakFG.fgRoot_confirmationWitness_at_read`)で genesis か honest な行の務めの確認の証人に分け、後者は穴 `fgWitness_preceq_laterVoteHead`(手書き `actionSources_preceq_voteDutyHead_of_gstZero` の FG の証人の結論)から。周回 247)から `confAnchor_preceq_laterVoteHead` で、動いた walk は穴 `confEligibleWalk_preceq_laterVoteHead` から。周回 245)と
+`confG1Raw_preceq_laterVoteHead`(round 0 は凍結が空なので g1 の frame に root が無く矛盾(`confCache_g1_round_zero`: `FrameCapture.freezeRoot_zero` / `FrameCapture.stateBefore_phase_zero`。手書き `confirmationRead_g1_round_zero_no_root`)、正の round は穴 `confG1Raw_preceq_laterVoteHead_positive`。周回 246)と `confFgRoot_preceq_laterVoteHead`(穴ではない。FG root を tick の時刻の読みの FG root に移し(`confPreUpdate_fgRoot`: 確認の締切は提案時刻ではない)、証明済みの `RootWitness.stateBeforeTime_fgRoot_confirmationWitness`(手書き `WeakFG.fgRoot_confirmationWitness_at_read`)で genesis か honest な行の務めの確認の証人に分け、後者は `fgWitness_preceq_laterVoteHead`(手書き `actionSources_preceq_voteDutyHead_of_gstZero` の FG の証人の結論)から。周回 247)から `confAnchor_preceq_laterVoteHead` で、動いた walk は `confEligibleWalk_preceq_laterVoteHead`(walk は genuine な確認なので穴 `genuineConf_preceq_laterVoteHead` から。周回 250)から。周回 245)と
 `confStableRoot_preceq_confWalk`(stable root ⪯ walk。穴ではない)から証明します(周回 224)。`confStableRoot_preceq_confWalk` は stable root が FG root に戻る枝を
 FG root ⪯ SG root ⪯ head(`ProposerRoot.getSgRootWith_extends_fgRoot` / `Goldfish.sgRoot_preceq_head`)で閉じ、g2 の frame の root がある枝を
 `confFrameRoot_preceq_confWalk`(穴ではない)に渡します(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、round 0 は
@@ -536,9 +541,9 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.fgWitness_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `actionSources_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 247 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_gstZero_v2` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 250 |
+| `Proofs.Consensus.AvailableHoles.fgStep_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `actionSources_preceq_of_priorConfirmations_and_historyCut` | `DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean` | 250 |
 | `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead_positive` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 246 |
-| `Proofs.Consensus.AvailableHoles.confEligibleWalk_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `preparedConfirmationWalk_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 245 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
