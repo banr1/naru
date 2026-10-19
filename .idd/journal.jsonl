@@ -299,3 +299,4 @@
 {"at":"2026-10-19T13:53:09Z","kind":"cycle","cycle":267,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-19T16:37:17Z","kind":"cycle","cycle":268,"outcome":"failed","reason":"launch_failed(exit 1)","agent":"claude","files_changed":0}
 {"at":"2026-10-19T16:37:18Z","kind":"loop","stop":"failed","cycle":268,"limit":2}
+{"at":"2026-10-19T18:04:24Z","kind":"human","action":"resume","note":"周回 267・268 の launch_failed(exit 1) は Wi-Fi 切断による起動失敗(人間の申告)。api.anthropic.com への到達を curl で確認済み。","released":"failed","ideal_sha":"d1e94e34cb5370bbdb956aed763e8a89116b7e79cb9303b55c49a5d612593e2f"}
