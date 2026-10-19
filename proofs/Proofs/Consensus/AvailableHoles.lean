@@ -61,8 +61,9 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `relativeGradeCarrierAt_of_commonUpper` から証明する。finalized の側は `stateBeforeTime_f_preceq_of_witnesses` で読みより前の
    honest な行の確認の証人に下ろす(周回 257)。共通の構成は、解釈済みの入力を持つ honest な多数派(穴
    `honestInterpretedMajority_of_commonUpper`)から grade の honest な支持者の入力を取り(`GradeSupporter.phase_graded_has_honest_supporter`)、
-   それを送り手が出した行に戻し(`SgFrom.sg_genuine`)、その `confirmed` の解決を行の SG block と同一視する(穴 `sgBlockAt_findRoot_eq`)
-   (周回 258)。
+   それを送り手が出した行に戻し(`SgFrom.sg_genuine`)、その `confirmed` の解決を行の SG block と同一視する(`sgBlockAt_findRoot_eq`)
+   (周回 258)。`sgBlockAt_findRoot_eq` は、SG block が務めの store の tree にあり(`sgBlockAt_mem_dutyTree`)、その bodies が tick の後の
+   bodies(`stateBefore_succ_bodies_of_emits`)なので run の中のブロックで、run に root の衝突が無いことで閉じた(周回 259)。
    `confStableRoot_preceq_confWalk` は stable root が FG root に戻る枝を FG root ⪯ SG root ⪯ head で閉じ、g2 の frame の root がある枝を
    `confFrameRoot_preceq_confWalk`(穴ではない)に渡す(周回 226)。`confFrameRoot_preceq_confWalk` は確認の更新の前の段の store の round で分け、
    round 0 は g2 の frame に root が無いので矛盾(`confCache_g2_round_zero`。G2 の round 0 の domain 時刻は `-Δ` で、run の event の時刻は 0 以上)、
@@ -85,12 +86,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
+3. 穴(6 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
    `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean`)/
    `honestInterpretedMajority_of_commonUpper`(手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero` が
    `relativeGradeCarrierAt_of_awakeWindowMajority` に渡す `hmajority` / `htransport`、`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)/
-   `sgBlockAt_findRoot_eq`(手書き `relativeGradeCarrierAt_of_awakeWindowMajority` の `hhead` の段、
-   `DecoupledConsensusProofs/Protocol/Grades/RelativeOneChain.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
    `stableIncluded`(手書き `available_stableIncluded_any`)。
@@ -558,14 +557,90 @@ theorem honestInterpretedMajority_of_commonUpper (hwf : SetupWellFormed c p s) (
         Model.Consensus.Objects.Weights.weightOf s.e.electorate A := by
   sorry
 
-/-- 穴: honest な `u` が添字 `i2` の tick(時刻 `t2`)で行を出したなら、その務めの SG block の root は、どの honest なノード `w` の
+/-- **務めの SG block は務めの store の tree の要素**(前提なし): `currentSGVote` の 4 つの枝 — `deepestClear` の結果は
+`liveConfirmed`(`TreeInv.live`)の祖先で tree は親について閉じている(`Trees.tree_closed`)、grade 2 の候補は filtered tree の
+`activePrefix`(`AttestationSource.grade2BlockWith_mem`)、FG root は `j` か `f`(`Trees.getFgRoot_cases`)、anchor は filtered tree の
+`activePrefix` か FG root — がどれも務めの store の tree にある。不変条件は `stateBefore` の `StoreInv` / `TreeInv` を
+`tickDutyStore` が受け継ぐ(周回 259)。 -/
+theorem sgBlockAt_mem_dutyTree (w : ValidatorId) (i : Nat) (t : Int) :
+    Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho w i t ∈
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.tree.elems := by
+  have hi : Proofs.Consensus.Carrier.StoreInv s.e s.cfg (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t) :=
+    Proofs.Consensus.AttestationSource.tickDutyStore_inv c p nr _ s.hc _ t
+      (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i w)
+  have ht : Proofs.Consensus.Trees.TreeInv (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core :=
+    Proofs.Consensus.AttestationSource.tickDutyStore_treeInv c p nr _ s.hc _ t
+      (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i w)
+      (Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i w)
+  have hfg : Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core) ∈
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.tree.elems := by
+    rcases Proofs.Consensus.Trees.getFgRoot_cases (Model.Consensus.Protocol.Store.storeToHealing
+        (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core) with h | h
+    · rw [h]; exact ht.j
+    · rw [h]; exact ht.f
+  unfold Proofs.Consensus.RootWitness.sgBlockAt
+  unfold Model.Consensus.Protocol.Duties.Inputs.getSgVoteWith Model.Consensus.Protocol.Grades.currentSGVote
+  split
+  · rename_i b hb
+    exact Proofs.Consensus.Trees.ancestor_mem_tree (Proofs.Consensus.Trees.tree_closed hi)
+      (Proofs.Consensus.AttestationSource.deepestClear_preceq hb) ht.live
+  · dsimp only
+    split
+    · rename_i q hq
+      exact Proofs.Consensus.AttestationSource.grade2BlockWith_mem hq
+    · split_ifs
+      · exact hfg
+      · unfold Model.Consensus.Protocol.Grades.frameGradeRead Model.Consensus.Protocol.Grades.anchor
+        dsimp only
+        split
+        · rename_i g _
+          cases hb : Model.Consensus.Protocol.Grades.activePrefix
+              (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree (Model.Consensus.Protocol.Store.storeToHealing
+                (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core)) g with
+          | none => simpa only [Option.getD_none] using hfg
+          | some b =>
+            rw [Option.getD_some]
+            exact Proofs.Consensus.Trees.getFilteredBlockTree_sub (Proofs.Consensus.Trees.activePrefix_mem hb)
+        · exact hfg
+
+/-- **行を出した tick の後の bodies は務めの store の bodies**(重複なし): `u` が時刻 `t` に行を出し、添字 `i` の event が
+`Tick u t` なら、`stateBefore (i + 1)` の `u` の bodies は務めの store `dutyStoreAt u i t` の bodies(tick の後の store は務めの
+store での `attestWith` の後の store で、`attestWith` は bodies を変えない。`AttestationSource.emits_vote_source` の bodies の段を
+height pair を問わずに取り出した形。添字は `EventsNodup` で揃える。周回 259)。 -/
+theorem stateBefore_succ_bodies_of_emits (hnd : EventsNodup rho) {u : ValidatorId} {i : Nat} {t : Int}
+    {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation}
+    (hev : rho.events[i]? = some (NamedEvent.Tick u t))
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t) :
+    (worldAt (stateBefore c p a nr s rho (i + 1)) u).st.bodies =
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i t).bodies := by
+  obtain ⟨i', hev', hrow⟩ := (Proofs.Consensus.Signing.emits_iff c p a nr s rho u _ t).mp hem
+  have hil : i' < rho.events.length := (List.getElem?_eq_some_iff.mp hev').1
+  have hii : i' = i := (List.Nodup.getElem?_inj hil
+    (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd)).mp (hev'.trans hev.symm)
+  subst hii
+  rw [Proofs.Consensus.Signing.nodeTick_out] at hrow
+  obtain ⟨st3, -, -, hst, -, -, hd⟩ :=
+    Proofs.Consensus.AttestationSource.tick_attest_store c p a nr _ s.hc _ _ _ t hrow
+  rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev]
+  unfold Model.Consensus.Execution.Run.worldStep
+  dsimp only
+  rw [Proofs.Consensus.Signing.worldAt_insert_self]
+  unfold Model.Consensus.Execution.Node.nodeTick Model.Consensus.Execution.Node.profileTick
+  dsimp only
+  rw [hst, Proofs.Consensus.Attribution.attestWith_bodies, hd]
+  rfl
+
+/-- honest な `u` が添字 `i2` の tick(時刻 `t2`)で行を出したなら、その務めの SG block の root は、どの honest なノード `w` の
 どの時刻の読みの tree でも、解決すればその SG block 自身に解決する(GST-zero を使わない)。手書き
 `relativeGradeCarrierAt_of_awakeWindowMajority`(`Protocol/Grades/RelativeOneChain.lean` 221 行)の `hhead` の段に当たる(手書きは
 前提 `htransport` の `Block.find?` の連言で受け取り、`WeakBootstrapAction.lean` が供給する。周回 258 に
-`relativeGradeCarrierAt_of_commonUpper` から切り出した)。閉じるのに要るもの: 解決した `head` は `w` の tree の要素なので run の中の
-ブロックの消去(`Carrier.StoreInv.named` と `FinalizedAccountable.blockInRun_of_mem`)。SG block も run の中のブロックの消去の祖先
-(`currentSGVote` の 4 つの枝: `deepestClear` の結果・grade 2 の候補・FG root・anchor は、どれも `u` の務めの store の tree の要素か
-その祖先)を示せば、`FinalizedAccountable.rootInjective_of_collisionFree`(`hsleep` の `Idealization`)で `head` と等しい。 -/
+`relativeGradeCarrierAt_of_commonUpper` から穴として切り出し、周回 259 に証明した)。解決した `head` は `w` の読みの tree の要素なので
+bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で、run の中のブロック。SG block は務めの store の tree の要素
+(`sgBlockAt_mem_dutyTree`)なので務めの store の bodies の消去で、その bodies は tick の後の `u` の bodies
+(`stateBefore_succ_bodies_of_emits`)なので run の中のブロック。root が等しいので、`FinalizedAccountable.rootInjective_of_collisionFree`
+(`hsleep` の `Idealization`)で `head` と等しい(`tickTree_root_inj` と同じ運び)。 -/
 theorem sgBlockAt_findRoot_eq (hwf : SetupWellFormed c p s) (hsleep : SleepyRegime c p a nr s rho 0)
     {u : ValidatorId} (hu : u ∈ rho.honest.elems) {i2 : Nat} {t2 : Int}
     {row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation}
@@ -577,7 +652,45 @@ theorem sgBlockAt_findRoot_eq (hwf : SetupWellFormed c p s) (hsleep : SleepyRegi
       (worldAt (stateBeforeTime c p a nr s rho τ) w).st.core.tree
       (root (Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho u i2 t2)) = some head) :
     head = Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho u i2 t2 := by
-  sorry
+  have _ := hwf
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hnd : EventsNodup rho := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hnd⟩, -⟩, -⟩, -⟩, -⟩ := h
+    exact hnd
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  -- `head` は `w` の読みの bodies の消去
+  obtain ⟨hm, hroot⟩ := Proofs.Consensus.BlockStamps.findRoot?_mem h
+  obtain ⟨i0, hi0⟩ := Proofs.Consensus.FinalizedAccountable.readAt_eq_stateBefore c p a nr s rho hs (τ - 1)
+  have hst : stateBeforeTime c p a nr s rho τ = stateBefore c p a nr s rho i0 := by
+    rw [← hi0, readAt_eq_stateBeforeTime_succ, sub_add_cancel]
+  rw [hst] at hm
+  obtain ⟨X, hX, rfl⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i0 w).named _ hm
+  have hwc : rho.honest.contains w = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hw
+  have huc : rho.honest.contains u = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu
+  have hXr : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho X :=
+    ⟨X, Or.inr ⟨w, hwc, i0, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hX⟩,
+      Proofs.Consensus.NamedBlocks.namedPreceq_self X⟩
+  -- SG block は tick の後の `u` の bodies の消去
+  have hsgi : Proofs.Consensus.Carrier.StoreInv s.e s.cfg (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i2 t2) :=
+    Proofs.Consensus.AttestationSource.tickDutyStore_inv c p nr _ s.hc _ t2
+      (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i2 u)
+  obtain ⟨Y, hY, hYe⟩ := hsgi.named _ (sgBlockAt_mem_dutyTree c p a nr s rho u i2 t2)
+  rw [← stateBefore_succ_bodies_of_emits c p a nr s rho hnd hev hem] at hY
+  have hYr : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho Y :=
+    ⟨Y, Or.inr ⟨u, huc, i2 + 1,
+      (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hY⟩,
+      Proofs.Consensus.NamedBlocks.namedPreceq_self Y⟩
+  rw [← hYe] at hroot ⊢
+  exact Proofs.Consensus.FinalizedAccountable.rootInjective_of_collisionFree c p a nr s rho hcf hXr hYr
+    _ _ ⟨⟨Or.inl (Proofs.Consensus.Blocks.preceq_self _), Or.inr (Proofs.Consensus.Blocks.preceq_self _)⟩, hroot⟩
 
 /-- GST-zero の枝で、正の round `r` の phase `ph` の domain 時刻が horizon 以内で、共通の上界 `D` が窓の round の honest な行の
 SG block(`RootWitness.HonestWindowCarrierAt r`)と、その読みでのすべての honest なノードの finalized の上にあれば、round `r` の
@@ -591,7 +704,7 @@ phase `ph` の読みの grade に担い手がある(`RootWitness.RelativeGradeCa
 `y` は読みの SG 票の行の attestation `x` の `sgVote` で(`SgStamps.mem_viewRow_iff`)、round は窓の中(`SgStamps.stateBefore_sgInv`)。
 送り手は honest なので `x` は送り手が出した行 `row2` の消去(`SgFrom.sg_genuine`。手書き `honest_rawInput_is_own_round_vote`)で、
 `row2.confirmed` は務めの SG block の root(`RootWitness.emits_confirmed_sgBlockAt`)。その解決は SG block 自身
-(穴 `sgBlockAt_findRoot_eq`)なので、`head` が担い手。 -/
+(`sgBlockAt_findRoot_eq`。周回 259 に閉じた)なので、`head` が担い手。 -/
 theorem relativeGradeCarrierAt_of_commonUpper (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {r : Nat} (hr : 0 < r) (ph : Model.Consensus.Protocol.Grades.GradePhase)
     (hhor : Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph ≤ rho.horizon) {D : Block}
@@ -1013,7 +1126,7 @@ slot `d` の投票の務めの head の祖先。手書き `actionSources_preceq_
 `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`、`limit = voteTime (d + 1)`、
 行ごとの性質を SG block ⪯ X(手書きの第 1 連言)に置いて掛ける。`cut = 0` なので bootstrap と古い根の前提は空。段の genuine な確認
 (手書きの `hprior`)は、行を出した tick が確認評価の tick(`emits_confTick`)で slot が `d` 未満(`emits_slot_lt_of_lt_nextVote`)
-なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は `honestInterpretedMajority_of_commonUpper` と `sgBlockAt_findRoot_eq`。周回 252〜258)から(周回 250)。 -/
+なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は `honestInterpretedMajority_of_commonUpper`。周回 252〜259)から(周回 250)。 -/
 theorem laterVoteHead_rowSources (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
