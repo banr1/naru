@@ -44,7 +44,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `fgStep_preceq_laterVoteHead_positive`(手書きの帰納の段の `hformation` の側。周回 252 から穴ではない)に渡す(周回 251)。
    `fgStep_preceq_laterVoteHead_positive` は SG block を `sgBlockAt_preceq_of_candidate_anchor`(`currentSGVote` の 4 つの枝)で
    grade 2 の候補と anchor に下ろす(周回 252)。anchor は `frameAnchor_preceq_of_g1Prefix` で FG root と G1 の root の active prefix に
-   下ろし、grade 2 の候補と G1 の root の active prefix を穴 `fgStep_g1PrefixCandidate_positive` から取る(周回 253)。
+   下ろし、G1 の root の active prefix を穴 `fgStep_g1Prefix_positive` から取る(周回 253)。grade 2 の候補は `fgStep_candidate_positive` で
+   窓の round の honest な行の SG block の祖先に下ろし、前の round の SG block の前提で閉じる。その担い手は穴 `fgStep_gradeCarrier_positive`(周回 254)。
    `confFgRoot_preceq_laterVoteHead` は FG root を tick の時刻の読みの FG root に移し(`confPreUpdate_fgRoot`: 確認の締切は提案時刻ではない
    `supportCutoff_ne_proposalTime`)、証明済みの `RootWitness.stateBeforeTime_fgRoot_confirmationWitness` で genesis か honest な行の務めの
    確認の証人に分け、後者を穴 `fgWitness_preceq_laterVoteHead` に渡す(周回 247)。
@@ -72,10 +73,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
+3. 穴(8 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
    `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean`)/
-   `fgStep_g1PrefixCandidate_positive`(手書き `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut` の帰納の段の
-   `hroots` の後の正の round の枝の grade の形成、`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)/
+   `fgStep_g1Prefix_positive` / `fgStep_gradeCarrier_positive`(手書き `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut` の
+   帰納の段の `hroots` の後の正の round の枝の grade の形成、`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)/
    `confG1Raw_preceq_laterVoteHead_positive`(手書き
    `preparedG1Raw_preceq_voteDutyHead_of_gstZero` の正の round の枝、`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -391,17 +392,18 @@ theorem frameAnchor_preceq_of_g1Prefix {e : Model.Consensus.Objects.Parameters.P
     | some b => simpa only [Option.getD_some] using hg1 g b hg hb
   · exact hroot
 
-/-- 穴: GST-zero の枝の round の帰納法の段の正の round の grade 2 の候補と G1 の root の active prefix。
+/-- 穴: GST-zero の枝の round の帰納法の段の正の round の G1 の root の active prefix。
 `fgStep_preceq_laterVoteHead_positive` と同じ前提から、務めの round の frame の G1 の結果が root `g` を持ち、`g` の filtered tree の中の
-active prefix `b` があるなら `b` が slot `d` の投票の務めの head `X` の祖先で、務めの grade 2 の候補も `X` の祖先。
+active prefix `b` があるなら `b` が slot `d` の投票の務めの head `X` の祖先。
 手書き `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`
 (`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)の帰納の段のうち `hroots` の後で、`hformation` から grade の形成を
-取る枝に当たる。anchor は `frameAnchor_preceq_of_g1Prefix`(G1 の root が無いか active prefix が無ければ FG root で `hroot`)、
-SG block は `sgBlockAt_preceq_of_candidate_anchor` がここから出す(周回 252・253)。
+取る枝の anchor の側に当たる。anchor は `frameAnchor_preceq_of_g1Prefix`(G1 の root が無いか active prefix が無ければ FG root で `hroot`)、
+SG block は `sgBlockAt_preceq_of_candidate_anchor` がここから出す(周回 252・253。周回 254 に grade 2 の候補の側を
+`fgStep_candidate_positive` に分けた)。
 閉じるのに要るもの: grade の形成 `hformation`(手書き `actionSources_preceq_voteDutyHead_of_gstZero` が
-`WeakJoint.actionGradeFormationAt_of_awakeWindowMajority` と `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero` で供給する。
-生成側の担い手の段は `RootWitness.grade2CandidateAt_preceq_windowConfirmed_of_emits`)(周回 250)。 -/
-theorem fgStep_g1PrefixCandidate_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+`WeakJoint.actionGradeFormationAt_of_awakeWindowMajority` で供給する)と、G1 の root の active prefix が前の round の honest な行の
+SG block の祖先であること(証明済みの `confAnchor_preceq_laterVoteHead` の運びに近い形)(周回 250)。 -/
+theorem fgStep_g1Prefix_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hupper : d ≤ last + 1) {x : ValidatorId} (hx : rho.honest.contains x = true)
@@ -441,7 +443,7 @@ theorem fgStep_g1PrefixCandidate_positive (hwf : SetupWellFormed c p s) (hdom : 
       (voteDutyHeadAt c p a nr s rho x d) = true)
     (hprior : ∀ C, Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
       preceq C (voteDutyHeadAt c p a nr s rho x d) = true) :
-    (∀ g b, (Model.Consensus.Protocol.Grades.readFrame
+    ∀ g b, (Model.Consensus.Protocol.Grades.readFrame
         (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
         (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core)
         (Model.Consensus.Protocol.Grades.roundOf s.hc
@@ -449,17 +451,150 @@ theorem fgStep_g1PrefixCandidate_positive (hwf : SetupWellFormed c p s) (hdom : 
       Model.Consensus.Protocol.Grades.activePrefix (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
         (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core)) g =
         some b →
-      preceq b (voteDutyHeadAt c p a nr s rho x d) = true) ∧
-      ∀ q, Proofs.Consensus.RootWitness.grade2CandidateAt c p a nr s rho w i t = some q →
-        preceq q (voteDutyHeadAt c p a nr s rho x d) = true := by
+      preceq b (voteDutyHeadAt c p a nr s rho x d) = true := by
   sorry
+
+/-- 穴: GST-zero の枝の round の帰納法の段の正の round の grade の担い手。`fgStep_preceq_laterVoteHead_positive` と同じ前提から、
+務めの round の各 phase の domain 時刻が horizon 以内なら、その読みの grade に担い手(窓の round の honest な行の SG block)がある
+(`RootWitness.RelativeGradeCarrierAt`)。手書き `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`
+(`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)の帰納の段の `hformation` の担い手の側に当たる(周回 254)。
+閉じるのに要るもの: 手書き `actionSources_preceq_voteDutyHead_of_gstZero` が `hformation` に渡す
+`WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`(awake な窓の履歴から担い手を作る段)。 -/
+theorem fgStep_gradeCarrier_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {w : ValidatorId} {i : Nat} {t : Int} {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation}
+    (hw : w ∈ rho.honest.elems) (hev : rho.events[i]? = some (NamedEvent.Tick w t))
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho w
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t)
+    (ht : t < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.s)
+    (hprevSg : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round < row.round →
+      preceq (Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho w2 i2 t2) (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hprev : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round < row.round →
+      preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w2 i2 t2).core))
+        (voteDutyHeadAt c p a nr s rho x d) = true ∧
+      ∀ T, Proofs.Consensus.RootWitness.fgConfirmationWitnessAt c p a nr s rho w2 i2 t2 = some T →
+        preceq T (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hsame : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round = row.round →
+      preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w2 i2 t2).core))
+        (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hroot : preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+        (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core))
+      (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hprior : ∀ C, Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
+      preceq C (voteDutyHeadAt c p a nr s rho x d) = true) :
+    ∀ ph, Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.s) ph ≤ rho.horizon →
+      Proofs.Consensus.RootWitness.RelativeGradeCarrierAt c p a nr s rho
+        (Model.Consensus.Protocol.Grades.roundOf s.hc
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.s) ph := by
+  sorry
+
+/-- 窓の round は読みの round より小さい: `latestWindow eta r` の元 `k` は `k < r`(周回 254)。 -/
+theorem lt_of_mem_latestWindow {eta r k : Nat}
+    (h : k ∈ Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow eta r) : k < r := by
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow at h
+  obtain ⟨j, hj, rfl⟩ := List.mem_map.mp h
+  have := List.mem_range.mp hj
+  omega
+
+/-- GST-zero の枝の round の帰納法の段の正の round の grade 2 の候補: `fgStep_preceq_laterVoteHead_positive` と同じ前提から、
+務めの grade 2 の候補は slot `d` の投票の務めの head `X` の祖先。候補は grade の担い手(穴 `fgStep_gradeCarrier_positive`)の下で
+窓の round の honest な行の SG block の祖先(`RootWitness.grade2CandidateAt_preceq_honestWindowCarrier_of_emits`)で、窓の round は
+務めの round(= 行の round、`RootWitness.emits_confirmed_sgBlockAt`)より小さい(`lt_of_mem_latestWindow`)ので、その SG block は
+前提 `hprevSg` で `X` の祖先(周回 254)。 -/
+theorem fgStep_candidate_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {w : ValidatorId} {i : Nat} {t : Int} {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation}
+    (hw : w ∈ rho.honest.elems) (hev : rho.events[i]? = some (NamedEvent.Tick w t))
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho w
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t)
+    (ht : t < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))
+    (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core.s)
+    (hprevSg : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round < row.round →
+      preceq (Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho w2 i2 t2) (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hprev : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round < row.round →
+      preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w2 i2 t2).core))
+        (voteDutyHeadAt c p a nr s rho x d) = true ∧
+      ∀ T, Proofs.Consensus.RootWitness.fgConfirmationWitnessAt c p a nr s rho w2 i2 t2 = some T →
+        preceq T (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hsame : ∀ (w2 : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      w2 ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick w2 t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho w2
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round = row.round →
+      preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+          (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w2 i2 t2).core))
+        (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hroot : preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+        (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho w i t).core))
+      (voteDutyHeadAt c p a nr s rho x d) = true)
+    (hprior : ∀ C, Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
+      preceq C (voteDutyHeadAt c p a nr s rho x d) = true) :
+    ∀ q, Proofs.Consensus.RootWitness.grade2CandidateAt c p a nr s rho w i t = some q →
+      preceq q (voteDutyHeadAt c p a nr s rho x d) = true := by
+  intro q hq
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hsch : ScheduleWellFormed s rho := by
+    have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+    unfold ExecutionValid at hexec
+    exact hexec.1.1.1
+  have hnd : Statements.Consensus.Spec.Conditions.EventsNodup rho := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hnd⟩, -⟩, -⟩, -⟩, -⟩ := h
+    exact hnd
+  have hgrade := fgStep_gradeCarrier_positive c p a nr s rho hwf hdom hsleep hhor hd hupper hx hw hev hem ht hpos
+    hprevSg hprev hsame hroot hprior
+  obtain ⟨Y, ⟨u, i2, t2, row2, hu, hev2, hem2, hwin, rfl⟩, hqY⟩ :=
+    Proofs.Consensus.RootWitness.grade2CandidateAt_preceq_honestWindowCarrier_of_emits c p a nr s rho hδ hsch hnd hw hem
+      hgrade hq
+  obtain ⟨i', hev', -, hround⟩ := Proofs.Consensus.RootWitness.emits_confirmed_sgBlockAt c p a nr s rho hem
+  have hil : i' < rho.events.length := (List.getElem?_eq_some_iff.mp hev').1
+  have hii : i' = i := (List.Nodup.getElem?_inj hil
+    (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd)).mp (hev'.trans hev.symm)
+  subst hii
+  have hlt : row2.round < row.round := by
+    rw [hround]
+    exact lt_of_mem_latestWindow hwin
+  exact Proofs.Consensus.Blocks.preceq_trans hqY (hprevSg u i2 t2 row2 hu hev2 hem2 hlt)
 
 /-- GST-zero の枝の round の帰納法の段の正の round。honest な `w` が時刻 `t < voteTime (d + 1)`(添字 `i` の tick)に行 `row` を出し、
 務めの store の round が正で、前の round の行の tick の SG block と FG root・確認の証人、同じ round の行の tick の FG root、自分の FG root と
 genuine な確認がどれも slot `d` の投票の務めの head `X` の祖先なら、自分の務めの SG block と grade 2 の候補も `X` の祖先。
 手書き `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`(`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)
 の帰納の段のうち `hroots` の後で、`hformation` から grade の形成を取って SG block と確認の証人を押さえる枝に当たる(round 0 の枝は
-`fgStep_round_zero`。周回 251)。grade 2 の候補と G1 の root の active prefix は穴 `fgStep_g1PrefixCandidate_positive` から取り、
+`fgStep_round_zero`。周回 251)。G1 の root の active prefix は穴 `fgStep_g1Prefix_positive`、grade 2 の候補は `fgStep_candidate_positive`(周回 254)から取り、
 anchor は `frameAnchor_preceq_of_g1Prefix`(周回 253)、SG block は `sgBlockAt_preceq_of_candidate_anchor` で出す(周回 252)。 -/
 theorem fgStep_preceq_laterVoteHead_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
@@ -505,7 +640,9 @@ theorem fgStep_preceq_laterVoteHead_positive (hwf : SetupWellFormed c p s) (hdom
       ∀ q, Proofs.Consensus.RootWitness.grade2CandidateAt c p a nr s rho w i t = some q →
         preceq q (voteDutyHeadAt c p a nr s rho x d) = true := by
   have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
-  obtain ⟨hg1, hq2⟩ := fgStep_g1PrefixCandidate_positive c p a nr s rho hwf hdom hsleep hhor hd hupper hx hw hev hem ht hpos
+  have hg1 := fgStep_g1Prefix_positive c p a nr s rho hwf hdom hsleep hhor hd hupper hx hw hev hem ht hpos
+    hprevSg hprev hsame hroot hprior
+  have hq2 := fgStep_candidate_positive c p a nr s rho hwf hdom hsleep hhor hd hupper hx hw hev hem ht hpos
     hprevSg hprev hsame hroot hprior
   have hanchor := frameAnchor_preceq_of_g1Prefix (e := s.e) (hc := s.hc) hroot hg1
   exact ⟨sgBlockAt_preceq_of_candidate_anchor c p a nr s rho hδ hem hroot hprior hq2 hanchor, hq2⟩
@@ -572,7 +709,7 @@ theorem fgStep_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDom
 `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`、`limit = voteTime (d + 1)`、
 行ごとの性質を SG block ⪯ X(手書きの第 1 連言)に置いて掛ける。`cut = 0` なので bootstrap と古い根の前提は空。段の genuine な確認
 (手書きの `hprior`)は、行を出した tick が確認評価の tick(`emits_confTick`)で slot が `d` 未満(`emits_slot_lt_of_lt_nextVote`)
-なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は grade 2 の候補と G1 の root の active prefix が穴 `fgStep_g1PrefixCandidate_positive`。周回 252・253)から(周回 250)。 -/
+なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix が穴 `fgStep_g1Prefix_positive`、grade 2 の候補の担い手が穴 `fgStep_gradeCarrier_positive`。周回 252〜254)から(周回 250)。 -/
 theorem fgWitness_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
