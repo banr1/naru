@@ -69,9 +69,11 @@ def SgInv (st : Store) : Prop := ∀ k x, x ∈ rows st k → x.round = k
 def SgKeep (a b : Store) : Prop :=
   ∀ k x, x ∈ rows a k → x ∈ rows b k ∧ b.timestampSgVote.get? (sgVote x) = a.timestampSgVote.get? (sgVote x)
 
-/-- 新しい票の印: `b` の行の attestation は `a` の同じ行にもあったか、その `sgVote` の受信の印が `b` の時計以上の時刻。 -/
+/-- 新しい票の印: `b` の行の attestation は `a` の同じ行にもあったか、その `sgVote` の受信の印が `b` の時計の時刻
+(以上かつ以下で書く。周回 262 に以下の向きを足した)。 -/
 def SgFresh (a b : Store) : Prop :=
-  ∀ k x, x ∈ rows b k → x ∈ rows a k ∨ ∃ τ, b.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧ b.t ≤ τ
+  ∀ k x, x ∈ rows b k → x ∈ rows a k ∨
+    ∃ τ, b.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧ b.t ≤ τ ∧ τ ≤ b.t
 
 /-- 時計を変えないハンドラの 1 段: 不変条件を運び、不変条件の下で行と印を保存し、新しい票の印は時計以上の時刻。 -/
 structure Step (a b : Store) : Prop where
@@ -95,7 +97,8 @@ theorem Step.trans {a b d : Store} (h1 : Step a b) (h2 : Step b d) : Step a d :=
   rcases h2.fresh (h1.inv h) k x hx with hb | hd
   · rcases h1.fresh h k x hb with ha | ⟨τ, hτ, hle⟩
     · exact Or.inl ha
-    · exact Or.inr ⟨τ, ((h2.keep (h1.inv h)) k x hb).2.trans hτ, by rw [h2.clock.t]; exact hle⟩
+    · exact Or.inr ⟨τ, ((h2.keep (h1.inv h)) k x hb).2.trans hτ, by rw [h2.clock.t]; exact hle.1,
+        by rw [h2.clock.t]; exact hle.2⟩
   · exact Or.inr hd
 
 /-- SG 票の表・印の表・時計が等しい store の間は 1 段(何も変わらない)。 -/
@@ -149,7 +152,7 @@ theorem onSgVote_step (hc : HealConfig) (st : Store) (a : CombinedAttestation) :
         rcases List.mem_append.mp hx with hx | hx
         · exact Or.inl hx
         · rw [List.mem_singleton.mp hx]
-          exact Or.inr ⟨st.t, sgv_get?_insert_self _ _ _, le_rfl⟩
+          exact Or.inr ⟨st.t, sgv_get?_insert_self _ _ _, le_rfl, le_rfl⟩
       · exact Or.inl hx
     · change x ∈ NaruStd.Table.getOr (st.sgVotes.insert a.round _) k [] at hx
       rw [rows_insert] at hx
@@ -417,6 +420,23 @@ theorem initial_sgInv : SgInv initStore := fun k x hx => by
   rw [this] at hx
   exact absurd hx List.not_mem_nil
 
+/-- 印の不変条件: 行の attestation の `sgVote` には受信の印 `At τ` があり、`τ` は store の時計以下(周回 262)。 -/
+def SgStampInv (st : Store) : Prop :=
+  ∀ k x, x ∈ rows st k → ∃ τ, st.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧ τ ≤ st.t
+
+theorem initial_sgStampInv : SgStampInv initStore := fun k x hx => by
+  have : rows initStore k = [] := rfl
+  rw [this] at hx
+  exact absurd hx List.not_mem_nil
+
+/-- 印の不変条件は、時計が進む 1 段で運ばれる(残る票の印はそのまま、新しい票の印は後の時計)。 -/
+theorem SgStampInv.of_grow {a b : Store} (h : SgStampInv a) (hinv : SgInv a) (hg : Grow a b) (ht : a.t ≤ b.t) :
+    SgStampInv b := fun k x hx => by
+  rcases hg.fresh hinv k x hx with ha | ⟨τ, hτ, -, hle⟩
+  · obtain ⟨τ, hτ, hle⟩ := h k x ha
+    exact ⟨τ, ((hg.keep hinv) k x ha).2.trans hτ, le_trans hle ht⟩
+  · exact ⟨τ, hτ, hle⟩
+
 section Run
 
 variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
@@ -467,7 +487,30 @@ theorem stateBefore_sgFresh (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.ev
       · exact Or.inl h0
       · exact Or.inr ⟨τ, (hg.keep hinv k x hxi).2.trans hτ, hle⟩
     · exact Or.inr ⟨τ, hτ,
-        le_trans (Proofs.Consensus.Window.tick_le_clock c p a nr s rho hs hnn (Nat.lt_succ_of_le hji) hj) hle⟩
+        le_trans (Proofs.Consensus.Window.tick_le_clock c p a nr s rho hs hnn (Nat.lt_succ_of_le hji) hj) hle.1⟩
+
+/-- **run のどの添字・どのノードでも SG 票の印の不変条件**(event の整列と時刻の非負の下で。時計の単調性 `Window.clock_succ_ge`。
+周回 262)。 -/
+theorem stateBefore_sgStampInv (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev) :
+    ∀ (i : Nat) (v : ValidatorId), SgStampInv (worldAt (stateBefore c p a nr s rho i) v).st.core
+  | 0, _ => initial_sgStampInv
+  | i + 1, v =>
+    (stateBefore_sgStampInv hs hnn i v).of_grow (stateBefore_sgInv c p a nr s rho i v)
+      (stateBefore_grow c p a nr s rho i v) (Proofs.Consensus.Window.clock_succ_ge c p a nr s rho hs hnn i v)
+
+/-- **SG 票の印は event の時刻以下に固定される**: `stateBefore (j + 1)` の `w` の鍵 `k` の行に `x` があれば、`j` より後の
+どの添字でも `x` は `w` の同じ行にあり、`sgVote x` の受信の印は添字 `j` の event の時刻以下の時刻のまま(`Stamps.stamp_le_of_mem`
+の SG 票の版。周回 262)。 -/
+theorem sg_stamp_le_of_mem (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    {j : Nat} {ev : NamedEvent} (hev : rho.events[j]? = some ev) {w : ValidatorId} {k : Nat} {x : CombinedAttestation}
+    (hx : x ∈ rows (worldAt (stateBefore c p a nr s rho (j + 1)) w).st.core k) {i : Nat} (hji : j < i) :
+    x ∈ rows (worldAt (stateBefore c p a nr s rho i) w).st.core k ∧
+      ∃ τ, (worldAt (stateBefore c p a nr s rho i) w).st.core.timestampSgVote.get? (sgVote x) = some (Stamp.At τ) ∧
+        τ ≤ eventTime ev := by
+  obtain ⟨τ, hτ, hle⟩ := stateBefore_sgStampInv c p a nr s rho hs hnn (j + 1) w k x hx
+  obtain ⟨hmem, heq⟩ := stateBefore_sgKeep c p a nr s rho (i := j + 1) (j := i) hji w k x hx
+  exact ⟨hmem, τ, heq.trans hτ,
+    le_trans hle (Proofs.Consensus.Stamps.clock_succ_le_event c p a nr s rho hs hnn hev w)⟩
 
 end Run
 
