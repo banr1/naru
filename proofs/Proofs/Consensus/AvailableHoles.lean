@@ -40,7 +40,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `confEligibleWalk_preceq_laterVoteHead` は walk が genuine な確認なので `genuineConf_preceq_laterVoteHead`(手書き
    `protectedVoteSlots_of_gstZero_v2` の `heads`)から(周回 250)。`genuineConf_preceq_laterVoteHead` は周回 270 に、手書きと同じ
    保護された投票の slot(`ProtectedVoteSlot`: 投票の head の `heads` と投票の cone)の slot の帰納法 `protectedVoteSlots_gstZero` で
-   証明した。種の cone は穴 `voteCone_genesis`、slot 0 の確認は穴 `genuineConf_slot_zero`、段は穴 `protectedVoteSlot_preserve`(古い確認)と
+   証明した。種の cone は穴 `voteCone_genesis`、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段は穴 `protectedVoteSlot_preserve`(古い確認)と
    穴 `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認)で、段の穴は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
@@ -101,8 +101,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(8 件): `voteCone_genesis`(手書き `protectedVoteSlot_genesis`)/ `genuineConf_slot_zero`(手書き
-   `actionLiveConfirmed_eq_genesis_zero`。どちらも `DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)/
+3. 穴(7 件): `voteCone_genesis`(手書き `protectedVoteSlot_genesis`、`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)/
    `protectedVoteSlot_preserve`(手書き `protectedVoteSlots_of_historyCut_v2_w` の `hpreserve`、
    `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean`)/ `protectedVoteSlot_succ_of_genuineConf`(手書き
    `protectedVoteSlot_succ_of_genuineConfirmationWith`、`DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean`)/
@@ -2121,17 +2120,72 @@ theorem voteCone_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     HonestVotesCone c p a nr s rho d Block.Genesis := by
   sorry
 
-/-- 穴: slot 0 の genuine な確認は genesis。確認評価の tick の slot `q = slotOf e t - 1` が 0 なら、その genuine な確認は genesis。
+/-- 確認の更新の前の段 `tickPreUpdateStore`(時計合わせ・提案・投票)の後の tree のブロックは、前の tree にあったか、受理の守りを
+通った(`ParentSlot.Fresh`。`ParentSlot.tick_fresh` と同じ運びの 4 経路。周回 271)。 -/
+theorem tickPreUpdateStore_fresh (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    (cfg : Model.Consensus.Protocol.ChainState.HeightConfig) (nd : Model.Consensus.Protocol.Schedule.Node)
+    (st : Model.Consensus.Protocol.Handlers.NamedStore) (t : Int) :
+    Proofs.Consensus.ParentSlot.Fresh st.core
+      (Proofs.Consensus.AttestationSource.tickPreUpdateStore c p nr cache e hc cfg nd st t).core := by
+  have h0 : Proofs.Consensus.ParentSlot.SStep
+      { st with core := { st.core with t := t, s := Model.Consensus.Objects.Parameters.slotOf e t } }
+      { st with core := { st.core with t := t, s := Model.Consensus.Objects.Parameters.slotOf e t } } :=
+    Proofs.Consensus.ParentSlot.Step.refl _
+  have hfin : Proofs.Consensus.ParentSlot.SStep
+      { st with core := { st.core with t := t, s := Model.Consensus.Objects.Parameters.slotOf e t } }
+      (Proofs.Consensus.AttestationSource.tickPreUpdateStore c p nr cache e hc cfg nd st t) := by
+    unfold Proofs.Consensus.AttestationSource.tickPreUpdateStore
+    dsimp only
+    split_ifs
+    all_goals first
+      | exact Proofs.Consensus.ParentSlot.namedGoldfishVoteWith_step' c cache e hc nd
+          (Proofs.Consensus.ParentSlot.proposeBlockWith_step' c p nr cache e hc cfg nd h0)
+      | exact Proofs.Consensus.ParentSlot.namedGoldfishVoteWith_step' c cache e hc nd h0
+      | exact Proofs.Consensus.ParentSlot.proposeBlockWith_step' c p nr cache e hc cfg nd h0
+      | exact h0
+  exact fun B hB => hfin.fresh B hB
+
+/-- 確認の更新の前の段の store の tree の genesis でないブロックの親の slot はブロックの slot より小さい
+(`ParentSlot.stateBefore_parentInv` を `tickPreUpdateStore_fresh` で運んだもの。周回 271)。 -/
+theorem preUpdateTree_parentInv (w : ValidatorId) (i : Nat) (t : Int) :
+    Proofs.Consensus.ParentSlot.ParentInv (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core :=
+  (Proofs.Consensus.ParentSlot.stateBefore_parentInv c p a nr s rho i w).of_fresh
+    (tickPreUpdateStore_fresh c p nr _ s.e s.hc s.cfg _ _ t)
+
+/-- slot 0 の genuine な確認は genesis。確認評価の tick の slot `q = slotOf e t - 1` が 0 なら、その genuine な確認は genesis。
 手書き `actionLiveConfirmed_eq_genesis_zero`(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`。手書きの帰納法の
-`hconfBoot` の `q = 0` の枝)に当たる。閉じるのに要るもの: slot 0 の eligible の判定(`lateCount` と `score`)で、honest な
-重みの過半から head が genesis に留まること(手書きは round 0 の action の store の `liveConfirmed` が genesis であることから)(周回 270)。 -/
-theorem genuineConf_slot_zero (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
-    (hsleep : SleepyRegime c p a nr s rho 0) {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
-    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+`hconfBoot` の `q = 0` の枝)に当たる。周回 270 に穴として置き、周回 271 に手書きの `confEligible_zero_child_false` と同じ運びで
+証明した: eligible なら支持者がいて(得点は支持者の数 `Majority.score_eq_supporters`)、その slot 0 の投票が指す tree のブロック `X` は
+slot 0 なので genesis(genesis でない tree のブロックの slot は親の slot より大きい `preUpdateTree_parentInv`)、`C ⪯ X` から
+`C` も genesis。手書きと違い anchor が genesis であることは要らない。 -/
+theorem genuineConf_slot_zero (hwf : SetupWellFormed c p s) {w : ValidatorId} {i : Nat} {t : Int}
     (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = 0) {C : Block}
     (hC : Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C) :
     C = Block.Genesis := by
-  sorry
+  have hδ : (0 : Int) ≤ s.e.delta := (Proofs.Consensus.Liveness.wf_facts hwf).1.le
+  have hel := hC.2
+  rw [hq] at hel
+  set st := (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core with hst
+  have hpos : 0 < (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters st.tree
+      (Proofs.Consensus.Goldfish.supportVotes s.e st 0) (Proofs.Consensus.Goldfish.supportVotes s.e st 0) 0 C).size := by
+    have h := of_decide_eq_true hel
+    rw [Proofs.Consensus.Majority.score_eq_supporters s.e st 0 C hδ] at h
+    omega
+  obtain ⟨-, u, -, -, -, hus, htu⟩ := Proofs.Consensus.Goldfish.exists_supporter_of_pos hpos
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder at htu
+  split at htu
+  · rename_i X hX
+    obtain ⟨hXs, hCX⟩ := Bool.and_eq_true_iff.mp htu
+    have hXs' : slot X = 0 := by rw [hus] at hXs; exact Nat.le_zero.mp (of_decide_eq_true hXs)
+    have hXg : X = Block.Genesis := by
+      by_contra hne
+      have := preUpdateTree_parentInv c p a nr s rho w i t X
+        (Proofs.Consensus.BlockStamps.findRoot?_mem hX).1 hne
+      omega
+    subst hXg
+    simpa [preceq] using hCX
+  · exact absurd htu Bool.false_ne_true
 
 /-- 穴: 保護の保存の段。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
 slot `d` で保護された `B` は slot `d + 1` でも保護される。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
@@ -2188,8 +2242,8 @@ theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDoma
       ⟨fun x _ => Proofs.Consensus.Blocks.preceq_genesis _,
         voteCone_genesis c p a nr s rho hwf hdom hsleep hhor le_rfl hupper⟩
     refine ⟨hseed, ?_⟩
-    intro w i t C hw ht hq hC
-    rw [genuineConf_slot_zero c p a nr s rho hwf hdom hsleep hw ht (by omega) hC]
+    intro w i t C _ _ hq hC
+    rw [genuineConf_slot_zero c p a nr s rho hwf (by omega) hC]
     exact hseed
   | succ d hd ih =>
     intro hupper
