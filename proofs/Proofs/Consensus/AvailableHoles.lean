@@ -8,6 +8,7 @@ import Proofs.Consensus.GradeSupporter
 import Proofs.Consensus.GradeTransport
 import Proofs.Consensus.SgStamps
 import Proofs.Consensus.SgFrom
+import Proofs.Consensus.SgAdmit
 import Proofs.Consensus.FrameCapture
 import Mathlib.Tactic
 
@@ -64,8 +65,9 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    honest の集合で、窓の時刻の action round は round の窓にある `actionRound_mem_latestWindow`。周回 260。各元が解釈済みの入力を
    持つことは `awakeWindowVote_interpreted_of_commonUpper`: 元は round の action 時刻に行を出し(`awake_emits_actionRow`)、その行の
    SG 票と SG block が早い cutoff より前に読み手に届くことは `honestActionRow_delivered`。周回 261。その行の側の運びは周回 262 に証明した:
-   `PartialSynchrony` で `t + Δ` より前に扱われ、扱いの後の行の attestation(穴 `honestActionRow_handled_row`)の印は扱いの時刻以下で残る
-   (`SgStamps.sg_stamp_le_of_mem`)。SG block の側は穴 `honestActionRow_sgBlock_delivered`)から grade の honest な支持者の
+   `PartialSynchrony` で `t + Δ` より前に扱われ、扱いの後の行の attestation(`honestActionRow_handled_row`。周回 263 に
+   `SgAdmit.handlesAt_honestRow_mem` で閉じた: `onSgVote` の受理の窓と、honest な送り手の行の `confirmed` が 1 通りであること)の印は
+   扱いの時刻以下で残る(`SgStamps.sg_stamp_le_of_mem`)。SG block の側は穴 `honestActionRow_sgBlock_delivered`)から grade の honest な支持者の
    入力を取り(`GradeSupporter.phase_graded_has_honest_supporter`)、それを送り手が出した行に戻し(`SgFrom.sg_genuine`)、その `confirmed` の解決を行の SG block と同一視する(`sgBlockAt_findRoot_eq`)
    (周回 258)。`sgBlockAt_findRoot_eq` は、SG block が務めの store の tree にあり(`sgBlockAt_mem_dutyTree`)、その bodies が tick の後の
    bodies(`stateBefore_succ_bodies_of_emits`)なので run の中のブロックで、run に root の衝突が無いことで閉じた(周回 259)。
@@ -91,10 +93,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
+3. 穴(6 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
    `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean`)/
-   `honestActionRow_handled_row`(手書き `NamedSGArrival.honest_row_after_call`、
-   `DecoupledConsensusProofs/Protocol/Handlers/SGArrival.lean`)/
    `honestActionRow_sgBlock_delivered`(手書き `NamedOutageClosure.compatible_carrier_body_at_read_after_gst`、
    `DecoupledConsensusProofs/Protocol/Grades/RoundVoterTransportTwoCutoff.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -718,17 +718,14 @@ theorem awake_emits_actionRow (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e.d
   · exact h
   · exact absurd ht (ne_of_lt ((Proofs.Consensus.RootWitness.actionTime_lt_actionTime_iff hδ hr0 _ _).mpr h))
 
-/-- 穴(行の側): GST-zero の枝で、honest な `u` が添字 `i` の tick(時刻 `t`)で行 `row` を出し、honest な `w` が時刻 `t2`
-(`t ≤ t2 < t + Δ ≤ horizon`)に添字 `j` でその行を扱う(`HandlesAt`)なら、`j` の event の後の `w` の store の鍵 `row.round` の
-SG 票の行に、送り手が `u` で `confirmed` が `row.confirmed` の attestation がある。手書き `NamedSGArrival.honest_row_after_call`
-(`Protocol/Handlers/SGArrival.lean` 758 行)・`held_row_own_and_stamp_at_event`(同じファイル 449 行)に当たる(周回 262 に `honestActionRow_delivered` から
-切り出した)。閉じるのに要るもの: `HandlesAt` の 3 つの経路(自分の tick の `attestWith`・配送の `admitRow`・受理したブロックが運ぶ行の
-`admitRows`。`w ≠ u` の tick の経路は、`w` の行の送り手が `w` なので掛からない)で、`onSgVote` の受理の守りを通すこと。行の時刻 `t` は
-行の round の action 時刻(`RootWitness.emits_attest_actionTime_round`)で、honest な `w` は公開時刻 `t` に tick し(`ScheduleWellFormed`)
-同じ時刻では tick が配送より先に並ぶので、扱いの時点の `w` の時計は `[t, t2]` にあり、slot は行の round の `k · R + 1`、round の窓は
-行の round を含む。pool の送り手 `u` の元は `u` の出した行の消去(`SgFrom.sg_genuine`)で、行の時刻は round の action 時刻に決まり、
-tick は時刻ごとに 1 つ(`EventsNodup`)、1 回の tick の行は 1 つなので、`roundVotes` の大きさは 2 でない。既に同じ `confirmed` があれば
-その attestation が求めるもの。ブロックが運ぶ経路では、後に続く行の受理で行が残る(`SgStamps.admitRows_step`)。 -/
+/-- **honest な行の扱いの後の行**(行の側): GST-zero の枝で、honest な `u` が添字 `i` の tick(時刻 `t`)で行 `row` を出し、
+honest な `w` が時刻 `t2`(`t ≤ t2 < t + Δ ≤ horizon`)に添字 `j` でその行を扱う(`HandlesAt`)なら、`j` の event の後の `w` の store の
+鍵 `row.round` の SG 票の行に、送り手が `u` で `confirmed` が `row.confirmed` の attestation がある。手書き
+`NamedSGArrival.honest_row_after_call`(`Protocol/Handlers/SGArrival.lean` 758 行)に当たる(周回 262 に `honestActionRow_delivered` から
+穴として切り出し、周回 263 に `SgAdmit.handlesAt_honestRow_mem` で閉じた): `HandlesAt` の 3 つの経路(自分の tick の `attestWith`・
+配送の `admitRow`・受理したブロックが運ぶ行の `admitRows`。自分の提案は提案の時刻にだけ起き、`t2` は提案の時刻ではない)で、
+受理の窓は扱いの時点の slot `k · R + 1`(`k = row.round`)の round、守りの大きさ 2 は honest な送り手の行の `confirmed` が
+1 通りであること(`SgAdmit.honest_rows_confirmed_eq`)で外す。 -/
 theorem honestActionRow_handled_row (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {u : ValidatorId} (hu : u ∈ rho.honest.elems) {i : Nat} {t : Int}
     {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation} (hev : rho.events[i]? = some (NamedEvent.Tick u t))
@@ -737,8 +734,8 @@ theorem honestActionRow_handled_row (hwf : SetupWellFormed c p s) (hdom : RunDom
     (hh : Statements.Consensus.Spec.Execution.HandlesAt c p a nr s rho j w
       (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2) :
     ∃ x ∈ Proofs.Consensus.SgStamps.rows (worldAt (stateBefore c p a nr s rho (j + 1)) w).st.core row.round,
-      x.valIndex = u ∧ x.confirmed = row.confirmed := by
-  sorry
+      x.valIndex = u ∧ x.confirmed = row.confirmed :=
+  Proofs.Consensus.SgAdmit.handlesAt_honestRow_mem c p a nr s rho hwf hsleep hu hem hw ht ht2 hh
 
 /-- 穴(SG block の側): `honestActionRow_delivered` と同じ前提で、`w` の時刻 `τ` の読みの tree での行の SG block
 (`RootWitness.sgBlockAt u i t`)の root の解決は、受信の印が `t + Δ` より前の head を返す。手書き
@@ -768,7 +765,7 @@ tick(時刻 `t`)で行 `row` を出し、honest な読み手 `w` の時刻 `τ`(
 より前の head を返す。手書き `NamedOutageClosure.honestRoundVote_interpreted_at_reader_of_twoCutoff_compatible`
 (`Protocol/Grades/RoundVoterTransportTwoCutoff.lean` 343 行)の配送の段に当たる(周回 261 に `awakeWindowVote_interpreted_of_commonUpper`
 から穴として切り出した)。周回 262 に行の側を証明した: `PartialSynchrony` の第 1 連言(`tGST ≤ 0 ≤ t` なので締切は `t + Δ`、attestation は
-`excludes` が偽)で `w` は時刻 `t2 < t + Δ` に添字 `j` で行を扱い、扱いの後の行の attestation(穴 `honestActionRow_handled_row`)の印は
+`excludes` が偽)で `w` は時刻 `t2 < t + Δ` に添字 `j` で行を扱い、扱いの後の行の attestation(`honestActionRow_handled_row`。周回 263 に閉じた)の印は
 `j` の event の時刻 `t2` 以下で `τ` の読みまで残る(`SgStamps.sg_stamp_le_of_mem`)。SG block の側は穴 `honestActionRow_sgBlock_delivered`。 -/
 theorem honestActionRow_delivered (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {u : ValidatorId} (hu : u ∈ rho.honest.elems) {i : Nat} {t : Int}
@@ -961,7 +958,7 @@ cutoff に解釈済みの入力を持つ。手書き `relativeGradeCarrierAt_of_
 (`Protocol/Grades/WeakBootstrapAction.lean` 106〜185 行)がそれを `hroots`(ここでは `hF`)と `hsg` から供給する(周回 260 に
 `honestInterpretedMajority_of_commonUpper` から穴として切り出し、周回 261 に証明した)。`u` は round `k` の action 時刻に行を出し
 (`awake_emits_actionRow`)、action 時刻 + Δ ≤ 早い cutoff ≤ domain 時刻(`R ≥ 3`、`k < r`。手書き `NamedOutageClosure.action_delta_le_early`)。
-行の SG block と `w` の finalized はどちらも `D` の祖先なので互換で、`honestActionRow_delivered`(行の側は周回 262 に証明した。残る穴は `honestActionRow_handled_row` / `honestActionRow_sgBlock_delivered`)から、行の SG 票が早い cutoff より前に
+行の SG block と `w` の finalized はどちらも `D` の祖先なので互換で、`honestActionRow_delivered`(行の側は周回 262〜263 に証明した。残る穴は `honestActionRow_sgBlock_delivered`)から、行の SG 票が早い cutoff より前に
 `w` の行にあり、SG block の root の解決が早い cutoff より前の印の head を返す。head は SG block 自身(`sgBlockAt_findRoot_eq`)で、
 行の `confirmed` はその root(`RootWitness.emits_confirmed_sgBlockAt`)なので、その SG 票は生の入力で `bodyReady`。 -/
 theorem awakeWindowVote_interpreted_of_commonUpper (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
@@ -1057,7 +1054,7 @@ honest でない validator の重みより大きい(`GradeSupporter.phase_graded
 `A` は `SleepyRegime` の `WindowMajority` を round `r` の action 時刻で使った窓の awake な honest の集合(手書き
 `sleepy_windows_of_generic` / `windowMajority_of_generic`。時刻の条件は `R ≥ 3` で domain 時刻 ≤ horizon から出る)。その元は
 窓の時刻に awake で、その action round は窓の round(`actionRound_mem_latestWindow`)なので、
-`awakeWindowVote_interpreted_of_commonUpper`(周回 261 に証明した。配送の `honestActionRow_delivered` の残る穴は `honestActionRow_handled_row` / `honestActionRow_sgBlock_delivered`。周回 262)で解釈済みの入力を持つ。 -/
+`awakeWindowVote_interpreted_of_commonUpper`(周回 261 に証明した。配送の `honestActionRow_delivered` の残る穴は `honestActionRow_sgBlock_delivered`。周回 263)で解釈済みの入力を持つ。 -/
 theorem honestInterpretedMajority_of_commonUpper (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {r : Nat} (hr : 0 < r) (ph : Model.Consensus.Protocol.Grades.GradePhase)
     (hhor : Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph ≤ rho.horizon) {D : Block}
@@ -1555,7 +1552,7 @@ slot `d` の投票の務めの head の祖先。手書き `actionSources_preceq_
 `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`、`limit = voteTime (d + 1)`、
 行ごとの性質を SG block ⪯ X(手書きの第 1 連言)に置いて掛ける。`cut = 0` なので bootstrap と古い根の前提は空。段の genuine な確認
 (手書きの `hprior`)は、行を出した tick が確認評価の tick(`emits_confTick`)で slot が `d` 未満(`emits_slot_lt_of_lt_nextVote`)
-なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は配送の `honestActionRow_handled_row` / `honestActionRow_sgBlock_delivered`。周回 252〜262)から(周回 250)。 -/
+なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は配送の `honestActionRow_sgBlock_delivered`。周回 252〜263)から(周回 250)。 -/
 theorem laterVoteHead_rowSources (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
