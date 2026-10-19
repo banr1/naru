@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 9)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 12 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -498,8 +498,8 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 `fgWitness_preceq_laterVoteHead` に渡します。`fgWitness_preceq_laterVoteHead`(穴ではない。周回 250)は手書き
 `actionSources_preceq_voteDutyHead_of_gstZero` と同じく、round の同時帰納 `RootWitness.dutyStoreAt_jointRoundInduction_of_prior`(手書き
 `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`・行の時刻 `< voteTime (d + 1)`・行ごとの性質 SG block ⪯ head で掛け、
-段の genuine な確認(行を出した tick は確認評価の tick で slot は `d` 未満。`emits_confTick` / `emits_slot_lt_of_lt_nextVote`)を穴
-`genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`)から、SG block と grade 2 の候補を
+段の genuine な確認(行を出した tick は確認評価の tick で slot は `d` 未満。`emits_confTick` / `emits_slot_lt_of_lt_nextVote`)を
+`genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`。周回 270 から穴ではない)から、SG block と grade 2 の候補を
 `fgStep_preceq_laterVoteHead`(穴ではない。周回 251)から供給します。これは務めの store の round で分け、round 0 は `fgStep_round_zero`(round 0 の frame に
 G1 / G2 の root は無いので grade 2 の候補は空、anchor は FG root で、SG block は `liveConfirmed` の祖先か FG root。手書き `WeakGenesis.actionSGBlock_eq_genesis_zero`)
 で閉じ、正の round は `fgStep_preceq_laterVoteHead_positive`(穴ではない。周回 252)に渡します。これは SG block を `sgBlockAt_preceq_of_candidate_anchor`
@@ -549,7 +549,10 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.genuineConf_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_gstZero_v2` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 250 |
+| `Proofs.Consensus.AvailableHoles.voteCone_genesis` | `Consensus.Spec.Claims.available` | `protectedVoteSlot_genesis` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean` | 270 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_slot_zero` | `Consensus.Spec.Claims.available` | `actionLiveConfirmed_eq_genesis_zero` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean` | 270 |
+| `Proofs.Consensus.AvailableHoles.protectedVoteSlot_preserve` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_historyCut_v2_w` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean` | 270 |
+| `Proofs.Consensus.AvailableHoles.protectedVoteSlot_succ_of_genuineConf` | `Consensus.Spec.Claims.available` | `protectedVoteSlot_succ_of_genuineConfirmationWith` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean` | 270 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
