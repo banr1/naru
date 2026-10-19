@@ -2326,6 +2326,62 @@ theorem genuineConf_slot_zero (hwf : SetupWellFormed c p s) {w : ValidatorId} {i
     simpa [preceq] using hCX
   · exact absurd htu Bool.false_ne_true
 
+/-- `voteDutyFgRootAt` は投票時刻の読みの FG root(時計合わせは FG root を変えない。周回 275)。 -/
+theorem voteDutyFgRootAt_eq_read (x : ValidatorId) (k : Nat) :
+    voteDutyFgRootAt c p a nr s rho x k =
+      Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+        (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st.core) :=
+  rfl
+
+/-- 段の FG root は前の slot の head の祖先: `1 ≤ d ≤ last` で `PriorConfsBelow d` なら、honest なノード `x` の slot `d + 1` の
+投票の務めの読みの FG root は、honest なノード `y` の slot `d` の投票の務めの head の祖先。`confFgRoot_preceq_laterVoteHead` と同じ運び:
+FG root の確認の証人(`RootWitness.stateBeforeTime_fgRoot_confirmationWitness`)で genesis か、時刻 `< voteTime (d + 1)` に honest な
+署名者が行を出した tick の務めの確認の証人に分け、後者は `laterVoteHead_rowSources_of_prior` に帰納法の仮定 `hprior y` を渡す
+(手書き `goldfishCone_succ_of_runFrontierWitnesses` の `hroots` の上界の側。周回 275)。 -/
+theorem voteDutyFgRoot_preceq_prevHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d)
+    {x y : ValidatorId} (hx : rho.honest.contains x = true) (hy : rho.honest.contains y = true) :
+    preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) (voteDutyHeadAt c p a nr s rho y d) = true := by
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho (Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep)).2
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  unfold UnforgeableSignatures at hunf
+  obtain ⟨-, hcar⟩ := hunf
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  unfold ScheduleWellFormed at hsch
+  obtain ⟨⟨⟨⟨⟨⟨hhor0, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hsch
+  have hlag : (0 : Int) ≤ Model.Consensus.Spec.Constants.participationLag s :=
+    (Proofs.Consensus.Constants.period_pos s hfacts.1 hfacts.2.2).le
+  have hqh := Proofs.Consensus.JustificationCertificate.quorumHonest_of_sleepyRegime
+    (Proofs.Consensus.JustificationCertificate.sorted_validators hwf) hsleep hlag le_rfl (by rw [sub_self]; exact hhor0)
+  have hxm : x ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx
+  rw [voteDutyFgRootAt_eq_read]
+  rcases Proofs.Consensus.RootWitness.stateBeforeTime_fgRoot_confirmationWitness c p a nr s rho hs hqh hcar hcf hxm
+      (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) with
+    hg | ⟨-, row, -, t2, i2, -, -, hH, -, ht2, hem, hev, hT⟩
+  · rw [hg]
+    exact Proofs.Consensus.Blocks.preceq_genesis _
+  · exact (laterVoteHead_rowSources_of_prior c p a nr s rho hwf hdom hsleep hhor hd (by omega) hy (hprior y hy)
+      ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hH) hem hev ht2).2 _ hT
+
+/-- **保存の段の FG root の互換**: slot `d` で保護された `B` と、honest なノード `x` の slot `d + 1` の読みの FG root は、どちらも
+`x` の slot `d` の head の祖先なので互換(`Blocks.preceq_linear`)。`B` が FG root の祖先でなければ FG root ⪯ `B`(手書き
+`goldfishCone_step'` の `hrootBelow` の枝に入る前提。周回 275)。 -/
+theorem fgRoot_preceq_of_notBelow (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d) {B : Block}
+    (hB : ProtectedVoteSlot c p a nr s rho d B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hroot : ¬ preceq B (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true) :
+    preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) B = true :=
+  (Proofs.Consensus.Blocks.preceq_linear (hB.heads x hx)
+    (voteDutyFgRoot_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hx hx)).resolve_left hroot
+
 /-- 穴: 保護の保存の段の `heads`。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
 slot `d` で保護された `B` は、すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(cone は `voteCone_of_heads` で出るので
 `protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
@@ -2334,13 +2390,15 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 読みの FG root と anchor が `B` と互換であることを示す(手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses` の heads の側)
 (周回 270。周回 273 に結論を cone から切り離して `heads` だけにした)。周回 274 から 1 つの honest なノード `x` についての主張で、
 `B` が `x` の読みの FG root の祖先である枝は `heads_of_notBelowFgRoot` が閉じるので、`B` が FG root の祖先でない(手書き
-`goldfishCone_step'` の `hrootBelow` の枝と、互換でない場合の排除)ときだけを示せばよい。 -/
+`goldfishCone_step'` の `hrootBelow` の枝)ときだけを示せばよい。周回 275 から、互換でない場合は `fgRoot_preceq_of_notBelow` が
+排除し、穴は FG root が `B` の真の祖先である(`hbelow` ∧ `hroot`)枝だけ。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d) {B : Block}
     (hB : ProtectedVoteSlot c p a nr s rho d B) {x : ValidatorId} (hx : rho.honest.contains x = true)
-    (hroot : ¬ preceq B (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true) :
+    (hroot : ¬ preceq B (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true)
+    (hbelow : preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) B = true) :
     preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
   sorry
 
@@ -2371,7 +2429,8 @@ theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdo
 `WeakJoint.protectedVoteSlots_of_historyCut_v2_after_gst` を掛けたもの)と同じ運びの slot の帰納法: 種は `voteCone_genesis`、
 slot 0 の確認は `genuineConf_slot_zero` で genesis、段は古い確認を `protectedVoteSlot_preserve`、slot `d` の確認を
 `protectedVoteSlot_succ_of_genuineConf` で進める(周回 270)。段の穴は `heads` だけを返し、cone は `protectedVoteSlot_of_heads` が足す
-(周回 273)。段の穴はノードごとで、FG root の祖先の枝は `heads_of_notBelowFgRoot` が閉じる(周回 274)。 -/
+(周回 273)。段の穴はノードごとで、FG root の祖先の枝は `heads_of_notBelowFgRoot` が閉じる(周回 274)。保存の段の FG root と `B` の
+互換は `fgRoot_preceq_of_notBelow` が出す(周回 275)。 -/
 theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon) :
@@ -2403,13 +2462,14 @@ theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDoma
         (∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true) →
         ProtectedVoteSlot c p a nr s rho (d + 1) B :=
       fun h => protectedVoteSlot_of_heads c p a nr s rho hwf hsleep hhor (by omega) hupper h
-    refine ⟨hsucc (heads_of_notBelowFgRoot c p a nr s rho fun x hx hr =>
-      protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hprev.1 hx hr), ?_⟩
+    have hpres : ∀ {B : Block}, ProtectedVoteSlot c p a nr s rho d B → ProtectedVoteSlot c p a nr s rho (d + 1) B :=
+      fun hB => hsucc (heads_of_notBelowFgRoot c p a nr s rho fun x hx hr =>
+        protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hB hx hr
+          (fgRoot_preceq_of_notBelow c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hB hx hr))
+    refine ⟨hpres hprev.1, ?_⟩
     intro w i t C hw ht hq hC
     by_cases hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d
-    · exact hsucc (heads_of_notBelowFgRoot c p a nr s rho fun x hx hr =>
-        protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior
-          (hprev.2 w i t C hw ht hqd hC) hx hr)
+    · exact hpres (hprev.2 w i t C hw ht hqd hC)
     · exact hsucc (heads_of_notBelowFgRoot c p a nr s rho fun x hx hr =>
         protectedVoteSlot_succ_of_genuineConf c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hw ht
           (by omega) hC hx hr)
