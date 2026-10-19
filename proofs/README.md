@@ -504,7 +504,8 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 G1 / G2 の root は無いので grade 2 の候補は空、anchor は FG root で、SG block は `liveConfirmed` の祖先か FG root。手書き `WeakGenesis.actionSGBlock_eq_genesis_zero`)
 で閉じ、正の round は `fgStep_preceq_laterVoteHead_positive`(穴ではない。周回 252)に渡します。これは SG block を `sgBlockAt_preceq_of_candidate_anchor`
 (`currentSGVote` の 4 つの枝: `deepestClear` の結果は `liveConfirmed` の祖先、grade 2 の候補、rawG2 なら FG root、それ以外は anchor)で grade 2 の候補と
-務めの round の frame の anchor に下ろし、その 2 つを穴 `fgStep_anchorCandidate_positive`(手書きの帰納の段の `hroots` の後の `hformation` の枝)から取ります。
+務めの round の frame の anchor に下ろします。anchor は `frameAnchor_preceq_of_g1Prefix`(周回 253)で FG root と G1 の root の active prefix に下ろし、
+grade 2 の候補と G1 の root の active prefix を穴 `fgStep_g1PrefixCandidate_positive`(手書きの帰納の段の `hroots` の後の `hformation` の枝)から取ります。
 `recordAt_preceq_laterVoteHead` は確認の記録の由来(`ConfirmedOrigin.lean` の `storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か
 grade の stable root。手書き `ConfirmationOrigin.stateBefore_latest_confirmed_origin`)で分け、`confWalk_preceq_laterVoteHead`(walk ⪯ 後の投票の head。穴ではない。
 手書きと同じく walk が anchor のままか filtered tree の適格な要素か(`Goldfish.head_cases`)で分け、anchor は g1 の frame の raw の active prefix か FG root なので
@@ -546,7 +547,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.genuineConf_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_gstZero_v2` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 250 |
-| `Proofs.Consensus.AvailableHoles.fgStep_anchorCandidate_positive` | `Consensus.Spec.Claims.available` | `actionSources_preceq_of_priorConfirmations_and_historyCut` | `DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean` | 252 |
+| `Proofs.Consensus.AvailableHoles.fgStep_g1PrefixCandidate_positive` | `Consensus.Spec.Claims.available` | `actionSources_preceq_of_priorConfirmations_and_historyCut` | `DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean` | 253 |
 | `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead_positive` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 246 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
