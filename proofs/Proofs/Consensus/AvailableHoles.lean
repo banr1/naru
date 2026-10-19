@@ -2643,6 +2643,108 @@ theorem voteDutyHead_passes_supporter_majority (x : ValidatorId) (k : Nat) {B : 
   dsimp only
   exact Proofs.Consensus.Majority.goldfishForkChoice_passes_supporter_majority s.e _ _ _ _ hnd hsub hmaj hAB hpath
 
+/-- 投票の歩みの tree `voterFilteredBlockTree`(store の tree の 4 段の絞り込み: 処理済み・finalized の子孫・viable・FG root の下)は、
+store の tree の要素に重複が無ければ重複が無い(`getFilteredBlockTree_nodup` と同じ運び。周回 279)。 -/
+theorem voterFilteredBlockTree_nodup {e : Model.Consensus.Objects.Parameters.ProtocolEnv}
+    {st : Model.Consensus.Protocol.Store.Store} (k : Nat) (hnd : st.tree.elems.Nodup) :
+    (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree e st k).elems.Nodup := by
+  unfold Model.Consensus.Protocol.Handlers.voterFilteredBlockTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTreeFrom
+    Model.Consensus.Protocol.ForkChoice.Goldfish.viableTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.finalizedDescendants
+    Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree NaruStd.Set.filter
+  exact (((hnd.filter _).filter _).filter _).filter _
+
+/-- 投票の務めの読みの歩みの tree に重複は無い(`voteDutyHead_passes_supporter_majority` の前提 `hnd`)。読みの store は
+`stateBeforeTime` の `x` の store の時計を合わせただけなので、tree は `Trees.stateBeforeTime_treeInv` の欄 `nodup` を受け継ぐ
+(周回 279)。 -/
+theorem voteDutyStore_voterFilteredBlockTree_nodup (x : ValidatorId) (k : Nat) :
+    (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree s.e (voteDutyStoreAt c p a nr s rho x k)
+      (voteDutyStoreAt c p a nr s rho x k).s).elems.Nodup := by
+  apply voterFilteredBlockTree_nodup
+  unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+  exact (Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ x).nodup
+
+/-- voter view の pooled の部分: 解決の印 `tau` が freeze より前なら受信の印も freeze より前(`Majority.timestampVote_before_of_tau`)
+なので、支持の pooled は投票の pooled に含まれる(周回 279)。 -/
+theorem voterSupportView_pooled_sub (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (st : Model.Consensus.Protocol.Store.Store) (k : Nat) (u : GoldfishVote)
+    (hu : u ∈ (NaruStd.Set.filter (Model.Consensus.Protocol.StoreBase.pool
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) (k - 1))
+      (fun vote => Model.Consensus.Objects.Time.occurrenceBefore
+        (Model.Consensus.Protocol.StoreBase.tau
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) vote)
+        (Model.Consensus.Protocol.Schedule.viewFreeze e (k - 1)))).elems) :
+    u ∈ (NaruStd.Set.filter (Model.Consensus.Protocol.StoreBase.pool
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) (k - 1))
+      (fun vote => Model.Consensus.Objects.Time.occurrenceBefore
+        (NaruStd.Table.get? (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing st)).timestampVote vote)
+        (Model.Consensus.Protocol.Schedule.viewFreeze e (k - 1)))).elems := by
+  obtain ⟨hpool, hτ⟩ := (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hu
+  rw [Proofs.Consensus.Trees.mem_filter_iff]
+  exact ⟨hpool, Proofs.Consensus.Majority.timestampVote_before_of_tau (st := st) hτ le_rfl⟩
+
+/-- **支持の voter view は投票の voter view に含まれる**(`voteDutyHead_passes_supporter_majority` の前提 `hsub` の形): pooled の部分は
+`voterSupportView_pooled_sub`、carried の部分は store の tree のブロックの運ぶ支持の投票がそのブロックの運ぶ投票に含まれること
+(`hcar`。受理の検査 `carriedSupportWellFormed` からの run の不変条件で、まだ無い)から出る(周回 279)。 -/
+theorem voterSupportView_sub_voterView (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (st : Model.Consensus.Protocol.Store.Store) (k : Nat)
+    (hcar : ∀ b ∈ st.tree.elems, ∀ u ∈ gfSupportVotes b, u ∈ gfVotes b) :
+    ∀ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) k).elems,
+      u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) k).elems := by
+  intro u hu
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterSupportView at hu
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterView
+  dsimp only at hu ⊢
+  rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu ⊢
+  rcases hu with hu | hu
+  · exact Or.inl (voterSupportView_pooled_sub e st k u hu)
+  · right
+    rw [Proofs.Consensus.Sets.mem_flatMap_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu ⊢
+    obtain ⟨b, hb, hub⟩ := hu
+    refine ⟨b, hb, ?_⟩
+    rw [Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hub ⊢
+    obtain ⟨hub, hcond⟩ := List.mem_filter.mp hub
+    have hbt := ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hb).1
+    simp only [Bool.and_eq_true] at hcond
+    exact List.mem_filter.mpr ⟨hcar b hbt u hub, hcond.2⟩
+
+/-- `voteDutyHead_passes_supporter_majority` の前提 `hnd` を `voteDutyStore_voterFilteredBlockTree_nodup` で、`hsub` を
+`voterSupportView_sub_voterView` で外した形。残りの前提は、読みの store の tree の運ぶ支持の投票が運ぶ投票に含まれること(`hcar`)、
+読みの voter view での `B` の支持者の過半(`hmaj`)、anchor ⪯ `B`(`hAB`)、anchor から `B` までの途中が歩みの tree にあること
+(`hpath`)(周回 279)。 -/
+theorem voteDutyHead_passes_supporter_majority_of_carried (x : ValidatorId) (k : Nat) {B : Block}
+    (hcar : ∀ b ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems, ∀ u ∈ gfSupportVotes b, u ∈ gfVotes b)
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x k) B = true)
+    (hpath : ∀ C, preceq (voteDutyAnchorAt c p a nr s rho x k) C = true → C ≠ voteDutyAnchorAt c p a nr s rho x k →
+      preceq C B = true →
+      C ∈ (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree s.e (voteDutyStoreAt c p a nr s rho x k)
+        (voteDutyStoreAt c p a nr s rho x k).s).elems) :
+    preceq B (voteDutyHeadAt c p a nr s rho x k) = true :=
+  voteDutyHead_passes_supporter_majority c p a nr s rho x k
+    (voteDutyStore_voterFilteredBlockTree_nodup c p a nr s rho x k)
+    (voterSupportView_sub_voterView s.e _ _ hcar) hmaj hAB hpath
+
 /-- **確認の締切は投票時刻ではない**(Δ > 0): `4Δ · k + 2Δ = 4Δ · k' + Δ` なら `1 = 4 · (k' - k)` で、整数では成り立たない
 (`supportCutoff_ne_proposalTime` と同じ運び。周回 277)。 -/
 theorem supportCutoff_ne_voteTime {e : Model.Consensus.Objects.Parameters.ProtocolEnv} (hδ : 0 < e.delta) (k k' : Nat) :
@@ -2899,7 +3001,9 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 `B` の真の祖先である(`hbelow` ∧ `hanc`。FG root ⪯ anchor ⪯ `B` も従う)枝だけ。残りは手書き `goldfishCone_step'` の `hrootBelow` の枝
 (`coreConeBandDescendant_of_runFrontier` → `coreGoldfishConePathEligible` → `goldfish_fork_choice_captures_supporter_majority`)。
 周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`(証明済み)にあり、残りはその前提: 読みの voter view での
-`B` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、anchor から `B` までの途中が歩みの tree にあること。 -/
+`B` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、anchor から `B` までの途中が歩みの tree にあること。
+周回 279 から重複なしと包含の pooled の部分は証明済みで、`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は
+carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -2922,7 +3026,8 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
 で eligible なので、経路の各ブロックの得点は過半。手書き `protectedVoteSlot_succ_of_genuineConfirmationWith` の head の段と
 `goldfish_fork_choice_captures_supporter_majority`)。周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`
 (証明済み)にあり、残りはその前提(読みの voter view での `C` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、
-anchor から `C` までの途中が歩みの tree にあること)。 -/
+anchor から `C` までの途中が歩みの tree にあること)。周回 279 から重複なしと包含の pooled の部分は証明済みで、
+`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)

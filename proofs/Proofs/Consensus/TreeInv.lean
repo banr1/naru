@@ -662,6 +662,14 @@ theorem stateBefore_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat → V
   unfold stateBefore
   exact foldl_worldStep_treeInv c p a nr s _ (worldInit_inv s.e s.cfg) worldInit_treeInv
 
+/-- 時刻 `t` より前の event を畳んだ world のどのノードでも 4 つの欄と `liveConfirmed` は tree にあり、tree に重複は無い
+(event の整列を要らない。周回 279)。 -/
+theorem stateBeforeTime_treeInv (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : ValidatorId → Nat → Bool)
+    (nr : ValidatorId → Nat → BlockId) (s : Model.Consensus.Execution.Setup.Setup) (rho : NamedRun) (t : Int) :
+    WorldTreeInv (stateBeforeTime c p a nr s rho t) := by
+  unfold stateBeforeTime
+  exact foldl_worldStep_treeInv c p a nr s _ (worldInit_inv s.e s.cfg) worldInit_treeInv
+
 /-! ## 3 つの出力 -/
 
 theorem getStable_mem {st : Store} (h : TreeInv st) : getStable st ∈ st.tree.elems := by
