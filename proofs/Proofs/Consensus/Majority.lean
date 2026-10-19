@@ -645,4 +645,324 @@ theorem exists_honest_supporter_of_run {c : Nat → NaruStd.Set ValidatorId} {p 
   exists_honest_supporter setup.e s b rho.honest (le_of_lt (Proofs.Consensus.Liveness.wf_facts hwf).1)
     (storeAt_pool c p a nr setup rho v t) (committee_sorted hwf s) (honestCommittees_at hhc s) hall hmaj
 
+/-! ## 過半の支持は fork choice の歩みを通す(手書き `Adoption.lean`)
+
+claim `available` の段の穴(`AvailableHoles.lean` の `protectedVoteSlot_preserve` / `protectedVoteSlot_succ_of_genuineConf`)の
+`ghost` の歩みの組合せの層(周回 278)。非 equivocator の投票者の投票は 1 つなので競合するブロックの支持者は互いに素
+(`rawSupporters_disjoint`)、競合するブロックの得点と支持者は参加者に収まる(`score_add_supporters_le`)ので、`B` の支持者が参加者の
+過半なら `B` の祖先は競合するどのブロックより得点が真に大きい(`score_lt_of_supporter_majority`)。重複のない tree では得点が真に最大の
+適格な子が一歩で選ばれ(`ghostStep_eq_of_dominates`)、anchor から `B` までの途中が tree にあれば歩みは `B` を通る
+(`ghost_passes_supporter_majority` / `goldfishForkChoice_passes_supporter_majority`)。 -/
+
+section SupporterMajority
+
+open Proofs.Consensus.Goldfish (rawSupporters_sub_participants rawSupporters_size_mono mem_ghostChildren_iff depth_of_parent?
+  preceq_of_parent? preceq_depth_le preceq_eq_of_depth_le ghostStep_preceq ghostStep_depth ghostWalk_preceq path_card)
+
+/-- 異なる 2 つの要素を持つリストの長さは 2 以上。 -/
+theorem two_le_length_of_ne {β : Type} {l : List β} {a b : β} (ha : a ∈ l) (hb : b ∈ l) (hab : a ≠ b) :
+    2 ≤ l.length := by
+  match l, ha, hb with
+  | [], ha, _ => simp at ha
+  | [x], ha, hb =>
+    simp only [List.mem_singleton] at ha hb
+    exact absurd (ha.trans hb.symm) hab
+  | _ :: _ :: _, _, _ => simp
+
+/-- **競合するブロックの支持者は互いに素**: 支持の投票が投票の部分集合なら、非 equivocator の投票者の投票は 1 つなので、
+競合する `B` と `D` の両方の支持者にはなれない。手書き `supporters_disjoint_of_conflicts`(`Adoption.lean`)。 -/
+theorem rawSupporters_disjoint {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote} {s : Nat} {B D : Block}
+    (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems) (hconflict : compatible B D = false) {v : ValidatorId}
+    (hB : v ∈ (rawSupporters tree votes sv s B).elems) (hD : v ∈ (rawSupporters tree votes sv s D).elems) : False := by
+  rw [mem_rawSupporters_iff] at hB hD
+  obtain ⟨-, hne, u, hu, hvi, -, htB⟩ := hB
+  obtain ⟨-, -, u', hu', hvi', -, htD⟩ := hD
+  have huu : u = u' := by
+    by_contra hneq
+    have h2 := two_le_length_of_ne ((mem_votesBy_iff votes v u).mpr ⟨hsub u hu, hvi⟩)
+      ((mem_votesBy_iff votes v u').mpr ⟨hsub u' hu', hvi'⟩) hneq
+    unfold equivocates at hne
+    rw [decide_eq_false_iff_not] at hne
+    exact hne h2
+  subst huu
+  obtain ⟨c, hc, -, hBc⟩ := (targetsUnder_iff tree B u).mp htB
+  obtain ⟨c', hc', -, hDc⟩ := (targetsUnder_iff tree D u).mp htD
+  rw [hc, Option.some.injEq] at hc'
+  subst hc'
+  rw [compatible_of_preceq_common hBc hDc] at hconflict
+  exact Bool.true_eq_false.mp hconflict
+
+/-- equivocator は参加者。 -/
+theorem rawEquivocators_sub_participants (votes : NaruStd.Set GoldfishVote) :
+    ∀ v ∈ (rawEquivocators votes).elems, v ∈ (rawParticipants votes).elems := by
+  intro v hv
+  obtain ⟨hvo, -⟩ := (mem_rawEquivocators_iff votes v).mp hv
+  exact mem_rawParticipants_of_voters hvo
+
+/-- 支持者は equivocator でない。 -/
+theorem not_mem_rawEquivocators_of_supporter {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote} {s : Nat}
+    {b : Block} {v : ValidatorId} (hv : v ∈ (rawSupporters tree votes sv s b).elems) :
+    v ∉ (rawEquivocators votes).elems := by
+  intro he
+  have h1 := ((mem_rawEquivocators_iff votes v).mp he).2
+  have h2 := ((mem_rawSupporters_iff tree votes sv s b v).mp hv).2.1
+  rw [h1] at h2
+  exact Bool.true_eq_false.mp h2
+
+/-- **競合するブロックの得点と支持者は参加者に収まる**: `D` の得点(equivocator + `D` の支持者)と `B` の支持者の数の和は投票の参加者の数
+以下(3 つの集合は互いに素でどれも参加者)。手書き `score_add_supporters_le`。 -/
+theorem score_add_supporters_le (e : ProtocolEnv) {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote} {s : Nat}
+    {B D : Block} (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems) (hconflict : compatible B D = false) :
+    goldfishScore e tree votes sv s D + (rawSupporters tree votes sv s B).size ≤ votersCount e votes s := by
+  have hsE : Sorted (rawEquivocators votes) := (sorted_voters votes).filter _
+  have hsD : Sorted (rawSupporters tree votes sv s D) := (sorted_voters sv).filter _
+  have hsB : Sorted (rawSupporters tree votes sv s B) := (sorted_voters sv).filter _
+  have hsP : Sorted (rawParticipants votes) := (sorted_voters votes).filter _
+  show (rawEquivocators votes).size + (rawSupporters tree votes sv s D).size +
+    (rawSupporters tree votes sv s B).size ≤ (rawParticipants votes).size
+  rw [size_eq_card hsE, size_eq_card hsD, size_eq_card hsB, size_eq_card hsP]
+  set E := (rawEquivocators votes).elems.toFinset
+  set SD := (rawSupporters tree votes sv s D).elems.toFinset
+  set SB := (rawSupporters tree votes sv s B).elems.toFinset
+  set P := (rawParticipants votes).elems.toFinset
+  have hsupP : ∀ (b : Block) v, v ∈ (rawSupporters tree votes sv s b).elems → v ∈ (rawParticipants votes).elems := by
+    intro b v hv
+    have h := rawSupporters_sub_participants tree votes sv s b v hv
+    obtain ⟨hvo, -⟩ := (mem_rawParticipants_iff sv v).mp h
+    exact mem_rawParticipants_of_voters (voters_mono hsub hvo)
+  have hED : Disjoint E SD := by
+    rw [Finset.disjoint_left]
+    intro v hE hD
+    rw [List.mem_toFinset] at hE hD
+    exact not_mem_rawEquivocators_of_supporter hD hE
+  have hEDB : Disjoint (E ∪ SD) SB := by
+    rw [Finset.disjoint_left]
+    intro v hv hB
+    rw [Finset.mem_union] at hv
+    rw [List.mem_toFinset] at hB
+    rcases hv with hE | hD
+    · rw [List.mem_toFinset] at hE
+      exact not_mem_rawEquivocators_of_supporter hB hE
+    · rw [List.mem_toFinset] at hD
+      exact rawSupporters_disjoint hsub hconflict hB hD
+  have hsubP : E ∪ SD ∪ SB ⊆ P := by
+    intro v hv
+    simp only [Finset.mem_union, List.mem_toFinset, E, SD, SB, P] at hv ⊢
+    rcases hv with (hE | hD) | hB
+    · exact rawEquivocators_sub_participants votes v hE
+    · exact hsupP D v hD
+    · exact hsupP B v hB
+  have hcard := Finset.card_le_card hsubP
+  rw [Finset.card_union_of_disjoint hEDB, Finset.card_union_of_disjoint hED] at hcard
+  exact hcard
+
+/-- **過半の支持の経路のブロックは競合するブロックより得点が真に大きい**: `B` の支持者が投票の参加者の過半なら、`B` の祖先 `C` の得点は
+`B` と競合する `D` の得点より大きい。手書き `score_lt_of_supporter_majority`。 -/
+theorem score_lt_of_supporter_majority (e : ProtocolEnv) {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote}
+    {s : Nat} {B C D : Block} (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems)
+    (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
+    (hCB : preceq C B = true) (hconflict : compatible B D = false) :
+    goldfishScore e tree votes sv s D < goldfishScore e tree votes sv s C := by
+  have hfit := score_add_supporters_le e (tree := tree) (s := s) hsub hconflict
+  have hmono := rawSupporters_size_mono (tree := tree) (votes := votes) (sv := sv) (s := s) hCB
+  show _ < (rawEquivocators votes).size + (rawSupporters tree votes sv s C).size
+  omega
+
+/-- 過半の支持は経路のブロックを過半の門に通す。手書き `eligible_of_supporter_majority`。 -/
+theorem lt_score_of_supporter_majority (e : ProtocolEnv) {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote}
+    {s : Nat} {B C : Block} (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
+    (hCB : preceq C B = true) :
+    votersCount e votes s < 2 * goldfishScore e tree votes sv s C := by
+  have hmono := rawSupporters_size_mono (tree := tree) (votes := votes) (sv := sv) (s := s) hCB
+  show _ < 2 * ((rawEquivocators votes).size + (rawSupporters tree votes sv s C).size)
+  omega
+
+/-- `goldfishEligible` は過半の門を含む。 -/
+theorem goldfishEligible_of_lt (e : ProtocolEnv) (sigma : NaruStd.Table Block Model.Consensus.Protocol.ChainState.ChainState)
+    (hMax : Nat) (tree : NaruStd.Set Block) (cur : Nat) (votes sv : NaruStd.Set GoldfishVote) (s : Nat) {b : Block}
+    (h : votersCount e votes s < 2 * goldfishScore e tree votes sv s b) :
+    goldfishEligible e sigma hMax tree cur votes sv s b = true := by
+  unfold goldfishEligible
+  simp only [Bool.or_eq_true, decide_eq_true_eq]
+  exact Or.inl (Or.inr h)
+
+/-! ## 一歩の選択と経路の通過 -/
+
+/-- **得点が真に最大の子は一歩で選ばれる**: 重複のない tree で、`c` が適格な子で、ほかの適格な子の得点がどれも `c` より小さければ、
+`ghostStep` は `c` を返す。手書き `argmax?_eq_some_of_dominates`。 -/
+theorem ghostStep_eq_of_dominates {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {h c : Block}
+    (hnd : tree.elems.Nodup) (hc : c ∈ (ghostChildren tree el h).elems)
+    (hdom : ∀ d ∈ (ghostChildren tree el h).elems, d ≠ c → score d < score c) :
+    ghostStep tree score el h = some c := by
+  have hbest : ∀ d ∈ (ghostChildren tree el h).elems,
+      isBestIn score (ghostChildren tree el h) d = true ↔ d = c := by
+    intro d hd
+    unfold isBestIn NaruStd.Set.all
+    rw [List.all_eq_true]
+    constructor
+    · intro hall
+      by_contra hne
+      have h1 := hall c hc
+      have hlt := hdom d hd hne
+      unfold outranks at h1
+      simp only [Bool.not_eq_true', Bool.or_eq_false_iff, decide_eq_false_iff_not] at h1
+      exact h1.1 hlt
+    · rintro rfl x hx
+      unfold outranks
+      simp only [Bool.not_eq_true', Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff,
+        beq_eq_false_iff_ne]
+      by_cases hxd : x = d
+      · subst hxd
+        refine ⟨lt_irrefl _, Or.inr ?_⟩
+        rw [bid_compare]
+        simp
+      · have hlt := hdom x hx hxd
+        exact ⟨Nat.not_lt.mpr hlt.le, Or.inl (Nat.ne_of_lt hlt).symm⟩
+  have hnd' : (ghostChildren tree el h).elems.Nodup := by
+    unfold ghostChildren NaruStd.Set.filter
+    exact hnd.filter _
+  have hfilter : (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)) = [c] := by
+    have hfnd := hnd'.filter (isBestIn score (ghostChildren tree el h))
+    have hcm : c ∈ (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)) :=
+      List.mem_filter.mpr ⟨hc, (hbest c hc).mpr rfl⟩
+    have hall : ∀ x ∈ (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)), x = c := by
+      intro x hx
+      obtain ⟨hx, hb⟩ := List.mem_filter.mp hx
+      exact (hbest x hx).mp hb
+    have hlen := length_le_one_of_nodup hfnd (fun a ha b hb => (hall a ha).trans (hall b hb).symm)
+    match hl : (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)), hlen, hcm with
+    | [], _, hcm => simp at hcm
+    | [x], _, hcm =>
+      rw [List.mem_singleton] at hcm
+      rw [hcm]
+  unfold ghostStep argmax? NaruStd.Set.findUnique?
+  rw [hfilter]
+
+/-- `H ⪯ B`、`H ≠ B` なら、`H` の子で `B` の祖先のものがある。手書き `exists_child_towards`。 -/
+theorem exists_child_towards {H : Block} : ∀ {B : Block}, preceq H B = true → H ≠ B →
+    ∃ C, parent? C = some H ∧ preceq C B = true
+  | Block.Genesis, hHB, hne => by
+    simp only [preceq, beq_iff_eq] at hHB
+    exact absurd hHB hne
+  | Block.Node p s r v sup ats i, hHB, hne => by
+    simp only [preceq, Bool.or_eq_true, beq_iff_eq] at hHB
+    rcases hHB with heq | hHp
+    · exact absurd heq hne
+    · by_cases hHp' : H = p
+      · subst hHp'
+        exact ⟨Block.Node H s r v sup ats i, rfl, preceq_self _⟩
+      · obtain ⟨C, hC, hCp⟩ := exists_child_towards hHp hHp'
+        exact ⟨C, hC, preceq_trans hCp (preceq_node _ _ _ _ _ _ _)⟩
+
+/-- 同じ親の 2 つの子がどちらも `B` の祖先なら同じブロック。手書き `child_towards_unique`。 -/
+theorem child_towards_unique {H C D B : Block} (hC : parent? C = some H) (hD : parent? D = some H)
+    (hCB : preceq C B = true) (hDB : preceq D B = true) : C = D := by
+  have hdC := depth_of_parent? hC
+  have hdD := depth_of_parent? hD
+  rcases preceq_linear hCB hDB with h | h
+  · exact preceq_eq_of_depth_le h (by omega)
+  · exact (preceq_eq_of_depth_le h (by omega)).symm
+
+/-- 燃料つきの歩みは、途中の各ブロックで次の一歩が `B` の祖先なら `B` を通る。手書き `ghost_walk_passes`。 -/
+theorem ghostWalk_passes {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {A B : Block}
+    (hstep : ∀ H, preceq A H = true → preceq H B = true → H ≠ B →
+      ∃ C, ghostStep tree score el H = some C ∧ preceq C B = true) :
+    ∀ (fuel : Nat) (H : Block), preceq A H = true → preceq H B = true →
+      depth B ≤ depth H + fuel → preceq B (ghostWalk tree score el fuel H) = true
+  | 0, H, _, hpre, hd => by
+    have hH : H = B := preceq_eq_of_depth_le hpre (by omega)
+    subst hH
+    exact ghostWalk_preceq tree score el 0 H
+  | n + 1, H, hanch, hpre, hd => by
+    by_cases hHB : H = B
+    · subst hHB
+      exact ghostWalk_preceq tree score el _ H
+    · obtain ⟨C, hCs, hCp⟩ := hstep H hanch hpre hHB
+      have hdepth := ghostStep_depth hCs
+      rw [ghostWalk]
+      split
+      · rename_i hz
+        simp at hz
+      rw [hCs]
+      dsimp only
+      rw [Nat.add_sub_cancel]
+      exact ghostWalk_passes hstep n C (preceq_trans hanch (ghostStep_preceq hCs)) hCp (by omega)
+
+/-- **通過補題**: anchor `A` から `B` までの途中のブロックがすべて tree にあり、各ブロックで次の一歩が `B` の祖先なら、fork choice の
+結果は `B` を延ばす。手書き `ghost_passes`(`ghost_reaches` と違い `B` で止まることは要らない)。 -/
+theorem ghost_passes {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {A B : Block}
+    (hAB : preceq A B = true)
+    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ tree.elems)
+    (hstep : ∀ H, preceq A H = true → preceq H B = true → H ≠ B →
+      ∃ C, ghostStep tree score el H = some C ∧ preceq C B = true) :
+    preceq B (ghost A tree score el) = true := by
+  unfold ghost
+  exact ghostWalk_passes hstep tree.size A (preceq_self _) hAB (path_card hAB hpath)
+
+/-- **過半の支持は fork choice の歩みを通す**: 重複のない歩みの tree `walkTree` で、`B` の支持者が投票の参加者の過半、anchor `A ⪯ B`、
+`A` から `B` までの途中のブロックがすべて `walkTree` にあり、過半の門を通る `B` の祖先は適格(`el`)なら、`ghost` の結果は `B` を延ばす。
+各一歩で `B` の祖先の子は過半の門を通って適格で、ほかの適格な子は `B` と競合するので得点が真に小さい(`score_lt_of_supporter_majority`)。
+手書き `goldfish_fork_choice_passes_supporter_majority`(`Adoption.lean`)。 -/
+theorem ghost_passes_supporter_majority (e : ProtocolEnv) {tree walkTree : NaruStd.Set Block}
+    {votes sv : NaruStd.Set GoldfishVote} {s : Nat} {el : Block → Bool} {A B : Block}
+    (hnd : walkTree.elems.Nodup) (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems)
+    (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
+    (hel : ∀ C, preceq C B = true → votersCount e votes s < 2 * goldfishScore e tree votes sv s C → el C = true)
+    (hAB : preceq A B = true)
+    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ walkTree.elems) :
+    preceq B (ghost A walkTree (goldfishScore e tree votes sv s) el) = true := by
+  refine ghost_passes hAB hpath ?_
+  intro H hAH hHB hne
+  obtain ⟨C, hCpar, hCB⟩ := exists_child_towards hHB hne
+  have hAC : preceq A C = true := preceq_trans hAH (preceq_of_parent? hCpar)
+  have hCne : C ≠ A := by
+    intro hEq
+    have h1 := depth_of_parent? hCpar
+    have h2 := preceq_depth_le hAH
+    rw [hEq] at h1
+    omega
+  have hCmem : C ∈ (ghostChildren walkTree el H).elems :=
+    (mem_ghostChildren_iff _ _ _ _).mpr ⟨hpath C hAC hCne hCB, hCpar,
+      hel C hCB (lt_score_of_supporter_majority e hmaj hCB)⟩
+  refine ⟨C, ghostStep_eq_of_dominates hnd hCmem ?_, hCB⟩
+  intro D hD hDC
+  obtain ⟨-, hDpar, -⟩ := (mem_ghostChildren_iff _ _ _ _).mp hD
+  have hDB : preceq D B = false := by
+    rw [← Bool.not_eq_true]
+    intro hpre
+    exact hDC (child_towards_unique hCpar hDpar hCB hpre).symm
+  have hHlt : depth H < depth B := by
+    rcases Nat.lt_or_ge (depth H) (depth B) with h | h
+    · exact h
+    · exact absurd (preceq_eq_of_depth_le hHB h) hne
+  have hBD : preceq B D = false := by
+    rw [← Bool.not_eq_true]
+    intro hpre
+    have hdD := depth_of_parent? hDpar
+    have hEq : B = D := preceq_eq_of_depth_le hpre (by have := preceq_depth_le hpre; omega)
+    rw [← hEq] at hDB
+    rw [preceq_self] at hDB
+    exact Bool.true_eq_false.mp hDB
+  have hconflict : compatible B D = false := by
+    unfold compatible
+    rw [hBD, hDB]
+    rfl
+  exact score_lt_of_supporter_majority e hsub hmaj hCB hconflict
+
+/-- `goldfishForkChoice` の形: 過半の支持は Goldfish の fork choice を通す。 -/
+theorem goldfishForkChoice_passes_supporter_majority (e : ProtocolEnv)
+    (sigma : NaruStd.Table Block Model.Consensus.Protocol.ChainState.ChainState) (hMax : Nat)
+    (tree : NaruStd.Set Block) (cur : Nat) {A B : Block} {walkTree : NaruStd.Set Block}
+    {votes sv : NaruStd.Set GoldfishVote} {s : Nat}
+    (hnd : walkTree.elems.Nodup) (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems)
+    (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
+    (hAB : preceq A B = true)
+    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ walkTree.elems) :
+    preceq B (goldfishForkChoice e sigma hMax tree cur A walkTree votes sv s) = true := by
+  unfold goldfishForkChoice
+  exact ghost_passes_supporter_majority e hnd hsub hmaj
+    (fun C _ h => goldfishEligible_of_lt e sigma hMax tree cur votes sv s h) hAB hpath
+
+end SupporterMajority
+
 end Proofs.Consensus.Majority

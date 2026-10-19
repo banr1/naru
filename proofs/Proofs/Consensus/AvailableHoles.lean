@@ -2592,6 +2592,57 @@ theorem heads_of_notBelowAnchor {k : Nat} {B : Block}
   · exact Proofs.Consensus.Blocks.preceq_trans h (voteDutyAnchorAt_preceq_head c p a nr s rho x k)
   · exact habove x hx h
 
+/-- ノード `x` の slot `k` の投票の務めの読みの store(`voteDutyHeadAt` / `voteDutyAnchorAt` と同じ読み。周回 278)。 -/
+def voteDutyStoreAt (x : ValidatorId) (k : Nat) : Model.Consensus.Protocol.Store.Store :=
+  (Proofs.Consensus.Voting.clocked s.e
+    (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k)).core
+
+/-- **投票の務めの head は過半の支持を通る**: `x` の slot `k` の読みの voter view(投票 `voterView`・支持の投票 `voterSupportView`、
+slot `st.s - 1`)で `B` の支持者が参加者の過半、支持の投票が投票の部分集合、歩みの tree `voterFilteredBlockTree` に重複が無く、
+anchor から `B` までの途中がその tree にあり、anchor ⪯ `B` なら、`B` は投票の務めの head の祖先
+(`Majority.goldfishForkChoice_passes_supporter_majority`。手書き `goldfish_fork_choice_passes_supporter_majority`)。段の 2 つの穴は
+これを読みの view の数え上げに渡す形で閉じる見込み(周回 278)。 -/
+theorem voteDutyHead_passes_supporter_majority (x : ValidatorId) (k : Nat) {B : Block}
+    (hnd : (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree s.e (voteDutyStoreAt c p a nr s rho x k)
+      (voteDutyStoreAt c p a nr s rho x k).s).elems.Nodup)
+    (hsub : ∀ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+        (voteDutyStoreAt c p a nr s rho x k).s).elems,
+      u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+        (voteDutyStoreAt c p a nr s rho x k).s).elems)
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x k) B = true)
+    (hpath : ∀ C, preceq (voteDutyAnchorAt c p a nr s rho x k) C = true → C ≠ voteDutyAnchorAt c p a nr s rho x k →
+      preceq C B = true →
+      C ∈ (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree s.e (voteDutyStoreAt c p a nr s rho x k)
+        (voteDutyStoreAt c p a nr s rho x k).s).elems) :
+    preceq B (voteDutyHeadAt c p a nr s rho x k) = true := by
+  unfold voteDutyHeadAt Proofs.Consensus.Voting.voteHeadBlock
+    Model.Consensus.Protocol.Handlers.getHeadInTreeWith
+    Model.Consensus.Protocol.ForkChoice.Head.getHeadInTreeWithLayer
+  dsimp only
+  exact Proofs.Consensus.Majority.goldfishForkChoice_passes_supporter_majority s.e _ _ _ _ hnd hsub hmaj hAB hpath
+
 /-- **確認の締切は投票時刻ではない**(Δ > 0): `4Δ · k + 2Δ = 4Δ · k' + Δ` なら `1 = 4 · (k' - k)` で、整数では成り立たない
 (`supportCutoff_ne_proposalTime` と同じ運び。周回 277)。 -/
 theorem supportCutoff_ne_voteTime {e : Model.Consensus.Objects.Parameters.ProtocolEnv} (hδ : 0 < e.delta) (k k' : Nat) :
@@ -2846,7 +2897,9 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 排除し、穴は FG root が `B` の真の祖先である枝だけになった。周回 276 から同じことを anchor(`voteDutyAnchorAt`。FG root を延ばす)で
 行い、`B` が anchor の祖先の枝は `heads_of_notBelowAnchor`、互換でない場合は `anchor_preceq_of_notBelow` が閉じるので、穴は anchor が
 `B` の真の祖先である(`hbelow` ∧ `hanc`。FG root ⪯ anchor ⪯ `B` も従う)枝だけ。残りは手書き `goldfishCone_step'` の `hrootBelow` の枝
-(`coreConeBandDescendant_of_runFrontier` → `coreGoldfishConePathEligible` → `goldfish_fork_choice_captures_supporter_majority`)。 -/
+(`coreConeBandDescendant_of_runFrontier` → `coreGoldfishConePathEligible` → `goldfish_fork_choice_captures_supporter_majority`)。
+周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`(証明済み)にあり、残りはその前提: 読みの voter view での
+`B` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、anchor から `B` までの途中が歩みの tree にあること。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -2867,7 +2920,9 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
 `genuineConfirmation_exists_honestVoteSupporter_after_gst`)を介して `anchor_preceq_of_genuineConf` が出すので、穴は anchor が `C` の
 真の祖先である(`hbelow` ∧ `hanc`)枝だけ。閉じるのに要るもの: anchor から `C` までの `ghost` の歩みが `C` を通ること(`C` は slot `d`
 で eligible なので、経路の各ブロックの得点は過半。手書き `protectedVoteSlot_succ_of_genuineConfirmationWith` の head の段と
-`goldfish_fork_choice_captures_supporter_majority`)。 -/
+`goldfish_fork_choice_captures_supporter_majority`)。周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`
+(証明済み)にあり、残りはその前提(読みの voter view での `C` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、
+anchor から `C` までの途中が歩みの tree にあること)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
