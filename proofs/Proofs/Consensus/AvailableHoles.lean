@@ -59,8 +59,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    2 つの担い手 `fgStep_gradeCarrier_positive` / `confG1Carrier_positive` は、共通の上界 `D`(ここでは `X`)が窓の round の honest な
    行の SG block と、phase の読みのすべての honest なノードの finalized の上にあれば担い手がある、という共通の構成
    `relativeGradeCarrierAt_of_commonUpper` から証明する。finalized の側は `stateBeforeTime_f_preceq_of_witnesses` で読みより前の
-   honest な行の確認の証人に下ろす(周回 257)。共通の構成は、解釈済みの入力を持つ honest な多数派(穴
-   `honestInterpretedMajority_of_commonUpper`)から grade の honest な支持者の入力を取り(`GradeSupporter.phase_graded_has_honest_supporter`)、
+   honest な行の確認の証人に下ろす(周回 257)。共通の構成は、解釈済みの入力を持つ honest な多数派
+   (`honestInterpretedMajority_of_commonUpper`。`SleepyRegime` の `WindowMajority` を round の action 時刻で使った窓の awake な
+   honest の集合で、窓の時刻の action round は round の窓にある `actionRound_mem_latestWindow`。各元が解釈済みの入力を持つことは穴
+   `awakeWindowVote_interpreted_of_commonUpper`。周回 260)から grade の honest な支持者の入力を取り(`GradeSupporter.phase_graded_has_honest_supporter`)、
    それを送り手が出した行に戻し(`SgFrom.sg_genuine`)、その `confirmed` の解決を行の SG block と同一視する(`sgBlockAt_findRoot_eq`)
    (周回 258)。`sgBlockAt_findRoot_eq` は、SG block が務めの store の tree にあり(`sgBlockAt_mem_dutyTree`)、その bodies が tick の後の
    bodies(`stateBefore_succ_bodies_of_emits`)なので run の中のブロックで、run に root の衝突が無いことで閉じた(周回 259)。
@@ -88,8 +90,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
 3. 穴(6 件): `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`、
    `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean`)/
-   `honestInterpretedMajority_of_commonUpper`(手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero` が
-   `relativeGradeCarrierAt_of_awakeWindowMajority` に渡す `hmajority` / `htransport`、`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)/
+   `awakeWindowVote_interpreted_of_commonUpper`(手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero` が
+   `relativeGradeCarrierAt_of_awakeWindowMajority` に渡す `htransport`、`DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
    `stableIncluded`(手書き `available_stableIncluded_any`)。
@@ -523,18 +525,120 @@ theorem stateBeforeTime_f_preceq_of_witnesses (hwf : SetupWellFormed c p s) (hsl
     exact Proofs.Consensus.Blocks.preceq_trans hF (Proofs.Consensus.Blocks.preceq_genesis _)
   · exact Proofs.Consensus.Blocks.preceq_trans hF (hwit _ i2 t2 row2 hH hev hem ht2 _ hT)
 
+/-- 窓の round はちょうど `r - eta ≤ k < r` の round: `latestWindow eta r` は `r - eta` から `min r eta` 個の round を並べた
+もの(`lt_of_mem_latestWindow` の両向き。手書き `NamedOutageClosure.window_bounds` / `mem_latest_window`。周回 260)。 -/
+theorem mem_latestWindow_iff {eta r k : Nat} :
+    k ∈ Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow eta r ↔ r - eta ≤ k ∧ k < r := by
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow
+  constructor
+  · intro h
+    obtain ⟨j, hj, rfl⟩ := List.mem_map.mp h
+    have := List.mem_range.mp hj
+    omega
+  · rintro ⟨h1, h2⟩
+    refine List.mem_map.mpr ⟨k - (r - eta), List.mem_range.mpr ?_, ?_⟩ <;> omega
+
+/-- round `j` の action 時刻は `4ΔR · j + 6Δ`(周回 260)。 -/
+theorem setupActionTime_eq (j : Nat) :
+    Model.Consensus.Execution.Setup.setupActionTime s j = s.e.delta * 4 * (s.hc.r : Int) * (j : Int) + 6 * s.e.delta := by
+  unfold Model.Consensus.Execution.Setup.setupActionTime Model.Consensus.Protocol.Grades.actionTime
+    Model.Consensus.Objects.Time.slotStart Model.Consensus.Protocol.Grades.openingSlot
+  simp only [Int.ofNat_eq_natCast]
+  push_cast
+  ring
+
+/-- **参加の窓の時刻の action round は round の窓にある**(Δ > 0、`R ≥ 1`、`r > 0`): 時刻 `u` が round `r` の action 時刻で
+終わる参加の窓 `[setupActionTime r - participationWindow, setupActionTime r)` にあれば、`u` の action round(`envAwake` が見る
+round)は `latestWindow η_SG r` にある。`u` が round 0 の action 時刻より前なら action round は 0 で、そのとき `r < η_SG` なので
+窓は `0` から始まる。そうでなければ action round は `(u - 6Δ) / 4ΔR` の床で、窓の端の不等式を 4ΔR で割る。手書き
+`awakeIn_action_window` の `→` の向き(`DecoupledConsensusProofs/Bridge/GenericParticipation.lean`。周回 260)。 -/
+theorem actionRound_mem_latestWindow (hδ : 0 < s.e.delta) (hR : 1 ≤ s.hc.r) {r : Nat} (hr : 0 < r) {u : Int}
+    (hlo : Model.Consensus.Execution.Setup.setupActionTime s r - Model.Consensus.Spec.Constants.participationWindow s ≤ u)
+    (hhi : u < Model.Consensus.Execution.Setup.setupActionTime s r) :
+    Model.Consensus.Spec.Interface.actionRound s u ∈
+      Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow s.hc.etaSG r := by
+  rw [mem_latestWindow_iff]
+  obtain ⟨L, hLdef⟩ : ∃ L : Int, L = s.e.delta * 4 * (s.hc.r : Int) := ⟨_, rfl⟩
+  have hR' : (1 : Int) ≤ (s.hc.r : Int) := by exact_mod_cast hR
+  have hL : 0 < L := by rw [hLdef]; nlinarith
+  have hact : ∀ j : Nat, Model.Consensus.Execution.Setup.setupActionTime s j = L * (j : Int) + 6 * s.e.delta := by
+    intro j
+    rw [setupActionTime_eq, hLdef]
+  have hperiod : Model.Consensus.Execution.Setup.setupActionTime s 1 -
+      Model.Consensus.Execution.Setup.setupActionTime s 0 = L := by
+    rw [hact, hact]
+    push_cast
+    ring
+  unfold Model.Consensus.Spec.Constants.participationWindow Model.Consensus.Spec.Constants.period at hlo
+  rw [hperiod, hact] at hlo
+  rw [hact] at hhi
+  simp only [Int.ofNat_eq_natCast] at hlo
+  unfold Model.Consensus.Spec.Interface.actionRound
+  rw [hperiod]
+  split_ifs with h0
+  · simp only [hact, decide_eq_true_eq, Nat.cast_zero, mul_zero, zero_add] at h0
+    refine ⟨?_, hr⟩
+    have hlt : (r : Int) < (s.hc.etaSG : Int) := by
+      by_contra hc
+      push_neg at hc
+      nlinarith
+    have : r < s.hc.etaSG := by exact_mod_cast hlt
+    omega
+  · simp only [hact, ne_eq, decide_eq_true_eq, not_lt, Nat.cast_zero, mul_zero, zero_add] at h0
+    rw [Int.fdiv_eq_ediv_of_nonneg _ hL.le]
+    have hlow : (u - 6 * s.e.delta) / L * L ≤ u - 6 * s.e.delta := Int.ediv_mul_le _ hL.ne'
+    have hup : u - 6 * s.e.delta < ((u - 6 * s.e.delta) / L + 1) * L := Int.lt_ediv_add_one_mul_self _ hL
+    have hq0 : 0 ≤ (u - 6 * s.e.delta) / L := Int.ediv_nonneg (by linarith) hL.le
+    generalize (u - 6 * s.e.delta) / L = q at hlow hup hq0
+    have hqr : q < (r : Int) := by
+      by_contra hc
+      push_neg at hc
+      nlinarith
+    have hqe : (r : Int) - (s.hc.etaSG : Int) ≤ q := by
+      by_contra hc
+      push_neg at hc
+      nlinarith
+    constructor <;> omega
+
 /-- 穴: GST-zero の枝で、正の round `r` の phase `ph` の domain 時刻が horizon 以内で、共通の上界 `D` が窓の round の honest な行の
+SG block(`RootWitness.HonestWindowCarrierAt r`)と、その読みでのすべての honest なノードの finalized の上にあれば、窓の round `k`
+(`latestWindow η_SG r`)に awake な honest な validator `u` は、honest な読み手 `w` の読み(domain 時刻の `stateBeforeTime`)で、早い
+cutoff に解釈済みの入力を持つ。手書き `relativeGradeCarrierAt_of_awakeWindowMajority`(`Protocol/Grades/RelativeOneChain.lean` 221 行)
+の前提 `htransport` の `∃ y ∈ interpretedInputs …` の段に当たり、手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`
+(`Protocol/Grades/WeakBootstrapAction.lean` 106〜185 行)がそれを `hroots`(ここでは `hF`)と `hsg` から供給する(周回 260 に
+`honestInterpretedMajority_of_commonUpper` から切り出した)。閉じるのに要るもの: `u` は round `k` の action 時刻に行を出す(手書き
+`honest_emits_exact_actionAttestationAt_of_awake`。tick の `awake` の守り。action 時刻 + Δ ≤ 早い cutoff ≤ domain 時刻 ≤ horizon は
+手書き `NamedOutageClosure.action_delta_le_early`)。その行は GST-zero の配送(`PartialSynchrony`、`tGST = 0`)で早い cutoff までに `w` に
+届き(生の入力)、`confirmed` の本体も届いていて、SG block ⪯ `D`(`hsg`)と `w` の finalized ⪯ `D`(`hF`)で互換なので解釈済み
+(`bodyReady`。手書き `NamedOutageClosure.honestRoundVote_interpreted_at_reader_of_twoCutoff_compatible`)。 -/
+theorem awakeWindowVote_interpreted_of_commonUpper (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {r : Nat} (hr : 0 < r) (ph : Model.Consensus.Protocol.Grades.GradePhase)
+    (hhor : Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph ≤ rho.horizon) {D : Block}
+    (hsg : ∀ Y, Proofs.Consensus.RootWitness.HonestWindowCarrierAt c p a nr s rho r Y → preceq Y D = true)
+    (hF : ∀ v ∈ rho.honest.elems,
+      preceq (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph)) v).st.core).f D = true)
+    {w : ValidatorId} (hw : w ∈ rho.honest.elems) {u : ValidatorId} (hu : u ∈ rho.honest.elems) {k : Nat}
+    (hk : k ∈ Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow s.hc.etaSG r) (huk : a u k = true) :
+    (Model.Consensus.Protocol.Grades.interpretedInputs
+      (Model.Consensus.Protocol.Grades.gradeView
+        (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+          (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph)) w).st.core))
+      (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph)) w).st.core).f
+      s.hc.etaSG r (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc r ph) u).elems ≠ [] := by
+  sorry
+
+/-- GST-zero の枝で、正の round `r` の phase `ph` の domain 時刻が horizon 以内で、共通の上界 `D` が窓の round の honest な行の
 SG block(`RootWitness.HonestWindowCarrierAt r`)と、その読みでのすべての honest なノードの finalized の上にあれば、honest な読み手 `w`
 の読み(domain 時刻の `stateBeforeTime`)で、早い cutoff に解釈済みの入力を持つ honest な validator の集合 `A` があって、その重みが
 honest でない validator の重みより大きい(`GradeSupporter.phase_graded_has_honest_supporter` の前提 `hAH` / `hmaj` の形)。
-手書き `relativeGradeCarrierAt_of_awakeWindowMajority`(`Protocol/Grades/RelativeOneChain.lean` 221 行)の `htransport` と
-`hawakePresent` に当たり、手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`
-(`Protocol/Grades/WeakBootstrapAction.lean` 106〜185 行)がそれを `hroots`(ここでは `hF`)と `hsg` から供給する(周回 258 に
-`relativeGradeCarrierAt_of_commonUpper` から切り出した)。閉じるのに要るもの: awake な窓の多数派は `hsleep` の `SleepyRegime` の
-`WindowMajority`(`participationWindow = η_SG·period`)を `t = actionTime r` 付近で使う。awake な honest な validator は窓の round の
-action 時刻に行を出し(tick の `awake` の守り)、GST-zero の配送(`PartialSynchrony`、`tGST = 0`)で早い cutoff までに `w` に届く
-(生の入力)。その `confirmed` の本体が早い cutoff までに `w` の tree にあり、`D` を介して `w` の finalized と互換(`hsg` と `hF`)
-なので解釈済み(`bodyReady`)。 -/
+手書き `relativeGradeCarrierAt_of_awakeWindowMajority`(`Protocol/Grades/RelativeOneChain.lean` 221 行)の `hmajority` と
+`hawakePresent` に当たる(周回 258 に `relativeGradeCarrierAt_of_commonUpper` から穴として切り出し、周回 260 に証明した)。
+`A` は `SleepyRegime` の `WindowMajority` を round `r` の action 時刻で使った窓の awake な honest の集合(手書き
+`sleepy_windows_of_generic` / `windowMajority_of_generic`。時刻の条件は `R ≥ 3` で domain 時刻 ≤ horizon から出る)。その元は
+窓の時刻に awake で、その action round は窓の round(`actionRound_mem_latestWindow`)なので、穴
+`awakeWindowVote_interpreted_of_commonUpper` で解釈済みの入力を持つ。 -/
 theorem honestInterpretedMajority_of_commonUpper (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {r : Nat} (hr : 0 < r) (ph : Model.Consensus.Protocol.Grades.GradePhase)
     (hhor : Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph ≤ rho.horizon) {D : Block}
@@ -555,7 +659,48 @@ theorem honestInterpretedMajority_of_commonUpper (hwf : SetupWellFormed c p s) (
       Model.Consensus.Objects.Weights.weightOf s.e.electorate
           ((Model.Consensus.Objects.Weights.validators s.e.electorate).diff rho.honest) <
         Model.Consensus.Objects.Weights.weightOf s.e.electorate A := by
-  sorry
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hδ := hfacts.1
+  have hR : (3 : Int) ≤ (s.hc.r : Int) := by exact_mod_cast hfacts.2.2
+  have hr' : (1 : Int) ≤ (r : Int) := by exact_mod_cast hr
+  have hperiod : Model.Consensus.Spec.Constants.period s = s.e.delta * 4 * (s.hc.r : Int) := by
+    unfold Model.Consensus.Spec.Constants.period
+    rw [setupActionTime_eq, setupActionTime_eq]
+    push_cast
+    ring
+  have hdt : s.e.delta * 4 * (s.hc.r : Int) * (r : Int) - s.e.delta ≤
+      Model.Consensus.Protocol.Grades.domainTime s.e s.hc r ph := by
+    have hoff : -1 ≤ Model.Consensus.Protocol.Grades.domainOffset ph := by
+      cases ph <;> decide
+    unfold Model.Consensus.Protocol.Grades.domainTime Model.Consensus.Protocol.Grades.openingTime
+      Model.Consensus.Protocol.Schedule.proposalTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart Model.Consensus.Protocol.Grades.openingSlot
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hL0 : (0 : Int) ≤ s.e.delta * 4 * (s.hc.r : Int) := by nlinarith
+  have hLr : s.e.delta * 4 * (s.hc.r : Int) ≤ s.e.delta * 4 * (s.hc.r : Int) * (r : Int) := by
+    nlinarith [mul_le_mul_of_nonneg_left hr' hL0]
+  have h0 : (0 : Int) ≤ Model.Consensus.Execution.Setup.setupActionTime s r := by
+    rw [setupActionTime_eq]
+    linarith
+  have hl : Model.Consensus.Spec.Constants.participationLag s ≤ Model.Consensus.Execution.Setup.setupActionTime s r := by
+    unfold Model.Consensus.Spec.Constants.participationLag
+    rw [hperiod, setupActionTime_eq]
+    linarith
+  have hh : Model.Consensus.Execution.Setup.setupActionTime s r - Model.Consensus.Spec.Constants.participationLag s ≤
+      rho.horizon := by
+    unfold Model.Consensus.Spec.Constants.participationLag
+    rw [hperiod, setupActionTime_eq]
+    nlinarith
+  obtain ⟨members, hex, hlt⟩ := hsleep.1.2 _ ⟨⟨h0, hl⟩, hh⟩
+  refine ⟨NaruStd.List.toSet members, Proofs.Consensus.Sets.Sorted.toSet members, fun x hx => ?_, hlt⟩
+  have hxc : (NaruStd.List.toSet members).contains x = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ x).mpr hx
+  obtain ⟨hxH, u, ⟨hlo, hhi⟩, haw⟩ := (hex x).mp hxc
+  have hxm : x ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hxH
+  exact ⟨hxm, awakeWindowVote_interpreted_of_commonUpper c p a nr s rho hwf hdom hsleep hr ph hhor hsg hF hw hxm
+    (actionRound_mem_latestWindow s hδ (by have := hfacts.2.2; omega) hr hlo hhi) haw⟩
 
 /-- **務めの SG block は務めの store の tree の要素**(前提なし): `currentSGVote` の 4 つの枝 — `deepestClear` の結果は
 `liveConfirmed`(`TreeInv.live`)の祖先で tree は親について閉じている(`Trees.tree_closed`)、grade 2 の候補は filtered tree の
@@ -699,7 +844,7 @@ phase `ph` の読みの grade に担い手がある(`RootWitness.RelativeGradeCa
 106〜185 行)に当たる。手書きの前提 `hroots`(action の読みの FG root ⪯ `D`)は、そこから導く `hFD`(domain の読みの finalized ⪯ `D`)の
 形で受け取る。`fgStep_gradeCarrier_positive` と `confG1Carrier_positive` の共通の構成(周回 257 に 2 つの穴から切り出した)。
 運びは手書き `relativeGradeCarrierAt_of_awakeWindowMajority`(`Protocol/Grades/RelativeOneChain.lean` 221 行)に沿う(周回 258):
-解釈済みの入力を持つ honest な多数派(穴 `honestInterpretedMajority_of_commonUpper`)から、grade の通った block の honest な支持者の
+解釈済みの入力を持つ honest な多数派(`honestInterpretedMajority_of_commonUpper`。周回 260 に閉じた)から、grade の通った block の honest な支持者の
 解釈済みの入力 `y` と、その `confirmed` の tree での解決 `head ⪰ B` を取る(`GradeSupporter.phase_graded_has_honest_supporter`)。
 `y` は読みの SG 票の行の attestation `x` の `sgVote` で(`SgStamps.mem_viewRow_iff`)、round は窓の中(`SgStamps.stateBefore_sgInv`)。
 送り手は honest なので `x` は送り手が出した行 `row2` の消去(`SgFrom.sg_genuine`。手書き `honest_rawInput_is_own_round_vote`)で、
@@ -1126,7 +1271,7 @@ slot `d` の投票の務めの head の祖先。手書き `actionSources_preceq_
 `WeakJoint.actionSources_preceq_of_priorConfirmations_and_historyCut`)を `base = cut = 0`、`limit = voteTime (d + 1)`、
 行ごとの性質を SG block ⪯ X(手書きの第 1 連言)に置いて掛ける。`cut = 0` なので bootstrap と古い根の前提は空。段の genuine な確認
 (手書きの `hprior`)は、行を出した tick が確認評価の tick(`emits_confTick`)で slot が `d` 未満(`emits_slot_lt_of_lt_nextVote`)
-なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は `honestInterpretedMajority_of_commonUpper`。周回 252〜259)から(周回 250)。 -/
+なので穴 `genuineConf_preceq_laterVoteHead` から、SG block と grade 2 の候補は `fgStep_preceq_laterVoteHead`(round 0 は証明済み、正の round は G1 の root の active prefix と grade 2 の候補の担い手が `fgStep_gradeCarrier_positive` で、その共通の構成が `relativeGradeCarrierAt_of_commonUpper` で、残る穴は `awakeWindowVote_interpreted_of_commonUpper`。周回 252〜260)から(周回 250)。 -/
 theorem laterVoteHead_rowSources (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
