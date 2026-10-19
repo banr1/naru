@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 12 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 11 件、`sorry` と表示。下の 11)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -505,7 +505,8 @@ G1 / G2 の root は無いので grade 2 の候補は空、anchor は FG root �
 で閉じ、正の round は `fgStep_preceq_laterVoteHead_positive`(穴ではない。周回 252)に渡します。これは SG block を `sgBlockAt_preceq_of_candidate_anchor`
 (`currentSGVote` の 4 つの枝: `deepestClear` の結果は `liveConfirmed` の祖先、grade 2 の候補、rawG2 なら FG root、それ以外は anchor)で grade 2 の候補と
 務めの round の frame の anchor に下ろします。anchor は `frameAnchor_preceq_of_g1Prefix`(周回 253)で FG root と G1 の root の active prefix に下ろし、
-G1 の root の active prefix を穴 `fgStep_g1Prefix_positive`(手書きの帰納の段の `hroots` の後の `hformation` の枝)から取ります。grade 2 の候補は
+G1 の root の active prefix は `fgStep_g1Prefix_positive`(周回 255。手書き `actionGradeFormationAt_of_awakeWindowMajority` の anchor の枝)で、G1 の domain 時刻の tick で
+凍結した root(`confCache_phase_origin`)の grade の担い手を通して前の round の SG block の前提で閉じます。grade 2 の候補は
 `fgStep_candidate_positive`(周回 254)で窓の round の honest な行の SG block の祖先に下ろし(`RootWitness.grade2CandidateAt_preceq_honestWindowCarrier_of_emits`。
 窓の round は務めの round より小さい `lt_of_mem_latestWindow`)、前の round の SG block の前提で閉じます。grade の担い手は穴 `fgStep_gradeCarrier_positive`(手書き `WeakJoint.relativeGradeCarrierAt_of_awakeWindowHistory_gstZero`)です。
 `recordAt_preceq_laterVoteHead` は確認の記録の由来(`ConfirmedOrigin.lean` の `storeAt_confirmed_origin`: genesis か、確認評価の tick の確認の walk か
@@ -549,7 +550,6 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.genuineConf_preceq_laterVoteHead` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_gstZero_v2` | `DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean` | 250 |
-| `Proofs.Consensus.AvailableHoles.fgStep_g1Prefix_positive` | `Consensus.Spec.Claims.available` | `actionSources_preceq_of_priorConfirmations_and_historyCut` | `DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean` | 254 |
 | `Proofs.Consensus.AvailableHoles.fgStep_gradeCarrier_positive` | `Consensus.Spec.Claims.available` | `relativeGradeCarrierAt_of_awakeWindowHistory_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/WeakBootstrapAction.lean` | 254 |
 | `Proofs.Consensus.AvailableHoles.confG1Raw_preceq_laterVoteHead_positive` | `Consensus.Spec.Claims.available` | `preparedG1Raw_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 246 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
