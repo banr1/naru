@@ -40,7 +40,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `confEligibleWalk_preceq_laterVoteHead` は walk が genuine な確認なので `genuineConf_preceq_laterVoteHead`(手書き
    `protectedVoteSlots_of_gstZero_v2` の `heads`)から(周回 250)。`genuineConf_preceq_laterVoteHead` は周回 270 に、手書きと同じ
    保護された投票の slot(`ProtectedVoteSlot`: 投票の head の `heads` と投票の cone)の slot の帰納法 `protectedVoteSlots_gstZero` で
-   証明した。種の cone は `voteCone_genesis`(周回 272 に証明した)、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段は穴 `protectedVoteSlot_preserve`(古い確認)と
+   証明した。cone はどの slot でも `heads` から出る(`voteCone_of_heads`。周回 273。種の cone `voteCone_genesis` は周回 272 に証明し、
+   周回 273 からその特別な場合)、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段の `heads` は穴 `protectedVoteSlot_preserve`(古い確認)と
    穴 `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認)で、段の穴は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
@@ -2131,22 +2132,31 @@ theorem voteHeadBlock_mem_tree (cache : Model.Consensus.Protocol.Grades.Cache)
     unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at h2
     exact ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp h2).1
 
-/-- 種の cone。正の slot `d`(`d ≤ last + 1`、`last` の確認の時刻は `horizon` 以下)の委員会の honest な元は、投票時刻に run の
-ブロックの root に投票する(genesis はどのブロックの祖先でもあるので、cone の `B ⪯ X` は自明)。手書き `protectedVoteSlot_genesis`
-(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)の cone の段に当たる。周回 270 に穴として置き、周回 272 に証明した:
-投票時刻は `last` の確認の時刻以下なので horizon 以下で、honest な委員は投票を出し(`Voting.honest_emits_gfVote_head`)、その head は
-tick の前の store の tree のブロックの root(`voteHeadBlock_mem_tree`)、tree のブロックは bodies の名前付きブロックの消去
-(`Carrier.StoreInv.named`)で run のブロック(`RootWitness.blockInRun_of_stateBefore`)。 -/
-theorem voteCone_genesis (hwf : SetupWellFormed c p s)
+/-- **cone は `heads` から出る**。正の slot `d`(`d ≤ last + 1`、`last` の確認の時刻は `horizon` 以下)で、すべての honest なノードの
+slot `d` の投票の務めの head が `B` の子孫なら、slot `d` の委員会の honest な元は投票時刻に、`B` の子孫である run のブロックの root に
+投票する。手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses` の結論の cone の側に当たる。周回 272 に `voteCone_genesis` として
+証明した運びを、周回 273 に `heads` を前提にして一般の `B` に広げた: 投票時刻は `last` の確認の時刻以下なので horizon 以下で、honest な
+委員は投票を出し(`Voting.honest_emits_gfVote_head`)、その head は tick の前の store の tree のブロックの root(`voteHeadBlock_mem_tree`)、
+tree のブロックは bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で run のブロック(`RootWitness.blockInRun_of_stateBefore`)。
+tick の前の状態は投票時刻の読み(`RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime`)なので、投票の head は `voteDutyHeadAt x d`
+そのもので、`B ⪯ X` は `heads` から出る。 -/
+theorem voteCone_of_heads (hwf : SetupWellFormed c p s)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
-    (hd : 1 ≤ d) (hupper : d ≤ last + 1) :
-    HonestVotesCone c p a nr s rho d Block.Genesis := by
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {B : Block}
+    (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true) :
+    HonestVotesCone c p a nr s rho d B := by
   intro x hx hxc
   have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
   have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
   unfold ExecutionValid at hexec
   have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hnd : EventsNodup rho := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hnd⟩, -⟩, -⟩, -⟩, -⟩ := h
+    exact hnd
+  obtain ⟨hs, -⟩ := Proofs.Consensus.Available.schedule_sorted_nodup s rho hsch
   have hvt : Model.Consensus.Protocol.Schedule.voteTime s.e d ≤ rho.horizon := by
     refine le_trans ?_ hhor
     have hd' : (d : Int) ≤ (last : Int) + 1 := by exact_mod_cast hupper
@@ -2154,7 +2164,7 @@ theorem voteCone_genesis (hwf : SetupWellFormed c p s)
       Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
     simp only [Int.ofNat_eq_natCast]
     nlinarith
-  obtain ⟨u, i, he, hval, hslot, -, hhead⟩ :=
+  obtain ⟨u, i, he, hval, hslot, hev, hhead⟩ :=
     Proofs.Consensus.Voting.honest_emits_gfVote_head c p a nr s rho hsch hδ hx (by omega) hxc hvt
   have hti := Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i x
   have hmem := voteHeadBlock_mem_tree
@@ -2166,13 +2176,46 @@ theorem voteCone_genesis (hwf : SetupWellFormed c p s)
       (worldAt (stateBefore c p a nr s rho i) x).st (Model.Consensus.Protocol.Schedule.voteTime s.e d)).core)
     (hti.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
   obtain ⟨X, hX, hXe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i x).named _ hmem
-  refine ⟨X, Proofs.Consensus.Blocks.preceq_genesis _,
+  have hduty : voteDutyHeadAt c p a nr s rho x d =
+      Proofs.Consensus.Voting.voteHeadBlock
+        (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho i) x).st.core)
+          (Model.Consensus.Protocol.Schedule.voteTime s.e d)
+          (worldAt (stateBefore c p a nr s rho i) x).cache) s.e s.hc
+        (Proofs.Consensus.Voting.clocked s.e
+          (worldAt (stateBefore c p a nr s rho i) x).st (Model.Consensus.Protocol.Schedule.voteTime s.e d)).core := by
+    unfold voteDutyHeadAt; dsimp only
+    rw [← Proofs.Consensus.RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs
+      (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd) hev]
+    rfl
+  refine ⟨X, ?_,
     Proofs.Consensus.RootWitness.blockInRun_of_stateBefore c p a nr s rho
       ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx) i hX, ?_⟩
+  · rw [hXe, ← hduty]
+    exact hheads x hx
   have hu : u = ⟨x, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩ := by
     rw [hXe, ← Proofs.Consensus.Voting.voteHead_eq_root, ← hhead, ← hval, ← hslot]
   rw [← hu]
   exact he
+
+/-- 種の cone。正の slot `d` の委員会の honest な元は、投票時刻に run のブロックの root に投票する(genesis はどのブロックの祖先でも
+あるので `heads` は自明)。手書き `protectedVoteSlot_genesis`(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)の cone の段に
+当たる。周回 270 に穴として置き、周回 272 に証明した。周回 273 から `voteCone_of_heads` の特別な場合。 -/
+theorem voteCone_genesis (hwf : SetupWellFormed c p s)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) :
+    HonestVotesCone c p a nr s rho d Block.Genesis :=
+  voteCone_of_heads c p a nr s rho hwf hsleep hhor hd hupper (fun _ _ => Proofs.Consensus.Blocks.preceq_genesis _)
+
+/-- `heads` があれば slot `d` で保護される(cone は `voteCone_of_heads`。周回 273)。 -/
+theorem protectedVoteSlot_of_heads (hwf : SetupWellFormed c p s)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {B : Block}
+    (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true) :
+    ProtectedVoteSlot c p a nr s rho d B :=
+  ⟨hheads, voteCone_of_heads c p a nr s rho hwf hsleep hhor hd hupper hheads⟩
 
 
 /-- 確認の更新の前の段 `tickPreUpdateStore`(時計合わせ・提案・投票)の後の tree のブロックは、前の tree にあったか、受理の守りを
@@ -2242,26 +2285,28 @@ theorem genuineConf_slot_zero (hwf : SetupWellFormed c p s) {w : ValidatorId} {i
     simpa [preceq] using hCX
   · exact absurd htu Bool.false_ne_true
 
-/-- 穴: 保護の保存の段。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
-slot `d` で保護された `B` は slot `d + 1` でも保護される。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
+/-- 穴: 保護の保存の段の `heads`。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
+slot `d` で保護された `B` は、すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(cone は `voteCone_of_heads` で出るので
+`protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
 (`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean`。`P = genesis` なので `P ⪯ B` は自明)に当たる。
 閉じるのに要るもの: 委員会の honest な元 `x` の slot `d` の head `D` を上界に `laterVoteHead_rowSources_of_prior` で行の源を押さえ、
-読みの FG root と anchor が `B` と互換であることを示し、cone を 1 slot 進める(手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses`)
-(周回 270)。 -/
+読みの FG root と anchor が `B` と互換であることを示す(手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses` の heads の側)
+(周回 270。周回 273 に結論を cone から切り離して `heads` だけにした)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d) {B : Block}
     (hB : ProtectedVoteSlot c p a nr s rho d B) :
-    ProtectedVoteSlot c p a nr s rho (d + 1) B := by
+    ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
   sorry
 
-/-- 穴: 新しい確認の段。`1 ≤ d ≤ last` で `PriorConfsBelow d` なら、slot `q = d` の確認評価の tick の genuine な確認 `C` は
-slot `d + 1` で保護される。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `q = d` の枝(`P ⪯ B` の向き。`P = genesis` なので
+/-- 穴: 新しい確認の段の `heads`。`1 ≤ d ≤ last` で `PriorConfsBelow d` なら、slot `q = d` の確認評価の tick の genuine な確認 `C` は
+すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(`protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。
+手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `q = d` の枝(`P ⪯ B` の向き。`P = genesis` なので
 常にこの向き)で、`WeakGoldfish.protectedVoteSlot_succ_of_genuineConfirmationWith`
 (`DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean`)に当たる。閉じるのに要るもの: `C` を投票の head に
 持つ honest な委員 `y`(手書き `genuineConfirmation_exists_honestVoteSupporter_after_gst`)の slot `d` の head を上界にした行の源と、
-`protectedVoteSlot_preserve` と同じ FG root と anchor の互換(周回 270)。 -/
+`protectedVoteSlot_preserve` と同じ FG root と anchor の互換(周回 270。周回 273 に結論を `heads` だけにした)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -2270,7 +2315,7 @@ theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdo
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
     (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = d) {C : Block}
     (hC : Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C) :
-    ProtectedVoteSlot c p a nr s rho (d + 1) C := by
+    ∀ x, rho.honest.contains x = true → preceq C (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
   sorry
 
 /-- **GST-zero の枝の保護された投票の slot**: `1 ≤ d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)なら、genesis は slot `d` で
@@ -2278,7 +2323,8 @@ theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdo
 (`DecoupledConsensusProofs/Execution/WeakGenesisGSTZeroActionSources.lean`。`base = cut = 0`、`start = 1`、`P = genesis` で
 `WeakJoint.protectedVoteSlots_of_historyCut_v2_after_gst` を掛けたもの)と同じ運びの slot の帰納法: 種は `voteCone_genesis`、
 slot 0 の確認は `genuineConf_slot_zero` で genesis、段は古い確認を `protectedVoteSlot_preserve`、slot `d` の確認を
-`protectedVoteSlot_succ_of_genuineConf` で進める(周回 270)。 -/
+`protectedVoteSlot_succ_of_genuineConf` で進める(周回 270)。段の穴は `heads` だけを返し、cone は `protectedVoteSlot_of_heads` が足す
+(周回 273)。 -/
 theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon) :
@@ -2306,13 +2352,17 @@ theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDoma
     have hprev := ih (by omega)
     have hprior : PriorConfsBelow c p a nr s rho d := fun x hx w i t C hw ht hq hC =>
       (hprev.2 w i t C hw ht hq hC).heads x hx
-    refine ⟨protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hprev.1, ?_⟩
+    have hsucc : ∀ {B : Block},
+        (∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true) →
+        ProtectedVoteSlot c p a nr s rho (d + 1) B :=
+      fun h => protectedVoteSlot_of_heads c p a nr s rho hwf hsleep hhor (by omega) hupper h
+    refine ⟨hsucc (protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hprev.1), ?_⟩
     intro w i t C hw ht hq hC
     by_cases hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d
-    · exact protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior
-        (hprev.2 w i t C hw ht hqd hC)
-    · exact protectedVoteSlot_succ_of_genuineConf c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hw ht
-        (by omega) hC
+    · exact hsucc (protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior
+        (hprev.2 w i t C hw ht hqd hC))
+    · exact hsucc (protectedVoteSlot_succ_of_genuineConf c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hw ht
+        (by omega) hC)
 
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の genuine な確認
 (確認の更新の前の段の head で、その slot で eligible。`RootWitness.GenuineConfirmationAt`)は、`q < d ≤ last + 1`(`last` の
