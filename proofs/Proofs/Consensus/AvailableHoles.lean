@@ -2382,6 +2382,216 @@ theorem fgRoot_preceq_of_notBelow (hwf : SetupWellFormed c p s) (hdom : RunDomai
   (Proofs.Consensus.Blocks.preceq_linear (hB.heads x hx)
     (voteDutyFgRoot_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hx hx)).resolve_left hroot
 
+/-- ノード `x` の slot `k` の投票の務めの読みの anchor(fork choice が `ghost` を始める SG root。手書き `voterAnchorAt`)。
+`voteDutyHeadAt` と同じ読み(周回 276)。 -/
+def voteDutyAnchorAt (x : ValidatorId) (k : Nat) : Block :=
+  let tv := Model.Consensus.Protocol.Schedule.voteTime s.e k
+  let n := worldAt (stateBeforeTime c p a nr s rho tv) x
+  let hs := Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.Voting.clocked s.e n.st tv).core
+  Model.Consensus.Protocol.ForkChoice.Head.getSgRootWith (preparedCache s n tv) s.e s.hc hs
+    (Model.Consensus.Protocol.Grades.roundOf s.hc hs.s)
+
+/-- 投票の務めの読みの anchor は投票の務めの head の祖先(`Goldfish.ghost_preceq`。周回 276)。 -/
+theorem voteDutyAnchorAt_preceq_head (x : ValidatorId) (k : Nat) :
+    preceq (voteDutyAnchorAt c p a nr s rho x k) (voteDutyHeadAt c p a nr s rho x k) = true := by
+  unfold voteDutyAnchorAt voteDutyHeadAt Proofs.Consensus.Voting.voteHeadBlock
+    Model.Consensus.Protocol.Handlers.getHeadInTreeWith
+    Model.Consensus.Protocol.ForkChoice.Head.getHeadInTreeWithLayer
+    Model.Consensus.Protocol.ForkChoice.Goldfish.goldfishForkChoice
+  dsimp only
+  exact Proofs.Consensus.Goldfish.ghost_preceq _ _ _ _
+
+/-- 投票の務めの読みの FG root は anchor の祖先(`ProposerRoot.getSgRootWith_extends_fgRoot`。周回 276)。 -/
+theorem fgRoot_preceq_voteDutyAnchorAt (x : ValidatorId) (k : Nat) :
+    preceq (voteDutyFgRootAt c p a nr s rho x k) (voteDutyAnchorAt c p a nr s rho x k) = true :=
+  Proofs.Consensus.ProposerRoot.getSgRootWith_extends_fgRoot _ _ _ _ _
+
+/-- **段の anchor は前の slot の head の祖先**: `1 ≤ d ≤ last` で `PriorConfsBelow d` なら、honest なノード `x` の slot `d + 1` の
+投票の務めの読みの anchor は、honest なノード `y` の slot `d` の投票の務めの head `D` の祖先。手書き
+`goldfishCone_succ_of_runFrontierWitnesses` の `hanchors`(`WeakBootstrapSlot.lean` の `getSgRoot_compatible_of_windowHistory_at_read`)を、
+互換でなく `D` の祖先の形で出したもの。運びは `fgStep_g1Prefix_positive` と同じ: anchor は G1 の root の active prefix か FG root
+(`frameAnchor_preceq_of_g1Prefix`。FG root は `voteDutyFgRoot_preceq_prevHead`)、G1 の root は round `r = roundOf (d + 1)` の G1 の
+domain 時刻の読みで凍結した `g0` の祖先(`preparedCache` の `onPhaseTick` の結果か、tick の前の cache の `stateBefore_phase_origin`。
+round 0 は凍結が空)、`g0` は grade の担い手(`relativeGradeCarrierAt_of_commonUpper` を `D` で掛ける)の下で窓の round の honest な
+行の SG block の祖先。窓の round の行の時刻(action 時刻)と domain 時刻は `R ≥ 3` で投票時刻 `voteTime (d + 1)` より前なので、
+行の源は `laterVoteHead_rowSources_of_prior` に帰納法の仮定 `hprior y` を渡して `D` の祖先(周回 276)。 -/
+theorem voteDutyAnchor_preceq_prevHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d)
+    {x y : ValidatorId} (hx : rho.honest.contains x = true) (hy : rho.honest.contains y = true) :
+    preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) (voteDutyHeadAt c p a nr s rho y d) = true := by
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hδ := hfacts.1
+  have hR := hfacts.2.2
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hnd : EventsNodup rho := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hnd⟩, -⟩, -⟩, -⟩, -⟩ := h
+    exact hnd
+  have hnd' := Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd
+  have hxm : x ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx
+  -- 時刻 `< voteTime (d + 1)` の honest な行の源は slot `d` の head の祖先
+  have hrows : ∀ (u : ValidatorId) (i2 : Nat) (t2 : Int) (row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation),
+      u ∈ rho.honest.elems → rho.events[i2]? = some (NamedEvent.Tick u t2) →
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      t2 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) →
+      preceq (Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho u i2 t2) (voteDutyHeadAt c p a nr s rho y d) = true ∧
+        ∀ T, Proofs.Consensus.RootWitness.fgConfirmationWitnessAt c p a nr s rho u i2 t2 = some T →
+          preceq T (voteDutyHeadAt c p a nr s rho y d) = true :=
+    fun u i2 t2 row2 hu hev2 hem2 ht2 =>
+      laterVoteHead_rowSources_of_prior c p a nr s rho hwf hdom hsleep hhor hd (by omega) hy (hprior y hy)
+        ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu) hem2 hev2 ht2
+  set r := Model.Consensus.Protocol.Grades.roundOf s.hc (d + 1) with hrdef
+  have hrR : r * s.hc.r ≤ d + 1 := Nat.div_mul_le_self (d + 1) s.hc.r
+  -- round `r` の G1 の domain 時刻は投票時刻以下
+  have hdomle : Model.Consensus.Protocol.Grades.domainTime s.e s.hc r Model.Consensus.Protocol.Grades.GradePhase.G1 ≤
+      Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    have h1 : ((r * s.hc.r : Nat) : Int) ≤ ((d + 1 : Nat) : Int) := by exact_mod_cast hrR
+    unfold Model.Consensus.Protocol.Grades.domainTime Model.Consensus.Protocol.Grades.openingTime
+      Model.Consensus.Protocol.Schedule.proposalTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+      Model.Consensus.Protocol.Grades.openingSlot
+    simp only [Model.Consensus.Protocol.Grades.domainOffset, Int.ofNat_eq_natCast]
+    nlinarith
+  have hvhor : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    have hd' : (d : Int) ≤ (last : Int) := by exact_mod_cast hdlast
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  -- 窓の round の行の時刻は投票時刻より前
+  have hwinTime : ∀ {u : ValidatorId} {row2 : Model.Consensus.Objects.NamedBlocks.NamedAttestation} {t2 : Int},
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row2) t2 →
+      row2.round ∈ Model.Consensus.Protocol.ForkChoice.Goldfish.latestWindow s.hc.etaSG r →
+      t2 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    intro u row2 t2 hem2 hwin
+    have hk := lt_of_mem_latestWindow hwin
+    have hkR : (row2.round + 1) * s.hc.r ≤ d + 1 :=
+      le_trans (Nat.mul_le_mul_right _ hk) hrR
+    have hkR' : row2.round * s.hc.r + 3 ≤ d + 1 := by nlinarith
+    have hkI : ((row2.round * s.hc.r : Nat) : Int) + 3 ≤ ((d + 1 : Nat) : Int) := by exact_mod_cast hkR'
+    rw [Proofs.Consensus.RootWitness.emits_attest_actionTime_round c p a nr s rho hem2]
+    unfold Model.Consensus.Protocol.Grades.actionTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+      Model.Consensus.Protocol.Grades.openingSlot
+    simp only [Int.ofNat_eq_natCast] at hkI ⊢
+    nlinarith
+  -- round `r` の G1 の読みの grade の担い手
+  have hcarrier : Proofs.Consensus.RootWitness.RelativeGradeCarrierAt c p a nr s rho r
+      Model.Consensus.Protocol.Grades.GradePhase.G1 := by
+    rcases Nat.eq_zero_or_pos r with hr0 | hrpos
+    · intro w _ B hB
+      rw [hr0, Proofs.Consensus.FrameCapture.gradeBool_zero] at hB
+      exact absurd hB Bool.false_ne_true
+    refine relativeGradeCarrierAt_of_commonUpper c p a nr s rho hwf hdom hsleep hrpos _ (le_trans hdomle hvhor)
+      (D := voteDutyHeadAt c p a nr s rho y d) ?_ ?_
+    · rintro Y ⟨u, i2, t2, row2, hu, hev2, hem2, hwin, rfl⟩
+      exact (hrows u i2 t2 row2 hu hev2 hem2 (hwinTime hem2 hwin)).1
+    · intro v hv
+      refine stateBeforeTime_f_preceq_of_witnesses c p a nr s rho hwf hsleep hv _ ?_
+      intro u i2 t2 row2 hu hev2 hem2 ht2 T hT
+      exact (hrows u i2 t2 row2 hu hev2 hem2 (lt_of_lt_of_le ht2 hdomle)).2 T hT
+  unfold voteDutyAnchorAt Model.Consensus.Protocol.ForkChoice.Head.getSgRootWith
+  dsimp only
+  refine frameAnchor_preceq_of_g1Prefix ?_ ?_
+  · exact voteDutyFgRoot_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hx hy
+  intro g b hg hb
+  have hslot : (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.Voting.clocked s.e
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st
+      (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))).core).s = d + 1 :=
+    Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  have hg' : Model.Consensus.Protocol.Grades.phaseResult
+      (Model.Consensus.Protocol.Grades.readFrame
+        (preparedCache s (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x)
+          (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)))
+        (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.Voting.clocked s.e
+          (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st
+          (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))).core) r)
+      Model.Consensus.Protocol.Grades.GradePhase.G1 = some (some g) := by
+    rw [hslot] at hg
+    exact hg
+  rw [Proofs.Consensus.FrameCapture.phaseResult_readFrame] at hg'
+  obtain ⟨old, hold, hgold⟩ := Proofs.Consensus.Grade2Capture.clipResult_some hg' (Proofs.Consensus.Blocks.preceq_self g)
+  obtain ⟨i0, hi0⟩ := Proofs.Consensus.FinalizedAccountable.readAt_eq_stateBefore c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) - 1)
+  have hst : stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) =
+      stateBefore c p a nr s rho i0 := by
+    rw [← hi0, readAt_eq_stateBeforeTime_succ, sub_add_cancel]
+  unfold Model.Consensus.Execution.Run.preparedCache at hold
+  rw [hst] at hold
+  -- G1 の結果は round `r` の G1 の domain 時刻の読みで凍結された `g0` の祖先
+  obtain ⟨g0, hgr, hold0⟩ : ∃ g0, Model.Consensus.Protocol.Grades.gradeBool s.e
+        (Model.Consensus.Protocol.Grades.gradeView
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+            (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r Model.Consensus.Protocol.Grades.GradePhase.G1)) x).st.core))
+        (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBeforeTime c p a nr s rho
+          (Model.Consensus.Protocol.Grades.domainTime s.e s.hc r Model.Consensus.Protocol.Grades.GradePhase.G1)) x).st.core).f
+        s.hc.etaSG r
+        (Model.Consensus.Protocol.Grades.earlyTime s.e s.hc r Model.Consensus.Protocol.Grades.GradePhase.G1)
+        (Model.Consensus.Protocol.Grades.lateTime s.e s.hc r Model.Consensus.Protocol.Grades.GradePhase.G1) g0 = true ∧
+      preceq old g0 = true := by
+    rcases Nat.eq_zero_or_pos r with hr0 | hrpos
+    · exfalso
+      rw [hr0] at hold
+      rcases Proofs.Consensus.FrameCapture.onPhaseTick_phase_some hold with ⟨x0, hx0, hxe⟩ | ⟨-, hxe⟩
+      · rw [Proofs.Consensus.FrameCapture.stateBefore_phase_zero c p a nr s rho i0 x _ hx0] at hxe
+        simp at hxe
+      · rw [Proofs.Consensus.FrameCapture.freezeRoot_zero] at hxe
+        simp at hxe
+    rcases Proofs.Consensus.FrameCapture.onPhaseTick_phase_some hold with ⟨x0, hx0, hxe⟩ | ⟨ht, hxe⟩
+    · obtain ⟨old0, rfl, hclip⟩ := Option.map_eq_some_iff.mp hxe.symm
+      obtain ⟨j, -, hevj, hx0e⟩ := Proofs.Consensus.FrameCapture.stateBefore_phase_origin c p a nr s rho i0 x hrpos
+        Model.Consensus.Protocol.Grades.GradePhase.G1 hx0
+      obtain ⟨g0, hfz, hclip0⟩ := Option.map_eq_some_iff.mp hx0e.symm
+      have hgr := (Proofs.Consensus.Grade2Capture.freezeRoot_mem hfz).2
+      rw [Proofs.Consensus.RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs hnd' hevj] at hgr
+      refine ⟨g0, hgr, ?_⟩
+      rw [← hclip, ← hclip0]
+      exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.Grade2Capture.clipGrade_preceq _ _)
+        (Proofs.Consensus.Grade2Capture.clipGrade_preceq _ _)
+    · obtain ⟨g0, hfz, hclip⟩ := Option.map_eq_some_iff.mp hxe.symm
+      have hgr := (Proofs.Consensus.Grade2Capture.freezeRoot_mem hfz).2
+      rw [← hst, ht] at hgr
+      refine ⟨g0, hgr, ?_⟩
+      rw [← hclip]
+      exact Proofs.Consensus.Grade2Capture.clipGrade_preceq _ _
+  obtain ⟨Y, ⟨u, i2, t2, row2, hu, hev2, hem2, hwin, rfl⟩, hg0Y⟩ := hcarrier x hxm g0 hgr
+  exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.Grade2Capture.activePrefix_preceq hb)
+    (Proofs.Consensus.Blocks.preceq_trans hgold (Proofs.Consensus.Blocks.preceq_trans hold0
+      (Proofs.Consensus.Blocks.preceq_trans hg0Y (hrows u i2 t2 row2 hu hev2 hem2 (hwinTime hem2 hwin)).1)))
+
+/-- **保存の段の anchor の互換**: slot `d` で保護された `B` と、honest なノード `x` の slot `d + 1` の読みの anchor は、どちらも
+`x` の slot `d` の head の祖先なので互換(`Blocks.preceq_linear`)。`B` が anchor の祖先でなければ anchor ⪯ `B`(周回 276)。 -/
+theorem anchor_preceq_of_notBelow (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d) {B : Block}
+    (hB : ProtectedVoteSlot c p a nr s rho d B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hanc : ¬ preceq B (voteDutyAnchorAt c p a nr s rho x (d + 1)) = true) :
+    preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true :=
+  (Proofs.Consensus.Blocks.preceq_linear (hB.heads x hx)
+    (voteDutyAnchor_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hx hx)).resolve_left hanc
+
+/-- **`heads` の anchor の枝**: `B` が読みの anchor の祖先なら head の祖先(`voteDutyAnchorAt_preceq_head`)なので、`heads` は `B` が
+anchor の祖先でない honest なノードについて示せばよい(anchor は FG root を延ばすので `heads_of_notBelowFgRoot` より強い。周回 276)。 -/
+theorem heads_of_notBelowAnchor {k : Nat} {B : Block}
+    (habove : ∀ x, rho.honest.contains x = true → ¬ preceq B (voteDutyAnchorAt c p a nr s rho x k) = true →
+      preceq B (voteDutyHeadAt c p a nr s rho x k) = true) :
+    ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x k) = true := by
+  intro x hx
+  by_cases h : preceq B (voteDutyAnchorAt c p a nr s rho x k) = true
+  · exact Proofs.Consensus.Blocks.preceq_trans h (voteDutyAnchorAt_preceq_head c p a nr s rho x k)
+  · exact habove x hx h
+
 /-- 穴: 保護の保存の段の `heads`。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
 slot `d` で保護された `B` は、すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(cone は `voteCone_of_heads` で出るので
 `protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
@@ -2391,14 +2601,17 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 (周回 270。周回 273 に結論を cone から切り離して `heads` だけにした)。周回 274 から 1 つの honest なノード `x` についての主張で、
 `B` が `x` の読みの FG root の祖先である枝は `heads_of_notBelowFgRoot` が閉じるので、`B` が FG root の祖先でない(手書き
 `goldfishCone_step'` の `hrootBelow` の枝)ときだけを示せばよい。周回 275 から、互換でない場合は `fgRoot_preceq_of_notBelow` が
-排除し、穴は FG root が `B` の真の祖先である(`hbelow` ∧ `hroot`)枝だけ。 -/
+排除し、穴は FG root が `B` の真の祖先である枝だけになった。周回 276 から同じことを anchor(`voteDutyAnchorAt`。FG root を延ばす)で
+行い、`B` が anchor の祖先の枝は `heads_of_notBelowAnchor`、互換でない場合は `anchor_preceq_of_notBelow` が閉じるので、穴は anchor が
+`B` の真の祖先である(`hbelow` ∧ `hanc`。FG root ⪯ anchor ⪯ `B` も従う)枝だけ。残りは手書き `goldfishCone_step'` の `hrootBelow` の枝
+(`coreConeBandDescendant_of_runFrontier` → `coreGoldfishConePathEligible` → `goldfish_fork_choice_captures_supporter_majority`)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hdlast : d ≤ last) (hprior : PriorConfsBelow c p a nr s rho d) {B : Block}
     (hB : ProtectedVoteSlot c p a nr s rho d B) {x : ValidatorId} (hx : rho.honest.contains x = true)
-    (hroot : ¬ preceq B (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true)
-    (hbelow : preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) B = true) :
+    (hanc : ¬ preceq B (voteDutyAnchorAt c p a nr s rho x (d + 1)) = true)
+    (hbelow : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true) :
     preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
   sorry
 
@@ -2430,7 +2643,7 @@ theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdo
 slot 0 の確認は `genuineConf_slot_zero` で genesis、段は古い確認を `protectedVoteSlot_preserve`、slot `d` の確認を
 `protectedVoteSlot_succ_of_genuineConf` で進める(周回 270)。段の穴は `heads` だけを返し、cone は `protectedVoteSlot_of_heads` が足す
 (周回 273)。段の穴はノードごとで、FG root の祖先の枝は `heads_of_notBelowFgRoot` が閉じる(周回 274)。保存の段の FG root と `B` の
-互換は `fgRoot_preceq_of_notBelow` が出す(周回 275)。 -/
+互換は `fgRoot_preceq_of_notBelow` が出し(周回 275)、周回 276 からは anchor との互換 `anchor_preceq_of_notBelow` を使う。 -/
 theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon) :
@@ -2463,9 +2676,9 @@ theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDoma
         ProtectedVoteSlot c p a nr s rho (d + 1) B :=
       fun h => protectedVoteSlot_of_heads c p a nr s rho hwf hsleep hhor (by omega) hupper h
     have hpres : ∀ {B : Block}, ProtectedVoteSlot c p a nr s rho d B → ProtectedVoteSlot c p a nr s rho (d + 1) B :=
-      fun hB => hsucc (heads_of_notBelowFgRoot c p a nr s rho fun x hx hr =>
+      fun hB => hsucc (heads_of_notBelowAnchor c p a nr s rho fun x hx hr =>
         protectedVoteSlot_preserve c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hB hx hr
-          (fgRoot_preceq_of_notBelow c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hB hx hr))
+          (anchor_preceq_of_notBelow c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hB hx hr))
     refine ⟨hpres hprev.1, ?_⟩
     intro w i t C hw ht hq hC
     by_cases hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d
