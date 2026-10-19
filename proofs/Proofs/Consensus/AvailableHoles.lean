@@ -40,7 +40,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `confEligibleWalk_preceq_laterVoteHead` は walk が genuine な確認なので `genuineConf_preceq_laterVoteHead`(手書き
    `protectedVoteSlots_of_gstZero_v2` の `heads`)から(周回 250)。`genuineConf_preceq_laterVoteHead` は周回 270 に、手書きと同じ
    保護された投票の slot(`ProtectedVoteSlot`: 投票の head の `heads` と投票の cone)の slot の帰納法 `protectedVoteSlots_gstZero` で
-   証明した。種の cone は穴 `voteCone_genesis`、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段は穴 `protectedVoteSlot_preserve`(古い確認)と
+   証明した。種の cone は `voteCone_genesis`(周回 272 に証明した)、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段は穴 `protectedVoteSlot_preserve`(古い確認)と
    穴 `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認)で、段の穴は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
@@ -101,8 +101,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(7 件): `voteCone_genesis`(手書き `protectedVoteSlot_genesis`、`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)/
-   `protectedVoteSlot_preserve`(手書き `protectedVoteSlots_of_historyCut_v2_w` の `hpreserve`、
+3. 穴(6 件): `protectedVoteSlot_preserve`(手書き `protectedVoteSlots_of_historyCut_v2_w` の `hpreserve`、
    `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean`)/ `protectedVoteSlot_succ_of_genuineConf`(手書き
    `protectedVoteSlot_succ_of_genuineConfirmationWith`、`DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean`)/
    `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
@@ -2109,16 +2108,72 @@ def PriorConfsBelow (d : Nat) : Prop :=
     Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
     preceq C (voteDutyHeadAt c p a nr s rho x d) = true
 
-/-- 穴: 種の cone。正の slot `d`(`d ≤ last + 1`、`last` の確認の時刻は `horizon` 以下)の委員会の honest な元は、投票時刻に run の
+/-- 投票の務めの head は tree のブロック: fork choice の `ghost` は出発点の anchor(grade の読み。tree の元か `j` / `f`。
+`Trees.getSgRootWith_cases`)を返すか、歩く tree(voter view の処理済みの tree を絞ったもの。どれも tree の部分集合)の元を返す
+(`Trees.ghost_cases`)。`j` / `f` は `TreeInv` で tree にある(手書き `voterHeadAt` が読みの tree にあることに当たる。周回 272)。 -/
+theorem voteHeadBlock_mem_tree (cache : Model.Consensus.Protocol.Grades.Cache)
+    (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (hc : Model.Consensus.Protocol.Grades.HealConfig)
+    {st : Model.Consensus.Protocol.Store.Store} (h : Proofs.Consensus.Trees.TreeInv st) :
+    Proofs.Consensus.Voting.voteHeadBlock cache e hc st ∈ st.tree.elems := by
+  unfold Proofs.Consensus.Voting.voteHeadBlock Model.Consensus.Protocol.Handlers.getHeadInTreeWith
+    Model.Consensus.Protocol.ForkChoice.Head.getHeadInTreeWithLayer
+    Model.Consensus.Protocol.ForkChoice.Goldfish.goldfishForkChoice
+  dsimp only
+  rcases Proofs.Consensus.Trees.ghost_cases _ _ _ _ with heq | hmem
+  · rw [heq]
+    rcases Proofs.Consensus.Trees.getSgRootWith_cases cache e hc (Model.Consensus.Protocol.Store.storeToHealing st)
+      _ with h1 | h1 | h1
+    · exact h1
+    · rw [h1]; exact h.j
+    · rw [h1]; exact h.f
+  · unfold Model.Consensus.Protocol.Handlers.voterFilteredBlockTree at hmem
+    have h2 := Proofs.Consensus.Trees.getFilteredBlockTreeFrom_sub hmem
+    unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at h2
+    exact ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp h2).1
+
+/-- 種の cone。正の slot `d`(`d ≤ last + 1`、`last` の確認の時刻は `horizon` 以下)の委員会の honest な元は、投票時刻に run の
 ブロックの root に投票する(genesis はどのブロックの祖先でもあるので、cone の `B ⪯ X` は自明)。手書き `protectedVoteSlot_genesis`
-(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)の cone の段に当たる。閉じるのに要るもの: 投票の務めの tick が
-投票の head の root の行を出すこと(手書きは `voterHeadAt` が読みの tree にあり、tree のブロックは run のブロック)(周回 270)。 -/
-theorem voteCone_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)の cone の段に当たる。周回 270 に穴として置き、周回 272 に証明した:
+投票時刻は `last` の確認の時刻以下なので horizon 以下で、honest な委員は投票を出し(`Voting.honest_emits_gfVote_head`)、その head は
+tick の前の store の tree のブロックの root(`voteHeadBlock_mem_tree`)、tree のブロックは bodies の名前付きブロックの消去
+(`Carrier.StoreInv.named`)で run のブロック(`RootWitness.blockInRun_of_stateBefore`)。 -/
+theorem voteCone_genesis (hwf : SetupWellFormed c p s)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hupper : d ≤ last + 1) :
     HonestVotesCone c p a nr s rho d Block.Genesis := by
-  sorry
+  intro x hx hxc
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hvt : Model.Consensus.Protocol.Schedule.voteTime s.e d ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    have hd' : (d : Int) ≤ (last : Int) + 1 := by exact_mod_cast hupper
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    nlinarith
+  obtain ⟨u, i, he, hval, hslot, -, hhead⟩ :=
+    Proofs.Consensus.Voting.honest_emits_gfVote_head c p a nr s rho hsch hδ hx (by omega) hxc hvt
+  have hti := Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho i x
+  have hmem := voteHeadBlock_mem_tree
+    (Model.Consensus.Protocol.Grades.onPhaseTick s.e s.hc
+          (Model.Consensus.Protocol.Store.storeToHealing (worldAt (stateBefore c p a nr s rho i) x).st.core)
+          (Model.Consensus.Protocol.Schedule.voteTime s.e d)
+          (worldAt (stateBefore c p a nr s rho i) x).cache) s.e s.hc
+    (st := (Proofs.Consensus.Voting.clocked s.e
+      (worldAt (stateBefore c p a nr s rho i) x).st (Model.Consensus.Protocol.Schedule.voteTime s.e d)).core)
+    (hti.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+  obtain ⟨X, hX, hXe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i x).named _ hmem
+  refine ⟨X, Proofs.Consensus.Blocks.preceq_genesis _,
+    Proofs.Consensus.RootWitness.blockInRun_of_stateBefore c p a nr s rho
+      ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx) i hX, ?_⟩
+  have hu : u = ⟨x, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩ := by
+    rw [hXe, ← Proofs.Consensus.Voting.voteHead_eq_root, ← hhead, ← hval, ← hslot]
+  rw [← hu]
+  exact he
+
 
 /-- 確認の更新の前の段 `tickPreUpdateStore`(時計合わせ・提案・投票)の後の tree のブロックは、前の tree にあったか、受理の守りを
 通った(`ParentSlot.Fresh`。`ParentSlot.tick_fresh` と同じ運びの 4 経路。周回 271)。 -/
@@ -2240,7 +2295,7 @@ theorem protectedVoteSlots_gstZero (hwf : SetupWellFormed c p s) (hdom : RunDoma
     intro hupper
     have hseed : ProtectedVoteSlot c p a nr s rho 1 Block.Genesis :=
       ⟨fun x _ => Proofs.Consensus.Blocks.preceq_genesis _,
-        voteCone_genesis c p a nr s rho hwf hdom hsleep hhor le_rfl hupper⟩
+        voteCone_genesis c p a nr s rho hwf hsleep hhor le_rfl hupper⟩
     refine ⟨hseed, ?_⟩
     intro w i t C _ _ hq hC
     rw [genuineConf_slot_zero c p a nr s rho hwf (by omega) hC]

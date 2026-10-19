@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 11 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 10 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -549,7 +549,6 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.voteCone_genesis` | `Consensus.Spec.Claims.available` | `protectedVoteSlot_genesis` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean` | 270 |
 | `Proofs.Consensus.AvailableHoles.protectedVoteSlot_preserve` | `Consensus.Spec.Claims.available` | `protectedVoteSlots_of_historyCut_v2_w` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean` | 270 |
 | `Proofs.Consensus.AvailableHoles.protectedVoteSlot_succ_of_genuineConf` | `Consensus.Spec.Claims.available` | `protectedVoteSlot_succ_of_genuineConfirmationWith` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean` | 270 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
