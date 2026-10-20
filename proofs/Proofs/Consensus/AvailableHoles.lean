@@ -12,6 +12,7 @@ import Proofs.Consensus.SgAdmit
 import Proofs.Consensus.FrameCapture
 import Proofs.Consensus.CarriedSupport
 import Proofs.Consensus.ProcessedAncestor
+import Proofs.Consensus.EntryHeight
 import Mathlib.Tactic
 
 /-!
@@ -3069,6 +3070,112 @@ theorem voteDutyStore_sigma_named (x : ValidatorId) (k : Nat) {B : Block}
   rw [← hYe]
   exact hinv.sigma Y hY
 
+/-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
+`sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、
+`B` の名前付きブロックの祖先に `A` の持ち上げがあり(`NamedBlocks.erased_ancestor_lift`)、root の衝突なしで `A` の名前付きブロックと
+同じなので、`EntryHeight.deriveNamed_h_mono`(手書き `derive_height_mono`)に帰着する。手書き `coreStoredHeightAtVoteDuty` と
+`derive_height_mono` を合わせた形(周回 284)。 -/
+theorem voteDutyStore_sigma_h_mono (hsleep : SleepyRegime c p a nr s rho 0) {x : ValidatorId}
+    (hx : rho.honest.contains x = true) (k : Nat) {A B : Block}
+    (hA : A ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems)
+    (hB : B ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems) (hAB : preceq A B = true) :
+    (Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf (voteDutyStoreAt c p a nr s rho x k).sigma A).h ≤
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf (voteDutyStoreAt c p a nr s rho x k).sigma B).h := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  unfold ExecutionValid at hexec
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hexec.1.1.1
+  obtain ⟨YA, hYA, hYAe, hσA⟩ := voteDutyStore_sigma_named c p a nr s rho x k hA
+  obtain ⟨YB, hYB, hYBe, hσB⟩ := voteDutyStore_sigma_named c p a nr s rho x k hB
+  rw [hσA, hσB]
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hYA hYB
+  have hin : ∀ D, D ∈ (worldAt (stateBefore c p a nr s rho
+      (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k))) x).st.bodies.elems →
+      Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho D := fun D hD =>
+    Or.inr ⟨x, hx, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hD⟩
+  rw [← hYBe] at hAB
+  obtain ⟨An, hAn, hAne⟩ := Proofs.Consensus.NamedBlocks.erased_ancestor_lift hAB
+  have heq : YA = An := hcf YA An
+    ⟨⟨YA, hin YA hYA, Proofs.Consensus.NamedBlocks.namedPreceq_self YA⟩, ⟨YB, hin YB hYB, hAn⟩⟩ YA An
+    ⟨⟨Or.inl (Proofs.Consensus.NamedBlocks.namedPreceq_self _), Or.inr (Proofs.Consensus.NamedBlocks.namedPreceq_self _)⟩,
+      by rw [← Proofs.Consensus.NamedBlocks.root_eraseBlock, ← Proofs.Consensus.NamedBlocks.root_eraseBlock, hYAe, hAne]⟩
+  rw [heq]
+  exact Proofs.Consensus.EntryHeight.deriveNamed_h_mono s.e s.cfg hAn
+
+/-- **段の橋の band の枝(名前付きの高さの形)**: `voteDutyHead_passes_supporter_majority_of_bandHead` の `hband` を、`B` の
+名前付きブロック `Bn`(run の中、消去が `B`)の導出の高さで与える形。head は `x` の読みの処理済み tree にあり
+(`voteDutyHead_processed_next`)、その `sigma` の高さは名前付き導出 `Y` の高さ(`voteDutyStore_sigma_named`)で、`B` の持ち上げは
+`Y` の祖先かつ root の衝突なしで `Bn` なので、`deriveNamed_h_mono` で `Bn` の高さ ≤ head の高さ。手書き
+`coreConeBandDescendant_of_processed` の `by_cases hband`(`Cn` の導出の高さ)の真の枝に当たる(周回 284)。 -/
+theorem voteDutyHead_passes_supporter_majority_of_bandNamed (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (hdw : DeliveryWellFormed c p a nr s rho)
+    {u : ValidatorId} (hu : rho.honest.contains u = true) {d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon)
+    {x : ValidatorId} (hx : rho.honest.contains x = true) {B : Block}
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true)
+    (hBD : preceq B (voteDutyHeadAt c p a nr s rho u d) = true)
+    {Bn : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hBnrun : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho Bn)
+    (hBne : Model.Consensus.Objects.NamedBlocks.eraseBlock Bn = B)
+    (hband : (voteDutyStoreAt c p a nr s rho x (d + 1)).hMax - 1 ≤
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg Bn).h) :
+    preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hfj := Proofs.Consensus.ProcessedAncestor.stateBeforeTime_fj c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) x
+  have hfroot : preceq
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st.core.f
+      (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true := by
+    unfold voteDutyFgRootAt
+    exact Proofs.Consensus.ReceiverFinality.store_fgRoot_extends
+      (st := (Proofs.Consensus.Voting.clocked s.e _ (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))).core) hfj
+  have hfh := Proofs.Consensus.Blocks.preceq_trans hfroot
+    (Proofs.Consensus.Blocks.preceq_trans (fgRoot_preceq_voteDutyAnchorAt c p a nr s rho x (d + 1))
+      (Proofs.Consensus.Blocks.preceq_trans hAB hBD))
+  have hcompat := Proofs.Consensus.Blocks.compatible_of_preceq_common hfh (Proofs.Consensus.Blocks.preceq_self _)
+  -- head は `x` の読みの tree にあり、その `sigma` の高さは名前付き導出の高さ
+  have hproc := voteDutyHead_processed_next c p a nr s rho hwf hdom hsleep hu hhor hx hcompat
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at hproc
+  dsimp only at hproc
+  rw [Proofs.Consensus.Trees.mem_filter_iff] at hproc
+  obtain ⟨Y, hY, hYe, hσ⟩ := voteDutyStore_sigma_named c p a nr s rho x (d + 1) hproc.1
+  refine voteDutyHead_passes_supporter_majority_of_bandHead c p a nr s rho hwf hdom hsleep hdw hu hhor hx hmaj hAB hBD ?_
+  rw [hσ]
+  -- `B` の名前付きの持ち上げは `Y` の祖先で、root の衝突なしで `Bn`
+  rw [← hYe] at hBD
+  obtain ⟨An, hAn, hAne⟩ := Proofs.Consensus.NamedBlocks.erased_ancestor_lift hBD
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hY
+  have hYdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho Y :=
+    Or.inr ⟨x, hx, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hY⟩
+  have heq : Bn = An := hcf Bn An ⟨hBnrun, ⟨Y, hYdir, hAn⟩⟩ Bn An
+    ⟨⟨Or.inl (Proofs.Consensus.NamedBlocks.namedPreceq_self _), Or.inr (Proofs.Consensus.NamedBlocks.namedPreceq_self _)⟩,
+      by rw [← Proofs.Consensus.NamedBlocks.root_eraseBlock, ← Proofs.Consensus.NamedBlocks.root_eraseBlock, hBne, hAne]⟩
+  rw [heq] at hband
+  exact le_trans hband (Proofs.Consensus.EntryHeight.deriveNamed_h_mono s.e s.cfg hAn)
+
 /-- **確認の締切は投票時刻ではない**(Δ > 0): `4Δ · k + 2Δ = 4Δ · k' + Δ` なら `1 = 4 · (k' - k)` で、整数では成り立たない
 (`supportCutoff_ne_proposalTime` と同じ運び。周回 277)。 -/
 theorem supportCutoff_ne_voteTime {e : Model.Consensus.Objects.Parameters.ProtocolEnv} (hδ : 0 < e.delta) (k k' : Nat) :
@@ -3336,6 +3443,9 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 周回 283 から、band の枝(`D` = honest な `u` の slot `d` の head で、`x` の読みの `sigma` での高さが `hMax - 1` 以上)は
 `voteDutyHead_passes_supporter_majority_of_bandHead`(証明済み。互換も中で出す)で閉じ、前提は `hmaj`・`hAB`・`B ⪯ head`・`hband`。
 `hband` の高さは `voteDutyStore_sigma_named` で読みの bodies の名前付きブロックの導出 `deriveNamed` の高さに読み替えられる。
+周回 284 から、band の判定を `B` の名前付きブロック `Bn`(run の中)の導出の高さで与える形
+`voteDutyHead_passes_supporter_majority_of_bandNamed`(証明済み。手書き `by_cases hband` の真の枝)があり、読みの tree の上の
+`sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
 残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
@@ -3369,6 +3479,9 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 周回 283 から、band の枝(`D` = honest な `u` の slot `d` の head で、`x` の読みの `sigma` での高さが `hMax - 1` 以上)は
 `voteDutyHead_passes_supporter_majority_of_bandHead`(証明済み。互換も中で出す)で閉じ、前提は `hmaj`・`hAB`・`B ⪯ head`・`hband`。
 `hband` の高さは `voteDutyStore_sigma_named` で読みの bodies の名前付きブロックの導出 `deriveNamed` の高さに読み替えられる。
+周回 284 から、band の判定を `B` の名前付きブロック `Bn`(run の中)の導出の高さで与える形
+`voteDutyHead_passes_supporter_majority_of_bandNamed`(証明済み。手書き `by_cases hband` の真の枝)があり、読みの tree の上の
+`sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
 残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
