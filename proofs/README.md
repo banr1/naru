@@ -505,7 +505,7 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 新しい確認の段 `protectedVoteSlot_succ_of_genuineConf` は周回 298 に、`C` の honest な支持者 `y` の slot `d` の head を上界に同じ 2 枝で閉じ、
 読みの voter view での `C` の支持者の過半を `genuineConf_supporterMajority` に切り出した。これは周回 299 に手書き `AdoptionTransport` の
 数え上げ(`Majority.AdoptionTransport.supporterMajority_of_eligible`。手書き `confirmation_adoption`)で閉じ、確認の store から読みの voter view への
-移送の境界を穴 `genuineConf_adoptionTransport`(手書き `adoptionTransport_B_after_gst`)に切り出した。その穴の `forward` / `backward` に共通の中継の層は周回 300 に `Settled.lean` に証明した: honest なノードが窓の中で扱った投票は pool に入るか投票者の equivocation が pool に残り(`handlesAt_gfVote_settled`。手書き `weakct_actual_gfVote_settled_before_deadline`)、受理された投票は中継で honest な各ノードにそうなり(`acceptsAt_gfVote_settled`)、後の読みの印の付いた pool に移る(`settled_stamped`)。pool の投票はある添字で受理されている(`pool_accepted`))から、SG block と grade 2 の候補を
+移送の境界を穴 `genuineConf_adoptionTransport`(手書き `adoptionTransport_B_after_gst`)に切り出した。その穴の `forward` / `backward` に共通の中継の層は周回 300 に `Settled.lean` に証明した: honest なノードが窓の中で扱った投票は pool に入るか投票者の equivocation が pool に残り(`handlesAt_gfVote_settled`。手書き `weakct_actual_gfVote_settled_before_deadline`)、受理された投票は中継で honest な各ノードにそうなり(`acceptsAt_gfVote_settled`)、後の読みの印の付いた pool に移る(`settled_stamped`)。pool の投票はある添字で受理されている(`pool_accepted`)。周回 301 に、受理の時刻は投票の slot の提案の時刻以後(`PoolSlot.acceptsAt_gfVote_slot_le`。pool に入る守り `st.s < vote.slot` の run の不変条件)を足して、読み手の pool の投票は確認の遅い投票に落ち着く(`AvailableHoles.pool_lateSettled`)ことを証明し、`genuineConf_adoptionTransport` を組んだ。残りは `forward`(穴 `genuineConf_adoptionForward`)と、`backward` の carried の部分(読みの tree の slot `d + 1` のブロックが運ぶ投票。穴 `genuineConf_backwardCarried`、手書き `targetCarrierVote_settledInPool`))から、SG block と grade 2 の候補を
 `fgStep_preceq_laterVoteHead`(穴ではない。周回 251)から供給します。これは務めの store の round で分け、round 0 は `fgStep_round_zero`(round 0 の frame に
 G1 / G2 の root は無いので grade 2 の候補は空、anchor は FG root で、SG block は `liveConfirmed` の祖先か FG root。手書き `WeakGenesis.actionSGBlock_eq_genesis_zero`)
 で閉じ、正の round は `fgStep_preceq_laterVoteHead_positive`(穴ではない。周回 252)に渡します。これは SG block を `sgBlockAt_preceq_of_candidate_anchor`
@@ -555,7 +555,8 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.genuineConf_adoptionTransport` | `Consensus.Spec.Claims.available` | `adoptionTransport_B_after_gst` | `DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean` | 299 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_backwardCarried` | `Consensus.Spec.Claims.available` | `targetCarrierVote_settledInPool` | `DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean` | 301 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_adoptionForward` | `Consensus.Spec.Claims.available` | `adoptionTransport_B_after_gst` | `DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean` | 301 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
