@@ -2790,6 +2790,55 @@ theorem voteDutyHead_passes_supporter_majority_of_delivery (hdw : DeliveryWellFo
   voteDutyHead_passes_supporter_majority_of_carried c p a nr s rho x k
     (voteDutyStore_tree_carried c p a nr s rho hdw x k) hmaj hAB hpath
 
+/-- **読みの voter view での cone の支持は過半の支持を与える**(段の 2 つの穴の橋に残る前提 `hmaj` の形): `x` の slot `k` の読みの
+voter view の参加者が slot `st.s - 1` の committee に収まり(手書き `corePreparedVoteViewValid`)、honest な委員がその view で equivocate
+せず(手書き `coreVoterViewNoHonestEquivocation`)、支持の voter view に `B` 以下を指す slot `st.s - 1` の投票を持てば(手書き
+`coneSupport_of_named_votes` の `vote` の欄)、`B` の支持者は参加者の過半。committee の整列は `SetupWellFormed`、honest 過半は
+`HonestCommittees` の slot `st.s - 1` の不等式。`Majority.supporterMajority_of_cone`(手書き `supporterMajority_of_cone`)を読みの
+view に掛けた形(周回 290)。 -/
+theorem voteDutyStore_supporterMajority_of_cone (hwf : SetupWellFormed c p s) (hhc : HonestCommittees c rho.honest)
+    (x : ValidatorId) (k : Nat) {B : Block}
+    (hPC : ∀ v ∈ (Model.Consensus.Protocol.ForkChoice.Goldfish.rawParticipants
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)).elems,
+      v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems)
+    (hno : ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      Model.Consensus.Protocol.Schedule.equivocates
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s) v = false)
+    (hvote : ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      ∃ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s).elems,
+        u.valIndex = v ∧ u.slot = (voteDutyStoreAt c p a nr s rho x k).s - 1 ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree B u = true) :
+    Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size :=
+  Proofs.Consensus.Majority.supporterMajority_of_cone s.e
+    (Proofs.Consensus.Majority.committee_sorted hwf _) (Proofs.Consensus.Majority.honestCommittees_at hhc _)
+    hPC hno hvote
+
 /-- `voteDutyHead_passes_supporter_majority_of_delivery` の前提 `hpath`(anchor から `B` までの途中が歩みの tree にあること)を、
 `B` の子孫で読みの処理済み tree にあり高さが band(`hMax - 1` 以上)のブロック `D` から出した形(手書き
 `coreCandidatePathOfBandDescendant`。`ProcessedAncestor.voterFiltered_mem_of_band`: 処理済み tree は祖先について閉じ
@@ -3795,7 +3844,10 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 `maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
 周回 289 から、band に届かない枝(`Bn` の導出の高さ < `hMax - 1`)は `voteDutyHead_passes_supporter_majority_of_belowBand`
 (証明済み。frontier の確認の証人 `K` を band の子孫に取る)で閉じ、前提は `hmaj`・`hAB`・honest な `y` の slot `d` の head が `B` の
-子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。 -/
+子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。
+周回 290 から `hmaj` は `voteDutyStore_supporterMajority_of_cone`(証明済み。`HonestCommittees` と committee の整列は regime から)で、
+読みの voter view の参加者が committee に収まること・honest な委員が equivocate しないこと・honest な委員が支持の voter view に `B` 以下を
+指す投票を持つこと(手書き `corePreparedVoteViewValid` / `coreVoterViewNoHonestEquivocation` / `coneSupport_of_named_votes` の `vote`)に分かれる。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -3835,7 +3887,10 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 `maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
 周回 289 から、band に届かない枝(`Bn` の導出の高さ < `hMax - 1`)は `voteDutyHead_passes_supporter_majority_of_belowBand`
 (証明済み。frontier の確認の証人 `K` を band の子孫に取る)で閉じ、前提は `hmaj`・`hAB`・honest な `y` の slot `d` の head が `B` の
-子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。 -/
+子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。
+周回 290 から `hmaj` は `voteDutyStore_supporterMajority_of_cone`(証明済み。`HonestCommittees` と committee の整列は regime から)で、
+読みの voter view の参加者が committee に収まること・honest な委員が equivocate しないこと・honest な委員が支持の voter view に `B` 以下を
+指す投票を持つこと(手書き `corePreparedVoteViewValid` / `coreVoterViewNoHonestEquivocation` / `coneSupport_of_named_votes` の `vote`)に分かれる。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)

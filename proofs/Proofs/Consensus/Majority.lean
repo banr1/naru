@@ -777,6 +777,37 @@ theorem lt_score_of_supporter_majority (e : ProtocolEnv) {tree : NaruStd.Set Blo
   show _ < 2 * ((rawEquivocators votes).size + (rawSupporters tree votes sv s C).size)
   omega
 
+/-- **cone の支持は過半の支持を与える**: 投票の参加者が committee `C`(整列)に収まり、`C` が honest 過半(`|C| < 2 |C ∩ H|`)で、
+honest な committee の要素がみな投票で equivocate せず、支持の投票に `B` 以下を指す slot `s` の投票を持てば、`B` の支持者は投票の参加者の
+過半(`goldfishForkChoice_passes_supporter_majority` の前提 `hmaj` の形)。`|P| ≤ |C| < 2 |C ∩ H| ≤ 2 |S_B|`。手書き
+`supporterMajority_of_cone`(`ConePersistence.lean`。`ConeSupport.subset_supporters` / `count_lt`)。周回 290。 -/
+theorem supporterMajority_of_cone (e : ProtocolEnv) {tree : NaruStd.Set Block} {votes sv : NaruStd.Set GoldfishVote}
+    {s : Nat} {B : Block} {C H : VSet} (hsorted : Sorted C) (hcom : C.size < 2 * (C.inter H).size)
+    (hPC : ∀ v ∈ (rawParticipants votes).elems, v ∈ C.elems)
+    (hno : ∀ v ∈ C.elems, v ∈ H.elems → equivocates votes v = false)
+    (hvote : ∀ v ∈ C.elems, v ∈ H.elems →
+      ∃ u ∈ sv.elems, u.valIndex = v ∧ u.slot = s ∧ targetsUnder tree B u = true) :
+    votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size := by
+  have hP : Sorted (rawParticipants votes) := (sorted_voters votes).filter _
+  have hS : Sorted (rawSupporters tree votes sv s B) := (sorted_voters sv).filter _
+  have h1 : (rawParticipants votes).size ≤ C.size := by
+    rw [size_eq_card hP, size_eq_card hsorted]
+    apply Finset.card_le_card
+    intro v hv
+    rw [List.mem_toFinset] at hv ⊢
+    exact hPC v hv
+  have h2 : (C.inter H).size ≤ (rawSupporters tree votes sv s B).size := by
+    rw [size_eq_card (hsorted.inter H), size_eq_card hS, toFinset_inter]
+    apply Finset.card_le_card
+    intro v hv
+    rw [Finset.mem_inter, List.mem_toFinset, List.mem_toFinset] at hv
+    rw [List.mem_toFinset]
+    obtain ⟨u, hu, hvi, hs, ht⟩ := hvote v hv.1 hv.2
+    rw [mem_rawSupporters_iff]
+    exact ⟨(mem_voters_iff _ _).mpr ⟨u, hu, hvi⟩, hno v hv.1 hv.2, u, hu, hvi, hs, ht⟩
+  show (rawParticipants votes).size < _
+  omega
+
 /-- `goldfishEligible` は過半の門を含む。 -/
 theorem goldfishEligible_of_lt (e : ProtocolEnv) (sigma : NaruStd.Table Block Model.Consensus.Protocol.ChainState.ChainState)
     (hMax : Nat) (tree : NaruStd.Set Block) (cur : Nat) (votes sv : NaruStd.Set GoldfishVote) (s : Nat) {b : Block}
