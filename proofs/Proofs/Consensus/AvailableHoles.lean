@@ -54,7 +54,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認。周回 298 に閉じ、`C` の支持者の過半 `genuineConf_supporterMajority` は
    周回 299 に手書き `AdoptionTransport` の数え上げで閉じて、移送の境界 `genuineConf_adoptionTransport` を切り出した。周回 301 にその
    `backward` の pooled の部分を `pool_lateSettled` で閉じ、`forward` と `backward` の carried の部分を穴 `genuineConf_adoptionForward` /
-   `genuineConf_backwardCarried` に分けた)で、段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
+   `genuineConf_backwardCarried` に分けた。周回 302 に後者を tree への最初の入場 `tree_entered` と `treeEntry_gfVote_settled` で
+   閉じた)で、段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
    `genuineConf_preceq_laterVoteHead`、SG block と grade 2 の候補を `fgStep_preceq_laterVoteHead` から供給する(周回 250)。
@@ -4596,19 +4597,117 @@ theorem nonUnique_lateEquivocates (hwf : SetupWellFormed c p s) (hsleep : Sleepy
     · rw [← hzv]; exact hz'
   · rw [← hyv]; exact hy'
 
-/-- 穴: 新しい確認の段の移送の境界の `backward` の carried の部分。`1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の評価者 `w`
-と honest なノード `x` について、`x` の slot `d + 1` の読みの tree の slot `d + 1` のブロックが運ぶ slot `d` の投票は、確認の更新の前の段の
-store の slot `d` の遅い投票にあるか、そこで投票者が equivocate する。手書き `targetCarrierVote_settledInPool`
-(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。周回 301 に `genuineConf_adoptionTransport` から
-切り出した。閉じるのに要るもの: ブロックが `x` の tree に入った添字(読みの添字より前)で、運ぶ投票は `onGoldfishVoteChecked` を通る。
-配送のブロックの運ぶ投票は committee の元(`DeliveryWellFormed` の `wellFormed`)、自分の提案の運ぶ投票は既に pool にある
-(`Settled.tick_block_gfVote_mem`)。受理の守り(slot ≤ store の slot。`processBlockCore_guards`)と読みの slot から窓の中。
-`Carried.UniqueIn` で `by_cases` すると、一意なら pool に入り(`Carried.processBlockCore_mem`)`pool_lateSettled`、一意でなければ
-`nonUnique_lateEquivocates`。 -/
-theorem genuineConf_backwardCarried (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+/-- **tree への最初の入場**(周回 302): 添字 `n` の前の `x` の tree のブロック `b` は genesis か、`n` より前のある添字 `j` で
+`x` の tree に新しく入った(添字 0 の tree は `{Genesis}`)。`Settled.pool_accepted` の tree の版。 -/
+theorem tree_entered (x : ValidatorId) (b : Block) :
+    ∀ n, b ∈ (worldAt (stateBefore c p a nr s rho n) x).st.core.tree.elems →
+      b = Block.Genesis ∨ ∃ j, j < n ∧ b ∉ (worldAt (stateBefore c p a nr s rho j) x).st.core.tree.elems ∧
+        b ∈ (worldAt (stateBefore c p a nr s rho (j + 1)) x).st.core.tree.elems
+  | 0, h => by
+    left
+    unfold stateBefore at h
+    simp only [List.take_zero, List.foldl_nil] at h
+    have h' : b ∈ (NaruStd.Set.singleton Block.Genesis).elems := h
+    exact (Proofs.Consensus.Sets.mem_singleton_iff _ _).mp h'
+  | n + 1, h => by
+    by_cases hn : b ∈ (worldAt (stateBefore c p a nr s rho n) x).st.core.tree.elems
+    · rcases tree_entered x b n hn with h0 | ⟨j, hj, h1, h2⟩
+      · exact Or.inl h0
+      · exact Or.inr ⟨j, Nat.lt_succ_of_lt hj, h1, h2⟩
+    · exact Or.inr ⟨n, Nat.lt_succ_self n, hn, h⟩
+
+/-- **tree に新しく入ったブロックの運ぶ投票は落ち着く**(周回 302): 添字 `j` で `x` の tree に新しく入ったブロック `b` の運ぶ投票
+`u`(committee の要素。投票者は byzantine でもよい)は、`slot b = u.slot + 1` で添字 `j` の event の時刻が `proposalTime (u.slot + 2)`
+より前なら、`stateBefore (j + 1)` の `x` で `PoolSettled`。`b` の名前付きの本体 `D` は添字 `j` で bodies に新しく入った
+(`StoreInv.tree`)ので、`x` の tick の提案か `x` への配送(`Attribution.nodeTick_bodies` / `nodeProcess_bodies`)。提案なら運ぶ投票は
+既に pool にある(`Settled.tick_block_gfVote_mem`)。配送なら受理の守り `slot b ≤ st.s`(`processBlockCore_guards`)と配送の時刻の
+上限(`Window.slot_le_of_deliver`)で窓の中、`Carried.UniqueIn` で場合を分けて一意なら pool に入る(`Carried.processBlockCore_mem`)。
+手書き `targetCarrierVote_settledInPool` の運びに当たる。 -/
+theorem treeEntry_gfVote_settled (hsch : ScheduleWellFormed s rho) (hδ : 0 < s.e.delta) {x : ValidatorId} {j : Nat}
+    {b : Block} (hnot : b ∉ (worldAt (stateBefore c p a nr s rho j) x).st.core.tree.elems)
+    (hin : b ∈ (worldAt (stateBefore c p a nr s rho (j + 1)) x).st.core.tree.elems)
+    {u : GoldfishVote} (hu : u ∈ gfVotes b)
+    (hwf : Model.Consensus.Protocol.Schedule.voteWellFormed c u = true) (hsl : slot b = u.slot + 1)
+    (hhi : ∀ ev, rho.events[j]? = some ev →
+      eventTime ev < Model.Consensus.Protocol.Schedule.proposalTime s.e (u.slot + 1 + 1)) :
+    Proofs.Consensus.Settled.PoolSettled (worldAt (stateBefore c p a nr s rho (j + 1)) x).st.core u := by
+  obtain ⟨D, hD, rfl⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho (j + 1) x).named _ hin
+  have hDn : D ∉ (worldAt (stateBefore c p a nr s rho j) x).st.bodies.elems := fun h =>
+    hnot ((Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho j x).tree D h)
+  rw [Proofs.Consensus.PoolFrom.gfVotes_eraseBlock] at hu
+  cases hev : rho.events[j]? with
+  | none =>
+    rw [Proofs.Consensus.Signing.stateBefore_succ_of_none c p a nr s rho hev] at hD
+    exact absurd hD hDn
+  | some ev =>
+    have hD' := hD
+    rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev] at hD'
+    cases ev with
+    | Tick w t =>
+      unfold worldStep at hD'
+      dsimp only at hD'
+      by_cases hwx : w = x
+      · subst hwx
+        rw [Proofs.Consensus.Signing.worldAt_insert_self] at hD'
+        rcases Proofs.Consensus.Attribution.nodeTick_bodies c p a nr s w _ t hD' with h | h
+        · exact absurd h hDn
+        · exact Or.inl (Proofs.Consensus.Settled.pool_succ_sub c p a nr s rho j w _ _
+            (Proofs.Consensus.Settled.tick_block_gfVote_mem c p a nr s rho h hu))
+      · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ hwx] at hD'
+        exact absurd hD' hDn
+    | Deliver w o t =>
+      unfold worldStep at hD'
+      dsimp only at hD'
+      by_cases hwx : w = x
+      · subst hwx
+        rw [Proofs.Consensus.Signing.worldAt_insert_self] at hD'
+        rcases Proofs.Consensus.Attribution.nodeProcess_bodies c p s hD' with h | rfl
+        · exact absurd h hDn
+        · have hDp : D ∈ (postCore c p s (worldAt (stateBefore c p a nr s rho j) w).st D).bodies.elems := by
+            have h2 : D ∈ (Model.Consensus.Protocol.Handlers.onBlockWith c p
+                Model.Consensus.Protocol.Handlers.CarriedAdmission.AlsoCarried s.e s.hc s.cfg
+                (worldAt (stateBefore c p a nr s rho j) w).st D).bodies.elems := hD'
+            unfold Model.Consensus.Protocol.Handlers.onBlockWith at h2
+            rw [Proofs.Consensus.Attribution.admitCarried_bodies] at h2
+            exact h2
+          obtain ⟨-, -, hge, -, -⟩ := processBlockCore_guards c p s.e s.hc s.cfg hDn hDp
+          have hnew : ¬ ((worldAt (stateBefore c p a nr s rho j) w).st.core.tree.contains
+              (Model.Consensus.Objects.NamedBlocks.eraseBlock D) = true) := by
+            rw [Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.block_compare_eq_iff]
+            exact hnot
+          have hin' : (postCore c p s (worldAt (stateBefore c p a nr s rho j) w).st D).core.tree.contains
+              (Model.Consensus.Objects.NamedBlocks.eraseBlock D) = true := by
+            rw [Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.block_compare_eq_iff]
+            exact (Proofs.Consensus.Carrier.processBlockCore_inv c p s.hc
+              (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho j w) D).tree D hDp
+          have hwin : Proofs.Consensus.Delivery.InWindow (worldAt (stateBefore c p a nr s rho j) w).st.core u :=
+            ⟨by omega, Proofs.Consensus.Window.slot_le_of_deliver c p a nr s rho hsch hδ hev (hhi _ hev)⟩
+          by_cases hU : Proofs.Consensus.Carried.UniqueIn (worldAt (stateBefore c p a nr s rho (j + 1)) w).st.core
+              u.slot u.valIndex
+          · left
+            rw [Proofs.Consensus.Signing.stateBefore_succ_of_get c p a nr s rho hev] at hU ⊢
+            unfold worldStep at hU ⊢
+            dsimp only at hU ⊢
+            rw [Proofs.Consensus.Signing.worldAt_insert_self] at hU ⊢
+            rw [Proofs.Consensus.Carried.nodeProcess_block_poolList]
+            have hU' := hU.mono (a := (postCore c p s (worldAt (stateBefore c p a nr s rho j) w).st D).core)
+              (fun y hy => by rw [Proofs.Consensus.Carried.nodeProcess_block_poolList]; exact hy)
+            exact Proofs.Consensus.Carried.processBlockCore_mem c p s.e s.hc s.cfg hnew hin' hu hwf hwin hU'
+          · exact Or.inr hU
+      · rw [Proofs.Consensus.Signing.worldAt_insert_ne _ _ _ _ hwx] at hD'
+        exact absurd hD' hDn
+
+/-- **新しい確認の段の移送の境界の `backward` の carried の部分**(周回 301 に穴として置き、周回 302 に閉じた)。`1 ≤ d ≤ last` で、
+slot `q = d` の確認評価の tick の評価者 `w` と honest なノード `x` について、`x` の slot `d + 1` の読みの tree の slot `d + 1` のブロックが
+運ぶ slot `d` の投票は、確認の更新の前の段の store の slot `d` の遅い投票にあるか、そこで投票者が equivocate する。手書き
+`targetCarrierVote_settledInPool`(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。運び: 運ぶ投票は
+committee の元(`CarriedCommittee.stateBeforeTime_tree_committee`)。ブロックが `x` の tree に新しく入った添字 `j`(読みの添字より前。
+`tree_entered`)の後で `x` の pool に `PoolSettled`(`treeEntry_gfVote_settled`。添字 `j` の event の時刻は `voteTime (d + 1)` より前で
+`proposalTime (d + 2)` より前)。pool にあれば `pool_lateSettled`、投票者の投票が一意でなければ `nonUnique_lateEquivocates`。 -/
+theorem genuineConf_backwardCarried (hwf : SetupWellFormed c p s)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
-    (hd : 1 ≤ d) (hdlast : d ≤ last)
+    (hdlast : d ≤ last)
     {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
     (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = d)
@@ -4621,7 +4720,37 @@ theorem genuineConf_backwardCarried (hwf : SetupWellFormed c p s) (hdom : RunDom
             (Proofs.Consensus.Goldfish.lateVotes s.e
               (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core d)
             u.valIndex = true := by
-  sorry
+  intro b hb hbs u hu hus
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hdw : DeliveryWellFormed c p a nr s rho := hexec.1.1.2
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked at hb
+  have hwfu : Model.Consensus.Protocol.Schedule.voteWellFormed c u = true :=
+    Proofs.Consensus.CarriedCommittee.stateBeforeTime_tree_committee c p a nr s rho hdw _ x b hb u hu
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hb
+  rcases tree_entered c p a nr s rho x b _ hb with rfl | ⟨j, hj, hnot, hin⟩
+  · simp [slot] at hbs
+  · have hvp : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) <
+        Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1 + 1) := by
+      unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.proposalTime
+        Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+      simp only [Int.ofNat_eq_natCast]
+      push_cast
+      nlinarith
+    have hhi : ∀ ev, rho.events[j]? = some ev →
+        eventTime ev < Model.Consensus.Protocol.Schedule.proposalTime s.e (u.slot + 1 + 1) := by
+      intro ev hev
+      rw [hus]
+      exact lt_trans (Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs hj hev) hvp
+    have hset := treeEntry_gfVote_settled c p a nr s rho hsch hδ hnot hin hu hwfu (by rw [hbs, hus]) hhi
+    rcases hset with h | h
+    · rw [hus] at h
+      exact pool_lateSettled c p a nr s rho hwf hsleep hhor hdlast hw ht hq hx hj h
+    · rw [hus] at h
+      exact Or.inr (nonUnique_lateEquivocates c p a nr s rho hwf hsleep hhor hdlast hw ht hq hx hj h)
 
 /-- 穴: 新しい確認の段の移送の境界の `forward`。`genuineConf_adoptionTransport` と同じ前提で、確認の分子の投票(`supportVotes`)で
 `C` 以下を指すものは、読みの支持の voter view にあって読みの tree で `C` 以下を指すか、読みの voter view で投票者が equivocate する。
@@ -4657,14 +4786,15 @@ theorem genuineConf_adoptionForward (hwf : SetupWellFormed c p s) (hdom : RunDom
           u.valIndex = true := by
   sorry
 
-/-- **新しい確認の段の移送の境界**(周回 299 に穴として置き、周回 301 に `forward` と `backward` の carried の部分を穴に分けた)。
+/-- **新しい確認の段の移送の境界**(周回 299 に穴として置き、周回 301 に `forward` と `backward` の carried の部分を穴に分け、周回 302 に
+後者を閉じた)。
 `1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の genuine な確認 `C` が honest なノード `x` の slot `d + 1` の読みの FG root の
 子孫なら、確認の更新の前の段の store の slot `d` の確認(分子 `supportVotes`、分母 `lateVotes`)から `x` の slot `d + 1` の読みの
 voter view(投票 `voterView`、支持の投票 `voterSupportView`、tree は読みの tree)への `Majority.AdoptionTransport` がある。手書き
 `adoptionTransport_B_after_gst`(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。`forward` は
 穴 `genuineConf_adoptionForward`。`backward` は voter view の 2 つの部分に分ける: pooled の部分(読みの pool のバケツ `d`)は
 `pool_lateSettled`(証明済み。周回 300 の中継の層 `Settled.lean` と、受理の時刻の下限 `PoolSlot.acceptsAt_gfVote_slot_le`)、
-carried の部分(読みの tree の slot `d + 1` のブロックが運ぶ slot `d` の投票)は穴 `genuineConf_backwardCarried`。 -/
+carried の部分(読みの tree の slot `d + 1` のブロックが運ぶ slot `d` の投票)は `genuineConf_backwardCarried`(証明済み。周回 302)。 -/
 theorem genuineConf_adoptionTransport (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -4712,7 +4842,7 @@ theorem genuineConf_adoptionTransport (hwf : SetupWellFormed c p s) (hdom : RunD
       have h := beq_iff_eq.mp hus
       rw [hslot, Nat.add_sub_cancel] at h
       exact h
-    exact genuineConf_backwardCarried c p a nr s rho hwf hdom hsleep hhor hd hdlast hw ht hq hx b hbt hbs' u hug hus'
+    exact genuineConf_backwardCarried c p a nr s rho hwf hsleep hhor hdlast hw ht hq hx b hbt hbs' u hug hus'
 
 /-- **新しい確認の段の過半の移送**(周回 298 に穴として置き、周回 299 に閉じた)。`1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の
 genuine な確認 `C` が honest なノード `x` の slot `d + 1` の読みの FG root の子孫なら、その読みの voter view で `C` の支持者は過半
