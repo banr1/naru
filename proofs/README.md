@@ -540,11 +540,17 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 `g1Tree_of_g2Tree`(G1 の tick の tree への持ち越し。手書き `q10_tree_fwd`。G2 の domain 時刻は G1 より前なので添字も前で、tree のブロックは残る。周回 236 に閉じた)で G1 の tick に運び、証明済みの `freezeRoot_of_graded`(grade の通った要素は互いに互換
 `GradeSupporter.graded_compatible` なので最も深い要素が支配する。手書き `q10_freeze_of_graded`)で G1 の凍結に移します(周回 235)。`g1Grade_of_g2Grade_positive` は手書きと同じく、抽象的な持ち越し `GradeTransport.gradeBool_transport`(支持は持ち越し反対は戻る。手書き `q10_gradeBool_transport`)に、G1 の early / late 時刻が G2 の domain 時刻以下であることと、2 つの tick の間の包含 `g1RawInputs_back` / `g1Interpreted_back`(G1 の tick の入力は `cut`(G2 の domain 時刻以下)より前に受信したので G2 の tick にもある。手書き `q10_rawInputs_back` / `q10_interpreted_back`。G2 の tick より後に入った SG 票とブロックの受信の印はその tick の時刻以上(新しい `SgStamps.stateBefore_sgFresh` / `BlockStamps.stateBefore_fresh`。新しい印はその時点の時計で、時計は戻らない)、finalized は添字について祖先へ戻らない。周回 242 に閉じた)・`g1LocalCovers_fwd`(覆いは tree が育っても残る。手書き `q10_localCovers_fwd`。tree のブロックは残り、run に root の衝突が無いので root の解決も変わらない。周回 240 に閉じた)・`g1InterpretedCover_fwd`(`b` を覆う入力は G1 の tick に運べる。手書き `q10_interpreted_fwd_cover`。SG 票の行と受信の印は run の添字について残り(新しい `SgStamps.stateBefore_sgKeep`。手書き `strict_sg_row_carry`)、本体の head も tree に残って印と root の解決が変わらない。周回 241 に閉じた)を渡して証明します(周回 238)。回復の枝は穴
 `recordAgree_recovered` / `crossAgree_recovered` から取ります(周回 216 に穴 `recordAgree` / `crossAgree` / `confirmedAgree_genesis` をこの形に替えた)。
+周回 304 で GST-zero の枝の一致の側(`commonUpper_genesis` から下)は sorry に依存しなくなりました(`#print axioms` で確かめた)。
+確認の出力への包含 `confirmedIncluded` は周回 305 に `RecoveredBy` の 2 枝に分けました: GST-zero の枝 `confirmedIncluded_genesis`(穴ではない)は、
+`IncludedFrom` の期限の時刻 `proposalTime e k + confirmationDelay` が確認の時刻 `confirmationTime e k` そのものなので、その読みの確認の記録が
+提案の消去に等しいこと(穴 `latestAtProposal_genesis`。手書き `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から
+`preceq_getConfirmed_of_latest` で出します(手書き `userProposalsConfirmedAfter_of_weakGenesis_named` の筋。手書きは確認の時刻より後の読みにも
+単調性で広げますが、naru の `IncludedFrom` は期限の時刻の 1 点なので要りません)。回復の枝は穴 `confirmedIncluded_recovered` です。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
 `stableIncludedFast`(周回 212)は入口 `StableIncludedFastHoles.lean` の `stableIncludedFastAt` が `FreshSleepyRegime` を `SleepyRegime` と新鮮な過半に分け、
-確認の出力への包含を `available` の穴 `confirmedIncluded` から取り(手書き `available_stableIncluded_fresh` と同じ依存)、`t0 = 0` か否かで stable の書き込みの
+確認の出力への包含を `available` の `confirmedIncluded`(周回 305 から穴ではなく、2 枝の穴 `latestAtProposal_genesis` / `confirmedIncluded_recovered` に依る)から取り(手書き `available_stableIncluded_fresh` と同じ依存)、`t0 = 0` か否かで stable の書き込みの
 穴 `stableWriteFresh_genesis` / `stableWriteFresh_recovered` に渡します。`finalized`(周回 212)は入口 `FinalizedHoles.lean` の `finalizedAt` が包含を穴 `finalizedIncluded` から取り、活性を
 証明済みの `finalizedLive_of_included` で包含から出します。`stableAsynchronyResilient`(周回 212)は入口 `PersistsHoles.lean` の `persistsFrom` が
 `PersistsFrom` の量化を開いてブロック・時刻ごとの穴 `stableInBy` に渡します。bundle `Consensus`(周回 212)は 13 件の theorem を項目に置き、固有の穴を持ちません。
@@ -557,7 +563,8 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
-| `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
+| `Proofs.Consensus.AvailableHoles.latestAtProposal_genesis` | `Consensus.Spec.Claims.available` | `latestAtProposalField_of_weakGenesis` | `DecoupledConsensusProofs/Execution/WeakGenesisLatestAtProposalClosed.lean` | 305 |
+| `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_recovered` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_afterGST` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |

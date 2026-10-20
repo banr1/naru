@@ -119,18 +119,20 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    (`FrameCapture.onPhaseTick_phase_some` / `FrameCapture.stateBefore_phase_origin`: domain の tick の凍結をいまの finalized で切り詰めたもの)から
    証明する(周回 243)。
    回復の枝の記録の一致と交差の互換は穴 `recordAgree_recovered` / `crossAgree_recovered`。
-3. 穴(6 件): `protectedVoteSlot_preserve`(手書き `protectedVoteSlots_of_historyCut_v2_w` の `hpreserve`、
-   `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean`)/ `protectedVoteSlot_succ_of_genuineConf`(手書き
-   `protectedVoteSlot_succ_of_genuineConfirmationWith`、`DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean`)/
-   `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
-   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `confirmedIncluded`(手書き `available_confirmedIncluded`)/
-   `stableIncluded`(手書き `available_stableIncluded_any`)。
+   GST-zero の枝の一致の側(`commonUpper_genesis` から下)は周回 304 に穴に依存しなくなった(公理監査は標準の 3 つだけ)。
+3. 確認の出力への包含 `confirmedIncluded` は周回 305 に 2 枝に分けた: GST-zero の枝 `confirmedIncluded_genesis`(穴ではない)は、期限の時刻が
+   確認の時刻そのものなので、その読みの確認の記録が提案の消去に等しいこと(穴 `latestAtProposal_genesis`。手書き
+   `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
+4. 穴(5 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `latestAtProposal_genesis`(手書き `latestAtProposalField_of_weakGenesis`)/
+   `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
 
 手書きは `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
-`boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致の穴はすでに枝ごとに分けた(`commonUpper_genesis` は
-`t0 = 0`、`_recovered` の 2 件は `hne : t0 ≠ 0` を受け取る)。包含の穴 2 件は義務の前提(`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)を
-そのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
+`boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致と確認の包含の穴はすでに枝ごとに分けた(`commonUpper_genesis` /
+`latestAtProposal_genesis` は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
+(`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)をそのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく
+`confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
 
 namespace Proofs.Consensus.AvailableHoles
@@ -7023,15 +7025,78 @@ theorem finalizedAgree_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s
     AgreeFrom c p a nr s rho Output.Finalized 0 :=
   agreeFrom_finalized_of_confirmed c p a nr s rho (confirmedAgree_genesis c p a nr s rho hwf hdom hsleep)
 
-/-- 穴: honest な提案の確認の出力への期限 `confirmationDelay` 以内の包含。
-手書き `available_confirmedIncluded`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)に当たる。
-閉じるのに要るもの: `genesis` の枝は `gstZeroGuarantees_of_weakGenesis` の `userProposals`、`recovered` の枝は位相の `userConfirmation.proposals`。
-どちらも honest な提案が適格な子の一意な最大になって `ghost_reaches`(`Goldfish.lean`)で選ばれることと、提案が締切までに各ノードの tree に入ること
-(`ProposerRoot.lean` の `partialSynchrony_emitted_block_mem_of_fgRoot`。FG root の上界 = 手書き `hreadBound`)。 -/
+/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻 `confirmationTime e k` が `horizon` 以下なら、
+提案のブロック `B` があり、honest なノードのその時刻の読みの確認の記録 `latestConfirmed` はどれも `B` の消去に等しい。
+手書き `latestAtProposalField_of_weakGenesis`(`DecoupledConsensusProofs/Execution/WeakGenesisLatestAtProposalClosed.lean`)に当たる。
+閉じるのに要るもの: 手書きの `latestAtProposalField_of_weakGenesis_of_pins` の運び — honest な提案が確認の評価の walk で適格な子の一意な最大に
+なって `ghost_reaches`(`Goldfish.lean`)で選ばれることと、提案が締切までに各ノードの tree に入ること(`ProposerRoot.lean` の
+`partialSynchrony_emitted_block_mem_of_fgRoot`)、提案の務めの読みの canonical な形(手書き `canonicalProposalDuty_positive_of_gstZero_named`)。 -/
+theorem latestAtProposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
+    (hhon : rho.honest.contains (p k) = true) :
+    ∃ B : Model.Consensus.Objects.NamedBlocks.NamedBlock, proposedBlockAt c p a nr s rho k = some B ∧
+      ∀ v, rho.honest.contains v = true →
+        (storeAt c p a nr s rho v (Model.Consensus.Protocol.Schedule.confirmationTime s.e k)).core.latestConfirmed =
+          Model.Consensus.Objects.NamedBlocks.eraseBlock B := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)の honest な提案の確認の出力への包含。手書き `userProposalsConfirmedAfter_of_weakGenesis_named`
+(`DecoupledConsensusProofs/Protocol/ChainState/GSTZeroSixFieldBypassNamed.lean`)と `included_of_userProposals` の筋: 期限の時刻
+`proposalTime e k + confirmationDelay` は確認の時刻 `confirmationTime e k` そのものなので、その読みの確認の記録は穴 `latestAtProposal_genesis` から
+提案の消去に等しく、記録と finalized の交差の互換(`crossAgree` の GST-zero の枝)と `preceq_getConfirmed_of_latest` で出力に移す。
+手書きは確認の時刻より後の読みにも単調性で広げるが、naru の `IncludedFrom` は期限の時刻の 1 点なので要らない。 -/
+theorem confirmedIncluded_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) :
+    IncludedFrom c p a nr s rho Output.Confirmed 0 (confirmationDelay s) := by
+  intro k hk
+  obtain ⟨⟨hpos, hhon⟩, hhor⟩ := hk
+  have hT : Model.Consensus.Protocol.Schedule.proposalTime s.e k + confirmationDelay s =
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e k := rfl
+  have hk0 : 0 < k := by
+    rcases Nat.eq_zero_or_pos k with h | h
+    · subst h
+      exfalso
+      revert hpos
+      simp [Model.Consensus.Protocol.Schedule.proposalTime, Model.Consensus.Objects.Parameters.slotTime,
+        Model.Consensus.Objects.Time.slotStart]
+    · exact h
+  rw [hT] at hhor ⊢
+  obtain ⟨B, hB, hL⟩ := latestAtProposal_genesis c p a nr s rho hwf hdom hsleep k hk0 hhor hhon
+  refine ⟨Model.Consensus.Objects.NamedBlocks.eraseBlock B, ⟨hhon, by simp [proposedBlock, hB]⟩, ?_⟩
+  intro v hv
+  have hT0 : 0 ≤ Model.Consensus.Protocol.Schedule.confirmationTime s.e k := by
+    have hδ : 0 ≤ s.e.delta := (Proofs.Consensus.Liveness.wf_facts hwf).1.le
+    have := hpos.le
+    unfold Model.Consensus.Protocol.Schedule.proposalTime at this
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime
+    omega
+  have hX := crossAgree c p a nr s rho hwf hdom hsleep v v _ _ hv hv hT0 hhor hT0 hhor
+  beta_reduce at hX
+  rw [outputAt_confirmed]
+  rw [hL v hv] at hX
+  exact preceq_getConfirmed_of_latest (Proofs.Consensus.RecordOrder.storeAt_sbc c p a nr s rho v _)
+    (by rw [hL v hv]; exact Proofs.Consensus.Blocks.preceq_self _) hX
+
+/-- 穴: 回復の枝(`t0 ≠ 0`)の honest な提案の確認の出力への期限 `confirmationDelay` 以内の包含。
+手書き `available_confirmedIncluded`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)の `recovered` の枝に当たる。
+閉じるのに要るもの: `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の `userConfirmation.proposals`(提案の slot は回復の境界の
+opening slot より後。手書き `opening_before_of_post_boundary_proposal`)。 -/
+theorem confirmedIncluded_recovered {t0 : Int} (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho t0) (hne : t0 ≠ 0) :
+    IncludedFrom c p a nr s rho Output.Confirmed t0 (confirmationDelay s) := by
+  sorry
+
+/-- honest な提案の確認の出力への期限 `confirmationDelay` 以内の包含: GST-zero の枝は `confirmedIncluded_genesis` から、回復の枝は
+穴 `confirmedIncluded_recovered` から。手書き `available_confirmedIncluded`(`DecoupledConsensusProofs/Bridge/StandardVocabulary.lean`)の
+`RecoveredBy` の 2 枝の分け方。 -/
 theorem confirmedIncluded {t0 : Int} (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho t0) :
     IncludedFrom c p a nr s rho Output.Confirmed t0 (confirmationDelay s) := by
-  sorry
+  by_cases h0 : t0 = 0
+  · subst h0
+    exact confirmedIncluded_genesis c p a nr s rho hwf hdom hsleep
+  · exact confirmedIncluded_recovered c p a nr s rho hwf hdom hsleep h0
 
 /-- 穴: honest な提案の stable の出力への期限 `stableInclusionDelay` 以内の包含。
 手書き `available_stableIncluded_any`(`DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean`)に当たる。
