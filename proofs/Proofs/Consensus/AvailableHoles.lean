@@ -3551,6 +3551,130 @@ theorem voteConeStamped_of_heads (hwf : SetupWellFormed c p s) (hdom : RunDomain
   rw [← hXe] at htree hstamp
   exact ⟨X, hBX, hX, hem, hsl, htree, hstamp⟩
 
+/-- **cone の投票は次の slot の読みの pool に凍結より前の印で入る**(`hpv` の全体): `voteConeStamped_of_heads` と同じ前提で、
+honest な `x` の slot `d + 1` の読み(`st.s - 1 = d`)の、slot `d` の委員会の honest な元 `v` ごとに、投票
+`⟨v, d, root (eraseBlock X)⟩` が読みの pool のバケツ `d` にあり受信の印が `viewFreeze d` より前(`v` は GST-zero の枝で投票の時刻
+`voteTime d` に出すので、`Stamps.partialSynchrony_honest_gfVote_stamped` で `x` は `supportCutoff d = voteTime d + Δ` より前の
+添字から pool に持ち、印は締切より前。読みの添字 `idxLt (voteTime (d + 1))` はその添字より後)。`X` の側は
+`voteConeStamped_of_heads`。手書き `coneSupport_of_named_votes` の `havailable` の vote の側に当たる(周回 297)。 -/
+theorem voteConePooled_of_heads (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) {B : Block}
+    (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true)
+    {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hbelow : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true) :
+    ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1)).elems, v ∈ rho.honest.elems →
+      ∃ u X, u ∈ (Model.Consensus.Protocol.StoreBase.pool
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1)).elems ∧
+        u.valIndex = v ∧ u.slot = (voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1 ∧
+        X ∈ (voteDutyStoreAt c p a nr s rho x (d + 1)).tree.elems ∧ root X = u.head ∧
+        slot X ≤ (voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1 ∧
+        Model.Consensus.Objects.Time.occurrenceBefore
+          (NaruStd.Table.get? (voteDutyStoreAt c p a nr s rho x (d + 1)).timestampVote u)
+          (Model.Consensus.Protocol.Schedule.viewFreeze s.e ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1)) = true ∧
+        Model.Consensus.Objects.Time.occurrenceBefore
+          (NaruStd.Table.get? (voteDutyStoreAt c p a nr s rho x (d + 1)).timestampBlock X)
+          (Model.Consensus.Protocol.Schedule.viewFreeze s.e ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1)) = true ∧
+        preceq B X = true := by
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hslot : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 :=
+    Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  rw [hslot, Nat.add_sub_cancel]
+  intro v hvc hvh
+  have hv : rho.honest.contains v = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hvh
+  have hvc' : (c d).contains v = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hvc
+  obtain ⟨X, hBX, -, hem, hsl, htree, hstamp⟩ :=
+    voteConeStamped_of_heads c p a nr s rho hwf hdom hsleep hhor hd hdlast hheads hx hbelow v hv hvc'
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  have hps : Statements.Consensus.Spec.Conditions.PartialSynchrony c p a nr s rho := hsleep.1.1.1.1.2
+  have hgst : s.e.tGST ≤ 0 := hsleep.1.1.1.2
+  obtain ⟨hs, hnd⟩ := Proofs.Consensus.Available.schedule_sorted_nodup s rho hsch
+  have hnd' := Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd
+  have hT0 : 0 ≤ Model.Consensus.Protocol.Schedule.voteTime s.e d := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    positivity
+  have hcutv : Model.Consensus.Protocol.Schedule.supportCutoff s.e d ≤
+      Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.supportCutoff Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hvt : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    have hd' : (d : Int) ≤ (last : Int) := by exact_mod_cast hdlast
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  obtain ⟨t2, j, ⟨-, ht2⟩, hh, hmem⟩ :=
+    Proofs.Consensus.Stamps.partialSynchrony_honest_gfVote_stamped c p a nr s rho hps hsch hunf hδ hem hv
+      (le_trans hgst hT0) hx (le_trans hcutv hvt)
+  obtain ⟨ev, hevj, hte⟩ := Proofs.Consensus.Stamps.handlesAt_event c p a nr s rho hh
+  have hji : j < Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) :=
+    Proofs.Consensus.ReceiverFinality.lt_idxLt_of_time_lt rho hs hnd' hevj
+      (by rw [hte]; exact lt_of_lt_of_le ht2 hcutv)
+  obtain ⟨hm, hob⟩ := hmem _ hji
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))
+  refine ⟨⟨v, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩,
+    Model.Consensus.Objects.NamedBlocks.eraseBlock X, ?_, rfl, rfl, htree, rfl, hsl, ?_, hstamp, hBX⟩
+  · unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    refine (Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mpr ?_
+    rw [heq]
+    exact hm
+  · unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    rw [heq]
+    refine Proofs.Consensus.GradeSupporter.occurrenceBefore_mono hob ?_
+    show Model.Consensus.Protocol.Schedule.supportCutoff s.e d ≤ Model.Consensus.Protocol.Schedule.viewFreeze s.e d
+    unfold Model.Consensus.Protocol.Schedule.supportCutoff Model.Consensus.Protocol.Schedule.viewFreeze
+    linarith
+
+/-- **段の橋の `hmaj` を cone の head から出す**: `voteConePooled_of_heads`(`hpv`)→ `voteDutyStore_supportVote_of_pool`(`hvote`)
+→ `voteDutyStore_supporterMajority_of_cone_run` を組んだ形。slot `d` のすべての honest なノードの投票の務めの head が `B` の子孫で、
+honest な `x` の slot `d + 1` の読みの anchor ⪯ `B` なら、その読みの voter view で `B` の支持者が参加者の過半(周回 297)。 -/
+theorem voteDutyStore_supporterMajority_of_heads (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (hhc : HonestCommittees c rho.honest)
+    (hdw : DeliveryWellFormed c p a nr s rho) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) {B : Block}
+    (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true)
+    {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hbelow : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true) :
+    Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) B).size := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  exact voteDutyStore_supporterMajority_of_cone_run c p a nr s rho hwf hhc hdw hsch hunf x (d + 1)
+    (voteDutyStore_supportVote_of_pool c p a nr s rho hsleep hsch hx (d + 1)
+      (voteConePooled_of_heads c p a nr s rho hwf hdom hsleep hhor hd hdlast hheads hx hbelow))
+
 /-- **投票の務めの読みの `sigma` の高さは名前付き導出の高さ**: `x` の slot `k` の読みの tree のブロック `B` は、読みの bodies の
 名前付きブロック `Y` の消去で、`sigma` での `B` の chain 状態は `Y` の導出 `deriveNamed`(`Carrier.StoreInv` の `named` / `sigma`。
 時計合わせ `clocked` は tree / `sigma` を変えない)。手書き `coreStoredHeightAtVoteDuty` の、根の衝突なしで `Y` を与えられた名前付き
@@ -4258,7 +4382,7 @@ theorem anchor_preceq_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDo
   exact (Proofs.Consensus.Blocks.preceq_linear hCy
     (voteDutyAnchor_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd hdlast hprior hx hy)).resolve_left hanc
 
-/-- 穴: 保護の保存の段の `heads`。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
+/-- **保護の保存の段の `heads`**(周回 270 に穴として置き、周回 297 に閉じた)。`1 ≤ d ≤ last` で、slot `d` 未満の genuine な確認が slot `d` の投票の head の祖先なら(`PriorConfsBelow d`)、
 slot `d` で保護された `B` は、すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(cone は `voteCone_of_heads` で出るので
 `protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。手書き `protectedVoteSlots_of_historyCut_v2_w` の段の `hpreserve`
 (`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakBootstrapSlot.lean`。`P = genesis` なので `P ⪯ B` は自明)に当たる。
@@ -4302,7 +4426,10 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 受信の印の形 `hpv` に移った。周回 294 から、`hpv` の honest な委員の投票と、その head のブロックが `B` の子孫で slot が `st.s - 1` 以下で
 あることは、slot `st.s - 1` の honest なノードの head が `B` の子孫なら cone の形(`voteConeSlot_of_heads`)で出る。周回 296 から tree の側
 (head のブロックが読みの tree に `viewFreeze (st.s - 1)` より前の印で入ること)は `voteConeStamped_of_heads`(前提は slot `st.s - 1` の
-`heads` と anchor ⪯ `B`)で出る。残りは pool の側(その投票が読みの pool のバケツ `st.s - 1` に凍結より前の印で入ること)。 -/
+`heads` と anchor ⪯ `B`)で出る。周回 297 に pool の側(その投票が読みの pool のバケツ `st.s - 1` に凍結より前の印で入ること)を
+`voteConePooled_of_heads`(`Stamps.partialSynchrony_honest_gfVote_stamped`)で出し、`hmaj` を `voteDutyStore_supporterMajority_of_heads`
+で組んで閉じた: `B` は `x` の slot `d` の head(読みの bodies の名前付きブロックの消去)の祖先なので名前付きの持ち上げ `Bn` があり、
+その導出の高さが band に届けば `voteDutyHead_passes_supporter_majority_of_bandNamed`、届かなければ `_of_belowBand`(`hprior x`)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -4311,7 +4438,44 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
     (hanc : ¬ preceq B (voteDutyAnchorAt c p a nr s rho x (d + 1)) = true)
     (hbelow : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true) :
     preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
-  sorry
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hdw : DeliveryWellFormed c p a nr s rho := hexec.1.1.2
+  have hhc : HonestCommittees c rho.honest := hsleep.1.1.2
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hmaj := voteDutyStore_supporterMajority_of_heads c p a nr s rho hwf hdom hsleep hhc hdw hhor hd hdlast
+    hB.heads hx hbelow
+  -- `B` の名前付きの持ち上げ: `x` の slot `d` の head は読みの bodies の名前付きブロック `Y` の消去で、`B` はその祖先
+  have hmem : voteDutyHeadAt c p a nr s rho x d ∈
+      (worldAt (stateBefore c p a nr s rho
+        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e d))) x).st.core.tree.elems := by
+    rw [← Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
+    unfold voteDutyHeadAt
+    exact voteHeadBlock_mem_tree _ s.e s.hc
+      ((Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ x).congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+  obtain ⟨Y, hY, hYe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho _ x).named _ hmem
+  have hBY := hB.heads x hx
+  rw [← hYe] at hBY
+  obtain ⟨Bn, hBn, hBne⟩ := Proofs.Consensus.NamedBlocks.erased_ancestor_lift hBY
+  have hBnrun : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho Bn :=
+    ⟨Y, Or.inr ⟨x, hx, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hY⟩,
+      hBn⟩
+  have hvhor : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    have hd' : (d : Int) ≤ (last : Int) := by exact_mod_cast hdlast
+    have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  by_cases hband : (voteDutyStoreAt c p a nr s rho x (d + 1)).hMax - 1 ≤
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg Bn).h
+  · exact voteDutyHead_passes_supporter_majority_of_bandNamed c p a nr s rho hwf hdom hsleep hdw hx hvhor hx hmaj
+      hbelow (hB.heads x hx) hBnrun hBne hband
+  · exact voteDutyHead_passes_supporter_majority_of_belowBand c p a nr s rho hwf hdom hsleep hdw hhor hd hdlast hx
+      (hprior x hx) hx hmaj hbelow (hB.heads x hx) hBnrun hBne (Nat.lt_of_not_le hband)
 
 /-- 穴: 新しい確認の段の `heads`。`1 ≤ d ≤ last` で `PriorConfsBelow d` なら、slot `q = d` の確認評価の tick の genuine な確認 `C` は
 すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(`protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。
@@ -4354,7 +4518,11 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 受信の印の形 `hpv` に移った。周回 294 から、`hpv` の honest な委員の投票と、その head のブロックが `B` の子孫で slot が `st.s - 1` 以下で
 あることは、slot `st.s - 1` の honest なノードの head が `B` の子孫なら cone の形(`voteConeSlot_of_heads`)で出る。周回 296 から tree の側
 (head のブロックが読みの tree に `viewFreeze (st.s - 1)` より前の印で入ること)は `voteConeStamped_of_heads`(前提は slot `st.s - 1` の
-`heads` と anchor ⪯ `B`)で出る。残りは pool の側(その投票が読みの pool のバケツ `st.s - 1` に凍結より前の印で入ること)。 -/
+`heads` と anchor ⪯ `B`)で出る。周回 297 から pool の側も `voteConePooled_of_heads` で出て、slot `d` の honest なノードの head が
+すべて対象の子孫なら `hmaj` は `voteDutyStore_supporterMajority_of_heads` が出す(`protectedVoteSlot_preserve` はこれで閉じた)。
+この穴では slot `d` の head が `C` の子孫とは限らないので、`hpv` は `C` の genuine な確認の支持の投票(`genuineConf_honestVoteSupporter`
+の側)から、`voteConePooled_of_heads` と同じ運び(投票は `Stamps.partialSynchrony_honest_gfVote_stamped`、head のブロックは
+`voteDutyHead_stamped_next`)で出す必要がある。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
