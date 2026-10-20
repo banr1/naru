@@ -17,6 +17,7 @@ import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.MaxCarrier
 import Proofs.Consensus.MaxCrossing
 import Proofs.Consensus.HeightRowWitness
+import Proofs.Consensus.Settled
 import Mathlib.Tactic
 
 /-!
@@ -4487,7 +4488,12 @@ slot `d + 1` の読みの FG root の子孫なら、確認の更新の前の段�
 投票が GST 以後なので読みの pool に凍結より前の印で入り(honest な投票は `Stamps.partialSynchrony_honest_gfVote_stamped`、byzantine の
 投票は読み手が受けた配送の中継)、その head の解決先が読みの tree にあること(`voteDutyHead_stamped_next` の運び)。`backward` は、読みの
 voter view の投票が確認の遅い投票にあるか、遅い投票で equivocation が検出済みであること(凍結より前に読み手が受けた投票は中継で
-確認の評価者にも `confirmationTime` までに届く)。 -/
+確認の評価者にも `confirmationTime` までに届く)。周回 300 から、両方の向きに共通の中継の層は `Settled.lean` にある(証明済み):
+honest なノードが窓の中で扱った投票(投票者は byzantine でもよい)は pool に入るか投票者の equivocation が pool に残り
+(`Settled.handlesAt_gfVote_settled`)、受理された投票は中継で honest な各ノードにそうなり(`acceptsAt_gfVote_settled`)、それは後の読みの
+印の付いた pool(`stampedPool`。`lateVotes` の形)に移る(`settled_stamped`)。pool の投票はある添字で受理されている
+(`pool_accepted`)。`backward` の pooled の部分に残るのは、受理の時刻が `proposalTime d` 以上であること(窓の下限)。carried の部分は
+slot `d + 1` のブロックが運ぶ投票が読み手の pool で落ち着くこと(手書き `targetCarrierVote_settledInPool`)。 -/
 theorem genuineConf_adoptionTransport (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
