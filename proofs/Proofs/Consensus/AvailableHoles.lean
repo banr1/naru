@@ -3157,13 +3157,103 @@ theorem voteDutyStore_frontierConfirmationWitness (hwf : SetupWellFormed c p s)
         Model.Consensus.Objects.NamedBlocks.eraseBlock K ∧
       Model.Consensus.Objects.NamedBlocks.namedPreceq K D = true ∧
       Model.Consensus.Objects.Blocks.root (Model.Consensus.Objects.NamedBlocks.eraseBlock K) =
-        Model.Consensus.Objects.Blocks.root X := by
+        Model.Consensus.Objects.Blocks.root X ∧
+      (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies =
+        (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho row.valIndex i t2).bodies := by
   obtain ⟨W, X, -, row, -, t2, hW, hWh, hX, -, -, hH, hmatch, -, -, -, ht2, hem⟩ :=
     voteDutyStore_maxCrossing_honestEmission c p a nr s rho hwf hsleep x k hlarge
   obtain ⟨nu, hv⟩ := Proofs.Consensus.RootEntry.matchesEntry_vote hmatch
-  obtain ⟨i, D, K, hev, hfg, hD, -, hDh, hK, hKe, hKh, hKt, hKD, hKr⟩ :=
+  obtain ⟨i, D, K, hev, hfg, hD, -, hDh, hK, hKe, hKh, hKt, hKD, hKr, hbod⟩ :=
     Proofs.Consensus.HeightRowWitness.emits_vote_confirmationWitness c p a nr s rho hem hv
-  exact ⟨W, X, row, t2, i, D, K, hW, hWh, hX, hH, hem, ht2, hev, hfg, hD, hDh, hK, hKe, hKh, hKt, hKD, hKr⟩
+  exact ⟨W, X, row, t2, i, D, K, hW, hWh, hX, hH, hem, ht2, hev, hfg, hD, hDh, hK, hKe, hKh, hKt, hKD, hKr, hbod⟩
+
+/-- **行を出した tick の務めの store の bodies のブロックは、次の slot の読みの処理済み tree にある**(GST-zero の枝): honest な `u` が
+時刻 `t2`(添字 `i` の tick)に行 `row` を出し、`stateBefore (i + 1)` の `u` の bodies が務めの store `dutyStoreAt u i t2` の bodies
+(`HeightRowWitness.emits_vote_confirmationWitness` の最後の欄)で、`t2` が slot `d + 1` の投票時刻より前なら、務めの store の bodies の
+`T` は、honest な `x` の slot `d + 1` の投票の務めの読み(時刻 `voteTime (d + 1)` ≤ horizon)の finalized がそれと互換なら、その読みの
+`voterProcessedBlockTree`(freeze は `viewFreeze d`)にある。手書き `coreActionBlockProcessedAtNextDuty`
+(`DecoupledConsensusProofs/Protocol/Schedule/WeakGoldfishCone.lean` 2237 行。手書き `coreConeBandDescendant_of_processed` の
+`hblockProcessed`)に当たる。`t2` は行の round の action 時刻 = opening slot `q` の確認の時刻 `4Δq + 6Δ`
+(`RootWitness.emits_attest_actionTime_round`)で、`voteTime (d + 1) = 4Δd + 5Δ` より前なので `q < d`、したがって
+`t2 + Δ ≤ viewFreeze d = 4Δd + 3Δ`(手書き `coreActionLeSupportCutoff`)。あとは `voteDutyHead_processed_next` と同じく
+`bodiesBlock_stamped`(`n = i + 1`、`T = t2`)で閉じる(周回 288)。 -/
+theorem dutyBody_processed_next (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {u : ValidatorId} (hu : rho.honest.contains u = true)
+    {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation} {t2 : Int} {i : Nat}
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2)
+    (hev : rho.events[i]? = some (Model.Consensus.Execution.Run.NamedEvent.Tick u t2))
+    (hbod : (worldAt (stateBefore c p a nr s rho (i + 1)) u).st.bodies =
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i t2).bodies)
+    {T : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hT : T ∈ (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i t2).bodies.elems) {d : Nat}
+    (ht2 : t2 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))
+    (hhor : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon)
+    {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hcompat : Model.Consensus.Objects.Blocks.compatible
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st.core.f
+      (Model.Consensus.Objects.NamedBlocks.eraseBlock T) = true) :
+    Model.Consensus.Objects.NamedBlocks.eraseBlock T ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree s.e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+      (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hu' : u ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hu
+  have hx' : x ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx
+  have hT0 : 0 ≤ t2 :=
+    (Proofs.Consensus.Window.eventTime_bounds hsch (List.mem_of_getElem? hev)).1
+  -- `t2` は opening slot `q` の確認の時刻で、`q < d` なので `t2 + Δ ≤ viewFreeze d`
+  have hta : t2 = Model.Consensus.Protocol.Schedule.confirmationTime s.e
+      (Model.Consensus.Protocol.Grades.openingSlot s.hc row.round) :=
+    Proofs.Consensus.RootWitness.emits_attest_actionTime_round c p a nr s rho hem
+  have hfreeze : t2 + s.e.delta ≤ Model.Consensus.Protocol.Schedule.viewFreeze s.e d := by
+    rw [hta] at ht2 ⊢
+    generalize Model.Consensus.Protocol.Grades.openingSlot s.hc row.round = q at ht2 ⊢
+    have hq : q < d := by
+      by_contra hn
+      have hdq : (d : Int) ≤ (q : Int) := by exact_mod_cast Nat.le_of_not_gt hn
+      unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+        Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart at ht2
+      simp only [Int.ofNat_eq_natCast] at ht2
+      push_cast at ht2
+      nlinarith
+    have hqd : (q : Int) + 1 ≤ (d : Int) := by exact_mod_cast hq
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.viewFreeze
+    unfold Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hτ : t2 + s.e.delta ≤ Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    refine le_trans hfreeze ?_
+    unfold Model.Consensus.Protocol.Schedule.viewFreeze Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  -- `stateBefore (i + 1)` より前の event の時刻は `t2` 以下
+  have hbefore : ∀ j ev, j < i + 1 → rho.events[j]? = some ev → eventTime ev ≤ t2 := by
+    intro j ev hj hevj
+    by_contra hn
+    have hlt := Proofs.Consensus.Window.lt_of_time_lt hs hev hevj (lt_of_not_ge hn)
+    omega
+  have hTb : T ∈ (worldAt (stateBefore c p a nr s rho (i + 1)) u).st.bodies.elems := by
+    rw [hbod]; exact hT
+  obtain ⟨htree, hstamp⟩ := bodiesBlock_stamped c p a nr s rho hwf hdom hsleep hu' hT0 hbefore hTb hx' hτ hhor hcompat
+  have hslot : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 :=
+    Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  rw [hslot]
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree
+  dsimp only
+  rw [Proofs.Consensus.Trees.mem_filter_iff]
+  refine ⟨htree, ?_⟩
+  rw [Bool.or_eq_true]
+  left
+  rw [Nat.add_sub_cancel]
+  exact Proofs.Consensus.GradeSupporter.occurrenceBefore_mono hstamp hfreeze
 
 /-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
 `sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、

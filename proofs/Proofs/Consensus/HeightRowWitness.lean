@@ -33,7 +33,8 @@ variable (c : Nat → NaruStd.Set ValidatorId) (p : Nat → ValidatorId) (a : Va
 /-- **発行した高さの行の務めの確認の証人**(手書き `coreHonestHeightRowConfirmationWitness`): `w` が時刻 `t` に height pair
 `Vote h entry nu` の行 `row` を出したなら、添字 `i` の event `Tick w t` の務めの store `dutyStoreAt w i t` の bodies に、
 消去が務めの FG source の `D`(導出の高さ `h`)と、`D` の祖先 `K`(消去は `D` の導出の `tH`、導出の高さ `h`、導出の `tH` は
-`K` の消去、根は `entry`)があり、務めの確認の証人は `K` の消去。 -/
+`K` の消去、根は `entry`)があり、務めの確認の証人は `K` の消去。`stateBefore (i + 1)` の `w` の bodies は務めの store の bodies
+(`attestWith` は bodies を変えない。周回 288)。 -/
 theorem emits_vote_confirmationWitness {w : ValidatorId} {row : NamedAttestation} {t : Int}
     (hem : Emits c p a nr s rho w (NamedObject.Attest row) t) {h : Nat} {entry : BlockId} {nu : Bool}
     (hv : row.heightPair = NamedHeightPair.Vote h entry nu) :
@@ -56,8 +57,9 @@ theorem emits_vote_confirmationWitness {w : ValidatorId} {row : NamedAttestation
       (deriveNamed s.e s.cfg D).h = h ∧
       K ∈ (dutyStoreAt c p a nr s rho w i t).bodies.elems ∧
       eraseBlock K = (deriveNamed s.e s.cfg D).tH ∧ (deriveNamed s.e s.cfg K).h = h ∧
-      (deriveNamed s.e s.cfg K).tH = eraseBlock K ∧ namedPreceq K D = true ∧ root (eraseBlock K) = entry := by
-  obtain ⟨i, cache, st3, q, hev, hcache, hst3, hinv, -, -, -, hq, hh, he, hqt, -⟩ :=
+      (deriveNamed s.e s.cfg K).tH = eraseBlock K ∧ namedPreceq K D = true ∧ root (eraseBlock K) = entry ∧
+      (worldAt (stateBefore c p a nr s rho (i + 1)) w).st.bodies = (dutyStoreAt c p a nr s rho w i t).bodies := by
+  obtain ⟨i, cache, st3, q, hev, hcache, hst3, hinv, -, hsucc, -, hq, hh, he, hqt, -⟩ :=
     Proofs.Consensus.AttestationSource.emits_vote_source c p a nr s rho hem hv
   have hduty : st3 = dutyStoreAt c p a nr s rho w i t := by
     rw [hst3, hcache]; rfl
@@ -72,7 +74,7 @@ theorem emits_vote_confirmationWitness {w : ValidatorId} {row : NamedAttestation
   have hfg : fgConfirmationWitnessAt c p a nr s rho w i t = some (eraseBlock K) := by
     unfold fgConfirmationWitnessAt
     rw [hq, Option.map_some, ← hDq, hinv.sigma D hD, hKe]
-  refine ⟨i, D, K, hev, hfg, hD, hDq ▸ hq, hDh, hK, hKe, hKh', hKt, hKD, ?_⟩
+  refine ⟨i, D, K, hev, hfg, hD, hDq ▸ hq, hDh, hK, hKe, hKh', hKt, hKD, ?_, hsucc⟩
   rw [hKe]; exact hDe
 
 end Run
