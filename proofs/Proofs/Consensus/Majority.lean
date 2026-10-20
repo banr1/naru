@@ -647,7 +647,7 @@ theorem exists_honest_supporter_of_run {c : Nat → NaruStd.Set ValidatorId} {p 
 
 /-! ## 過半の支持は fork choice の歩みを通す(手書き `Adoption.lean`)
 
-claim `available` の段の穴(`AvailableHoles.lean` の `protectedVoteSlot_preserve` / `protectedVoteSlot_succ_of_genuineConf`)の
+claim `available` の段(`AvailableHoles.lean` の `protectedVoteSlot_preserve` / `protectedVoteSlot_succ_of_genuineConf`)の
 `ghost` の歩みの組合せの層(周回 278)。非 equivocator の投票者の投票は 1 つなので競合するブロックの支持者は互いに素
 (`rawSupporters_disjoint`)、競合するブロックの得点と支持者は参加者に収まる(`score_add_supporters_le`)ので、`B` の支持者が参加者の
 過半なら `B` の祖先は競合するどのブロックより得点が真に大きい(`score_lt_of_supporter_majority`)。重複のない tree では得点が真に最大の

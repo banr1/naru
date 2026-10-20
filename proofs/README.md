@@ -501,7 +501,9 @@ finalized の一致の出どころを分け(`t0 ≠ 0` は証明済みの `agree
 段の genuine な確認(行を出した tick は確認評価の tick で slot は `d` 未満。`emits_confTick` / `emits_slot_lt_of_lt_nextVote`)を
 `genuineConf_preceq_laterVoteHead`(手書き `protectedVoteSlots_of_gstZero_v2` の `heads`。周回 270 から穴ではない。その段の保存の穴
 `protectedVoteSlot_preserve` は周回 297 に閉じた: 読みの voter view での `B` の支持者の過半を `voteDutyStore_supporterMajority_of_heads` で出し、
-`B` の名前付きブロックの導出の高さが band に届くかで `voteDutyHead_passes_supporter_majority_of_bandNamed` / `_of_belowBand` に分ける)から、SG block と grade 2 の候補を
+`B` の名前付きブロックの導出の高さが band に届くかで `voteDutyHead_passes_supporter_majority_of_bandNamed` / `_of_belowBand` に分ける。
+新しい確認の段 `protectedVoteSlot_succ_of_genuineConf` は周回 298 に、`C` の honest な支持者 `y` の slot `d` の head を上界に同じ 2 枝で閉じ、
+読みの voter view での `C` の支持者の過半を穴 `genuineConf_supporterMajority`(手書き `adoptionTransport_B_after_gst`)に切り出した)から、SG block と grade 2 の候補を
 `fgStep_preceq_laterVoteHead`(穴ではない。周回 251)から供給します。これは務めの store の round で分け、round 0 は `fgStep_round_zero`(round 0 の frame に
 G1 / G2 の root は無いので grade 2 の候補は空、anchor は FG root で、SG block は `liveConfirmed` の祖先か FG root。手書き `WeakGenesis.actionSGBlock_eq_genesis_zero`)
 で閉じ、正の round は `fgStep_preceq_laterVoteHead_positive`(穴ではない。周回 252)に渡します。これは SG block を `sgBlockAt_preceq_of_candidate_anchor`
@@ -551,7 +553,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 
 | 穴(theorem) | 義務 | 手書きの宣言 | 手書きのファイル | 置いた周回 |
 |---|---|---|---|---|
-| `Proofs.Consensus.AvailableHoles.protectedVoteSlot_succ_of_genuineConf` | `Consensus.Spec.Claims.available` | `protectedVoteSlot_succ_of_genuineConfirmationWith` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakConfirmationHead.lean` | 270 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_supporterMajority` | `Consensus.Spec.Claims.available` | `adoptionTransport_B_after_gst` | `DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean` | 298 |
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 211 |
