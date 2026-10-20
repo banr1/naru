@@ -3089,6 +3089,84 @@ theorem voteDutyStore_supporterMajority_of_cone_run (hwf : SetupWellFormed c p s
   voteDutyStore_supporterMajority_of_cone_delivery c p a nr s rho hwf hhc hdw x k
     (voteDutyStore_no_honest_equivocation c p a nr s rho hsch hunf x k) hvote
 
+/-- **pool の投票は支持の voter view にあり `B` 以下を指す**(store の形。手書き `mem_voter_support_view_of_pool` と
+`stampedBefore_resolution_of`): slot `k - 1` のバケツの投票 `u` の head の root を引いたブロック `X`(slot が投票の slot 以下)の受信の印と、
+投票の受信の印がどちらも凍結時刻 `viewFreeze e (k - 1)` より前なら、解決の印 `tau` も凍結より前(`BlockStamps.storeTau_before`)なので
+`u` は支持の voter view の pooled の部分にあり、`B ⪯ X` なら `u` は `B` 以下を指す(`Goldfish.targetsUnder_iff`。周回 293)。 -/
+theorem voterSupportView_pooled_targets (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (st : Model.Consensus.Protocol.Store.Store) (k : Nat) {u : GoldfishVote} {X B : Block}
+    (hpool : u ∈ (Model.Consensus.Protocol.StoreBase.pool
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+      (k - 1)).elems)
+    (hr : findRoot? st.tree u.head = some X) (hsl : slot X ≤ u.slot)
+    (hv : Model.Consensus.Objects.Time.occurrenceBefore (NaruStd.Table.get? st.timestampVote u)
+      (Model.Consensus.Protocol.Schedule.viewFreeze e (k - 1)) = true)
+    (hb : Model.Consensus.Objects.Time.occurrenceBefore (NaruStd.Table.get? st.timestampBlock X)
+      (Model.Consensus.Protocol.Schedule.viewFreeze e (k - 1)) = true)
+    (hBX : preceq B X = true) :
+    u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) k).elems ∧
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing st).tree B u = true := by
+  refine ⟨?_, (Proofs.Consensus.Goldfish.targetsUnder_iff _ _ _).mpr ⟨X, hr, hsl, hBX⟩⟩
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterSupportView
+  dsimp only
+  rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff]
+  left
+  rw [Proofs.Consensus.Trees.mem_filter_iff]
+  exact ⟨hpool, Proofs.Consensus.BlockStamps.storeTau_before hr hsl hv hb⟩
+
+/-- `voteDutyStore_supporterMajority_of_cone_run` の前提 `hvote`(支持の voter view の投票)を、読みの store の pool と tree と
+2 つの受信の印で書いた形(手書き `coneSupport_of_named_votes` の `vote` の、`hcutoff` / `havailable` を受けた後の段)。
+読みの tree は root が要素を決める(`tickTree_root_inj`。`stateBeforeTime` は `stateBefore` の添字 `idxLt` と一致:
+`ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt`)ので、tree の `X` の root は `X` に解決し(`findRoot?_of_mem`)、
+`voterSupportView_pooled_targets` に渡る。残る前提 `hpv` は、honest な委員ごとに、読みの pool の slot `st.s - 1` の投票 `u` と、
+その head を root に持つ読みの tree のブロック `X`(slot が `st.s - 1` 以下で `B` の子孫)があり、投票と `X` の受信の印が
+凍結時刻より前であること(周回 293)。 -/
+theorem voteDutyStore_supportVote_of_pool (hsleep : SleepyRegime c p a nr s rho 0) (hsch : ScheduleWellFormed s rho)
+    {x : ValidatorId} (hx : rho.honest.contains x = true) (k : Nat) {B : Block}
+    (hpv : ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      ∃ u X, u ∈ (Model.Consensus.Protocol.StoreBase.pool
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems ∧
+        u.valIndex = v ∧ u.slot = (voteDutyStoreAt c p a nr s rho x k).s - 1 ∧
+        X ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems ∧ root X = u.head ∧
+        slot X ≤ (voteDutyStoreAt c p a nr s rho x k).s - 1 ∧
+        Model.Consensus.Objects.Time.occurrenceBefore
+          (NaruStd.Table.get? (voteDutyStoreAt c p a nr s rho x k).timestampVote u)
+          (Model.Consensus.Protocol.Schedule.viewFreeze s.e ((voteDutyStoreAt c p a nr s rho x k).s - 1)) = true ∧
+        Model.Consensus.Objects.Time.occurrenceBefore
+          (NaruStd.Table.get? (voteDutyStoreAt c p a nr s rho x k).timestampBlock X)
+          (Model.Consensus.Protocol.Schedule.viewFreeze s.e ((voteDutyStoreAt c p a nr s rho x k).s - 1)) = true ∧
+        preceq B X = true) :
+    ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      ∃ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s).elems,
+        u.valIndex = v ∧ u.slot = (voteDutyStoreAt c p a nr s rho x k).s - 1 ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree B u = true := by
+  intro v hvc hvh
+  obtain ⟨u, X, hpool, hval, hus, hX, hroot, hXs, hv, hb, hBX⟩ := hpv v hvc hvh
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k)
+  have hnd : (voteDutyStoreAt c p a nr s rho x k).tree.elems.Nodup := by
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    exact (Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ x).nodup
+  have hinj : ∀ y ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems,
+      ∀ z ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems, root y = root z → y = z := by
+    intro y hy z hz hr
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked at hy hz
+    rw [heq] at hy hz
+    exact tickTree_root_inj c p a nr s rho hsleep hx _ hy hz hr
+  have hr := findRoot?_of_mem hnd hinj hX hroot
+  obtain ⟨hmem, htg⟩ := voterSupportView_pooled_targets s.e (voteDutyStoreAt c p a nr s rho x k)
+    (voteDutyStoreAt c p a nr s rho x k).s hpool hr (hus ▸ hXs) hv hb hBX
+  exact ⟨u, hmem, hval, hus, htg⟩
+
 /-- `voteDutyHead_passes_supporter_majority_of_delivery` の前提 `hpath`(anchor から `B` までの途中が歩みの tree にあること)を、
 `B` の子孫で読みの処理済み tree にあり高さが band(`hMax - 1` 以上)のブロック `D` から出した形(手書き
 `coreCandidatePathOfBandDescendant`。`ProcessedAncestor.voterFiltered_mem_of_band`: 処理済み tree は祖先について閉じ
