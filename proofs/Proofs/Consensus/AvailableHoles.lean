@@ -2139,20 +2139,44 @@ theorem voteHeadBlock_mem_tree (cache : Model.Consensus.Protocol.Grades.Cache)
     unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at h2
     exact ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp h2).1
 
+/-- **投票時刻の読みの bodies のブロックの slot は `d` 以下**(手書き `block_slot_lt_of_mem_storeAt` の投票時刻の形): genesis でなければ
+投票時刻より前の event で入ったので、提案時刻はその event の時刻以下(`NoFutureRead.bodies_entry_slot`)で投票時刻 `voteTime e d`
+より前(`JustificationCertificate.time_lt_of_lt_idxLt`)、したがって slot は `d` 以下(周回 294)。 -/
+theorem voteTimeBodies_slot_le (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    (hδ : 0 < s.e.delta) (x : ValidatorId) (d : Nat) {X : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hX : X ∈ (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e d)) x).st.bodies.elems) :
+    slot (Model.Consensus.Objects.NamedBlocks.eraseBlock X) ≤ d := by
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hX
+  rcases Proofs.Consensus.NoFutureRead.bodies_entry_slot c p a nr s rho hs hnn hδ _ x X hX with
+    rfl | ⟨j, ev, hj, hev, -, hle⟩
+  · exact Nat.zero_le _
+  · have hlt := Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs hj hev
+    have h := Proofs.Consensus.Window.le_slotOf_of_le s.e hδ (hle.trans hlt.le)
+    rwa [Proofs.Consensus.Voting.slotOf_voteTime s.e hδ] at h
+
 /-- **cone は `heads` から出る**。正の slot `d`(`d ≤ last + 1`、`last` の確認の時刻は `horizon` 以下)で、すべての honest なノードの
-slot `d` の投票の務めの head が `B` の子孫なら、slot `d` の委員会の honest な元は投票時刻に、`B` の子孫である run のブロックの root に
-投票する。手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses` の結論の cone の側に当たる。周回 272 に `voteCone_genesis` として
-証明した運びを、周回 273 に `heads` を前提にして一般の `B` に広げた: 投票時刻は `last` の確認の時刻以下なので horizon 以下で、honest な
-委員は投票を出し(`Voting.honest_emits_gfVote_head`)、その head は tick の前の store の tree のブロックの root(`voteHeadBlock_mem_tree`)、
-tree のブロックは bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で run のブロック(`RootWitness.blockInRun_of_stateBefore`)。
-tick の前の状態は投票時刻の読み(`RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime`)なので、投票の head は `voteDutyHeadAt x d`
-そのもので、`B ⪯ X` は `heads` から出る。 -/
-theorem voteCone_of_heads (hwf : SetupWellFormed c p s)
+slot `d` の投票の務めの head が `B` の子孫なら、slot `d` の委員会の honest な元は投票時刻に、`B` の子孫で slot が `d` 以下の run の
+ブロックの root に投票する。手書き `WeakGoldfish.goldfishCone_succ_of_runFrontierWitnesses` の結論の cone の側に当たる。周回 272 に
+`voteCone_genesis` として証明した運びを、周回 273 に `heads` を前提にして一般の `B` に広げた: 投票時刻は `last` の確認の時刻以下なので
+horizon 以下で、honest な委員は投票を出し(`Voting.honest_emits_gfVote_head`)、その head は tick の前の store の tree のブロックの root
+(`voteHeadBlock_mem_tree`)、tree のブロックは bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で run のブロック
+(`RootWitness.blockInRun_of_stateBefore`)。tick の前の状態は投票時刻の読み(`RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime`)
+なので、投票の head は `voteDutyHeadAt x d` そのもので、`B ⪯ X` は `heads` から出る。周回 294 に slot の上限
+(`voteTimeBodies_slot_le`。手書き `coneSupport_of_named_votes` の前提 `hvote` の `X.slot ≤ s`)を足した。 -/
+theorem voteConeSlot_of_heads (hwf : SetupWellFormed c p s)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     (hd : 1 ≤ d) (hupper : d ≤ last + 1) {B : Block}
     (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true) :
-    HonestVotesCone c p a nr s rho d B := by
+    ∀ x, rho.honest.contains x = true → (c d).contains x = true →
+      ∃ X : Model.Consensus.Objects.NamedBlocks.NamedBlock,
+        preceq B (Model.Consensus.Objects.NamedBlocks.eraseBlock X) = true ∧
+        Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho X ∧
+        Statements.Consensus.Spec.Execution.Emits c p a nr s rho x
+          (Model.Consensus.Execution.Objects.NamedObject.GfVote
+            ⟨x, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩)
+          (Model.Consensus.Protocol.Schedule.voteTime s.e d) ∧
+        slot (Model.Consensus.Objects.NamedBlocks.eraseBlock X) ≤ d := by
   intro x hx hxc
   have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
   have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
@@ -2197,13 +2221,28 @@ theorem voteCone_of_heads (hwf : SetupWellFormed c p s)
     rfl
   refine ⟨X, ?_,
     Proofs.Consensus.RootWitness.blockInRun_of_stateBefore c p a nr s rho
-      ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx) i hX, ?_⟩
+      ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hx) i hX, ?_, ?_⟩
   · rw [hXe, ← hduty]
     exact hheads x hx
-  have hu : u = ⟨x, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩ := by
-    rw [hXe, ← Proofs.Consensus.Voting.voteHead_eq_root, ← hhead, ← hval, ← hslot]
-  rw [← hu]
-  exact he
+  · have hu : u = ⟨x, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩ := by
+      rw [hXe, ← Proofs.Consensus.Voting.voteHead_eq_root, ← hhead, ← hval, ← hslot]
+    rw [← hu]
+    exact he
+  · rw [Proofs.Consensus.RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs
+      (Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd) hev] at hX
+    exact voteTimeBodies_slot_le c p a nr s rho hs
+      (fun ev hev => (Proofs.Consensus.Window.eventTime_bounds hsch hev).1) hδ x d hX
+
+/-- slot `d` の投票の cone は `heads` から出る(`voteConeSlot_of_heads` の slot の上限を落とした形。周回 273。周回 294 から射影)。 -/
+theorem voteCone_of_heads (hwf : SetupWellFormed c p s)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {B : Block}
+    (hheads : ∀ x, rho.honest.contains x = true → preceq B (voteDutyHeadAt c p a nr s rho x d) = true) :
+    HonestVotesCone c p a nr s rho d B := by
+  intro x hx hxc
+  obtain ⟨X, hBX, hX, hem, -⟩ := voteConeSlot_of_heads c p a nr s rho hwf hsleep hhor hd hupper hheads x hx hxc
+  exact ⟨X, hBX, hX, hem⟩
 
 /-- 種の cone。正の slot `d` の委員会の honest な元は、投票時刻に run のブロックの root に投票する(genesis はどのブロックの祖先でも
 あるので `heads` は自明)。手書き `protectedVoteSlot_genesis`(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesis.lean`)の cone の段に
@@ -4179,7 +4218,11 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 周回 291 から参加者の committee は `voteDutyStore_participants_committee`(証明済み。`DeliveryWellFormed`)で外れ、
 `voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。
 周回 292 から `hno` も `voteDutyStore_no_honest_equivocation`(証明済み。`ScheduleWellFormed` / `UnforgeableSignatures`)で外れ、
-`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。 -/
+`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。
+周回 293 から `hvote` は `voteDutyStore_supportVote_of_pool` で、読みの pool の投票・head を root に持つ読みの tree のブロック・2 つの
+受信の印の形 `hpv` に移った。周回 294 から、`hpv` の honest な委員の投票と、その head のブロックが `B` の子孫で slot が `st.s - 1` 以下で
+あることは、slot `st.s - 1` の honest なノードの head が `B` の子孫なら cone の形(`voteConeSlot_of_heads`)で出る。残りは、その投票と head のブロックが読みの pool と tree に
+凍結より前の受信の印で入ること(配送の同期)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -4226,7 +4269,11 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 周回 291 から参加者の committee は `voteDutyStore_participants_committee`(証明済み。`DeliveryWellFormed`)で外れ、
 `voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。
 周回 292 から `hno` も `voteDutyStore_no_honest_equivocation`(証明済み。`ScheduleWellFormed` / `UnforgeableSignatures`)で外れ、
-`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。 -/
+`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。
+周回 293 から `hvote` は `voteDutyStore_supportVote_of_pool` で、読みの pool の投票・head を root に持つ読みの tree のブロック・2 つの
+受信の印の形 `hpv` に移った。周回 294 から、`hpv` の honest な委員の投票と、その head のブロックが `B` の子孫で slot が `st.s - 1` 以下で
+あることは、slot `st.s - 1` の honest なノードの head が `B` の子孫なら cone の形(`voteConeSlot_of_heads`)で出る。残りは、その投票と head のブロックが読みの pool と tree に
+凍結より前の受信の印で入ること(配送の同期)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
