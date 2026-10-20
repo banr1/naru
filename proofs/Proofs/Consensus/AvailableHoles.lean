@@ -14,6 +14,7 @@ import Proofs.Consensus.CarriedSupport
 import Proofs.Consensus.ProcessedAncestor
 import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.MaxCarrier
+import Proofs.Consensus.MaxCrossing
 import Mathlib.Tactic
 
 /-!
@@ -3084,6 +3085,46 @@ theorem voteDutyStore_maxCarrier (x : ValidatorId) (k : Nat) :
       (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg W).h = (voteDutyStoreAt c p a nr s rho x k).hMax :=
   Proofs.Consensus.MaxCarrier.stateBeforeTime_maxCarrier c p a nr s rho
     (Model.Consensus.Protocol.Schedule.voteTime s.e k) x
+
+/-- **投票の務めの読みの最大の高さの横断の honest な発行**: `x` の slot `k` の読みの `hMax` が 1 より大きければ、bodies の `W`
+(導出の高さが `hMax`)と `eraseBlock W` の祖先 `X` があり、honest な署名者が slot `k` の投票の時刻より前に
+`matchesEntry heightPair (hMax - 1) (root X)` の行を実際に出していて、その行は `x` が投票の時刻より前に処理した `W` の祖先 `Y` に
+載っている(`MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt`。前提 `QuorumHonest` / carried / `EventsSorted` は
+sleepy regime から出す)。手書き `coreFrontierQuorumWitness`(高さの横断・定足数の honest な署名者・`honest_held_ancestor_row_emission`)
+に当たり、band に届かない枝の frontier の証人の 2 段目(周回 286)。 -/
+theorem voteDutyStore_maxCrossing_honestEmission (hwf : SetupWellFormed c p s) (hsleep : SleepyRegime c p a nr s rho 0)
+    (x : ValidatorId) (k : Nat) (hlarge : 1 < (voteDutyStoreAt c p a nr s rho x k).hMax) :
+    ∃ W X Y row t t2,
+      W ∈ (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st.bodies.elems ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg W).h = (voteDutyStoreAt c p a nr s rho x k).hMax ∧
+      preceq X (Model.Consensus.Objects.NamedBlocks.eraseBlock W) = true ∧
+      Model.Consensus.Objects.NamedBlocks.namedPreceq Y W = true ∧
+      row ∈ Model.Consensus.Objects.NamedBlocks.namedAttestations Y ∧ row.valIndex ∈ rho.honest.elems ∧
+      Model.Consensus.Objects.NamedBlocks.matchesEntry row.heightPair ((voteDutyStoreAt c p a nr s rho x k).hMax - 1)
+        (Model.Consensus.Objects.Blocks.root X) = true ∧
+      Statements.Consensus.Spec.Execution.Processes c p a nr s rho x
+        (Model.Consensus.Execution.Objects.NamedObject.Block Y) t ∧
+      t < Model.Consensus.Protocol.Schedule.voteTime s.e k ∧ t2 ≤ t ∧
+      t2 < Model.Consensus.Protocol.Schedule.voteTime s.e k ∧
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho row.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2 := by
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  unfold UnforgeableSignatures at hunf
+  obtain ⟨-, hcar⟩ := hunf
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hhor0 : (0 : Int) ≤ rho.horizon := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    exact h.1.1.1.1.1.1
+  have hlag : (0 : Int) ≤ Model.Consensus.Spec.Constants.participationLag s :=
+    (Proofs.Consensus.Constants.period_pos s hfacts.1 hfacts.2.2).le
+  have hqh := Proofs.Consensus.JustificationCertificate.quorumHonest_of_sleepyRegime
+    (Proofs.Consensus.JustificationCertificate.sorted_validators hwf) hsleep hlag le_rfl (by rw [sub_self]; exact hhor0)
+  exact Proofs.Consensus.MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt c p a nr s rho hs hqh hcar x
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k) hlarge
 
 /-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
 `sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、
