@@ -19,6 +19,7 @@ import Proofs.Consensus.MaxCrossing
 import Proofs.Consensus.HeightRowWitness
 import Proofs.Consensus.Settled
 import Proofs.Consensus.PoolSlot
+import Proofs.Consensus.StampExact
 import Mathlib.Tactic
 
 /-!
@@ -55,7 +56,9 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    周回 299 に手書き `AdoptionTransport` の数え上げで閉じて、移送の境界 `genuineConf_adoptionTransport` を切り出した。周回 301 にその
    `backward` の pooled の部分を `pool_lateSettled` で閉じ、`forward` と `backward` の carried の部分を穴 `genuineConf_adoptionForward` /
    `genuineConf_backwardCarried` に分けた。周回 302 に後者を tree への最初の入場 `tree_entered` と `treeEntry_gfVote_settled` で
-   閉じた)で、段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
+   閉じた。周回 303 に前者を、分子の投票が読みの印の付いた pool に落ち着くこと `supportVote_readSettled` と、穴
+   `genuineConf_supportHeadVisible`(支持の投票の head の解決先が読みの tree で見えること)に分けて組んだ)で、
+   段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
    `genuineConf_preceq_laterVoteHead`、SG block と grade 2 の候補を `fgStep_preceq_laterVoteHead` から供給する(周回 250)。
@@ -4752,12 +4755,166 @@ theorem genuineConf_backwardCarried (hwf : SetupWellFormed c p s)
     · rw [hus] at h
       exact Or.inr (nonUnique_lateEquivocates c p a nr s rho hwf hsleep hhor hdlast hw ht hq hx hj h)
 
-/-- 穴: 新しい確認の段の移送の境界の `forward`。`genuineConf_adoptionTransport` と同じ前提で、確認の分子の投票(`supportVotes`)で
-`C` 以下を指すものは、読みの支持の voter view にあって読みの tree で `C` 以下を指すか、読みの voter view で投票者が equivocate する。
-手書き `adoptionTransport_B_after_gst`(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)の forward に当たる。
-周回 301 に `genuineConf_adoptionTransport` から切り出した。閉じるのに要るもの: `C` 以下を指す分子の投票が GST 以後なので読みの pool に
-凍結より前の印で入り(honest な投票は `Stamps.partialSynchrony_honest_gfVote_stamped`、byzantine の投票は評価者が受けた配送の中継
-`Settled.acceptsAt_gfVote_settled`)、その head の解決先が読みの tree にあること(`voteDutyHead_stamped_next` の運び)。 -/
+/-- `Settled.settled_stamped` の equivocation の枝を、投票者の異なる 2 つの投票として返す形(周回 303。voter view のような
+上位の集合の equivocation に移すため)。 -/
+theorem settled_stamped_pair (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    {j : Nat} {ev : NamedEvent} (hev : rho.events[j]? = some ev) {w : ValidatorId} {u : GoldfishVote}
+    (hset : Proofs.Consensus.Settled.PoolSettled (worldAt (stateBefore c p a nr s rho (j + 1)) w).st.core u)
+    {i : Nat} (hji : j < i) {γ : Int} (hγ : eventTime ev < γ) :
+    u ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho i) w).st.core u.slot γ).elems ∨
+      ∃ y z, y ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho i) w).st.core u.slot γ).elems ∧
+        z ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho i) w).st.core u.slot γ).elems ∧
+        y.valIndex = u.valIndex ∧ z.valIndex = u.valIndex ∧ y ≠ z := by
+  have hmem : ∀ x, x ∈ Proofs.Consensus.Votes.poolList (worldAt (stateBefore c p a nr s rho (j + 1)) w).st.core u.slot →
+      x ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho i) w).st.core u.slot γ).elems := by
+    intro x hx
+    have hxs := (Proofs.Consensus.Votes.stateBefore_pool c p a nr s rho (j + 1) w _ x hx).1
+    rw [← hxs] at hx
+    obtain ⟨hm, τ, hτ, hle⟩ := Proofs.Consensus.Stamps.stamp_le_of_mem c p a nr s rho hs hnn hev hx hji
+    rw [hxs] at hm
+    unfold Proofs.Consensus.Settled.stampedPool
+    rw [Proofs.Consensus.Trees.mem_filter_iff]
+    refine ⟨(Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mpr hm, ?_⟩
+    show Model.Consensus.Objects.Time.occurrenceBefore
+      ((worldAt (stateBefore c p a nr s rho i) w).st.core.timestampVote.get? x) γ = true
+    rw [hτ]
+    exact Proofs.Consensus.Stamps.occurrenceBefore_at (lt_of_le_of_lt hle hγ)
+  rcases hset with h | h
+  · exact Or.inl (hmem u h)
+  · right
+    unfold Proofs.Consensus.Carried.UniqueIn at h
+    push Not at h
+    obtain ⟨y, z, hy, hz, hyv, hzv, hne⟩ := h
+    exact ⟨y, z, hmem y hy, hmem z hz, hyv, hzv, hne⟩
+
+/-- **確認の分子の投票は読みの印の付いた pool に落ち着く**(`genuineConf_adoptionForward` の投票の側。周回 303): `1 ≤ d ≤ last`
+の slot `q = d` の確認評価の tick(添字 `i`・時刻 `t`)の評価者 `w` の確認の更新の前の段の store の slot `d` の支持の投票 `u`
+(投票者は byzantine でもよい)は、honest なノード `x` の slot `d + 1` の読みの添字 `idxLt (voteTime (d + 1))` の、印が
+`viewFreeze d` より前の鍵 `d` の pool にあるか、そこに投票者の異なる 2 つの投票がある。運び: 支持の投票の解決の印は支持の締切より前
+なので受信の印も(`Majority.timestampVote_before_of_tau`)、最初の受理の時刻 `t0` も支持の締切より前
+(`StampExact.pool_acceptedBeforeCutoff`)で `proposalTime d` 以後(`PoolSlot.acceptsAt_gfVote_slot_le`)。中継
+(`Settled.acceptsAt_gfVote_settled`。`tGST ≤ 0` なので締切は `t0 + Δ < viewFreeze d`)で `x` に落ち着き、読みの印の付いた pool に移る
+(`settled_stamped_pair`)。手書き `confirmationVotesAcceptedInWindow_of_admissible` と
+`accepted_gfVote_forward_settled_at_voteDuty_after_gst`(`Protocol/Schedule/WeakConfirmationTransport.lean`)の形。 -/
+theorem supportVote_readSettled (hwf : SetupWellFormed c p s) (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon) (hdlast : d ≤ last)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    {x : ValidatorId} (hx : rho.honest.contains x = true) {u : GoldfishVote}
+    (hu : u ∈ (Proofs.Consensus.Goldfish.supportVotes s.e
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core d).elems) :
+    u ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho
+        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))))
+        x).st.core d (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems ∨
+      ∃ y z, y ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho
+          (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))))
+          x).st.core d (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems ∧
+        z ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho
+          (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))))
+          x).st.core d (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems ∧
+        y.valIndex = u.valIndex ∧ z.valIndex = u.valIndex ∧ y ≠ z := by
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  have hps : Statements.Consensus.Spec.Conditions.PartialSynchrony c p a nr s rho := hsleep.1.1.1.1.2
+  have hgst : s.e.tGST ≤ 0 := hsleep.1.1.1.2
+  obtain ⟨hs, hnd⟩ := Proofs.Consensus.Available.schedule_sorted_nodup s rho hsch
+  have hnd' := Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd
+  have hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev := fun ev hev =>
+    (Proofs.Consensus.Window.eventTime_bounds hsch hev).1
+  rw [confPreUpdate_eq c p a nr s rho hδ ht] at hu
+  unfold Proofs.Consensus.Goldfish.supportVotes at hu
+  obtain ⟨hearly, -⟩ := (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hu
+  unfold Proofs.Consensus.Goldfish.earlyVotes at hearly
+  obtain ⟨hpool, htau⟩ := (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hearly
+  have hpl : u ∈ Proofs.Consensus.Votes.poolList (worldAt (stateBefore c p a nr s rho i) w).st.core d :=
+    (Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mp hpool
+  have hsl : u.slot = d := (Proofs.Consensus.Votes.stateBefore_pool c p a nr s rho i w d u hpl).1
+  rw [← hsl] at hpl
+  have hstamp := Proofs.Consensus.Majority.timestampVote_before_of_tau htau le_rfl
+  rw [← hsl] at hstamp
+  obtain ⟨i0, t0, -, hacc, ht0⟩ :=
+    Proofs.Consensus.StampExact.pool_acceptedBeforeCutoff c p a nr s rho hsch hδ hw hpl hstamp
+  obtain ⟨ev0, ⟨⟨hev0, -⟩, hte0⟩, -⟩ := hacc.1.1
+  have ht00 : 0 ≤ t0 := by rw [← hte0]; exact hnn _ (List.mem_of_getElem? hev0)
+  have hmax : max t0 s.e.tGST = t0 := max_eq_left (le_trans hgst ht00)
+  have hlo := Proofs.Consensus.PoolSlot.acceptsAt_gfVote_slot_le c p a nr s rho hs hnn hδ hacc
+  rw [hsl] at ht0
+  have hfz : Model.Consensus.Protocol.Schedule.supportCutoff s.e d + s.e.delta =
+      Model.Consensus.Protocol.Schedule.viewFreeze s.e d := by
+    unfold Model.Consensus.Protocol.Schedule.supportCutoff Model.Consensus.Protocol.Schedule.viewFreeze
+    ring
+  have hfp : Model.Consensus.Protocol.Schedule.viewFreeze s.e d ≤
+      Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1 + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.proposalTime Model.Consensus.Protocol.Schedule.viewFreeze
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hfv : Model.Consensus.Protocol.Schedule.viewFreeze s.e d <
+      Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.viewFreeze
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hfc : Model.Consensus.Protocol.Schedule.viewFreeze s.e d ≤
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e last := by
+    have hdl : (d : Int) ≤ (last : Int) := by exact_mod_cast hdlast
+    unfold Model.Consensus.Protocol.Schedule.viewFreeze Model.Consensus.Protocol.Schedule.confirmationTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    nlinarith
+  have hhi : max t0 s.e.tGST + s.e.delta ≤ Model.Consensus.Protocol.Schedule.proposalTime s.e (u.slot + 1 + 1) := by
+    rw [hmax, hsl]; linarith
+  have hdh : max t0 s.e.tGST + s.e.delta ≤ rho.horizon := by rw [hmax]; linarith
+  obtain ⟨t2, j, ⟨-, ht2⟩, ⟨ev, hevj, hte⟩, hset⟩ :=
+    Proofs.Consensus.Settled.acceptsAt_gfVote_settled c p a nr s rho hps hsch hunf hδ hw hx hacc hlo hhi hdh
+  rw [hmax] at ht2
+  have ht2f : eventTime ev < Model.Consensus.Protocol.Schedule.viewFreeze s.e d := by rw [hte]; linarith
+  have hjN : j < Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) :=
+    Proofs.Consensus.ReceiverFinality.lt_idxLt_of_time_lt rho hs hnd' hevj (lt_trans ht2f hfv)
+  have h := settled_stamped_pair c p a nr s rho hs hnn hevj hset hjN ht2f
+  rw [hsl] at h
+  exact h
+
+/-- 穴: 新しい確認の段の移送の境界の `forward` の head の側。`genuineConf_adoptionTransport` と同じ前提で、確認の更新の前の段の
+store の slot `d` の支持の投票 `u` の head が確認の tree で `C` の子孫 `H` に解決するなら、`x` の slot `d + 1` の読みの tree でも
+`u.head` は同じ `H` に解決し、`H` の受信の印は `viewFreeze d` より前。手書き `supportingTarget_visibleAtVoteDuty_after_gst`
+(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。周回 303 に `genuineConf_adoptionForward` から
+切り出した。閉じるのに要るもの: `H` が genesis なら初期の tree と印。そうでなければ `u` の解決の印が支持の締切より前なので `H` の受信の
+印も(`Majority` の `occurrenceMax` の運び)、評価者が `H` を受理した時刻も支持の締切より前(`StampExact` のブロックの版)。中継で `x` に
+`viewFreeze d` より前に届き、`x` の FG root ⪯ `C` ⪯ `H`(`hroot`)なので `x` は `H` を受理する(手書き
+`weakct_admittedBefore_of_accepted_after_support`)。読みの tree は root が要素を決める(`runTree_root_inj`)。 -/
+theorem genuineConf_supportHeadVisible (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = d) {C : Block}
+    (hC : Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C)
+    {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hroot : preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) C = true) {u : GoldfishVote}
+    (hu : u ∈ (Proofs.Consensus.Goldfish.supportVotes s.e
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core d).elems) {H : Block}
+    (hfind : findRoot? (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.tree u.head = some H)
+    (hCH : preceq C H = true) :
+    findRoot? (voteDutyStoreAt c p a nr s rho x (d + 1)).tree u.head = some H ∧
+      Model.Consensus.Objects.Time.occurrenceBefore
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).timestampBlock.get? H)
+        (Model.Consensus.Protocol.Schedule.viewFreeze s.e d) = true := by
+  sorry
+
+/-- **新しい確認の段の移送の境界の `forward`**(周回 301 に穴として置き、周回 303 に組んだ)。`genuineConf_adoptionTransport` と
+同じ前提で、確認の分子の投票(`supportVotes`)で `C` 以下を指すものは、読みの支持の voter view にあって読みの tree で `C` 以下を
+指すか、読みの voter view で投票者が equivocate する。手書き `adoptionTransport_B_after_gst`
+(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)の forward に当たる。運び: `u` は読みの印が `viewFreeze d`
+より前の pool にあるか、そこに投票者の異なる 2 つの投票がある(`supportVote_readSettled`)。後者は読みの voter view の pooled の部分に
+入るので equivocation。前者では head の解決先 `H` が読みの tree で同じで印が `viewFreeze d` より前(穴
+`genuineConf_supportHeadVisible`)なので、解決の印も `viewFreeze d` より前(`BlockStamps.storeTau_before`)で支持の voter view の
+pooled の部分に入り、読みの tree でも `C ⪯ H`。手書きの `settled_before_freeze_in_voter_pair` の形。 -/
 theorem genuineConf_adoptionForward (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -4784,15 +4941,74 @@ theorem genuineConf_adoptionForward (hwf : SetupWellFormed c p s) (hdom : RunDom
               (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
             (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
           u.valIndex = true := by
-  sorry
+  intro u hu htarg
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hslot : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 :=
+    Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule
+    (Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep).1.1.1
+  have hV : ∀ y, y ∈ (Proofs.Consensus.Settled.stampedPool (worldAt (stateBefore c p a nr s rho
+        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))))
+        x).st.core d (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems →
+      y ∈ (Proofs.Consensus.Settled.stampedPool (voteDutyStoreAt c p a nr s rho x (d + 1)) d
+        (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems := by
+    intro y hy
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
+    exact hy
+  have hVV : ∀ y, y ∈ (Proofs.Consensus.Settled.stampedPool (voteDutyStoreAt c p a nr s rho x (d + 1)) d
+        (Model.Consensus.Protocol.Schedule.viewFreeze s.e d)).elems →
+      y ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+            (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+              (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+            (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems := by
+    intro y hy
+    unfold Model.Consensus.Protocol.ForkChoice.Views.voterView
+    dsimp only
+    rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff, hslot, Nat.add_sub_cancel]
+    exact Or.inl hy
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder at htarg
+  cases hf : findRoot? (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.tree u.head with
+  | none => rw [hf] at htarg; exact absurd htarg (by simp)
+  | some H =>
+    rw [hf] at htarg
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at htarg
+    obtain ⟨hslH, hCH⟩ := htarg
+    rcases supportVote_readSettled c p a nr s rho hwf hsleep hhor hdlast hw ht hx hu with hmem | ⟨y, z, hy, hz, hyv, hzv, hne⟩
+    · obtain ⟨hfx, hbx⟩ := genuineConf_supportHeadVisible c p a nr s rho hwf hdom hsleep hhor hd hdlast hw ht hq hC hx hroot hu
+        hf hCH
+      have hm := hV u hmem
+      unfold Proofs.Consensus.Settled.stampedPool at hm
+      obtain ⟨hp, hts⟩ := (Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hm
+      left
+      refine ⟨?_, ?_⟩
+      · unfold Model.Consensus.Protocol.ForkChoice.Views.voterSupportView
+        dsimp only
+        rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff, hslot, Nat.add_sub_cancel]
+        left
+        rw [Proofs.Consensus.Trees.mem_filter_iff]
+        exact ⟨hp, Proofs.Consensus.BlockStamps.storeTau_before hfx hslH hts hbx⟩
+      · unfold Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        show (match findRoot? (voteDutyStoreAt c p a nr s rho x (d + 1)).tree u.head with
+          | some c => decide (slot c ≤ u.slot) && preceq C c
+          | none => false) = true
+        rw [hfx]
+        simp [hslH, hCH]
+    · right
+      unfold Model.Consensus.Protocol.Schedule.equivocates
+      rw [decide_eq_true_eq]
+      unfold NaruStd.Set.size
+      exact Proofs.Consensus.Settled.two_le_length_of_ne
+        ((Proofs.Consensus.Goldfish.mem_votesBy_iff _ _ _).mpr ⟨hVV y (hV y hy), hyv⟩)
+        ((Proofs.Consensus.Goldfish.mem_votesBy_iff _ _ _).mpr ⟨hVV z (hV z hz), hzv⟩) hne
 
 /-- **新しい確認の段の移送の境界**(周回 299 に穴として置き、周回 301 に `forward` と `backward` の carried の部分を穴に分け、周回 302 に
-後者を閉じた)。
+後者を閉じ、周回 303 に前者を組んだ)。
 `1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の genuine な確認 `C` が honest なノード `x` の slot `d + 1` の読みの FG root の
 子孫なら、確認の更新の前の段の store の slot `d` の確認(分子 `supportVotes`、分母 `lateVotes`)から `x` の slot `d + 1` の読みの
 voter view(投票 `voterView`、支持の投票 `voterSupportView`、tree は読みの tree)への `Majority.AdoptionTransport` がある。手書き
 `adoptionTransport_B_after_gst`(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。`forward` は
-穴 `genuineConf_adoptionForward`。`backward` は voter view の 2 つの部分に分ける: pooled の部分(読みの pool のバケツ `d`)は
+`genuineConf_adoptionForward`(周回 303。残りは穴 `genuineConf_supportHeadVisible`)。`backward` は voter view の 2 つの部分に分ける: pooled の部分(読みの pool のバケツ `d`)は
 `pool_lateSettled`(証明済み。周回 300 の中継の層 `Settled.lean` と、受理の時刻の下限 `PoolSlot.acceptsAt_gfVote_slot_le`)、
 carried の部分(読みの tree の slot `d + 1` のブロックが運ぶ slot `d` の投票)は `genuineConf_backwardCarried`(証明済み。周回 302)。 -/
 theorem genuineConf_adoptionTransport (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
