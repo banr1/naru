@@ -3255,6 +3255,166 @@ theorem dutyBody_processed_next (hwf : SetupWellFormed c p s) (hdom : RunDomain 
   rw [Nat.add_sub_cancel]
   exact Proofs.Consensus.GradeSupporter.occurrenceBefore_mono hstamp hfreeze
 
+/-- **frontier の確認の証人は低い保護されたブロックの子孫**(GST-zero の枝): honest な `u` が slot `d + 1` の投票時刻より前の時刻 `t2`
+(添字 `i` の tick)に行を出し、その tick の務めの確認の証人が務めの store の bodies の `K` の消去で(`voteDutyStore_frontierConfirmationWitness`
+の欄)、honest な `y` の slot `d` の投票の務めの head が `B` の子孫で、`B` の run の中の名前付きブロック `Bn` の導出の高さが `K` の導出の
+高さより低いなら、`B` は `K` の消去の祖先。確認の証人は行の源として `y` の slot `d` の head の祖先(`laterVoteHead_rowSources_of_prior`)
+なので `B` と比べられ、`K` の消去が `B` の祖先なら、その持ち上げは `Bn` の祖先で root の衝突なしで `K`(`K` は `u` の bodies にあり run の
+中)になり、`deriveNamed_h_mono` で高さが矛盾する。手書き `coreConeBandDescendant_of_processed` の偽の枝の `hwitnesses`(呼び出し側
+`protectedVoteSlots_of_historyCut_v2_w` の `hfrontierB`。recent な round は `hfgB`)と、互換から高さで逆向きを排除する段
+(`coreNamedPreceq_of_runBlock_erase_preceq` と `derive_height_mono`)を合わせた形に当たる(周回 289)。 -/
+theorem frontierWitness_above_of_upperHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hupper : d ≤ last + 1) {y : ValidatorId} (hy : rho.honest.contains y = true)
+    (hpriorD : ∀ (w : ValidatorId) (i : Nat) (t : Int) (C : Block), rho.honest.contains w = true →
+      Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t →
+      Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d →
+      Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
+      preceq C (voteDutyHeadAt c p a nr s rho y d) = true)
+    {B : Block} (hBy : preceq B (voteDutyHeadAt c p a nr s rho y d) = true)
+    {Bn : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hBnrun : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho Bn)
+    (hBne : Model.Consensus.Objects.NamedBlocks.eraseBlock Bn = B)
+    {u : ValidatorId} (hu : rho.honest.contains u = true)
+    {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation} {t2 : Int} {i : Nat}
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2)
+    (hev : rho.events[i]? = some (Model.Consensus.Execution.Run.NamedEvent.Tick u t2))
+    (ht2 : t2 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))
+    {K : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hfg : Proofs.Consensus.RootWitness.fgConfirmationWitnessAt c p a nr s rho u i t2 =
+      some (Model.Consensus.Objects.NamedBlocks.eraseBlock K))
+    (hK : K ∈ (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i t2).bodies.elems)
+    (hbod : (worldAt (stateBefore c p a nr s rho (i + 1)) u).st.bodies =
+      (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho u i t2).bodies)
+    (hh : (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg Bn).h <
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg K).h) :
+    preceq B (Model.Consensus.Objects.NamedBlocks.eraseBlock K) = true := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  -- 確認の証人は `y` の slot `d` の head の祖先なので `B` と比べられる
+  have hKy := (laterVoteHead_rowSources_of_prior c p a nr s rho hwf hdom hsleep hhor hd hupper hy hpriorD hu hem hev ht2).2
+    _ hfg
+  rcases Proofs.Consensus.Blocks.preceq_linear hBy hKy with hBK | hKB
+  · exact hBK
+  · -- `K` の消去が `B` の祖先なら、持ち上げは root の衝突なしで `K` で、高さが矛盾する
+    exfalso
+    rw [← hBne] at hKB
+    obtain ⟨Kn, hKn, hKne⟩ := Proofs.Consensus.NamedBlocks.erased_ancestor_lift hKB
+    have hKb : K ∈ (worldAt (stateBefore c p a nr s rho (i + 1)) u).st.bodies.elems := by
+      rw [hbod]; exact hK
+    have hKdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho K :=
+      Or.inr ⟨u, hu, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hKb⟩
+    have heq : K = Kn := hcf K Bn ⟨⟨K, hKdir, Proofs.Consensus.NamedBlocks.namedPreceq_self K⟩, hBnrun⟩ K Kn
+      ⟨⟨Or.inl (Proofs.Consensus.NamedBlocks.namedPreceq_self _), Or.inr hKn⟩,
+        by rw [← Proofs.Consensus.NamedBlocks.root_eraseBlock, ← Proofs.Consensus.NamedBlocks.root_eraseBlock, hKne]⟩
+    rw [← heq] at hKn
+    exact absurd (Proofs.Consensus.EntryHeight.deriveNamed_h_mono s.e s.cfg hKn) (Nat.not_le_of_lt hh)
+
+/-- **段の橋の band に届かない枝**: `voteDutyHead_passes_supporter_majority_of_bandNamed` の偽の枝。`B` の名前付きブロック `Bn` の導出の
+高さが `x` の slot `d + 1` の読みの `hMax - 1` より低ければ、読みの `hMax` は 1 より大きく、frontier の確認の証人 `K`
+(`voteDutyStore_frontierConfirmationWitness`。導出の高さ `hMax - 1`)は `B` の子孫(`frontierWitness_above_of_upperHead`。上界は
+honest な `y` の slot `d` の head)。読みの finalized ⪯ FG root ⪯ anchor ⪯ `B` ⪯ `K` の消去なので `K` の消去は読みの処理済み tree にあり
+(`dutyBody_processed_next`)、その `sigma` の高さは、読みの bodies の名前付きブロックの導出(`voteDutyStore_sigma_named`)が root の
+衝突なしで `K` なので `hMax - 1`。`D = K` の消去で `voteDutyHead_passes_supporter_majority_of_band` を掛ける。手書き
+`coreConeBandDescendant_of_processed` の `by_cases hband` の偽の枝(`D = K.erase`)と `coreCandidatePathOfBandDescendant` に当たる
+(周回 289)。残りの前提は `hmaj`。 -/
+theorem voteDutyHead_passes_supporter_majority_of_belowBand (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (hdw : DeliveryWellFormed c p a nr s rho) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last) {y : ValidatorId} (hy : rho.honest.contains y = true)
+    (hpriorD : ∀ (w : ValidatorId) (i : Nat) (t : Int) (C : Block), rho.honest.contains w = true →
+      Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t →
+      Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d →
+      Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C →
+      preceq C (voteDutyHeadAt c p a nr s rho y d) = true)
+    {x : ValidatorId} (hx : rho.honest.contains x = true) {B : Block}
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+        ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) B = true)
+    (hBy : preceq B (voteDutyHeadAt c p a nr s rho y d) = true)
+    {Bn : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hBnrun : Statements.Consensus.Spec.Execution.BlockInRun c p a nr s rho Bn)
+    (hBne : Model.Consensus.Objects.NamedBlocks.eraseBlock Bn = B)
+    (hhigh : (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg Bn).h <
+      (voteDutyStoreAt c p a nr s rho x (d + 1)).hMax - 1) :
+    preceq B (voteDutyHeadAt c p a nr s rho x (d + 1)) = true := by
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hδ := hfacts.1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hvhor : Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    have hd' : (d : Int) ≤ (last : Int) := by exact_mod_cast hdlast
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hlarge : 1 < (voteDutyStoreAt c p a nr s rho x (d + 1)).hMax := by omega
+  obtain ⟨-, -, row, t2, i, -, K, -, -, -, hrowH, hem, ht2, hev, hfg, -, -, hK, -, hKh, -, -, -, hbod⟩ :=
+    voteDutyStore_frontierConfirmationWitness c p a nr s rho hwf hsleep x (d + 1) hlarge
+  have hu : rho.honest.contains row.valIndex = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hrowH
+  -- frontier の確認の証人は `B` の子孫
+  have hBK := frontierWitness_above_of_upperHead c p a nr s rho hwf hdom hsleep hhor hd (by omega) hy hpriorD hBy
+    hBnrun hBne hu hem hev ht2 hfg hK hbod (by rw [hKh]; exact hhigh)
+  -- `K` の消去は読みの処理済み tree にある
+  have hfj := Proofs.Consensus.ProcessedAncestor.stateBeforeTime_fj c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1)) x
+  have hfroot : preceq
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st.core.f
+      (voteDutyFgRootAt c p a nr s rho x (d + 1)) = true := by
+    unfold voteDutyFgRootAt
+    exact Proofs.Consensus.ReceiverFinality.store_fgRoot_extends
+      (st := (Proofs.Consensus.Voting.clocked s.e _ (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))).core) hfj
+  have hfK := Proofs.Consensus.Blocks.preceq_trans hfroot
+    (Proofs.Consensus.Blocks.preceq_trans (fgRoot_preceq_voteDutyAnchorAt c p a nr s rho x (d + 1))
+      (Proofs.Consensus.Blocks.preceq_trans hAB hBK))
+  have hcompat := Proofs.Consensus.Blocks.compatible_of_preceq_common hfK (Proofs.Consensus.Blocks.preceq_self _)
+  have hproc := dutyBody_processed_next c p a nr s rho hwf hdom hsleep hu hem hev hbod hK ht2 hvhor hx hcompat
+  refine voteDutyHead_passes_supporter_majority_of_band c p a nr s rho hsch hdw x (d + 1) hmaj hAB hBK hproc ?_
+  -- `sigma` での `K` の消去の高さは `K` の導出の高さ `hMax - 1`
+  have htree := hproc
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at htree
+  dsimp only at htree
+  rw [Proofs.Consensus.Trees.mem_filter_iff] at htree
+  obtain ⟨Y, hY, hYe, hσ⟩ := voteDutyStore_sigma_named c p a nr s rho x (d + 1) htree.1
+  rw [hσ]
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hY
+  have hYdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho Y :=
+    Or.inr ⟨x, hx, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hY⟩
+  have hKb : K ∈ (worldAt (stateBefore c p a nr s rho (i + 1)) row.valIndex).st.bodies.elems := by
+    rw [hbod]; exact hK
+  have hKdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho K :=
+    Or.inr ⟨row.valIndex, hu, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hKb⟩
+  have heq : Y = K := hcf Y K ⟨⟨Y, hYdir, Proofs.Consensus.NamedBlocks.namedPreceq_self Y⟩,
+      ⟨K, hKdir, Proofs.Consensus.NamedBlocks.namedPreceq_self K⟩⟩ Y K
+    ⟨⟨Or.inl (Proofs.Consensus.NamedBlocks.namedPreceq_self _), Or.inr (Proofs.Consensus.NamedBlocks.namedPreceq_self _)⟩,
+      by rw [← Proofs.Consensus.NamedBlocks.root_eraseBlock, ← Proofs.Consensus.NamedBlocks.root_eraseBlock, hYe]⟩
+  rw [heq, hKh]
+
 /-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
 `sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、
 `B` の名前付きブロックの祖先に `A` の持ち上げがあり(`NamedBlocks.erased_ancestor_lift`)、root の衝突なしで `A` の名前付きブロックと
@@ -3633,7 +3793,9 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 `sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
 周回 285 から、frontier の証人の出発点(読みの `hMax` を導出の高さで担う bodies のブロック `W`。手書き
 `maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
-残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
+周回 289 から、band に届かない枝(`Bn` の導出の高さ < `hMax - 1`)は `voteDutyHead_passes_supporter_majority_of_belowBand`
+(証明済み。frontier の確認の証人 `K` を band の子孫に取る)で閉じ、前提は `hmaj`・`hAB`・honest な `y` の slot `d` の head が `B` の
+子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -3671,7 +3833,9 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 `sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
 周回 285 から、frontier の証人の出発点(読みの `hMax` を導出の高さで担う bodies のブロック `W`。手書き
 `maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
-残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
+周回 289 から、band に届かない枝(`Bn` の導出の高さ < `hMax - 1`)は `voteDutyHead_passes_supporter_majority_of_belowBand`
+(証明済み。frontier の確認の証人 `K` を band の子孫に取る)で閉じ、前提は `hmaj`・`hAB`・honest な `y` の slot `d` の head が `B` の
+子孫・`hprior y`。band の枝と合わせ、`B` の名前付きブロックで場合分けすれば、残りは `hmaj`(読みの voter view での `B` の支持者の過半)だけ。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
