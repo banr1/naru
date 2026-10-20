@@ -40,6 +40,9 @@ import Mathlib.Tactic
 2 つの支持者の集合は `noSecondVoteIn` で互いに素でどちらも一方の参加者に収まるので `2(a + b) ≤ count_v + count_w < 2a + 2b`)、
 そして確認の記録・stable の記録・grade の候補の分岐をそれで結ぶこと。生成 Model の得点と `HonestCommittees` は個数(`Set.size`)なので
 重みではなく個数で数える(手書きも Goldfish の確認は個数)。
+- **確認の過半の別の読みへの移送**(節 `Adoption`。周回 299): 確認の分子・分母から別の読みの投票への境界 `AdoptionTransport`
+  (`forward` / `backward`)の下で、確認の門を通るブロックの支持者は読みの参加者の過半(`AdoptionTransport.supporterMajority_of_eligible`)。
+  手書き `AdoptionTransport` / `confirmation_adoption`(`Protocol/ForkChoice/Goldfish/Adoption.lean`)。
 -/
 
 namespace Proofs.Consensus.Majority
@@ -995,5 +998,141 @@ theorem goldfishForkChoice_passes_supporter_majority (e : ProtocolEnv)
     (fun C _ h => goldfishEligible_of_lt e sigma hMax tree cur votes sv s h) hAB hpath
 
 end SupporterMajority
+
+/-! ## 確認の過半の別の読みへの移送(手書き `AdoptionTransport`。周回 299) -/
+
+section Adoption
+
+/-- 遅い投票の中で、支持の投票と同じ投票者の投票はその支持の投票だけ(`noSecondVoteIn lateVotes` の絞り込みから)。
+手書き `Numerator.unique_in_late`。 -/
+theorem lateVotes_eq_of_support (e : ProtocolEnv) (st : Store) (s : Nat) {u u' : GoldfishVote}
+    (hu : u ∈ (supportVotes e st s).elems) (hu' : u' ∈ (lateVotes e st s).elems) (hv : u'.valIndex = u.valIndex) :
+    u' = u := by
+  unfold supportVotes at hu
+  obtain ⟨-, hno⟩ := (mem_filter_iff _ _ _).mp hu
+  unfold noSecondVoteIn NaruStd.Set.all at hno
+  rw [List.all_eq_true] at hno
+  have h := hno u' hu'
+  rw [Bool.or_eq_true, beq_iff_eq, bne_iff_ne] at h
+  rcases h with h | h
+  · exact h
+  · exact absurd hv h
+
+/-- 支持の投票の投票者は遅い投票で equivocate しない。手書き `Numerator.no_equivocation_in_late`。 -/
+theorem lateVotes_no_equivocation_of_support (e : ProtocolEnv) (st : Store) (s : Nat) {u : GoldfishVote}
+    (hu : u ∈ (supportVotes e st s).elems) : equivocates (lateVotes e st s) u.valIndex = false := by
+  unfold equivocates
+  rw [decide_eq_false_iff_not]
+  intro h2
+  have hnd : (votesBy (lateVotes e st s) u.valIndex).elems.Nodup := by
+    unfold votesBy lateVotes
+    exact SortedLt.nodup gv_irrefl (SortedLt.filter (SortedLt.filter (storePool_sortedLt st s) _) _)
+  have hle : (votesBy (lateVotes e st s) u.valIndex).elems.length ≤ 1 := by
+    apply length_le_one_of_nodup hnd
+    intro a ha b hb
+    rw [mem_votesBy_iff] at ha hb
+    exact (lateVotes_eq_of_support e st s hu ha.1 ha.2).trans (lateVotes_eq_of_support e st s hu hb.1 hb.2).symm
+  unfold NaruStd.Set.size at h2
+  omega
+
+/-- **確認の数え上げを別の読みへ運ぶ境界**: store `st` の slot `s` の確認(分子は支持の投票 `supportVotes`、分母は遅い投票
+`lateVotes`、tree は `st.tree`)から、別の読みの投票 `tgtVotes`・支持の投票 `tgtSupport`・tree `tgtTree` へ。`forward` は `B` 以下を指す
+分子の投票が読みの支持の投票にあって読みの tree でも `B` 以下を指すか、読みでその投票者の equivocation が検出済みであること、`backward` は
+読みの投票が確認の遅い投票にあるか、遅い投票でその投票者の equivocation が検出済みであること。手書き `AdoptionTransport`
+(`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/Adoption.lean`。分子・分母を store の名前付きの値で与えた形)。 -/
+structure AdoptionTransport (e : ProtocolEnv) (st : Store) (s : Nat) (tgtTree : NaruStd.Set Block)
+    (tgtVotes tgtSupport : NaruStd.Set GoldfishVote) (B : Block) : Prop where
+  forward : ∀ u ∈ (supportVotes e st s).elems, targetsUnder st.tree B u = true →
+    (u ∈ tgtSupport.elems ∧ targetsUnder tgtTree B u = true) ∨ equivocates tgtVotes u.valIndex = true
+  backward : ∀ u ∈ tgtVotes.elems,
+    u ∈ (lateVotes e st s).elems ∨ equivocates (lateVotes e st s) u.valIndex = true
+
+namespace AdoptionTransport
+
+variable {e : ProtocolEnv} {st : Store} {s : Nat} {tgtTree : NaruStd.Set Block}
+  {tgtVotes tgtSupport : NaruStd.Set GoldfishVote} {B : Block}
+
+/-- 分子の投票の投票者は読みの投票で equivocate しない(読みの同じ投票者の投票は `backward` でどれも遅い投票に入り、分子の投票に等しい)。
+手書き `AdoptionTransport.target_not_equivocates`。読みの投票の重複なし `hnd` は手書きの `Finset` が持つ性質。 -/
+theorem target_not_equivocates (hT : AdoptionTransport e st s tgtTree tgtVotes tgtSupport B)
+    (hnd : tgtVotes.elems.Nodup) {u : GoldfishVote} (hu : u ∈ (supportVotes e st s).elems) :
+    equivocates tgtVotes u.valIndex = false := by
+  unfold equivocates
+  rw [decide_eq_false_iff_not]
+  intro h2
+  have hnd' : (votesBy tgtVotes u.valIndex).elems.Nodup := by
+    unfold votesBy NaruStd.Set.filter
+    exact hnd.filter _
+  have hsame : ∀ x ∈ tgtVotes.elems, x.valIndex = u.valIndex → x = u := by
+    intro x hx hval
+    rcases hT.backward x hx with hreach | hequiv
+    · exact lateVotes_eq_of_support e st s hu hreach hval
+    · rw [hval, lateVotes_no_equivocation_of_support e st s hu] at hequiv
+      exact absurd hequiv (by decide)
+  have hle : (votesBy tgtVotes u.valIndex).elems.length ≤ 1 := by
+    apply length_le_one_of_nodup hnd'
+    intro a ha b hb
+    rw [mem_votesBy_iff] at ha hb
+    exact (hsame a ha.1 ha.2).trans (hsame b hb.1 hb.2).symm
+  unfold NaruStd.Set.size at h2
+  omega
+
+/-- 確認の支持者は読みの支持者。手書き `AdoptionTransport.supporters_subset`。 -/
+theorem supporters_subset (hT : AdoptionTransport e st s tgtTree tgtVotes tgtSupport B)
+    (hnd : tgtVotes.elems.Nodup) :
+    ∀ v ∈ (rawSupporters st.tree (supportVotes e st s) (supportVotes e st s) s B).elems,
+      v ∈ (rawSupporters tgtTree tgtVotes tgtSupport s B).elems := by
+  intro v hv
+  rw [mem_rawSupporters_iff] at hv ⊢
+  obtain ⟨-, -, u, hu, hvi, hslot, htB⟩ := hv
+  have hclean := hT.target_not_equivocates hnd hu
+  rw [hvi] at hclean
+  rcases hT.forward u hu htB with ⟨hut, htt⟩ | hequiv
+  · exact ⟨(mem_voters_iff _ _).mpr ⟨u, hut, hvi⟩, hclean, u, hut, hvi, hslot, htt⟩
+  · rw [hvi, hclean] at hequiv
+    exact absurd hequiv (by decide)
+
+/-- 読みの参加者は確認の遅い投票の参加者。手書き `AdoptionTransport.participants_subset`。 -/
+theorem participants_subset (hT : AdoptionTransport e st s tgtTree tgtVotes tgtSupport B) :
+    ∀ v ∈ (rawParticipants tgtVotes).elems, v ∈ (rawParticipants (lateVotes e st s)).elems := by
+  intro v hv
+  obtain ⟨hvo, -⟩ := (mem_rawParticipants_iff _ _).mp hv
+  obtain ⟨u, hu, hvi⟩ := (mem_voters_iff _ _).mp hvo
+  rcases hT.backward u hu with hreach | hequiv
+  · exact mem_rawParticipants_of_voters ((mem_voters_iff _ _).mpr ⟨u, hreach, hvi⟩)
+  · rw [hvi] at hequiv
+    unfold equivocates at hequiv
+    rw [decide_eq_true_eq] at hequiv
+    unfold NaruStd.Set.size at hequiv
+    obtain ⟨w, hw⟩ := List.exists_mem_of_length_pos (by omega : 0 < (votesBy (lateVotes e st s) v).elems.length)
+    rw [mem_votesBy_iff] at hw
+    exact mem_rawParticipants_of_voters ((mem_voters_iff _ _).mpr ⟨w, hw.1, hw.2⟩)
+
+/-- **確認の過半は読みの過半になる**: `B` が store `st` の slot `s` で確認の門を通れば(`eligible`)、`B` の支持者は読みの投票の
+参加者の過半(`votersCount` は slot を見ない)。確認の得点は支持者の数(`score_eq_supporters`)で、支持者は増え(`supporters_subset`)、
+参加者は減る(`participants_subset`)。honest 過半や閾値は使わない。手書き `confirmation_adoption`。 -/
+theorem supporterMajority_of_eligible (hT : AdoptionTransport e st s tgtTree tgtVotes tgtSupport B)
+    (hδ : 0 ≤ e.delta) (hnd : tgtVotes.elems.Nodup)
+    (helig : Proofs.Consensus.Goldfish.eligible e st s B = true) (s' : Nat) :
+    votersCount e tgtVotes s' < 2 * (rawSupporters tgtTree tgtVotes tgtSupport s B).size := by
+  rw [Proofs.Consensus.Goldfish.eligible_iff, score_eq_supporters e st s B hδ] at helig
+  have hsS : Sorted (rawSupporters st.tree (supportVotes e st s) (supportVotes e st s) s B) := (sorted_voters _).filter _
+  have hsT : Sorted (rawSupporters tgtTree tgtVotes tgtSupport s B) := (sorted_voters _).filter _
+  have hsP : Sorted (rawParticipants tgtVotes) := (sorted_voters _).filter _
+  have hsL : Sorted (rawParticipants (lateVotes e st s)) := (sorted_voters _).filter _
+  have h1 : (rawSupporters st.tree (supportVotes e st s) (supportVotes e st s) s B).size ≤
+      (rawSupporters tgtTree tgtVotes tgtSupport s B).size := by
+    rw [size_eq_card hsS, size_eq_card hsT]
+    exact Finset.card_le_card (fun v hv => List.mem_toFinset.mpr (hT.supporters_subset hnd v (List.mem_toFinset.mp hv)))
+  have h2 : (rawParticipants tgtVotes).size ≤ (rawParticipants (lateVotes e st s)).size := by
+    rw [size_eq_card hsP, size_eq_card hsL]
+    exact Finset.card_le_card (fun v hv => List.mem_toFinset.mpr (hT.participants_subset v (List.mem_toFinset.mp hv)))
+  have hl : lateCount e st s = (rawParticipants (lateVotes e st s)).size := rfl
+  show (rawParticipants tgtVotes).size < _
+  omega
+
+end AdoptionTransport
+
+end Adoption
 
 end Proofs.Consensus.Majority

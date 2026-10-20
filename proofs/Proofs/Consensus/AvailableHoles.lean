@@ -49,8 +49,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    保護された投票の slot(`ProtectedVoteSlot`: 投票の head の `heads` と投票の cone)の slot の帰納法 `protectedVoteSlots_gstZero` で
    証明した。cone はどの slot でも `heads` から出る(`voteCone_of_heads`。周回 273。種の cone `voteCone_genesis` は周回 272 に証明し、
    周回 273 からその特別な場合)、slot 0 の確認は `genuineConf_slot_zero`(周回 271 に証明した)、段の `heads` は `protectedVoteSlot_preserve`(古い確認。周回 297 に閉じた)と
-   `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認。周回 298 に閉じ、`C` の支持者の過半を穴 `genuineConf_supporterMajority` に
-   切り出した)で、段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
+   `protectedVoteSlot_succ_of_genuineConf`(slot `d` の確認。周回 298 に閉じ、`C` の支持者の過半 `genuineConf_supporterMajority` は
+   周回 299 に手書き `AdoptionTransport` の数え上げで閉じて、移送の境界を穴 `genuineConf_adoptionTransport` に切り出した)で、段の補題は帰納法の仮定 `PriorConfsBelow d` を受け取る。行の源は
    この前提で `laterVoteHead_rowSources_of_prior` から取れる。`fgWitness_preceq_laterVoteHead` は round の同時帰納
    `RootWitness.dutyStoreAt_jointRoundInduction_of_prior` を `base = cut = 0` で掛け、段の genuine な確認を
    `genuineConf_preceq_laterVoteHead`、SG block と grade 2 の候補を `fgStep_preceq_laterVoteHead` から供給する(周回 250)。
@@ -4478,15 +4478,45 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
   · exact voteDutyHead_passes_supporter_majority_of_belowBand c p a nr s rho hwf hdom hsleep hdw hhor hd hdlast hx
       (hprior x hx) hx hmaj hbelow (hB.heads x hx) hBnrun hBne (Nat.lt_of_not_le hband)
 
-/-- 穴: 新しい確認の段の過半の移送。`1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の genuine な確認 `C` が honest なノード `x` の
-slot `d + 1` の読みの FG root の子孫なら、その読みの voter view で `C` の支持者は過半(`votersCount < 2 · rawSupporters`)。
-手書き `adoptionTransport_B_after_gst`(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`。確認の
-分子の投票は読みの支持の voter view に届き、読みの参加者は確認の late view の参加者)と、その数え上げ `AdoptionTransport.supporters_subset` /
-`AdoptionTransport.participants_subset`(`Protocol/ForkChoice/Goldfish/Adoption.lean`)に当たる。`protectedVoteSlot_succ_of_genuineConf`
-の `hmaj` として周回 298 に切り出した。閉じるのに要るもの: 確認の更新の前の段の pool の投票(`C` の eligible の分子)が GST 以後なので
-読みの pool に凍結より前の印で入ること(`Stamps.partialSynchrony_honest_gfVote_stamped` と、byzantine の投票は読み手が受けた
-配送の中継)、読みの voter view の投票が確認の late view にあるか equivocation が検出済みであること、`C` の上の解決先が読みの tree に
-あること(`voteDutyHead_stamped_next` の運び)。 -/
+/-- 穴: 新しい確認の段の移送の境界。`1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の genuine な確認 `C` が honest なノード `x` の
+slot `d + 1` の読みの FG root の子孫なら、確認の更新の前の段の store の slot `d` の確認(分子 `supportVotes`、分母 `lateVotes`)から
+`x` の slot `d + 1` の読みの voter view(投票 `voterView`、支持の投票 `voterSupportView`、tree は読みの tree)への
+`Majority.AdoptionTransport` がある。手書き `adoptionTransport_B_after_gst`
+(`DecoupledConsensusProofs/Protocol/Schedule/WeakConfirmationTransport.lean`)に当たる。周回 299 に `genuineConf_supporterMajority` の
+数え上げ(`AdoptionTransport.supporterMajority_of_eligible`)を外して切り出した。閉じるのに要るもの: `forward` は、`C` 以下を指す分子の
+投票が GST 以後なので読みの pool に凍結より前の印で入り(honest な投票は `Stamps.partialSynchrony_honest_gfVote_stamped`、byzantine の
+投票は読み手が受けた配送の中継)、その head の解決先が読みの tree にあること(`voteDutyHead_stamped_next` の運び)。`backward` は、読みの
+voter view の投票が確認の遅い投票にあるか、遅い投票で equivocation が検出済みであること(凍結より前に読み手が受けた投票は中継で
+確認の評価者にも `confirmationTime` までに届く)。 -/
+theorem genuineConf_adoptionTransport (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
+    (hd : 1 ≤ d) (hdlast : d ≤ last)
+    {w : ValidatorId} (hw : rho.honest.contains w = true) {i : Nat} {t : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = d) {C : Block}
+    (hC : Proofs.Consensus.RootWitness.GenuineConfirmationAt c p a nr s rho w i t C)
+    {x : ValidatorId} (hx : rho.honest.contains x = true)
+    (hroot : preceq (voteDutyFgRootAt c p a nr s rho x (d + 1)) C = true) :
+    Proofs.Consensus.Majority.AdoptionTransport s.e (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core d
+      (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree
+      (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+      (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s) C := by
+  sorry
+
+/-- **新しい確認の段の過半の移送**(周回 298 に穴として置き、周回 299 に閉じた)。`1 ≤ d ≤ last` で、slot `q = d` の確認評価の tick の
+genuine な確認 `C` が honest なノード `x` の slot `d + 1` の読みの FG root の子孫なら、その読みの voter view で `C` の支持者は過半
+(`votersCount < 2 · rawSupporters`)。手書き `confirmation_adoption`(`Protocol/ForkChoice/Goldfish/Adoption.lean`)を
+`adoptionTransport_B_after_gst`(`Protocol/Schedule/WeakConfirmationTransport.lean`)の境界に掛けた形。`C` は確認の更新の前の段の
+store の slot `d` で eligible(`GenuineConfirmationAt` の第 2 欄)なので、移送の境界(穴 `genuineConf_adoptionTransport`)と
+`Majority.AdoptionTransport.supporterMajority_of_eligible` で出る。読みの slot は `d + 1`(`Voting.slotOf_voteTime`)、読みの投票の重複なしは
+`voterView` が整列した集合の和(`SortedLt.foldl_insert`)であることから。 -/
 theorem genuineConf_supporterMajority (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -4514,7 +4544,27 @@ theorem genuineConf_supporterMajority (hwf : SetupWellFormed c p s) (hdom : RunD
             (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
           (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
         ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1) C).size := by
-  sorry
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hT := genuineConf_adoptionTransport c p a nr s rho hwf hdom hsleep hhor hd hdlast hw ht hq hC hx hroot
+  have helig := hC.2
+  rw [hq] at helig
+  have hsd : (voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1 = d := by
+    rw [show (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 from Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)]
+    omega
+  have hnd : (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+      (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems.Nodup := by
+    unfold Model.Consensus.Protocol.ForkChoice.Views.voterView NaruStd.Set.union
+    dsimp only
+    refine Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl ?_
+    exact Proofs.Consensus.Majority.SortedLt.foldl_insert Proofs.Consensus.Orders.gv_compare_eq_iff
+      Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _
+      (Proofs.Consensus.Majority.SortedLt.filter (Proofs.Consensus.Majority.SortedLt.toSet
+        Proofs.Consensus.Orders.gv_compare_eq_iff Proofs.Consensus.Majority.gv_lt_trans
+        Proofs.Consensus.Majority.gv_gt_lt _) _)
+  rw [hsd]
+  exact hT.supporterMajority_of_eligible (le_of_lt hδ) hnd helig _
 
 /-- **新しい確認の段の `heads`**(周回 270 に穴として置き、周回 298 に閉じた)。`1 ≤ d ≤ last` で `PriorConfsBelow d` なら、slot `q = d` の確認評価の tick の genuine な確認 `C` は
 すべての honest なノードの slot `d + 1` の投票の務めの head の祖先(`protectedVoteSlot_of_heads` で slot `d + 1` の保護になる)。
@@ -4559,7 +4609,7 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 (head のブロックが読みの tree に `viewFreeze (st.s - 1)` より前の印で入ること)は `voteConeStamped_of_heads`(前提は slot `st.s - 1` の
 `heads` と anchor ⪯ `B`)で出る。周回 297 から pool の側も `voteConePooled_of_heads` で出て、slot `d` の honest なノードの head が
 すべて対象の子孫なら `hmaj` は `voteDutyStore_supporterMajority_of_heads` が出す(`protectedVoteSlot_preserve` はこれで閉じた)。
-この段では slot `d` の head が `C` の子孫とは限らないので、周回 298 に `hmaj` を穴 `genuineConf_supporterMajority`(手書き
+この段では slot `d` の head が `C` の子孫とは限らないので、周回 298 に `hmaj` を `genuineConf_supporterMajority`(周回 299 に閉じた。手書き
 `adoptionTransport_B_after_gst` と `AdoptionTransport.supporters_subset` / `participants_subset` の数え上げ)に切り出して閉じた:
 `C` の honest な支持者 `y`(`genuineConf_honestVoteSupporter`。slot `d` の head が `C` の子孫)を上界にとり、`C` を `y` の slot `d` の head
 (読みの bodies の名前付きブロックの消去)の祖先として名前付きに持ち上げた `Cn` の導出の高さが band に届けば
