@@ -13,6 +13,7 @@ import Proofs.Consensus.FrameCapture
 import Proofs.Consensus.CarriedSupport
 import Proofs.Consensus.ProcessedAncestor
 import Proofs.Consensus.EntryHeight
+import Proofs.Consensus.MaxCarrier
 import Mathlib.Tactic
 
 /-!
@@ -3070,6 +3071,20 @@ theorem voteDutyStore_sigma_named (x : ValidatorId) (k : Nat) {B : Block}
   rw [← hYe]
   exact hinv.sigma Y hY
 
+/-- **投票の務めの読みの最大の高さの carrier**: `x` の slot `k` の読みには、bodies の名前付きブロック `W` で、消去が読みの tree にあり、
+`sigma` のその鍵の値が `W` の導出で、その高さが読みの `hMax` に等しいものがある(`MaxCarrier.stateBeforeTime_maxCarrier`。
+時計合わせは tree / sigma / `hMax` を変えない)。手書き `coreFrontierQuorumWitness` の最初の段
+(`maximum_carrier_stateBeforeTime`)に当たり、band に届かない枝の frontier の証人の出発点(周回 285)。 -/
+theorem voteDutyStore_maxCarrier (x : ValidatorId) (k : Nat) :
+    ∃ W, W ∈ (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st.bodies.elems ∧
+      Model.Consensus.Objects.NamedBlocks.eraseBlock W ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems ∧
+      Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf (voteDutyStoreAt c p a nr s rho x k).sigma
+          (Model.Consensus.Objects.NamedBlocks.eraseBlock W) =
+        Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg W ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg W).h = (voteDutyStoreAt c p a nr s rho x k).hMax :=
+  Proofs.Consensus.MaxCarrier.stateBeforeTime_maxCarrier c p a nr s rho
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k) x
+
 /-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
 `sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、
 `B` の名前付きブロックの祖先に `A` の持ち上げがあり(`NamedBlocks.erased_ancestor_lift`)、root の衝突なしで `A` の名前付きブロックと
@@ -3446,6 +3461,8 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 周回 284 から、band の判定を `B` の名前付きブロック `Bn`(run の中)の導出の高さで与える形
 `voteDutyHead_passes_supporter_majority_of_bandNamed`(証明済み。手書き `by_cases hband` の真の枝)があり、読みの tree の上の
 `sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
+周回 285 から、frontier の証人の出発点(読みの `hMax` を導出の高さで担う bodies のブロック `W`。手書き
+`maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
 残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
@@ -3482,6 +3499,8 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 周回 284 から、band の判定を `B` の名前付きブロック `Bn`(run の中)の導出の高さで与える形
 `voteDutyHead_passes_supporter_majority_of_bandNamed`(証明済み。手書き `by_cases hband` の真の枝)があり、読みの tree の上の
 `sigma` の高さの単調性は `voteDutyStore_sigma_h_mono`。
+周回 285 から、frontier の証人の出発点(読みの `hMax` を導出の高さで担う bodies のブロック `W`。手書き
+`maximum_carrier_stateBeforeTime`)は `voteDutyStore_maxCarrier`(証明済み)。
 残りは `hmaj` と、band に届かない枝(手書き `coreFrontierConfirmationWitness` の frontier の確認の証人)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
