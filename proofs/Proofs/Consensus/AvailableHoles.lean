@@ -11,6 +11,7 @@ import Proofs.Consensus.SgFrom
 import Proofs.Consensus.SgAdmit
 import Proofs.Consensus.FrameCapture
 import Proofs.Consensus.CarriedSupport
+import Proofs.Consensus.ProcessedAncestor
 import Mathlib.Tactic
 
 /-!
@@ -2785,6 +2786,59 @@ theorem voteDutyHead_passes_supporter_majority_of_delivery (hdw : DeliveryWellFo
   voteDutyHead_passes_supporter_majority_of_carried c p a nr s rho x k
     (voteDutyStore_tree_carried c p a nr s rho hdw x k) hmaj hAB hpath
 
+/-- `voteDutyHead_passes_supporter_majority_of_delivery` の前提 `hpath`(anchor から `B` までの途中が歩みの tree にあること)を、
+`B` の子孫で読みの処理済み tree にあり高さが band(`hMax - 1` 以上)のブロック `D` から出した形(手書き
+`coreCandidatePathOfBandDescendant`。`ProcessedAncestor.voterFiltered_mem_of_band`: 処理済み tree は祖先について閉じ
+(印の祖先の不変条件 `stateBeforeTime_ancestorStamped`)、FG root ⪯ anchor(`fgRoot_preceq_voteDutyAnchorAt`)。周回 281)。
+残りの前提は、読みの voter view での `B` の支持者の過半(`hmaj`)、anchor ⪯ `B`(`hAB`)、band の子孫 `D`(`hBD`・`hD`・`hband`。
+手書き `coreConeBandDescendant_of_runFrontier` が出すもの)。 -/
+theorem voteDutyHead_passes_supporter_majority_of_band (hsch : ScheduleWellFormed s rho)
+    (hdw : DeliveryWellFormed c p a nr s rho) (x : ValidatorId) (k : Nat) {B D : Block}
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x k) B = true)
+    (hBD : preceq B D = true)
+    (hD : D ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree s.e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+      (voteDutyStoreAt c p a nr s rho x k).s).elems)
+    (hband : (voteDutyStoreAt c p a nr s rho x k).hMax - 1 ≤
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf (voteDutyStoreAt c p a nr s rho x k).sigma D).h) :
+    preceq B (voteDutyHeadAt c p a nr s rho x k) = true := by
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev := fun ev h =>
+    (Proofs.Consensus.Window.eventTime_bounds hsch h).1
+  have hanc : Proofs.Consensus.ProcessedAncestor.AncestorStamped (voteDutyStoreAt c p a nr s rho x k) := by
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    exact Proofs.Consensus.ProcessedAncestor.stateBeforeTime_ancestorStamped c p a nr s rho hs hnn _ x
+  have hcl : ∀ y, y ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems →
+      parent y ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems := by
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    exact Proofs.Consensus.ProcessedAncestor.stateBeforeTime_tree_closed c p a nr s rho _ x
+  have hfj : Proofs.Consensus.ProposerFinality.FJ (voteDutyStoreAt c p a nr s rho x k) := by
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    exact Proofs.Consensus.ProcessedAncestor.stateBeforeTime_fj c p a nr s rho hs _ x
+  refine voteDutyHead_passes_supporter_majority_of_delivery c p a nr s rho hdw x k hmaj hAB ?_
+  intro C hAC _ hCB
+  exact Proofs.Consensus.ProcessedAncestor.voterFiltered_mem_of_band hanc hcl hfj
+    (Proofs.Consensus.Blocks.preceq_trans hCB hBD) hD hband
+    (Proofs.Consensus.Blocks.preceq_trans (fgRoot_preceq_voteDutyAnchorAt c p a nr s rho x k) hAC)
+
 /-- **確認の締切は投票時刻ではない**(Δ > 0): `4Δ · k + 2Δ = 4Δ · k' + Δ` なら `1 = 4 · (k' - k)` で、整数では成り立たない
 (`supportCutoff_ne_proposalTime` と同じ運び。周回 277)。 -/
 theorem supportCutoff_ne_voteTime {e : Model.Consensus.Objects.Parameters.ProtocolEnv} (hδ : 0 < e.delta) (k k' : Nat) :
@@ -3044,7 +3098,10 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 `B` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、anchor から `B` までの途中が歩みの tree にあること。
 周回 279 から重複なしと包含の pooled の部分は証明済みで、`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は
 carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 280 から `hcar` も証明済み(`voteDutyStore_tree_carried`。
-`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。 -/
+`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。
+周回 281 から `hpath` も、対象の子孫で読みの処理済み tree にあり高さが band のブロック `D` から出る
+(`voteDutyHead_passes_supporter_majority_of_band`。`hsch` は `hexec.1.1.1`)ので、残りは `hmaj` と band の子孫 `D`
+(手書き `coreConeBandDescendant_of_runFrontier`)。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -3069,7 +3126,10 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
 (証明済み)にあり、残りはその前提(読みの voter view での `C` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、
 anchor から `C` までの途中が歩みの tree にあること)。周回 279 から重複なしと包含の pooled の部分は証明済みで、
 `voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 280 から `hcar` も証明済み(`voteDutyStore_tree_carried`。
-`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。 -/
+`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。
+周回 281 から `hpath` も、対象の子孫で読みの処理済み tree にあり高さが band のブロック `D` から出る
+(`voteDutyHead_passes_supporter_majority_of_band`。`hsch` は `hexec.1.1.1`)ので、残りは `hmaj` と band の子孫 `D`
+(手書き `coreConeBandDescendant_of_runFrontier`)。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
