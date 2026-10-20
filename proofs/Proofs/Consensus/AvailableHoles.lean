@@ -2929,6 +2929,166 @@ theorem voteDutyStore_supporterMajority_of_cone_delivery (hwf : SetupWellFormed 
   voteDutyStore_supporterMajority_of_cone c p a nr s rho hwf hhc x k
     (voteDutyStore_participants_committee c p a nr s rho hdw x k) hno hvote
 
+/-- store の voter view(slot `k`)の honest な投票者の投票は、slot が `k - 1` で、その投票者が実際に出した投票: pooled の部分は
+pool の不変条件(slot)と前提 `hpool`(pool の honest な投票は出した投票)、carried の部分は view の絞り込み(slot)と前提 `htree`
+(tree のブロックの運ぶ honest な投票は出した投票)から。手書き `coreEmitsOfVoteVisible` に当たる(周回 292)。 -/
+theorem voterView_honest_emitted (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (st : Model.Consensus.Protocol.Store.Store) (k : Nat) (hp : Proofs.Consensus.Votes.PoolInv c st)
+    (hpool : ∀ u ∈ (Model.Consensus.Protocol.Store.storePool st (k - 1)).elems, rho.honest.contains u.valIndex = true →
+      ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho u.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t)
+    (htree : ∀ b ∈ st.tree.elems, ∀ u ∈ gfVotes b, rho.honest.contains u.valIndex = true →
+      ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho u.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t)
+    {u : GoldfishVote}
+    (hu : u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+      k).elems)
+    (hh : rho.honest.contains u.valIndex = true) :
+    u.slot = k - 1 ∧ ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho u.valIndex
+      (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t := by
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterView at hu
+  dsimp only at hu
+  rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu
+  rcases hu with hu | hu
+  · have hpool' := ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hu).1
+    exact ⟨(hp.mem (k := k - 1) hpool').1, hpool u hpool' hh⟩
+  · rw [Proofs.Consensus.Sets.mem_flatMap_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu
+    obtain ⟨b, hb, hub⟩ := hu
+    rw [Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hub
+    obtain ⟨hub, hslot⟩ := List.mem_filter.mp hub
+    have hbt := ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp hb).1
+    rw [beq_iff_eq] at hslot
+    exact ⟨hslot, htree b hbt u hub hh⟩
+
+/-- **honest な投票者は store の voter view で equivocate しない**(`voterView_honest_emitted` の前提の下で): view の honest な `v` の
+投票はどれも slot `k - 1` の `v` の出した投票なので、`ScheduleWellFormed` の下で等しい(`Voting.emits_gfVote_unique`)。view は整列
+(pooled は pool の `toSet` の絞り込み、`union` は整列の `insert` の畳み込み)なので、`votesBy` の大きさは 1 以下(周回 292)。 -/
+theorem voterView_no_honest_equivocation (hsch : ScheduleWellFormed s rho)
+    (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
+    (st : Model.Consensus.Protocol.Store.Store) (k : Nat) (hp : Proofs.Consensus.Votes.PoolInv c st)
+    (hpool : ∀ u ∈ (Model.Consensus.Protocol.Store.storePool st (k - 1)).elems, rho.honest.contains u.valIndex = true →
+      ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho u.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t)
+    (htree : ∀ b ∈ st.tree.elems, ∀ u ∈ gfVotes b, rho.honest.contains u.valIndex = true →
+      ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho u.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t)
+    {v : ValidatorId} (hv : rho.honest.contains v = true) :
+    Model.Consensus.Protocol.Schedule.equivocates
+      (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+        k) v = false := by
+  have hsorted : Proofs.Consensus.Majority.SortedLt (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+      k) := by
+    unfold Model.Consensus.Protocol.ForkChoice.Views.voterView NaruStd.Set.union
+    dsimp only
+    apply Proofs.Consensus.Majority.SortedLt.foldl_insert Proofs.Consensus.Orders.gv_compare_eq_iff
+      Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt
+    apply Proofs.Consensus.Majority.SortedLt.filter
+    unfold Model.Consensus.Protocol.StoreBase.pool
+    exact Proofs.Consensus.Majority.SortedLt.toSet Proofs.Consensus.Orders.gv_compare_eq_iff
+      Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _
+  unfold Model.Consensus.Protocol.Schedule.equivocates
+  rw [decide_eq_false_iff_not]
+  intro h2
+  have hnd : (Model.Consensus.Protocol.Schedule.votesBy (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+      k) v).elems.Nodup := by
+    unfold Model.Consensus.Protocol.Schedule.votesBy
+    exact Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl
+      (Proofs.Consensus.Majority.SortedLt.filter hsorted _)
+  have hle : (Model.Consensus.Protocol.Schedule.votesBy (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st))
+      k) v).elems.length ≤ 1 := by
+    apply Proofs.Consensus.Majority.length_le_one_of_nodup hnd
+    intro x hx y hy
+    rw [Proofs.Consensus.Goldfish.mem_votesBy_iff] at hx hy
+    obtain ⟨hxs, t₁, he₁⟩ := voterView_honest_emitted c p a nr s rho e st k hp hpool htree hx.1 (by rw [hx.2]; exact hv)
+    obtain ⟨hys, t₂, he₂⟩ := voterView_honest_emitted c p a nr s rho e st k hp hpool htree hy.1 (by rw [hy.2]; exact hv)
+    rw [hx.2] at he₁
+    rw [hy.2] at he₂
+    exact Proofs.Consensus.Voting.emits_gfVote_unique c p a nr s rho hsch he₁ he₂ (hxs.trans hys.symm)
+  unfold NaruStd.Set.size at h2
+  omega
+
+/-- **投票の務めの読みの voter view で honest な委員は equivocate しない**(`voteDutyStore_supporterMajority_of_cone_delivery` の前提
+`hno`。手書き `coreVoterViewNoHonestEquivocation`): 読みの store は `stateBeforeTime` の `x` の store の時計を合わせただけで、
+pool の honest な投票は出した投票(`PoolFrom.pool_genuine`)、tree のブロックは bodies の名前付きブロックの消去(`Carrier.StoreInv.named`)で、
+bodies のブロックは genesis(運ぶ投票は空)か処理したブロック(`Attribution.bodies_processed`)なので、その運ぶ honest な投票は出した投票
+(`UnforgeableSignatures` の carried の半分)。前提は `ScheduleWellFormed` と `UnforgeableSignatures`(周回 292)。 -/
+theorem voteDutyStore_no_honest_equivocation (hsch : ScheduleWellFormed s rho)
+    (hunf : UnforgeableSignatures c p a nr s rho) (x : ValidatorId) (k : Nat) :
+    ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      Model.Consensus.Protocol.Schedule.equivocates
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s) v = false := by
+  intro v _ hv
+  have hvc : rho.honest.contains v = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hv
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k)
+  have hinv : Proofs.Consensus.Carrier.StoreInv s.e s.cfg
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st := by
+    unfold stateBeforeTime
+    exact Proofs.Consensus.Carrier.foldl_worldStep_inv c p a nr s _ (Proofs.Consensus.Carrier.worldInit_inv s.e s.cfg) x
+  apply voterView_no_honest_equivocation c p a nr s rho hsch s.e
+  · unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+    exact Proofs.Consensus.CarriedCommittee.stateBeforeTime_pool c p a nr s rho _ x
+  · intro u hu hh
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked at hu
+    have hu' := (Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mp hu
+    rw [heq] at hu'
+    exact Proofs.Consensus.PoolFrom.pool_genuine c p a nr s rho hunf hu' hh
+  · intro b hb u hu hh
+    unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked at hb
+    obtain ⟨D, hD, rfl⟩ := hinv.named b hb
+    rw [Proofs.Consensus.PoolFrom.gfVotes_eraseBlock] at hu
+    rw [heq] at hD
+    rcases Proofs.Consensus.Attribution.bodies_processed c p a nr s rho x _ D hD with rfl | ⟨t, hproc⟩
+    · exact absurd hu (by simp [Model.Consensus.Objects.NamedBlocks.namedGfVotes])
+    · obtain ⟨t2, -, hem⟩ := hunf.2 x _ t hproc _ (Proofs.Consensus.PoolFrom.carries_gfVote hu) u.valIndex ⟨hh, rfl⟩
+      exact ⟨t2, hem⟩
+  · exact hvc
+
+/-- `voteDutyStore_supporterMajority_of_cone_delivery` の前提 `hno` を `voteDutyStore_no_honest_equivocation`(run の前提
+`ScheduleWellFormed` / `UnforgeableSignatures`)で外した形。`hmaj` に残る前提は、honest な委員が支持の voter view に `B` 以下を指す
+slot `st.s - 1` の投票を持つこと(`hvote`。手書き `coneSupport_of_named_votes` の `vote`)だけ(周回 292)。 -/
+theorem voteDutyStore_supporterMajority_of_cone_run (hwf : SetupWellFormed c p s)
+    (hhc : HonestCommittees c rho.honest) (hdw : DeliveryWellFormed c p a nr s rho)
+    (hsch : ScheduleWellFormed s rho) (hunf : UnforgeableSignatures c p a nr s rho)
+    (x : ValidatorId) (k : Nat) {B : Block}
+    (hvote : ∀ v ∈ (c ((voteDutyStoreAt c p a nr s rho x k).s - 1)).elems, v ∈ rho.honest.elems →
+      ∃ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s).elems,
+        u.valIndex = v ∧ u.slot = (voteDutyStoreAt c p a nr s rho x k).s - 1 ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree B u = true) :
+    Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size :=
+  voteDutyStore_supporterMajority_of_cone_delivery c p a nr s rho hwf hhc hdw x k
+    (voteDutyStore_no_honest_equivocation c p a nr s rho hsch hunf x k) hvote
+
 /-- `voteDutyHead_passes_supporter_majority_of_delivery` の前提 `hpath`(anchor から `B` までの途中が歩みの tree にあること)を、
 `B` の子孫で読みの処理済み tree にあり高さが band(`hMax - 1` 以上)のブロック `D` から出した形(手書き
 `coreCandidatePathOfBandDescendant`。`ProcessedAncestor.voterFiltered_mem_of_band`: 処理済み tree は祖先について閉じ
@@ -3939,7 +4099,9 @@ carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 
 読みの voter view の参加者が committee に収まること・honest な委員が equivocate しないこと・honest な委員が支持の voter view に `B` 以下を
 指す投票を持つこと(手書き `corePreparedVoteViewValid` / `coreVoterViewNoHonestEquivocation` / `coneSupport_of_named_votes` の `vote`)に分かれる。
 周回 291 から参加者の committee は `voteDutyStore_participants_committee`(証明済み。`DeliveryWellFormed`)で外れ、
-`voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。 -/
+`voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。
+周回 292 から `hno` も `voteDutyStore_no_honest_equivocation`(証明済み。`ScheduleWellFormed` / `UnforgeableSignatures`)で外れ、
+`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -3984,7 +4146,9 @@ anchor から `C` までの途中が歩みの tree にあること)。周回 279
 読みの voter view の参加者が committee に収まること・honest な委員が equivocate しないこと・honest な委員が支持の voter view に `B` 以下を
 指す投票を持つこと(手書き `corePreparedVoteViewValid` / `coreVoterViewNoHonestEquivocation` / `coneSupport_of_named_votes` の `vote`)に分かれる。
 周回 291 から参加者の committee は `voteDutyStore_participants_committee`(証明済み。`DeliveryWellFormed`)で外れ、
-`voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。 -/
+`voteDutyStore_supporterMajority_of_cone_delivery` の残りの前提は `hno` と `hvote`。
+周回 292 から `hno` も `voteDutyStore_no_honest_equivocation`(証明済み。`ScheduleWellFormed` / `UnforgeableSignatures`)で外れ、
+`voteDutyStore_supporterMajority_of_cone_run` の残りの前提は `hvote` だけ。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
