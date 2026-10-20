@@ -10,6 +10,7 @@ import Proofs.Consensus.SgStamps
 import Proofs.Consensus.SgFrom
 import Proofs.Consensus.SgAdmit
 import Proofs.Consensus.FrameCapture
+import Proofs.Consensus.CarriedSupport
 import Mathlib.Tactic
 
 /-!
@@ -2687,7 +2688,7 @@ theorem voterSupportView_pooled_sub (e : Model.Consensus.Objects.Parameters.Prot
 
 /-- **支持の voter view は投票の voter view に含まれる**(`voteDutyHead_passes_supporter_majority` の前提 `hsub` の形): pooled の部分は
 `voterSupportView_pooled_sub`、carried の部分は store の tree のブロックの運ぶ支持の投票がそのブロックの運ぶ投票に含まれること
-(`hcar`。受理の検査 `carriedSupportWellFormed` からの run の不変条件で、まだ無い)から出る(周回 279)。 -/
+(`hcar`。受理の検査 `carriedSupportWellFormed` からの run の不変条件。周回 280 の `voteDutyStore_tree_carried`)から出る(周回 279)。 -/
 theorem voterSupportView_sub_voterView (e : Model.Consensus.Objects.Parameters.ProtocolEnv)
     (st : Model.Consensus.Protocol.Store.Store) (k : Nat)
     (hcar : ∀ b ∈ st.tree.elems, ∀ u ∈ gfSupportVotes b, u ∈ gfVotes b) :
@@ -2744,6 +2745,45 @@ theorem voteDutyHead_passes_supporter_majority_of_carried (x : ValidatorId) (k :
   voteDutyHead_passes_supporter_majority c p a nr s rho x k
     (voteDutyStore_voterFilteredBlockTree_nodup c p a nr s rho x k)
     (voterSupportView_sub_voterView s.e _ _ hcar) hmaj hAB hpath
+
+/-- 投票の務めの読みの store の tree のブロックの運ぶ支持の投票は運ぶ投票に含まれる(`voteDutyHead_passes_supporter_majority_of_carried`
+の前提 `hcar`)。読みの store は `stateBeforeTime` の `x` の store の時計を合わせただけなので、`CarriedSupport.stateBeforeTime_tree_carried`
+(run の前提 `DeliveryWellFormed` と提案の組み立てからの不変条件)を受け継ぐ(周回 280)。 -/
+theorem voteDutyStore_tree_carried (hdw : DeliveryWellFormed c p a nr s rho) (x : ValidatorId) (k : Nat) :
+    ∀ b ∈ (voteDutyStoreAt c p a nr s rho x k).tree.elems, ∀ u ∈ gfSupportVotes b, u ∈ gfVotes b := by
+  unfold voteDutyStoreAt Proofs.Consensus.Voting.clocked
+  exact Proofs.Consensus.CarriedSupport.stateBeforeTime_tree_carried c p a nr s rho hdw _ x
+
+/-- `voteDutyHead_passes_supporter_majority_of_carried` の前提 `hcar` を `voteDutyStore_tree_carried`(run の前提
+`DeliveryWellFormed`)で外した形。残りの前提は、読みの voter view での `B` の支持者の過半(`hmaj`)、anchor ⪯ `B`(`hAB`)、
+anchor から `B` までの途中が歩みの tree にあること(`hpath`)(周回 280)。 -/
+theorem voteDutyHead_passes_supporter_majority_of_delivery (hdw : DeliveryWellFormed c p a nr s rho)
+    (x : ValidatorId) (k : Nat) {B : Block}
+    (hmaj : Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) <
+      2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)).tree
+        (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x k)))
+          (voteDutyStoreAt c p a nr s rho x k).s)
+        ((voteDutyStoreAt c p a nr s rho x k).s - 1) B).size)
+    (hAB : preceq (voteDutyAnchorAt c p a nr s rho x k) B = true)
+    (hpath : ∀ C, preceq (voteDutyAnchorAt c p a nr s rho x k) C = true → C ≠ voteDutyAnchorAt c p a nr s rho x k →
+      preceq C B = true →
+      C ∈ (Model.Consensus.Protocol.Handlers.voterFilteredBlockTree s.e (voteDutyStoreAt c p a nr s rho x k)
+        (voteDutyStoreAt c p a nr s rho x k).s).elems) :
+    preceq B (voteDutyHeadAt c p a nr s rho x k) = true :=
+  voteDutyHead_passes_supporter_majority_of_carried c p a nr s rho x k
+    (voteDutyStore_tree_carried c p a nr s rho hdw x k) hmaj hAB hpath
 
 /-- **確認の締切は投票時刻ではない**(Δ > 0): `4Δ · k + 2Δ = 4Δ · k' + Δ` なら `1 = 4 · (k' - k)` で、整数では成り立たない
 (`supportCutoff_ne_proposalTime` と同じ運び。周回 277)。 -/
@@ -3003,7 +3043,8 @@ slot `d` で保護された `B` は、すべての honest なノードの slot `
 周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`(証明済み)にあり、残りはその前提: 読みの voter view での
 `B` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、anchor から `B` までの途中が歩みの tree にあること。
 周回 279 から重複なしと包含の pooled の部分は証明済みで、`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は
-carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。 -/
+carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 280 から `hcar` も証明済み(`voteDutyStore_tree_carried`。
+`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。 -/
 theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
@@ -3027,7 +3068,8 @@ theorem protectedVoteSlot_preserve (hwf : SetupWellFormed c p s) (hdom : RunDoma
 `goldfish_fork_choice_captures_supporter_majority`)。周回 278 から歩みの組合せの層は `voteDutyHead_passes_supporter_majority`
 (証明済み)にあり、残りはその前提(読みの voter view での `C` の支持者の過半、`voterSupportView ⊆ voterView`、歩みの tree の重複なし、
 anchor から `C` までの途中が歩みの tree にあること)。周回 279 から重複なしと包含の pooled の部分は証明済みで、
-`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。 -/
+`voteDutyHead_passes_supporter_majority_of_carried` の残りの前提は carried の包含 `hcar`・過半 `hmaj`・`hAB`(= `hbelow`)・`hpath`。周回 280 から `hcar` も証明済み(`voteDutyStore_tree_carried`。
+`hdw` は `hsleep` の `ExecutionValid` から)で、`voteDutyHead_passes_supporter_majority_of_delivery` の残りの前提は `hmaj`・`hAB`・`hpath`。 -/
 theorem protectedVoteSlot_succ_of_genuineConf (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
