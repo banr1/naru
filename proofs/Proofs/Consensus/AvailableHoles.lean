@@ -15,6 +15,7 @@ import Proofs.Consensus.ProcessedAncestor
 import Proofs.Consensus.EntryHeight
 import Proofs.Consensus.MaxCarrier
 import Proofs.Consensus.MaxCrossing
+import Proofs.Consensus.HeightRowWitness
 import Mathlib.Tactic
 
 /-!
@@ -3125,6 +3126,44 @@ theorem voteDutyStore_maxCrossing_honestEmission (hwf : SetupWellFormed c p s) (
     (Proofs.Consensus.JustificationCertificate.sorted_validators hwf) hsleep hlag le_rfl (by rw [sub_self]; exact hhor0)
   exact Proofs.Consensus.MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt c p a nr s rho hs hqh hcar x
     (Model.Consensus.Protocol.Schedule.voteTime s.e k) hlarge
+
+/-- **投票の務めの読みの最大の高さの frontier の確認の証人**: `x` の slot `k` の読みの `hMax` が 1 より大きければ、honest な
+署名者 `u` が slot `k` の投票の時刻より前の時刻 `t2` に高さ `hMax - 1` の行を出していて、その tick(添字 `i`)の務めの store
+`dutyStoreAt u i t2` の bodies に、消去が務めの FG source の `D`(導出の高さ `hMax - 1`)と `D` の祖先 `K`(消去は `D` の導出の
+`tH`、導出の高さ `hMax - 1`、導出の `tH` は `K` の消去)があり、務めの確認の証人は `K` の消去。`K` の根は横断の `X` の根で、
+`X` は読みの bodies の `W`(導出の高さ `hMax`)の消去の祖先。`voteDutyStore_maxCrossing_honestEmission` の行に
+`HeightRowWitness.emits_vote_confirmationWitness`(手書き `coreHonestHeightRowConfirmationWitness`)を掛けたもので、手書き
+`coreFrontierConfirmationWitness` の `RunBlock K` を除く形に当たる(周回 287)。 -/
+theorem voteDutyStore_frontierConfirmationWitness (hwf : SetupWellFormed c p s)
+    (hsleep : SleepyRegime c p a nr s rho 0) (x : ValidatorId) (k : Nat)
+    (hlarge : 1 < (voteDutyStoreAt c p a nr s rho x k).hMax) :
+    ∃ W X row t2 i D K,
+      W ∈ (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st.bodies.elems ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg W).h = (voteDutyStoreAt c p a nr s rho x k).hMax ∧
+      preceq X (Model.Consensus.Objects.NamedBlocks.eraseBlock W) = true ∧
+      row.valIndex ∈ rho.honest.elems ∧
+      Statements.Consensus.Spec.Execution.Emits c p a nr s rho row.valIndex
+        (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2 ∧
+      t2 < Model.Consensus.Protocol.Schedule.voteTime s.e k ∧
+      rho.events[i]? = some (Model.Consensus.Execution.Run.NamedEvent.Tick row.valIndex t2) ∧
+      Proofs.Consensus.RootWitness.fgConfirmationWitnessAt c p a nr s rho row.valIndex i t2 =
+        some (Model.Consensus.Objects.NamedBlocks.eraseBlock K) ∧
+      D ∈ (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho row.valIndex i t2).bodies.elems ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg D).h = (voteDutyStoreAt c p a nr s rho x k).hMax - 1 ∧
+      K ∈ (Proofs.Consensus.RootWitness.dutyStoreAt c p a nr s rho row.valIndex i t2).bodies.elems ∧
+      Model.Consensus.Objects.NamedBlocks.eraseBlock K = (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg D).tH ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg K).h = (voteDutyStoreAt c p a nr s rho x k).hMax - 1 ∧
+      (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg K).tH =
+        Model.Consensus.Objects.NamedBlocks.eraseBlock K ∧
+      Model.Consensus.Objects.NamedBlocks.namedPreceq K D = true ∧
+      Model.Consensus.Objects.Blocks.root (Model.Consensus.Objects.NamedBlocks.eraseBlock K) =
+        Model.Consensus.Objects.Blocks.root X := by
+  obtain ⟨W, X, -, row, -, t2, hW, hWh, hX, -, -, hH, hmatch, -, -, -, ht2, hem⟩ :=
+    voteDutyStore_maxCrossing_honestEmission c p a nr s rho hwf hsleep x k hlarge
+  obtain ⟨nu, hv⟩ := Proofs.Consensus.RootEntry.matchesEntry_vote hmatch
+  obtain ⟨i, D, K, hev, hfg, hD, -, hDh, hK, hKe, hKh, hKt, hKD, hKr⟩ :=
+    Proofs.Consensus.HeightRowWitness.emits_vote_confirmationWitness c p a nr s rho hem hv
+  exact ⟨W, X, row, t2, i, D, K, hW, hWh, hX, hH, hem, ht2, hev, hfg, hD, hDh, hK, hKe, hKh, hKt, hKD, hKr⟩
 
 /-- **投票の務めの読みの `sigma` の高さは祖先で単調**: `x`(honest)の slot `k` の読みの tree の 2 つのブロック `A ⪯ B` について、
 `sigma` での `A` の高さは `B` の高さ以下。どちらも読みの bodies の名前付きブロックの導出の高さ(`voteDutyStore_sigma_named`)で、
