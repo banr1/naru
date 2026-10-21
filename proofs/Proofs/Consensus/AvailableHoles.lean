@@ -20,6 +20,7 @@ import Proofs.Consensus.HeightRowWitness
 import Proofs.Consensus.Settled
 import Proofs.Consensus.PoolSlot
 import Proofs.Consensus.StampExact
+import Proofs.Consensus.BodiesUnique
 import Mathlib.Tactic
 
 /-!
@@ -125,19 +126,20 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(8 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
-   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposedBlockAt_isSome_genesis`(手書き `proposedBlockAt_isSome`。
-   slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
+4. 穴(7 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
+   祖先の側。等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
-   `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
-   祖先の側。等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した)/ `genuineConf_proposal_genesis`(手書き
+   `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/ `genuineConf_proposal_genesis`(手書き
    `genuineConfirmation_of_dutyExecution`)/ `confHeadExtendsStable_genesis`(手書き `honestHeadExtendsStableFrom_zero_of_weakGenesis`)/
    `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
+   提案のブロックの存在(周回 306 に穴 `proposedBlockAt_isSome_genesis` として置いた)は周回 312 に前提なしの `proposedBlockAt_isSome` に
+   した(bodies の消去の単射性 `BodiesUnique.lean`)。
 
 手書きは `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
 `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致と確認の包含の穴はすでに枝ごとに分けた(`commonUpper_genesis` /
-GST-zero の枝の 4 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
+GST-zero の枝の 3 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
 (`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)をそのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく
 `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
@@ -7115,16 +7117,25 @@ theorem confRead_eq_update (hsch : ScheduleWellFormed s rho) (hnd : rho.events.N
   rfl
 
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、slot `k` の提案のブロックがある。
-手書き `proposedBlockAt_isSome`(`DecoupledConsensusProofs/Protocol/ChainState/ProposalBridge.lean`)に当たる(手書きは前提なし)。
-閉じるのに要るもの: 提案者の読みの head が bodies の名前付きブロックの消去で一意に引けること(手書き `runtime_proposal_some` の
-`NamedStoreRoots.Invariant`。naru の `parentBody?` は `findUnique?` なので、bodies の消去の重複の無さ。run の root の衝突の無さから)。 -/
-theorem proposedBlockAt_isSome_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
-    (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
-    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
-    (hhon : rho.honest.contains (p k) = true) :
+/-- **slot `k` の提案のブロックがある**(前提なし): 提案者の読みは提案の時刻の読みの時計を合わせたもので、その store は
+`StoreInv` / `TreeInv` / `UniqueBodies` を満たす(時計合わせは tree / bodies を変えない)ので、`BodiesUnique.proposalWith_isSome`。
+手書き `proposedBlockAt_isSome`(`DecoupledConsensusProofs/Protocol/ChainState/ProposalBridge.lean`。手書きも前提なし)に当たる。
+周回 306 に GST-zero の枝の穴 `proposedBlockAt_isSome_genesis` として置き、周回 312 に bodies の消去の単射性(run の不変条件)で閉じた。 -/
+theorem proposedBlockAt_isSome (k : Nat) :
     ∃ B : Model.Consensus.Objects.NamedBlocks.NamedBlock, proposedBlockAt c p a nr s rho k = some B := by
-  sorry
+  have hinv : Proofs.Consensus.Carrier.StoreInv s.e s.cfg
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.proposalTime s.e k)) (p k)).st := by
+    unfold stateBeforeTime
+    exact Proofs.Consensus.Carrier.foldl_worldStep_inv c p a nr s _ (Proofs.Consensus.Carrier.worldInit_inv s.e s.cfg) _
+  have hti := Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e k) (p k)
+  have hu := Proofs.Consensus.BodiesUnique.stateBeforeTime_bodiesUnique c p a nr s rho
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e k) (p k)
+  unfold proposedBlockAt proposerReadAt confirmationReadAt confirmationReadFrom
+    Model.Consensus.Protocol.Handlers.setClock
+  dsimp only
+  exact Proofs.Consensus.BodiesUnique.proposalWith_isSome (hinv.congr rfl ⟨rfl, rfl, rfl⟩)
+    (hti.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩) hu
 
 /-- **tree の真の子孫は slot が大きい**: bodies は名前付きの親について閉じ(`Carrier.StoreInv.closed`)、tree のブロックは bodies の消去
 (`StoreInv.named`)で親の消去は消去の親(`NamedBlocks.parent_eraseBlock`)なので tree は親について閉じる。genesis でない tree のブロックの
@@ -7760,7 +7771,7 @@ theorem confTick_slot_lt (hsch : ScheduleWellFormed s rho) (hnd : rho.events.Nod
 (slot `< k`。`confTick_slot_lt`)の walk か stable root なので、slot `k` の投票の務めの head(穴 `voteDutyHead_proposal_genesis` で提案)の
 祖先(`confWalk_preceq_laterVoteHead` / `confStableRoot_preceq_confWalk`)で、元の記録を提案に進めると提案(手書き
 `advance_confirmed_eq_of_read_slot_le` の slot の議論の代わりに祖先の反対称)。更新の後の記録は `updateConfirmation_latest_eq_of_genuine`。
-提案のブロックの存在は穴 `proposedBlockAt_isSome_genesis`。 -/
+提案のブロックの存在は `proposedBlockAt_isSome`(周回 312)。 -/
 theorem latestAtProposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
@@ -7769,7 +7780,7 @@ theorem latestAtProposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain
       ∀ v, rho.honest.contains v = true →
         (storeAt c p a nr s rho v (Model.Consensus.Protocol.Schedule.confirmationTime s.e k)).core.latestConfirmed =
           Model.Consensus.Objects.NamedBlocks.eraseBlock B := by
-  obtain ⟨B, hB⟩ := proposedBlockAt_isSome_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon
+  obtain ⟨B, hB⟩ := proposedBlockAt_isSome c p a nr s rho k
   refine ⟨B, hB, ?_⟩
   intro v hv
   have hsch : ScheduleWellFormed s rho := by
