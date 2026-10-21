@@ -550,8 +550,11 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 確認評価の tick で、読みの記録はその tick の確認の更新の結果(`confRead_eq_update`)。walk が提案で eligible なこと(穴 `genuineConf_proposal_genesis`。
 手書き `genuineConfirmation_of_dutyExecution` を `canonicalProposalDuty_positive_of_gstZero_named` の務めに当てたもの)、stable の書き込みが
 元の記録を walk に進めたものの祖先であること(穴 `confHeadExtendsStable_genesis`)、元の記録が slot `k` の投票の務めの head の祖先で、その head が
-提案であること(穴 `voteDutyHead_proposal_genesis`。元の記録の側は証明済みの `confWalk_preceq_laterVoteHead`)、提案のブロックがあること
+提案であること(`voteDutyHead_proposal_genesis`。周回 306 に穴として置いた。元の記録の側は証明済みの `confWalk_preceq_laterVoteHead`)、提案のブロックがあること
 (穴 `proposedBlockAt_isSome_genesis`)の 4 つの穴に分けました。
+周回 307 に `voteDutyHead_proposal_genesis` の等号を祖先の側に弱めました: 投票の務めの head は投票時刻の読みの tree のブロックで slot が `k` 以下、
+tree は親について閉じて(bodies の親閉包)親の slot は小さいので、tree の真の子孫は slot が大きく(`tree_slot_lt_of_preceq`)、slot `k` の提案が
+head の祖先なら head そのもの(`voteDutyHead_eq_of_preceq`)。残りは提案が head の祖先であること(穴 `proposal_preceq_voteDutyHead_genesis`)です。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -570,7 +573,7 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.proposedBlockAt_isSome_genesis` | `Consensus.Spec.Claims.available` | `proposedBlockAt_isSome` | `DecoupledConsensusProofs/Protocol/ChainState/ProposalBridge.lean` | 306 |
-| `Proofs.Consensus.AvailableHoles.voteDutyHead_proposal_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_positive_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesisVoteStoresPositiveClosed.lean` | 306 |
+| `Proofs.Consensus.AvailableHoles.proposal_preceq_voteDutyHead_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_positive_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesisVoteStoresPositiveClosed.lean` | 307 |
 | `Proofs.Consensus.AvailableHoles.genuineConf_proposal_genesis` | `Consensus.Spec.Claims.available` | `genuineConfirmation_of_dutyExecution` | `DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean` | 306 |
 | `Proofs.Consensus.AvailableHoles.confHeadExtendsStable_genesis` | `Consensus.Spec.Claims.available` | `honestHeadExtendsStableFrom_zero_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 306 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |

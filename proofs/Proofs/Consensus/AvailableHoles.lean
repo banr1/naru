@@ -127,7 +127,8 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
 4. 穴(8 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposedBlockAt_isSome_genesis`(手書き `proposedBlockAt_isSome`)/
-   `voteDutyHead_proposal_genesis`(手書き `honestVoteStoresExtend_positive_of_gstZero`)/ `genuineConf_proposal_genesis`(手書き
+   `proposal_preceq_voteDutyHead_genesis`(手書き `honestVoteStoresExtend_positive_of_gstZero` の祖先の側。等号は周回 307 に
+   `voteDutyHead_eq_of_preceq` で出した)/ `genuineConf_proposal_genesis`(手書き
    `genuineConfirmation_of_dutyExecution`)/ `confHeadExtendsStable_genesis`(手書き `honestHeadExtendsStableFrom_zero_of_weakGenesis`)/
    `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
 
@@ -7123,19 +7124,98 @@ theorem proposedBlockAt_isSome_genesis (hwf : SetupWellFormed c p s) (hdom : Run
     ∃ B : Model.Consensus.Objects.NamedBlocks.NamedBlock, proposedBlockAt c p a nr s rho k = some B := by
   sorry
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest などのノードの slot `k` の
-投票の務めの head は提案のブロックの消去。手書き `honestVoteStoresExtend_positive_of_gstZero`
-(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesisVoteStoresPositiveClosed.lean`。`NamedVoteStoreExtends` の walk が提案に届く)に当たる。
+/-- **tree の真の子孫は slot が大きい**: bodies は名前付きの親について閉じ(`Carrier.StoreInv.closed`)、tree のブロックは bodies の消去
+(`StoreInv.named`)で親の消去は消去の親(`NamedBlocks.parent_eraseBlock`)なので tree は親について閉じる。genesis でない tree のブロックの
+親の slot はブロックの slot より小さい(`ParentSlot.ParentInv`)ので、tree のブロック `Y` の `Y` でない祖先の slot は `Y` の slot より小さい
+(`Y` の構造帰納法。周回 307)。 -/
+theorem tree_slot_lt_of_preceq {e : Model.Consensus.Objects.Parameters.ProtocolEnv}
+    {cfg : Model.Consensus.Protocol.ChainState.HeightConfig} {st : Model.Consensus.Protocol.Handlers.NamedStore} (hinv : Proofs.Consensus.Carrier.StoreInv e cfg st)
+    (hpar : Proofs.Consensus.ParentSlot.ParentInv st.core) :
+    ∀ {Y A : Block}, Y ∈ st.core.tree.elems → preceq A Y = true → A ≠ Y → slot A < slot Y := by
+  intro Y
+  induction Y with
+  | Genesis =>
+    intro A _ hA hne
+    simp only [preceq, beq_iff_eq] at hA
+    exact absurd hA hne
+  | Node P sl r v sup ats i ih =>
+    intro A hY hA hne
+    simp only [preceq, Bool.or_eq_true, beq_iff_eq] at hA
+    rcases hA with hA | hA
+    · exact absurd hA hne
+    · have hPmem : P ∈ st.core.tree.elems := by
+        obtain ⟨D, hD, hDe⟩ := hinv.named _ hY
+        have h := hinv.tree _ (hinv.closed D hD)
+        rw [← Proofs.Consensus.NamedBlocks.parent_eraseBlock, hDe] at h
+        exact h
+      have hlt : slot P < slot (Block.Node P sl r v sup ats i) :=
+        hpar _ hY (by intro h; cases h)
+      by_cases hAP : A = P
+      · subst hAP
+        exact hlt
+      · exact (ih hPmem hA hAP).trans hlt
+
+/-- **slot `k` の投票の務めの head の祖先で slot が `k` なら head そのもの**: head は投票時刻の読みの tree のブロック(`voteHeadBlock_mem_tree`)で
+bodies の消去なので slot は `k` 以下(`voteTimeBodies_slot_le`)、tree の真の子孫は slot が大きい(`tree_slot_lt_of_preceq`)。手書き
+`NamedVoteStoreExtends` の `head` を祖先の側だけから出す(周回 307)。 -/
+theorem voteDutyHead_eq_of_preceq (hs : EventsSorted rho) (hnn : ∀ ev, ev ∈ rho.events → 0 ≤ eventTime ev)
+    (hδ : 0 < s.e.delta) (x : ValidatorId) (k : Nat) {P : Block} (hslot : slot P = k)
+    (hP : preceq P (voteDutyHeadAt c p a nr s rho x k) = true) :
+    voteDutyHeadAt c p a nr s rho x k = P := by
+  have hw := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.voteTime s.e k)
+  have hinv := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho
+    (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k))) x
+  have hti := Proofs.Consensus.Trees.stateBefore_treeInv c p a nr s rho
+    (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x
+  have hpar := Proofs.Consensus.ParentSlot.stateBefore_parentInv c p a nr s rho
+    (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x
+  rw [← hw] at hinv hti hpar
+  have hmem : voteDutyHeadAt c p a nr s rho x k ∈
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e k)) x).st.core.tree.elems :=
+    voteHeadBlock_mem_tree _ s.e s.hc (hti.congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+  obtain ⟨X, hX, hXe⟩ := hinv.named _ hmem
+  have hle : slot (voteDutyHeadAt c p a nr s rho x k) ≤ k := by
+    rw [← hXe]
+    exact voteTimeBodies_slot_le c p a nr s rho hs hnn hδ x k hX
+  by_contra hne
+  have := tree_slot_lt_of_preceq hinv hpar hmem hP (Ne.symm hne)
+  omega
+
+/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、提案のブロックの消去は honest な
+ノードの slot `k` の投票の務めの head の祖先(手書きの `ProtectedVoteSlot k` の `heads` を提案に当てたもの)。手書き
+`honestVoteStoresExtend_positive_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/WeakGenesisVoteStoresPositiveClosed.lean`。
+`NamedVoteStoreExtends` の `head`)の祖先の側に当たる(等号の側は `voteDutyHead_eq_of_preceq`)。
 閉じるのに要るもの: 提案が投票時刻までに各ノードの tree に入ること(`ProposerRoot.partialSynchrony_emitted_block_mem_of_fgRoot`)と、
 投票の walk が提案に降りること(`Goldfish.ghost_reaches`。手書きの slot の帰納 `honestVoteStoresExtend_succ_of_gstZero` /
-`honestVoteStoresExtend_one_of_gstZero_named`)。 -/
+`honestVoteStoresExtend_one_of_gstZero_named`。前者は pivot `PreparedProtectedProposalPivot` と凍結した suffix の帯の写し)。 -/
+theorem proposal_preceq_voteDutyHead_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
+    (hhon : rho.honest.contains (p k) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho k = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
+    preceq (Model.Consensus.Objects.NamedBlocks.eraseBlock B) (voteDutyHeadAt c p a nr s rho x k) = true := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノードの slot `k` の
+投票の務めの head は提案のブロックの消去。手書き `honestVoteStoresExtend_positive_of_gstZero`(`NamedVoteStoreExtends` の `head`)に当たる。
+周回 306 に穴として置き、周回 307 に祖先の側(穴 `proposal_preceq_voteDutyHead_genesis`)と、提案の slot が `k`
+(`NoFutureRead.proposedBlockAt_slot`)なので祖先なら head そのもの(`voteDutyHead_eq_of_preceq`)に分けた。 -/
 theorem voteDutyHead_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
     (hhon : rho.honest.contains (p k) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
     (hB : proposedBlockAt c p a nr s rho k = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
     voteDutyHeadAt c p a nr s rho x k = Model.Consensus.Objects.NamedBlocks.eraseBlock B := by
-  sorry
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hsch : ScheduleWellFormed s rho := by
+    have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+    unfold ExecutionValid at hexec
+    exact hexec.1.1.1
+  exact voteDutyHead_eq_of_preceq c p a nr s rho (Proofs.Consensus.Window.eventsSorted_of_schedule hsch)
+    (fun ev hev => (Proofs.Consensus.Window.eventTime_bounds hsch hev).1) hδ x k
+    (Proofs.Consensus.NoFutureRead.proposedBlockAt_slot c p a nr s rho hδ hB).2
+    (proposal_preceq_voteDutyHead_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hx)
 
 /-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノードの slot `k` の確認評価の
 tick の確認は提案のブロックの消去の genuine な確認(walk が提案で eligible)。手書き `genuineConfirmation_of_dutyExecution`
