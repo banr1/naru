@@ -543,14 +543,20 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 周回 304 で GST-zero の枝の一致の側(`commonUpper_genesis` から下)は sorry に依存しなくなりました(`#print axioms` で確かめた)。
 確認の出力への包含 `confirmedIncluded` は周回 305 に `RecoveredBy` の 2 枝に分けました: GST-zero の枝 `confirmedIncluded_genesis`(穴ではない)は、
 `IncludedFrom` の期限の時刻 `proposalTime e k + confirmationDelay` が確認の時刻 `confirmationTime e k` そのものなので、その読みの確認の記録が
-提案の消去に等しいこと(穴 `latestAtProposal_genesis`。手書き `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から
+提案の消去に等しいこと(`latestAtProposal_genesis`。手書き `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から
 `preceq_getConfirmed_of_latest` で出します(手書き `userProposalsConfirmedAfter_of_weakGenesis_named` の筋。手書きは確認の時刻より後の読みにも
 単調性で広げますが、naru の `IncludedFrom` は期限の時刻の 1 点なので要りません)。回復の枝は穴 `confirmedIncluded_recovered` です。
+`latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組みました: 確認の時刻の honest なノードの tick は
+確認評価の tick で、読みの記録はその tick の確認の更新の結果(`confRead_eq_update`)。walk が提案で eligible なこと(穴 `genuineConf_proposal_genesis`。
+手書き `genuineConfirmation_of_dutyExecution` を `canonicalProposalDuty_positive_of_gstZero_named` の務めに当てたもの)、stable の書き込みが
+元の記録を walk に進めたものの祖先であること(穴 `confHeadExtendsStable_genesis`)、元の記録が slot `k` の投票の務めの head の祖先で、その head が
+提案であること(穴 `voteDutyHead_proposal_genesis`。元の記録の側は証明済みの `confWalk_preceq_laterVoteHead`)、提案のブロックがあること
+(穴 `proposedBlockAt_isSome_genesis`)の 4 つの穴に分けました。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
 `stableIncludedFast`(周回 212)は入口 `StableIncludedFastHoles.lean` の `stableIncludedFastAt` が `FreshSleepyRegime` を `SleepyRegime` と新鮮な過半に分け、
-確認の出力への包含を `available` の `confirmedIncluded`(周回 305 から穴ではなく、2 枝の穴 `latestAtProposal_genesis` / `confirmedIncluded_recovered` に依る)から取り(手書き `available_stableIncluded_fresh` と同じ依存)、`t0 = 0` か否かで stable の書き込みの
+確認の出力への包含を `available` の `confirmedIncluded`(周回 305 から穴ではなく、GST-zero の枝は周回 306 に `latestAtProposal_genesis` から分けた 4 つの穴、回復の枝は穴 `confirmedIncluded_recovered` に依る)から取り(手書き `available_stableIncluded_fresh` と同じ依存)、`t0 = 0` か否かで stable の書き込みの
 穴 `stableWriteFresh_genesis` / `stableWriteFresh_recovered` に渡します。`finalized`(周回 212)は入口 `FinalizedHoles.lean` の `finalizedAt` が包含を穴 `finalizedIncluded` から取り、活性を
 証明済みの `finalizedLive_of_included` で包含から出します。`stableAsynchronyResilient`(周回 212)は入口 `PersistsHoles.lean` の `persistsFrom` が
 `PersistsFrom` の量化を開いてブロック・時刻ごとの穴 `stableInBy` に渡します。bundle `Consensus`(周回 212)は 13 件の theorem を項目に置き、固有の穴を持ちません。
@@ -563,7 +569,10 @@ G1 の domain 時刻の tick の凍結の切り詰め。手書き `frame_phase_c
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
-| `Proofs.Consensus.AvailableHoles.latestAtProposal_genesis` | `Consensus.Spec.Claims.available` | `latestAtProposalField_of_weakGenesis` | `DecoupledConsensusProofs/Execution/WeakGenesisLatestAtProposalClosed.lean` | 305 |
+| `Proofs.Consensus.AvailableHoles.proposedBlockAt_isSome_genesis` | `Consensus.Spec.Claims.available` | `proposedBlockAt_isSome` | `DecoupledConsensusProofs/Protocol/ChainState/ProposalBridge.lean` | 306 |
+| `Proofs.Consensus.AvailableHoles.voteDutyHead_proposal_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_positive_of_gstZero` | `DecoupledConsensusProofs/Protocol/Grades/WeakGenesisVoteStoresPositiveClosed.lean` | 306 |
+| `Proofs.Consensus.AvailableHoles.genuineConf_proposal_genesis` | `Consensus.Spec.Claims.available` | `genuineConfirmation_of_dutyExecution` | `DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean` | 306 |
+| `Proofs.Consensus.AvailableHoles.confHeadExtendsStable_genesis` | `Consensus.Spec.Claims.available` | `honestHeadExtendsStableFrom_zero_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 306 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
