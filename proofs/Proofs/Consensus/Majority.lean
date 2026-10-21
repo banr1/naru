@@ -1010,6 +1010,263 @@ theorem goldfishForkChoice_passes_supporter_majority (e : ProtocolEnv)
   exact ghost_passes_supporter_majority e hnd hsub hmaj
     (fun C _ h => goldfishEligible_of_lt e sigma hMax tree cur votes sv s h) hAB hpath
 
+/-! ## 同点を許す一歩の選択と、別の読みの walk からの一歩の写し(周回 326) -/
+
+/-- 自分自身には勝たない(`outranks` は非反射)。 -/
+theorem outranks_self (score : Block → Nat) (b : Block) : outranks score b b = false := by
+  unfold outranks
+  simp [bid_compare]
+
+/-- 互いに勝たない 2 ブロックの root は等しい(得点が等しく、root の比較がどちらの向きにも `lt` でない)。 -/
+theorem root_eq_of_not_outranks {score : Block → Nat} {b c : Block}
+    (h1 : outranks score b c = false) (h2 : outranks score c b = false) : root b = root c := by
+  unfold outranks at h1 h2
+  simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne,
+    bid_compare] at h1 h2
+  obtain ⟨h1a, h1b⟩ := h1
+  obtain ⟨h2a, h2b⟩ := h2
+  have hsc : score c = score b := by omega
+  have hc1 : compare (root c).value (root b).value ≠ .lt := by
+    rcases h1b with h | h
+    · exact absurd hsc h
+    · exact h
+  have hc2 : compare (root b).value (root c).value ≠ .lt := by
+    rcases h2b with h | h
+    · exact absurd hsc.symm h
+    · exact h
+  rw [Ne, Nat.compare_eq_lt] at hc1 hc2
+  cases hb : root b with
+  | mk x =>
+    cases hc : root c with
+    | mk y =>
+      rw [hb, hc] at hc1 hc2
+      simp only at hc1 hc2
+      congr 1
+      omega
+
+/-- `outranks` は推移的(得点の大小と、等しいときの root の大小の辞書式)。 -/
+theorem outranks_trans {score : Block → Nat} {a b c : Block}
+    (hab : outranks score a b = true) (hbc : outranks score b c = true) : outranks score a c = true := by
+  unfold outranks at hab hbc ⊢
+  simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq, bid_compare,
+    Nat.compare_eq_lt] at hab hbc ⊢
+  omega
+
+/-- 空でないリストには、どの要素にも負けない要素がある。 -/
+theorem exists_unbeaten (score : Block → Nat) :
+    ∀ l : List Block, l ≠ [] → ∃ b ∈ l, ∀ c ∈ l, outranks score c b = false
+  | [], h => absurd rfl h
+  | [x], _ => ⟨x, List.mem_singleton_self x, fun c hc => by
+      rw [List.mem_singleton] at hc
+      subst hc
+      exact outranks_self score c⟩
+  | x :: y :: l, _ => by
+    obtain ⟨b, hb, hbest⟩ := exists_unbeaten score (y :: l) (List.cons_ne_nil y l)
+    cases hxb : outranks score x b with
+    | false =>
+      refine ⟨b, List.mem_cons_of_mem x hb, fun c hc => ?_⟩
+      rcases List.mem_cons.mp hc with rfl | hc
+      · exact hxb
+      · exact hbest c hc
+    | true =>
+      refine ⟨x, List.mem_cons_self .., fun c hc => ?_⟩
+      rcases List.mem_cons.mp hc with rfl | hc
+      · exact outranks_self score c
+      · cases hcx : outranks score c x with
+        | false => rfl
+        | true =>
+          have := outranks_trans hcx hxb
+          rw [hbest c hc] at this
+          exact absurd this Bool.false_ne_true
+
+/-- **負けない子は一歩で選ばれる**: 重複がなく root が要素を決める tree で、`c` が適格な子で、どの適格な子にも負けなければ、
+`ghostStep` は `c` を返す(負けない子が 2 つあれば root が等しいので同じブロック)。`ghostStep_eq_of_dominates` の同点を許す形(周回 326)。 -/
+theorem ghostStep_eq_of_unbeaten {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {h c : Block}
+    (hnd : tree.elems.Nodup) (hinj : ∀ x ∈ tree.elems, ∀ y ∈ tree.elems, root x = root y → x = y)
+    (hc : c ∈ (ghostChildren tree el h).elems)
+    (hbest : ∀ d ∈ (ghostChildren tree el h).elems, outranks score d c = false) :
+    ghostStep tree score el h = some c := by
+  have hcb : isBestIn score (ghostChildren tree el h) c = true := by
+    unfold isBestIn NaruStd.Set.all
+    rw [List.all_eq_true]
+    intro d hd
+    rw [hbest d hd]
+    rfl
+  have huniq : ∀ d ∈ (ghostChildren tree el h).elems, isBestIn score (ghostChildren tree el h) d = true → d = c := by
+    intro d hd hdb
+    unfold isBestIn NaruStd.Set.all at hdb
+    rw [List.all_eq_true] at hdb
+    have h2 : outranks score c d = false := by
+      have := hdb c hc
+      simpa using this
+    have hr := root_eq_of_not_outranks h2 (hbest d hd)
+    exact hinj d ((Goldfish.mem_ghostChildren_iff _ _ _ _).mp hd).1 c
+      ((Goldfish.mem_ghostChildren_iff _ _ _ _).mp hc).1 hr.symm
+  have hnd' : (ghostChildren tree el h).elems.Nodup := by
+    unfold ghostChildren NaruStd.Set.filter
+    exact hnd.filter _
+  have hfilter : (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)) = [c] := by
+    have hfnd := hnd'.filter (isBestIn score (ghostChildren tree el h))
+    have hcm : c ∈ (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)) :=
+      List.mem_filter.mpr ⟨hc, hcb⟩
+    have hall : ∀ x ∈ (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)), x = c := by
+      intro x hx
+      obtain ⟨hx, hb⟩ := List.mem_filter.mp hx
+      exact huniq x hx hb
+    have hlen := length_le_one_of_nodup hfnd (fun a ha b hb => (hall a ha).trans (hall b hb).symm)
+    match hl : (ghostChildren tree el h).elems.filter (isBestIn score (ghostChildren tree el h)), hlen, hcm with
+    | [], _, hcm => simp at hcm
+    | [x], _, hcm =>
+      rw [List.mem_singleton] at hcm
+      rw [hcm]
+  unfold ghostStep argmax? NaruStd.Set.findUnique?
+  rw [hfilter]
+
+/-- 重複がなく root が要素を決める tree で適格な子があれば、一歩は進む。 -/
+theorem ghostStep_isSome {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {h c : Block}
+    (hnd : tree.elems.Nodup) (hinj : ∀ x ∈ tree.elems, ∀ y ∈ tree.elems, root x = root y → x = y)
+    (hc : c ∈ (ghostChildren tree el h).elems) :
+    ∃ c', ghostStep tree score el h = some c' := by
+  have hne : (ghostChildren tree el h).elems ≠ [] := by
+    intro h0
+    rw [h0] at hc
+    simp at hc
+  obtain ⟨b, hb, hbest⟩ := exists_unbeaten score _ hne
+  exact ⟨b, ghostStep_eq_of_unbeaten hnd hinj hb hbest⟩
+
+/-- **一歩の写し**: 写し元の walk の `X` からの一歩が `C` で、`C` が写し先の tree にあって写し先で適格、写し先の `X` の適格な子
+(`C` 以外)はどれも写し元の tree にあって写し元で適格、写し先の `X` の適格な子の得点が写し元と等しければ、写し先の一歩も `C`
+(写し先の tree は重複がなく root が要素を決める)。手書き `ghost_transport_of_source` の一歩の部分(周回 326)。 -/
+theorem ghostStep_transport {srcTree tgtTree : NaruStd.Set Block} {srcScore tgtScore : Block → Nat}
+    {srcEl tgtEl : Block → Bool} {X C : Block}
+    (hnd : tgtTree.elems.Nodup) (hinj : ∀ x ∈ tgtTree.elems, ∀ y ∈ tgtTree.elems, root x = root y → x = y)
+    (hsrc : ghostStep srcTree srcScore srcEl X = some C)
+    (hC : C ∈ tgtTree.elems) (hCel : tgtEl C = true)
+    (hreflect : ∀ D ∈ tgtTree.elems, parent? D = some X → tgtEl D = true → D ≠ C →
+      D ∈ srcTree.elems ∧ srcEl D = true)
+    (hscore : ∀ D ∈ tgtTree.elems, parent? D = some X → tgtEl D = true → D ∈ srcTree.elems →
+      tgtScore D = srcScore D) :
+    ghostStep tgtTree tgtScore tgtEl X = some C := by
+  obtain ⟨hCs, hCpar, hCsel, hCbest⟩ := Goldfish.ghostStep_child hsrc
+  have hsrcbest : ∀ D ∈ (ghostChildren srcTree srcEl X).elems, outranks srcScore D C = false := by
+    unfold isBestIn NaruStd.Set.all at hCbest
+    rw [List.all_eq_true] at hCbest
+    intro D hD
+    simpa using hCbest D hD
+  apply ghostStep_eq_of_unbeaten hnd hinj ((Goldfish.mem_ghostChildren_iff _ _ _ _).mpr ⟨hC, hCpar, hCel⟩)
+  intro D hD
+  obtain ⟨hDt, hDpar, hDel⟩ := (Goldfish.mem_ghostChildren_iff _ _ _ _).mp hD
+  by_cases hDC : D = C
+  · subst hDC
+    exact outranks_self _ _
+  obtain ⟨hDs, hDsel⟩ := hreflect D hDt hDpar hDel hDC
+  have h1 := hsrcbest D ((Goldfish.mem_ghostChildren_iff _ _ _ _).mpr ⟨hDs, hDpar, hDsel⟩)
+  have hsD := hscore D hDt hDpar hDel hDs
+  have hsC := hscore C hC hCpar hCel hCs
+  unfold outranks at h1 ⊢
+  rw [hsD, hsC]
+  exact h1
+
+/-- 燃料つきの歩みの途中のブロック `X`(結果でない)からの一歩は、結果の祖先へ進む。 -/
+theorem ghostWalk_step_toward (tree : NaruStd.Set Block) (score : Block → Nat) (el : Block → Bool) :
+    ∀ (fuel : Nat) (h X : Block), preceq h X = true → preceq X (ghostWalk tree score el fuel h) = true →
+      X ≠ ghostWalk tree score el fuel h →
+      ∃ C, ghostStep tree score el X = some C ∧ preceq C (ghostWalk tree score el fuel h) = true
+  | 0, h, X, hhX, hXR, hne => by
+    exfalso
+    have hR : ghostWalk tree score el 0 h = h := by
+      rw [ghostWalk]
+      split
+      · rfl
+      · rename_i hz
+        simp at hz
+    rw [hR] at hXR hne
+    exact hne (Goldfish.preceq_eq_of_depth_le hXR (Goldfish.preceq_depth_le hhX))
+  | n + 1, h, X, hhX, hXR, hne => by
+    cases hstep : ghostStep tree score el h with
+    | none =>
+      exfalso
+      have hR : ghostWalk tree score el (n + 1) h = h := by
+        rw [ghostWalk]
+        split
+        · rename_i hz
+          simp at hz
+        · rw [hstep]
+      rw [hR] at hXR hne
+      exact hne (Goldfish.preceq_eq_of_depth_le hXR (Goldfish.preceq_depth_le hhX))
+    | some c =>
+      have hR : ghostWalk tree score el (n + 1) h = ghostWalk tree score el n c := by
+        rw [ghostWalk]
+        split
+        · rename_i hz
+          simp at hz
+        · rw [hstep]
+          dsimp only
+          rw [Nat.add_sub_cancel]
+      rw [hR] at hXR hne ⊢
+      have hcR := Goldfish.ghostWalk_preceq tree score el n c
+      by_cases hXh : X = h
+      · subst hXh
+        exact ⟨c, hstep, hcR⟩
+      · -- `c` は `X` の祖先(`c` と `X` は結果の祖先で線形、`X ⪯ c` なら深さで `X = h`)
+        have hcX : preceq c X = true := by
+          rcases preceq_linear hcR hXR with h1 | h1
+          · exact h1
+          · have hdc := Goldfish.ghostStep_depth hstep
+            have hdX := Goldfish.preceq_depth_le h1
+            have hdh := Goldfish.preceq_depth_le hhX
+            by_cases heq : X = c
+            · rw [heq]; exact preceq_self _
+            · exfalso
+              have hlt : depth X < depth c := by
+                rcases Nat.lt_or_ge (depth X) (depth c) with h2 | h2
+                · exact h2
+                · exact absurd (Goldfish.preceq_eq_of_depth_le h1 h2) heq
+              exact hXh (Goldfish.preceq_eq_of_depth_le hhX (by omega)).symm
+        exact ghostWalk_step_toward tree score el n c X hcX hXR hne
+
+/-- fork choice の途中のブロック `X`(anchor ⪯ `X` ⪯ 結果、`X` は結果でない)からの一歩は、結果の祖先へ進む。
+手書き `ghost_walk_step_towards_result`(周回 326)。 -/
+theorem ghost_step_toward {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {anchor X : Block}
+    (hAX : preceq anchor X = true) (hXR : preceq X (ghost anchor tree score el) = true)
+    (hne : X ≠ ghost anchor tree score el) :
+    ∃ C, ghostStep tree score el X = some C ∧ preceq C (ghost anchor tree score el) = true :=
+  ghostWalk_step_toward tree score el _ anchor X hAX hXR hne
+
+/-- **fork choice の結果に適格な子は無い**: 重複がなく root が要素を決め、anchor より下の祖先について閉じた tree(要素の祖先で
+anchor の真の子孫のものは要素)では、fork choice の結果の子は適格でない。歩みが止まったなら一歩が無いので適格な子は無く
+(`ghostStep_isSome`)、燃料を使い切ったなら適格な子 `D` から anchor の直上までの `size + 1` 個が tree にあることになり矛盾
+(`ghost_terminal` の、閉包を anchor より下に弱めた形。周回 326)。 -/
+theorem ghost_noEligibleChild {tree : NaruStd.Set Block} {score : Block → Nat} {el : Block → Bool} {anchor : Block}
+    (hnd : tree.elems.Nodup) (hinj : ∀ x ∈ tree.elems, ∀ y ∈ tree.elems, root x = root y → x = y)
+    (hclosed : ∀ D ∈ tree.elems, ∀ C, preceq anchor C = true → C ≠ anchor → preceq C D = true → C ∈ tree.elems)
+    {D : Block} (hD : D ∈ tree.elems) (hDpar : parent? D = some (ghost anchor tree score el)) :
+    el D = false := by
+  cases hel : el D with
+  | false => rfl
+  | true =>
+    exfalso
+    have hDc : D ∈ (ghostChildren tree el (ghost anchor tree score el)).elems :=
+      (Goldfish.mem_ghostChildren_iff _ _ _ _).mpr ⟨hD, hDpar, hel⟩
+    rcases Goldfish.ghostWalk_stop_or_depth tree score el tree.size anchor with hstop | hd
+    · obtain ⟨c', hc'⟩ := ghostStep_isSome (score := score) hnd hinj hDc
+      have hstop' : ghostStep tree score el (ghost anchor tree score el) = none := hstop
+      rw [hstop'] at hc'
+      exact absurd hc' (by simp)
+    · have hdR : depth (ghost anchor tree score el) = depth anchor + tree.size := hd
+      have hdD := Goldfish.depth_of_parent? hDpar
+      have hAR := Goldfish.ghost_preceq anchor tree score el
+      have hAD : preceq anchor D = true := preceq_trans hAR (Goldfish.preceq_of_parent? hDpar)
+      have hn : tree.size + 1 ≤ tree.size := by
+        apply Goldfish.chainUpTo_le_size (b := D) (by omega)
+        intro C hC
+        obtain ⟨hCD, hdC⟩ := Goldfish.mem_chainUpTo _ D C hC
+        have hlt : depth anchor < depth C := by omega
+        refine hclosed D hD C (Goldfish.preceq_of_deeper hAD hCD hlt) (fun h => ?_) hCD
+        rw [h] at hlt
+        exact Nat.lt_irrefl _ hlt
+      omega
+
 /-- **ちょうど `B` に解決する honest な支持の下で、門を通るブロックは `B` の祖先**: slot `s` の committee が honest 過半で、honest な
 committee の要素がみな支持の投票に root が `B` に解決する slot `s` の投票を持てば、門 `eligible` を通る `X` には honest な支持者がいて
 (`exists_honest_supporter_of_eligible`)、その支持の投票は投票者ごとに 1 つ(`supportVotes_unique`)なので `B` に解決し、`X ⪯ B`。

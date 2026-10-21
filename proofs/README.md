@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 11 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -638,7 +638,14 @@ finalized ⪯ FG root ⪯ anchor ⪯ `X` で `X` は提案者の読みの tree �
 pivot より下の一歩は、pivot の支持者が投票者の読みの voter view で過半なこと(`voteDutyStore_supporterMajority_of_heads`)から、
 `Majority.ghostStep_toward_of_supporter_majority`(`ghost_passes_supporter_majority` の一歩を切り出したもの)で証明しました
 (`voteStep_belowProtected_succ_genesis`)。
-これで GST-zero の枝で残る穴は、pivot から上の一歩 `voteStep_abovePivot_succ_genesis`(手書きの凍結した suffix の帯の前提 hfrozen / hsuffix / hscore)だけです。
+周回 326 に、pivot から上の一歩 `voteStep_abovePivot_succ_genesis` を、提案者の walk の一歩を投票者の walk に写す形で組みました
+(手書き `ghost_transport_via_bridge_of_target_passes` の一歩の部分)。投票者と提案者の読みの anchor はどちらも slot `k - 1` で保護されるので pivot の祖先です。
+提案の親は提案者の読みの `ghost` の結果(`proposalParent_eq_ghost`)なので、提案の親の真の祖先 `H` からの提案者の一歩 `C` は提案の親の祖先です
+(`Majority.ghost_step_toward`)。写し先の適格な子が写し元でも適格な子で得点が等しく、`C` が写し先でも適格なら、写し先の一歩も `C` です
+(`Majority.ghostStep_transport`。同点は root の衝突なし `tickTree_root_inj` で一つに決まる。`Majority.ghostStep_eq_of_unbeaten`)。`H` が提案の親なら、
+提案は現在の slot なので適格で、ほかの適格な子は写し元の walk の結果の適格な子になりますが、それは無いので(`Majority.ghost_noEligibleChild`)、提案が選ばれます。
+これで GST-zero の枝で残る穴は、写しの前提の 3 つ — persist `voteSuffixPersist_succ_genesis`、reflect `voteSuffixReflect_succ_genesis`、
+得点の一致 `voteSuffixScore_succ_genesis`(手書きの凍結した suffix の帯の前提 hfrozen / hsuffix / hscore)— です。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -656,7 +663,9 @@ pivot より下の一歩は、pivot の支持者が投票者の読みの voter v
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
-| `Proofs.Consensus.AvailableHoles.voteStep_abovePivot_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalWalkTransferred_of_frozenCompatiblePivot_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/ProposalPivot.lean` | 325 |
+| `Proofs.Consensus.AvailableHoles.voteSuffixPersist_succ_genesis` | `Consensus.Spec.Claims.available` | `NamedProposalPivotSuffixTransfer` | `DecoupledConsensusInternal/Definitions/NamedProposalPivot.lean` | 326 |
+| `Proofs.Consensus.AvailableHoles.voteSuffixReflect_succ_genesis` | `Consensus.Spec.Claims.available` | `NamedProposalPivotSuffixTransfer` | `DecoupledConsensusInternal/Definitions/NamedProposalPivot.lean` | 326 |
+| `Proofs.Consensus.AvailableHoles.voteSuffixScore_succ_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_succ_of_gstZero_of_pins` | `DecoupledConsensusProofs/Protocol/Schedule/WeakGenesisVoteStoresSuccPins.lean` | 326 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
