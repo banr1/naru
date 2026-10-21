@@ -128,13 +128,15 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
 4. 穴(5 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/
-   `voteStep_proposal_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の祖先の側 `proposal_preceq_voteDutyHead_succ_genesis` を
+   `voteStep_abovePivot_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の祖先の側 `proposal_preceq_voteDutyHead_succ_genesis` を
    周回 318 に降下補題 `Goldfish.ghost_reaches` の前提 `hpre` / `hpath` / `hstep` に分けたもの。`hstop` は `voteStop_proposal` で証明した。
    `hpre`(`voteAnchor_preceq_proposal_succ_genesis`)と `hpath`(`votePath_proposal_succ_genesis`)は周回 320 に、slot `k - 1` で保護された
    ブロックが提案の親の祖先なこと(`protected_preceq_proposalParent_succ_genesis`)から証明した。それは周回 321 に提案者の walk の層
    `proposalParent_passes_supporter_majority` で組み、提案者の view での過半(周回 322)と歩みの tree の証人(周回 323。証人は honest な提案者の
    slot `d` の投票の務めの head)を証明し、提案者の読みの anchor ⪯ head(`proposalDutyAnchor_preceq_voteDutyHead_succ_genesis`)は周回 324 に
-   投票者の側の anchor の補題を時刻を一般にした `readAnchor_preceq_prevHead` で証明した。
+   投票者の側の anchor の補題を時刻を一般にした `readAnchor_preceq_prevHead` で証明した。`hstep`(`voteStep_proposal_succ_genesis`)は周回 325 に、
+   slot `k - 1` で保護されたブロックのうち最も深いもの(pivot)で分け、pivot より下の一歩を過半の支持で証明した
+   (`voteStep_belowProtected_succ_genesis`)。残りは pivot から上の一歩。
    等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
    `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/
@@ -8627,12 +8629,105 @@ theorem votePath_proposal_succ_genesis (hwf : SetupWellFormed c p s) (hdom : Run
     · rw [Bool.and_eq_true, decide_eq_true_eq]
       exact ⟨hCB, hH⟩
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、slot `k ≥ 2` の提案者が honest なら、honest なノードの slot `k` の投票の walk は、anchor から提案
+/-- 祖先の鎖で述語 `q` を満たす最も深いもの: `T` の祖先に `q` を満たすものがあれば、`T` の祖先で `q` を満たし、`T` の祖先で `q` を満たす
+どのブロックも自分の祖先であるもの `G` がある(`T` の上の帰納法。`T` が `q` を満たせば `T`、そうでなければ親に降りる)。手書き
+`greatest_member_of_common_ancestor_bound`(`CommonAncestorBound.lean`)に当たる(周回 325)。 -/
+theorem exists_greatest_below (q : Block → Prop) :
+    ∀ T : Block, (∃ Q, q Q ∧ preceq Q T = true) →
+      ∃ G, q G ∧ preceq G T = true ∧ ∀ Q, q Q → preceq Q T = true → preceq Q G = true := by
+  intro T
+  induction T with
+  | Genesis =>
+    rintro ⟨Q, hQ, hQT⟩
+    have hQg : Q = Block.Genesis := by
+      cases Q with
+      | Genesis => rfl
+      | Node => simp [preceq] at hQT
+    subst hQg
+    exact ⟨_, hQ, hQT, fun _ _ h => h⟩
+  | Node P sl r v sup ats i ih =>
+    rintro ⟨Q, hQ, hQT⟩
+    by_cases hT : q (Block.Node P sl r v sup ats i)
+    · exact ⟨_, hT, Proofs.Consensus.Blocks.preceq_self _, fun _ _ h => h⟩
+    · have hQP : preceq Q P = true := by
+        simp only [preceq, Bool.or_eq_true, beq_iff_eq] at hQT
+        rcases hQT with h | h
+        · subst h; exact absurd hQ hT
+        · exact h
+      obtain ⟨G, hG, hGP, hmax⟩ := ih ⟨Q, hQ, hQP⟩
+      refine ⟨G, hG, ?_, ?_⟩
+      · exact Proofs.Consensus.Blocks.preceq_trans hGP (Proofs.Consensus.Goldfish.preceq_parent (Block.Node P sl r v sup ats i))
+      · intro R hR hRT
+        simp only [preceq, Bool.or_eq_true, beq_iff_eq] at hRT
+        rcases hRT with h | h
+        · subst h; exact absurd hR hT
+        · exact hmax R hR h
+
+/-- **pivot より下の一歩**: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、slot `d` で保護されたブロック `P`
+(honest なノード `x` の slot `d + 1` の読みの anchor ⪯ `P`)の真の祖先 `H`(anchor ⪯ `H`)からの、`x` の slot `d + 1` の投票の walk の一歩は
+`P` の祖先に進む。`P` の支持者は読みの voter view で参加者の過半(`voteDutyStore_supporterMajority_of_heads`)なので、
+`Majority.ghostStep_toward_of_supporter_majority` を掛ける。途中のブロックは提案の祖先(`P ⪯` 提案の親。`protected_preceq_proposalParent_succ_genesis`)
+なので歩みの tree にある(`votePath_proposal_succ_genesis`)。手書き `namedProposalWalkTransferred_of_frozenCompatiblePivot_core` の
+`htarget`(pivot までは walk が過半で通る)に当たる(周回 325)。 -/
+theorem voteStep_belowProtected_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {P : Block} (hP : ProtectedVoteSlot c p a nr s rho d P)
+    (hAP : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) P = true)
+    {H : Block} (hAH : preceq (voteDutyAnchorAt c p a nr s rho x (d + 1)) H = true)
+    (hHP : preceq H P = true) (hne : H ≠ P) :
+    ∃ C, Model.Consensus.Protocol.ForkChoice.Goldfish.ghostStep (voteDutyTreeAt c p a nr s rho x (d + 1))
+      (voteDutyScoreAt c p a nr s rho x (d + 1)) (voteDutyEligibleAt c p a nr s rho x (d + 1)) H = some C ∧
+      preceq C P = true := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hdw : DeliveryWellFormed c p a nr s rho := hexec.1.1.2
+  have hhc : HonestCommittees c rho.honest := hsleep.1.1.2
+  have hPB : preceq P (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true :=
+    Proofs.Consensus.Blocks.preceq_trans
+      (protected_preceq_proposalParent_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hP)
+      (Proofs.Consensus.Goldfish.preceq_parent _)
+  have hpath := votePath_proposal_succ_genesis c p a nr s rho hwf hdom hsleep (d + 1) (by omega) hhor hhon hB hx
+  exact Proofs.Consensus.Majority.ghostStep_toward_of_supporter_majority s.e
+    (voteDutyStore_voterFilteredBlockTree_nodup c p a nr s rho x (d + 1))
+    (voterSupportView_sub_voterView s.e _ _ (voteDutyStore_tree_carried c p a nr s rho hdw x (d + 1)))
+    (voteDutyStore_supporterMajority_of_heads c p a nr s rho hwf hdom hsleep hhc hdw hhor hd (Nat.le_succ d)
+      hP.heads hx hAP)
+    (fun C _ h => Proofs.Consensus.Majority.goldfishEligible_of_lt s.e _ _ _ _ _ _ _ h)
+    (fun C hAC hCne hCP => hpath C hAC hCne (Proofs.Consensus.Blocks.preceq_trans hCP hPB))
+    hAH hHP hne
+
+/-- 穴: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、slot `d` で保護されたブロックのうち最も深いもの `G`
+(pivot)から提案までの途中の(提案でない)各ブロック `H` で、honest なノード `x` の slot `d + 1` の投票の walk は提案の祖先へ一歩進む。
+手書き `namedProposalWalkTransferred_of_frozenCompatiblePivot_core`(`ProposalPivot.lean`)の pivot から上の部分(`ghost_transport_via_bridge_of_target_passes`
+に渡す `hsuffix` / `hscore`)に当たる。pivot は手書き `exists_preparedProtectedProposalPivot_of_gstZero`(`WeakProposalPivotNamed.lean`)と同じく
+保護されたブロックの最大のもの。周回 325 に `voteStep_proposal_succ_genesis` から切り出した。
+閉じるのに要るもの: 手書きの前提 hfrozen / hsuffix / hscore — pivot から上は凍結した suffix の帯(`NamedFrozenProposalSuffixBandInputs`)で、
+投票者の歩みの tree と得点が提案者の読み(提案の親 = 提案者の walk の結果)と一致し(voter view は凍結の時刻までの pool と slot `d + 1` の
+ブロックが運ぶ投票)、提案者の walk が `H` から提案の親の側へ進むので投票者の walk も同じ子を選ぶ。提案は現在の slot なので適格。 -/
+theorem voteStep_abovePivot_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {G : Block} (hG : ProtectedVoteSlot c p a nr s rho d G)
+    (hmax : ∀ Q, ProtectedVoteSlot c p a nr s rho d Q → preceq Q G = true)
+    {H : Block} (hGH : preceq G H = true) (hHB : preceq H (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true)
+    (hne : H ≠ Model.Consensus.Objects.NamedBlocks.eraseBlock B) :
+    ∃ C, Model.Consensus.Protocol.ForkChoice.Goldfish.ghostStep (voteDutyTreeAt c p a nr s rho x (d + 1))
+      (voteDutyScoreAt c p a nr s rho x (d + 1)) (voteDutyEligibleAt c p a nr s rho x (d + 1)) H = some C ∧
+      preceq C (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true := by
+  sorry
+
+/-- GST-zero の枝(`t0 = 0`)で、slot `k ≥ 2` の提案者が honest なら、honest なノードの slot `k` の投票の walk は、anchor から提案
 までの途中の(提案でない)各ブロックで、提案の祖先へ一歩進む(`ghost_reaches` の前提 `hstep`。周回 318)。手書き
 `namedProposalWalkTransferred_of_frozenCompatiblePivot_core`(`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/ProposalPivot.lean`)に当たる。
-閉じるのに要るもの: 手書きの前提 hexists / hfrozen / hsuffix / htarget / hscore — pivot `PreparedProtectedProposalPivot` の下の walk は pivot に
-達し(過半の支持。`voteDutyHead_passes_supporter_majority` の形)、pivot から上は凍結した suffix の帯で提案者の walk と得点が等しい
-(voter view は凍結の時刻までの pool と slot `k` のブロックが運ぶ投票。提案は現在の slot なので適格)。 -/
+周回 325 に pivot で 2 つに分けた: pivot `G` は slot `k - 1` で保護されたブロックのうち最も深いもの(`exists_greatest_below`。anchor は
+保護されるので候補があり、保護されたブロックは `x` の slot `k - 1` の head の祖先)。`G` は提案の親の祖先
+(`protected_preceq_proposalParent_succ_genesis`)で、anchor ⪯ `G`。`H` が `G` の真の祖先なら過半で `G` の側へ進み
+(`voteStep_belowProtected_succ_genesis`)、`G ⪯ H` なら穴 `voteStep_abovePivot_succ_genesis`。 -/
 theorem voteStep_proposal_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 2 ≤ k)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
@@ -8644,7 +8739,30 @@ theorem voteStep_proposal_succ_genesis (hwf : SetupWellFormed c p s) (hdom : Run
       ∃ C, Model.Consensus.Protocol.ForkChoice.Goldfish.ghostStep (voteDutyTreeAt c p a nr s rho x k)
         (voteDutyScoreAt c p a nr s rho x k) (voteDutyEligibleAt c p a nr s rho x k) H = some C ∧
         preceq C (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true := by
-  sorry
+  intro H hAH hHB hne
+  obtain ⟨d, rfl⟩ : ∃ d, k = d + 1 := ⟨k - 1, by omega⟩
+  have hd : 1 ≤ d := by omega
+  have hprior : PriorConfsBelow c p a nr s rho d := fun y hy w i t C hw ht hq hC =>
+    genuineConf_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hy ht hq (by omega) hC
+  have hAprot := protectedVoteSlot_of_heads c p a nr s rho hwf hsleep hhor hd (by omega)
+    (fun y hy => voteDutyAnchor_preceq_prevHead c p a nr s rho hwf hdom hsleep hhor hd (by omega) hprior hx hy)
+  obtain ⟨G, hG, -, hmax0⟩ := exists_greatest_below (ProtectedVoteSlot c p a nr s rho d)
+    (voteDutyHeadAt c p a nr s rho x d) ⟨_, hAprot, hAprot.heads x hx⟩
+  have hmax : ∀ Q, ProtectedVoteSlot c p a nr s rho d Q → preceq Q G = true :=
+    fun Q hQ => hmax0 Q hQ (hQ.heads x hx)
+  have hGB : preceq G (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true :=
+    Proofs.Consensus.Blocks.preceq_trans
+      (protected_preceq_proposalParent_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hG)
+      (Proofs.Consensus.Goldfish.preceq_parent _)
+  rcases Proofs.Consensus.Blocks.preceq_linear hHB hGB with hHG | hGH
+  · by_cases hHGe : H = G
+    · subst hHGe
+      exact voteStep_abovePivot_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hG hmax
+        (Proofs.Consensus.Blocks.preceq_self _) hHB hne
+    · obtain ⟨C, hC, hCG⟩ := voteStep_belowProtected_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx
+        hG (hmax _ hAprot) hAH hHG hHGe
+      exact ⟨C, hC, Proofs.Consensus.Blocks.preceq_trans hCG hGB⟩
+  · exact voteStep_abovePivot_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hG hmax hGH hHB hne
 
 /-- GST-zero の枝(`t0 = 0`)で、slot `k ≥ 2` の提案者が honest で確認の時刻が `horizon` 以下なら、提案のブロックの消去は honest な
 ノードの slot `k` の投票の務めの head の祖先(手書きの `ProtectedVoteSlot k` の `heads` を提案に当てたもの)。手書き

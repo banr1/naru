@@ -933,20 +933,18 @@ theorem ghost_passes {tree : NaruStd.Set Block} {score : Block → Nat} {el : Bl
   unfold ghost
   exact ghostWalk_passes hstep tree.size A (preceq_self _) hAB (path_card hAB hpath)
 
-/-- **過半の支持は fork choice の歩みを通す**: 重複のない歩みの tree `walkTree` で、`B` の支持者が投票の参加者の過半、anchor `A ⪯ B`、
-`A` から `B` までの途中のブロックがすべて `walkTree` にあり、過半の門を通る `B` の祖先は適格(`el`)なら、`ghost` の結果は `B` を延ばす。
-各一歩で `B` の祖先の子は過半の門を通って適格で、ほかの適格な子は `B` と競合するので得点が真に小さい(`score_lt_of_supporter_majority`)。
-手書き `goldfish_fork_choice_passes_supporter_majority`(`Adoption.lean`)。 -/
-theorem ghost_passes_supporter_majority (e : ProtocolEnv) {tree walkTree : NaruStd.Set Block}
-    {votes sv : NaruStd.Set GoldfishVote} {s : Nat} {el : Block → Bool} {A B : Block}
+/-- **過半の支持は一歩を `B` の祖先に進める**: 重複のない歩みの tree `walkTree` で、`B` の支持者が投票の参加者の過半、
+過半の門を通る `B` の祖先は適格(`el`)で、anchor `A ⪯ H ⪯ B`、`H ≠ B`、`A` から `B` までの途中がすべて `walkTree` にあれば、
+`H` からの一歩は `B` の祖先の子を選ぶ(その子は過半の門を通って適格で、ほかの適格な子は `B` と競合するので得点が真に小さい)。
+`ghost_passes_supporter_majority` の各一歩を切り出したもの(周回 325)。 -/
+theorem ghostStep_toward_of_supporter_majority (e : ProtocolEnv) {tree walkTree : NaruStd.Set Block}
+    {votes sv : NaruStd.Set GoldfishVote} {s : Nat} {el : Block → Bool} {A B H : Block}
     (hnd : walkTree.elems.Nodup) (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems)
     (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
     (hel : ∀ C, preceq C B = true → votersCount e votes s < 2 * goldfishScore e tree votes sv s C → el C = true)
-    (hAB : preceq A B = true)
-    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ walkTree.elems) :
-    preceq B (ghost A walkTree (goldfishScore e tree votes sv s) el) = true := by
-  refine ghost_passes hAB hpath ?_
-  intro H hAH hHB hne
+    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ walkTree.elems)
+    (hAH : preceq A H = true) (hHB : preceq H B = true) (hne : H ≠ B) :
+    ∃ C, ghostStep walkTree (goldfishScore e tree votes sv s) el H = some C ∧ preceq C B = true := by
   obtain ⟨C, hCpar, hCB⟩ := exists_child_towards hHB hne
   have hAC : preceq A C = true := preceq_trans hAH (preceq_of_parent? hCpar)
   have hCne : C ≠ A := by
@@ -982,6 +980,21 @@ theorem ghost_passes_supporter_majority (e : ProtocolEnv) {tree walkTree : NaruS
     rw [hBD, hDB]
     rfl
   exact score_lt_of_supporter_majority e hsub hmaj hCB hconflict
+
+/-- **過半の支持は fork choice の歩みを通す**: 重複のない歩みの tree `walkTree` で、`B` の支持者が投票の参加者の過半、anchor `A ⪯ B`、
+`A` から `B` までの途中のブロックがすべて `walkTree` にあり、過半の門を通る `B` の祖先は適格(`el`)なら、`ghost` の結果は `B` を延ばす。
+各一歩で `B` の祖先の子は過半の門を通って適格で、ほかの適格な子は `B` と競合するので得点が真に小さい(`score_lt_of_supporter_majority`)。
+手書き `goldfish_fork_choice_passes_supporter_majority`(`Adoption.lean`)。 -/
+theorem ghost_passes_supporter_majority (e : ProtocolEnv) {tree walkTree : NaruStd.Set Block}
+    {votes sv : NaruStd.Set GoldfishVote} {s : Nat} {el : Block → Bool} {A B : Block}
+    (hnd : walkTree.elems.Nodup) (hsub : ∀ u ∈ sv.elems, u ∈ votes.elems)
+    (hmaj : votersCount e votes s < 2 * (rawSupporters tree votes sv s B).size)
+    (hel : ∀ C, preceq C B = true → votersCount e votes s < 2 * goldfishScore e tree votes sv s C → el C = true)
+    (hAB : preceq A B = true)
+    (hpath : ∀ C, preceq A C = true → C ≠ A → preceq C B = true → C ∈ walkTree.elems) :
+    preceq B (ghost A walkTree (goldfishScore e tree votes sv s) el) = true := by
+  exact ghost_passes hAB hpath fun H hAH hHB hne =>
+    ghostStep_toward_of_supporter_majority e hnd hsub hmaj hel hpath hAH hHB hne
 
 /-- `goldfishForkChoice` の形: 過半の支持は Goldfish の fork choice を通す。 -/
 theorem goldfishForkChoice_passes_supporter_majority (e : ProtocolEnv)
