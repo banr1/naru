@@ -168,7 +168,7 @@ bodies の `D` の導出の `f`(finality carrier)— を全ハンドラで保つ
 attestation は bodies の名前付き祖先の行の消去で、bodies の genesis でないブロックはそのノードが処理した(`Processes`)ブロック(bodies が増えるのはブロックの
 配送か自分の提案の tick だけ)なので、`UnforgeableSignatures` の carried で署名者の発行(`Emits`)に帰着する。手書き `validatorVoteSafety`
 (`attributedVoteSafety` / `emissionVoteSafety` / `honestNoDoubleTarget` / `no_timeout_against_finality` / `carriedByHonest_of_storeAt`)の筋)。
-残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 10 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
+残りの 6 claims と bundle `Consensus` は骨格(周回 211・212。穴 9 件、`sorry` と表示。下の 12)で、`missing` は 0 件。`naru_test proofs` は証明済みの件名が `proved` のままであることを検査する
 (`tests/NaruTest/Proofs.lean` の `consensusProved`。証明を足したらそこにも足す)。
 
 残りの liveness 系の claim(`available` / `confirmedLive` / `stableLive` / `stableIncludedFast` / `finalized` / `stableAsynchronyResilient`)に向けた
@@ -627,7 +627,12 @@ equivocate しません(`proposalDutyStore_no_honest_equivocation`)。slot `d` �
 周回 323 に、証人 `X` の穴を閉じました。証人は honest な提案者自身の slot `d` の投票の務めの head です。提案者の読みの anchor ⪯ `X` から、
 finalized ⪯ FG root ⪯ anchor ⪯ `X` で `X` は提案者の読みの tree に入ります(`voteDutyHead_mem_proposalDutyTree`)。viable の証人は `X` そのもので、
 高さの帯(`proposalDutyBand_voteDutyHead_succ_genesis`)は、最大の高さの横断の行の確認の証人が `X` の祖先であることから出します。
-残りは anchor ⪯ `X` の穴 `proposalDutyAnchor_preceq_voteDutyHead_succ_genesis`(投票者の側の `voteDutyAnchor_preceq_prevHead` を提案者の読みに写したもの)です。
+残りは anchor ⪯ `X`(`proposalDutyAnchor_preceq_voteDutyHead_succ_genesis`)でした。
+周回 324 に、それを閉じました。提案者の読み(`proposerReadAt`)は投票者の読みと同じ `confirmationReadFrom`(時計合わせした store と `preparedCache`)で、
+時刻だけが違います。そこで投票者の側の `voteDutyFgRoot_preceq_prevHead` / `voteDutyAnchor_preceq_prevHead` を、時刻 `τ`
+(`proposalTime (d + 1) ≤ τ ≤ voteTime (d + 1)`、`slotOf τ = d + 1`)の読みの形 `readFgRoot_preceq_prevHead` / `readAnchor_preceq_prevHead` に
+一般にし、投票者の側はその系にしました。G1 の domain 時刻と窓の round の行の時刻は提案時刻以下なので、同じ運びが提案時刻でも通ります。
+これで GST-zero の枝で残る穴は `voteStep_proposal_succ_genesis` だけです。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -645,7 +650,6 @@ finalized ⪯ FG root ⪯ anchor ⪯ `X` で `X` は提案者の読みの tree �
 |---|---|---|---|---|
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
-| `Proofs.Consensus.AvailableHoles.proposalDutyAnchor_preceq_voteDutyHead_succ_genesis` | `Consensus.Spec.Claims.available` | `preparedProposalAnchor_preceq_voteDutyHead_of_gstZero` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakProposalHeadNamed.lean` | 323 |
 | `Proofs.Consensus.AvailableHoles.voteStep_proposal_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalWalkTransferred_of_frozenCompatiblePivot_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/ProposalPivot.lean` | 318 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
