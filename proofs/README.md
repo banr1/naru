@@ -576,6 +576,12 @@ tick するので、提案者 `p 1` は提案の時刻に提案を発行し(`pro
 提案の親は fork choice の head で読みの tree にあり、tree のブロックは bodies の消去で、run のどの store でも bodies は重複が無く消去が単射
 (新しいモジュール `BodiesUnique.lean`。bodies に `b` を足すのは消去が前の tree に無いときだけ)なので、`parentBody?`(`findUnique?`)は
 その body を返します(手書き `runtime_proposal_some`)。
+周回 313 に stable の書き込みが元の確認の記録を walk に進めたものの祖先であること(穴 `confHeadExtendsStable_genesis`)を証明しました(手書き
+`stableWrite_preceq_advanceWalk_of_gstZero_of_carrierWindow` の運び): tick の slot を `q` とすると、walk は slot `q + 1` の投票の務めの head の祖先
+(`confWalk_preceq_laterVoteHead`)、元の確認の記録も genesis か、より前の確認評価の tick の walk か stable root なので同じ head の祖先で、
+2 つは一方が他方の祖先(`Blocks.preceq_linear`。手書き `latestConfirmed_compatible_confWalk_of_gstZero`)。stable の書き込みは元の stable の記録
+(元の確認の記録の祖先 `RecordOrder.stateBefore_sbc`)か grade の stable root(walk の祖先 `confStableRoot_preceq_confWalk`)なので、
+`advanceConfirmed` の 2 枝で閉じます。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -595,7 +601,6 @@ tick するので、提案者 `p 1` は提案の時刻に提案を発行し(`pro
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.proposal_preceq_voteDutyHead_succ_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_succ_of_gstZero_of_pins` | `DecoupledConsensusProofs/Protocol/Schedule/WeakGenesisVoteStoresSuccPins.lean` | 308 |
 | `Proofs.Consensus.AvailableHoles.genuineConf_proposal_genesis` | `Consensus.Spec.Claims.available` | `genuineConfirmation_of_dutyExecution` | `DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean` | 306 |
-| `Proofs.Consensus.AvailableHoles.confHeadExtendsStable_genesis` | `Consensus.Spec.Claims.available` | `honestHeadExtendsStableFrom_zero_of_weakGenesis` | `DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean` | 306 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
