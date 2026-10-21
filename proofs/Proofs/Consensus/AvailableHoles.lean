@@ -126,9 +126,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(7 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+4. 穴(9 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/
-   `voteSuffixPersist_succ_genesis` / `voteSuffixReflect_succ_genesis` / `voteSuffixScore_succ_genesis`(手書き
+   `voteSuffixPersist_succ_genesis` / `voteSuffixReflect_succ_genesis` / `voteScoreRawExtra_succ_genesis` / `voteScoreForward_succ_genesis` /
+   `voteScoreBackward_succ_genesis`(手書き
    `honestVoteStoresExtend_succ_of_gstZero_of_pins` の祖先の側 `proposal_preceq_voteDutyHead_succ_genesis` を
    周回 318 に降下補題 `Goldfish.ghost_reaches` の前提 `hpre` / `hpath` / `hstep` に分けたもの。`hstop` は `voteStop_proposal` で証明した。
    `hpre`(`voteAnchor_preceq_proposal_succ_genesis`)と `hpath`(`votePath_proposal_succ_genesis`)は周回 320 に、slot `k - 1` で保護された
@@ -139,6 +140,9 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    slot `k - 1` で保護されたブロックのうち最も深いもの(pivot)で分け、pivot より下の一歩を過半の支持で証明した
    (`voteStep_belowProtected_succ_genesis`)。pivot から上の一歩(`voteStep_abovePivot_succ_genesis`)は周回 326 に、提案者の walk(結果は
    提案の親)の一歩を投票者の walk に写す形(`Majority.ghostStep_transport`)で組み、写しの前提の persist / reflect / 得点の一致を 3 つの穴に残した。
+   得点の一致は周回 327 に、候補ごとの得点の写しの境界 `Majority.ScoreTransport`(手書き `CandidateScorePreservingViewExtension`)で
+   `voteScore_eq_succ_genesis` として組み(pivot によらない)、境界の `raw_subset` は提案の運ぶ投票が voter view の carried の部分に入ることで
+   証明し(`proposalVotes_sub_voterView_succ_genesis`)、raw extra / forward / backward を 3 つの穴に残した。
    等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
    `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/
@@ -8734,7 +8738,8 @@ honest なノード `x` の slot `d + 1` の投票の読みでも適格。手書
 `votePath_proposal_succ_genesis` から出るので、ここは適格さだけ。周回 326 に `voteStep_abovePivot_succ_genesis` から切り出した。
 閉じるのに要るもの: 凍結した suffix の帯(`NamedFrozenProposalSuffixBandInputs`)— 提案者の読みと投票者の読みの `hMax` が等しいか、どちらも
 pivot の高さの帯の中にあること(手書きの `hfrontier`)— で、`C` が提案者の読みで適格な理由(親の高さの帯・過半の得点・現在の slot)を投票者の
-読みに写すこと(得点は穴 `voteSuffixScore_succ_genesis` と同じ数え上げ)。 -/
+読みに写すこと(得点と参加者の数は `voteScoreTransport_succ_genesis` の境界の下で一致する。`Majority.ScoreTransport.goldfishScore_eq` /
+`votersCount_eq`)。 -/
 theorem voteSuffixPersist_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
@@ -8773,27 +8778,231 @@ theorem voteSuffixReflect_succ_genesis (hwf : SetupWellFormed c p s) (hdom : Run
     D ∈ (proposalDutyTreeAt c p a nr s rho (d + 1)).elems ∧ proposalDutyEligibleAt c p a nr s rho (d + 1) D = true := by
   sorry
 
-/-- 穴(pivot から上の得点): 同じ前提で、pivot `G` から提案の親までの途中の(提案の親でない)ブロック `X` の子 `D` が投票者と提案者の
-両方の歩みの tree にあって投票者の読みで適格なら、投票者の読みの得点と提案者の読みの得点は等しい。手書き
-`honestVoteStoresExtend_succ_of_gstZero_of_pins`(`WeakGenesisVoteStoresSuccPins.lean`)の前提 `hscore`(供給は
-`NamedProposalCandidateScoreBridge`(`SGOpeningFrozenSuffix.lean`))に当たる。周回 326 に `voteStep_abovePivot_succ_genesis` から切り出した。
-閉じるのに要るもの: voter view(凍結の時刻までの pool と、提案が運ぶ slot `d` の投票)と提案者の view(提案時刻のバケツ。提案はこれを運ぶ)の
-`D` の支持者と equivocator の数え上げが一致すること(root の解決は両方の tree で同じブロックに着く)。 -/
-theorem voteSuffixScore_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+/-- 提案が運ぶ投票は提案の務めの読みの view(`proposalInput` の `proposerView`。手書き `proposedBlock_gf_votes`
+(`ProposalSnapshotBridge.lean`)。周回 327)。 -/
+theorem proposal_gfVotes_eq {k : Nat} {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho k = some B) :
+    gfVotes (Model.Consensus.Objects.NamedBlocks.eraseBlock B) =
+      Model.Consensus.Protocol.ForkChoice.Views.proposerView
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho k)))
+        (proposalDutyStoreAt c p a nr s rho k).s := by
+  unfold proposedBlockAt at hB
+  obtain ⟨par, -, hb⟩ := Proofs.Consensus.Proposal.proposalWith_some _ _ _ _ _ _ hB
+  subst hb
+  rfl
+
+/-- 提案の務めの読みの投票の view は重複が無い(`List.toSet` は整列。周回 327)。 -/
+theorem proposalDutyVotesAt_nodup (k : Nat) : (proposalDutyVotesAt c p a nr s rho k).elems.Nodup :=
+  Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl
+    (Proofs.Consensus.Majority.SortedLt.toSet Proofs.Consensus.Orders.gv_compare_eq_iff
+      Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _)
+
+/-- voter view は重複が無い(pooled の部分は整列した pool の filter、和は整列を保つ挿入の畳み込み。周回 327)。 -/
+theorem voterView_nodup (e : Model.Consensus.Objects.Parameters.ProtocolEnv) (st : Model.Consensus.Protocol.Store.Store)
+    (k : Nat) :
+    (Model.Consensus.Protocol.ForkChoice.Views.voterView e
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish (Model.Consensus.Protocol.Store.storeToHealing st)) k).elems.Nodup := by
+  apply Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterView NaruStd.Set.union
+  dsimp only
+  exact Proofs.Consensus.Majority.SortedLt.foldl_insert Proofs.Consensus.Orders.gv_compare_eq_iff
+    Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _
+    (Proofs.Consensus.Majority.SortedLt.filter
+      (Proofs.Consensus.Majority.SortedLt.toSet Proofs.Consensus.Orders.gv_compare_eq_iff
+        Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _) _)
+
+/-- GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、提案は honest なノード `x` の slot `d + 1` の投票の務めの
+読みの store の tree にある(anchor が提案なら `voteDutyAnchorAt_mem_tree`、そうでなければ anchor ⪯ 提案
+(`voteAnchor_preceq_proposal_succ_genesis`)から歩みの tree にある(`votePath_proposal_succ_genesis`)。周回 327)。 -/
+theorem proposal_mem_voteDutyStore_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
+    Model.Consensus.Objects.NamedBlocks.eraseBlock B ∈ (voteDutyStoreAt c p a nr s rho x (d + 1)).tree.elems := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hexec.1.1.1
+  by_cases hAeq : voteDutyAnchorAt c p a nr s rho x (d + 1) = Model.Consensus.Objects.NamedBlocks.eraseBlock B
+  · rw [← hAeq]
+    exact voteDutyAnchorAt_mem_tree c p a nr s rho hs x (d + 1)
+  · have hmem := votePath_proposal_succ_genesis c p a nr s rho hwf hdom hsleep (d + 1) (by omega) hhor hhon hB hx _
+      (voteAnchor_preceq_proposal_succ_genesis c p a nr s rho hwf hdom hsleep (d + 1) (by omega) hhor hhon hB hx)
+      (Ne.symm hAeq) (Proofs.Consensus.Blocks.preceq_self _)
+    unfold voteDutyTreeAt Model.Consensus.Protocol.Handlers.voterFilteredBlockTree at hmem
+    have h2 := Proofs.Consensus.Trees.getFilteredBlockTreeFrom_sub hmem
+    unfold Model.Consensus.Protocol.ForkChoice.Views.voterProcessedBlockTree at h2
+    exact ((Proofs.Consensus.Trees.mem_filter_iff _ _ _).mp h2).1
+
+/-- **提案の運ぶ投票は voter view に入る**(得点の写しの `raw_subset`): 提案の務めの読みの view の投票 `u` は提案が運ぶ投票
+(`proposal_gfVotes_eq`)で、slot は `d`(pool の不変条件)。提案は slot `d + 1` で投票者の読みの tree にある
+(`proposal_mem_voteDutyStore_succ_genesis`)ので、voter view の carried の部分に入る。手書き `carried_raw_subset_voter_view`
+(`ProposalSnapshotBridge.lean`)。周回 327)。 -/
+theorem proposalVotes_sub_voterView_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
+    ∀ u ∈ (proposalDutyVotesAt c p a nr s rho (d + 1)).elems,
+      u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems := by
+  intro u hu
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hVs : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 := Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  have hPs := proposalDutyStoreAt_s c p a nr s rho hδ (d + 1)
+  obtain ⟨-, hBslot⟩ := Proofs.Consensus.NoFutureRead.proposedBlockAt_slot c p a nr s rho hδ hB
+  have huslot : u.slot = d := by
+    have h := ((proposalDutyStore_poolInv c p a nr s rho (d + 1)).mem
+      (by rw [← proposalDutyVotesAt_eq_pool]; exact hu)).1
+    rw [hPs] at h
+    simpa using h
+  have hBt := proposal_mem_voteDutyStore_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterView
+  dsimp only
+  rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff]
+  right
+  rw [Proofs.Consensus.Sets.mem_flatMap_iff Proofs.Consensus.Orders.gv_compare_eq_iff]
+  refine ⟨Model.Consensus.Objects.NamedBlocks.eraseBlock B, ?_, ?_⟩
+  · rw [Proofs.Consensus.Trees.mem_filter_iff]
+    refine ⟨hBt, ?_⟩
+    rw [beq_iff_eq, hBslot, hVs]
+  · rw [Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff, List.mem_filter]
+    refine ⟨?_, ?_⟩
+    · rw [proposal_gfVotes_eq c p a nr s rho hB]
+      unfold proposalDutyVotesAt at hu
+      exact (Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff _ _).mp hu
+    · rw [beq_iff_eq, huslot, hVs]
+      rfl
+
+/-- 穴(得点の写しの raw extra): GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、honest なノード `x` の
+slot `d + 1` の投票の読みの voter view の投票で提案者の読みの view に無いものは、その投票者が提案者の読みの view で equivocate する。手書き
+`voter_raw_extra_equivocates_proposal_afterGST_core`(`RecoveryProposalCapInputs.lean`)に当たる。周回 327 に `voteSuffixScore_succ_genesis` から
+切り出した。
+閉じるのに要るもの: voter view の pooled の部分(凍結の時刻 `viewFreeze d` より前に受信した slot `d` の投票)は、GST 以後の配送で提案の時刻
+までに提案者の pool に入るか、その投票者の equivocation が提案者の pool で検出済みであること(手書き
+`accepted_gfVote_settled_at_nextProposer_afterGST_core`)。carried の部分は slot `d + 1` のブロックが投票者の tree で提案だけであること
+(手書き `unique_slot_block_in_store_core`)。 -/
+theorem voteScoreRawExtra_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
+    ∀ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems,
+      u ∉ (proposalDutyVotesAt c p a nr s rho (d + 1)).elems →
+      Model.Consensus.Protocol.Schedule.equivocates (proposalDutyVotesAt c p a nr s rho (d + 1)) u.valIndex = true := by
+  sorry
+
+/-- 穴(得点の写しの forward): 同じ前提で、投票者の歩みの tree のブロック `D` について、提案者の読みの支持の view の投票で提案者の
+tree で `D` 以下を指すものは、投票者の読みの支持の view にあって投票者の tree でも `D` 以下を指すか、その投票者が voter view で
+equivocate する。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の `forward` に当たる。周回 327 に
+`voteSuffixScore_succ_genesis` から切り出した。
+閉じるのに要るもの: 提案者が解決した head のブロックは、GST 以後の配送で投票時刻までに投票者の tree に入り、同じブロックに解決すること
+(手書き `frozenSuffix_proposalTarget_visibleAtVote`。root の衝突なしは `tickTree_root_inj`)と、提案の運ぶ支持の投票が voter view の carried の
+支持の部分に入ること(手書き `mem_voter_support_view_of_carried`)。 -/
+theorem voteScoreForward_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
     (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
     (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
-    {G : Block} (hG : ProtectedVoteSlot c p a nr s rho d G)
-    (hmax : ∀ Q, ProtectedVoteSlot c p a nr s rho d Q → preceq Q G = true)
-    {X D : Block} (hGX : preceq G X = true)
-    (hXR : preceq X (parent (Model.Consensus.Objects.NamedBlocks.eraseBlock B)) = true)
-    (hne : X ≠ parent (Model.Consensus.Objects.NamedBlocks.eraseBlock B))
-    (hD : D ∈ (voteDutyTreeAt c p a nr s rho x (d + 1)).elems) (hDpar : parent? D = some X)
-    (hDel : voteDutyEligibleAt c p a nr s rho x (d + 1) D = true)
+    {D : Block} (hD : D ∈ (voteDutyTreeAt c p a nr s rho x (d + 1)).elems) :
+    ∀ u ∈ (proposalDutySupportAt c p a nr s rho (d + 1)).elems,
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree D u = true →
+      (u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree D u = true) ∨
+      Model.Consensus.Protocol.Schedule.equivocates (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+          (voteDutyStoreAt c p a nr s rho x (d + 1)).s) u.valIndex = true := by
+  sorry
+
+/-- 穴(得点の写しの backward): 同じ前提で、提案者の歩みの tree のブロック `D` について、投票者の読みの支持の view の投票で投票者の
+tree で `D` 以下を指すものは、提案者の読みの支持の view にあって提案者の tree でも `D` 以下を指すか、その投票者が提案者の読みの view で
+equivocate する。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の `backward` に当たる。周回 327 に
+`voteSuffixScore_succ_genesis` から切り出した。
+閉じるのに要るもの: pooled の支持の投票が提案の運ぶ投票にあれば、その head のブロック(凍結の時刻より前に受信)は提案の時刻までに提案者の
+tree に入り(手書き `frozenSuffix_voterTarget_visibleAtProposal`)、無ければ raw extra(穴 `voteScoreRawExtra_succ_genesis`)。carried の支持の
+投票は提案が運ぶもので(手書き `unique_slot_block_in_store_core`)、両方の tree で同じブロックに解決する(手書き
+`frozenSuffix_resolved_blocks_eq`)。 -/
+theorem voteScoreBackward_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {D : Block} (hDs : D ∈ (proposalDutyTreeAt c p a nr s rho (d + 1)).elems) :
+    ∀ u ∈ (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s).elems,
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree D u = true →
+      (u ∈ (proposalDutySupportAt c p a nr s rho (d + 1)).elems ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree D u = true) ∨
+      Model.Consensus.Protocol.Schedule.equivocates (proposalDutyVotesAt c p a nr s rho (d + 1)) u.valIndex = true := by
+  sorry
+
+/-- **得点の写しの境界**: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、投票者と提案者の両方の歩みの tree に
+あるブロック `D` について、提案者の読み(投票 `proposerView`・支持 `proposerSupportView`・提案者の tree)から投票者の読み(voter view・
+支持の voter view・投票者の tree)へ `Majority.ScoreTransport` が成り立つ。`raw_subset` は `proposalVotes_sub_voterView_succ_genesis`、残りは
+穴。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)。周回 327)。 -/
+theorem voteScoreTransport_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {D : Block} (hD : D ∈ (voteDutyTreeAt c p a nr s rho x (d + 1)).elems)
+    (hDs : D ∈ (proposalDutyTreeAt c p a nr s rho (d + 1)).elems) :
+    Proofs.Consensus.Majority.ScoreTransport
+      (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree
+      (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree
+      (proposalDutyVotesAt c p a nr s rho (d + 1)) (proposalDutySupportAt c p a nr s rho (d + 1))
+      (Model.Consensus.Protocol.ForkChoice.Views.voterView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s)
+      (Model.Consensus.Protocol.ForkChoice.Views.voterSupportView s.e
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))))
+        (voteDutyStoreAt c p a nr s rho x (d + 1)).s) D where
+  raw_subset := proposalVotes_sub_voterView_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx
+  raw_extra_equiv := voteScoreRawExtra_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx
+  forward := voteScoreForward_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hD
+  backward := voteScoreBackward_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hDs
+
+/-- **共通の候補の得点は一致する**: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、honest なノード `x` の
+slot `d + 1` の投票の歩みの tree と提案者の歩みの tree の両方にあるブロック `D` の投票者の読みの得点と提案者の読みの得点は等しい
+(`voteScoreTransport_succ_genesis` に `Majority.ScoreTransport.goldfishScore_eq` を掛ける。どちらの読みも slot は `d + 1`)。手書き
+`honestVoteStoresExtend_succ_of_gstZero_of_pins`(`WeakGenesisVoteStoresSuccPins.lean`)の前提 `hscore`(供給は
+`NamedProposalCandidateScoreBridge` の `goldfish_score_eq`)に当たる。周回 326 に穴 `voteSuffixScore_succ_genesis` として置き、周回 327 に
+pivot によらない形で組んだ。 -/
+theorem voteScore_eq_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {D : Block} (hD : D ∈ (voteDutyTreeAt c p a nr s rho x (d + 1)).elems)
     (hDs : D ∈ (proposalDutyTreeAt c p a nr s rho (d + 1)).elems) :
     voteDutyScoreAt c p a nr s rho x (d + 1) D = proposalDutyScoreAt c p a nr s rho (d + 1) D := by
-  sorry
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hVs : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 := Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  have hss : (proposalDutyStoreAt c p a nr s rho (d + 1)).s - 1 = (voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1 := by
+    rw [proposalDutyStoreAt_s c p a nr s rho hδ, hVs]
+  have hT := voteScoreTransport_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hD hDs
+  unfold voteDutyScoreAt proposalDutyScoreAt
+  dsimp only
+  rw [hss]
+  exact (hT.goldfishScore_eq (proposalDutyVotesAt_nodup c p a nr s rho _) (voterView_nodup s.e _ _) s.e s.e _).symm
 
 /-- **pivot から上の一歩**: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、slot `d` で保護されたブロックのうち
 最も深いもの `G`(pivot)から提案までの途中の(提案でない)各ブロック `H` で、honest なノード `x` の slot `d + 1` の投票の walk は提案の祖先へ
@@ -8801,7 +9010,7 @@ theorem voteSuffixScore_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDo
 (`ghost_transport_via_bridge_of_target_passes` に `hsuffix` / `hscore` を渡す段)に当たる。周回 325 に穴として置き、周回 326 に提案者の walk
 からの写しで組んだ: 投票者と提案者の読みの anchor はどちらも slot `d` で保護されるので pivot の祖先。`H` が提案の親の真の祖先なら、提案者の
 walk(結果は提案の親。`proposalParent_eq_ghost`)の `H` からの一歩 `C` は提案の親の祖先(`Majority.ghost_step_toward`)で、穴
-`voteSuffixPersist_succ_genesis` / `voteSuffixReflect_succ_genesis` / `voteSuffixScore_succ_genesis` の下で投票者の一歩も `C`
+`voteSuffixPersist_succ_genesis` / `voteSuffixReflect_succ_genesis` と得点の一致 `voteScore_eq_succ_genesis`(周回 327)の下で投票者の一歩も `C`
 (`Majority.ghostStep_transport`。tree の root の衝突なしは `tickTree_root_inj`)。`H` が提案の親なら、提案は現在の slot なので適格で、
 ほかの適格な子は reflect で提案者の walk の結果の適格な子になるが、それは無い(`Majority.ghost_noEligibleChild`。提案者の歩みの tree は
 FG root より下の祖先について閉じる)ので、提案が選ばれる。 -/
@@ -8935,9 +9144,8 @@ theorem voteStep_abovePivot_succ_genesis (hwf : SetupWellFormed c p s) (hdom : R
       intro hDB
       rw [hDB, hparB] at hDpar
       exact hHR' (Option.some.inj hDpar).symm
-    · intro D hDt hDpar hDel hDs
-      exact voteSuffixScore_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hG hmax
-        hGH hHR hHR' hDt hDpar hDel hDs
+    · intro D hDt _ _ hDs
+      exact voteScore_eq_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hDt hDs
 
 /-- GST-zero の枝(`t0 = 0`)で、slot `k ≥ 2` の提案者が honest なら、honest なノードの slot `k` の投票の walk は、anchor から提案
 までの途中の(提案でない)各ブロックで、提案の祖先へ一歩進む(`ghost_reaches` の前提 `hstep`。周回 318)。手書き

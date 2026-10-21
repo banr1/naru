@@ -43,6 +43,9 @@ import Mathlib.Tactic
 - **確認の過半の別の読みへの移送**(節 `Adoption`。周回 299): 確認の分子・分母から別の読みの投票への境界 `AdoptionTransport`
   (`forward` / `backward`)の下で、確認の門を通るブロックの支持者は読みの参加者の過半(`AdoptionTransport.supporterMajority_of_eligible`)。
   手書き `AdoptionTransport` / `confirmation_adoption`(`Protocol/ForkChoice/Goldfish/Adoption.lean`)。
+- **候補ごとの得点の写し**(節の末尾。周回 327): 写し元の投票・支持・tree から写し先へ、ブロック `C` の得点を保つ境界 `ScoreTransport`
+  (`raw_subset` / `raw_extra_equiv` / `forward` / `backward`)の下で、equivocation・equivocator・参加者・`C` の支持者が一致し、得点と参加者の数が
+  等しい(`ScoreTransport.goldfishScore_eq` / `votersCount_eq`)。手書き `CandidateScorePreservingViewExtension`(`ProposalSnapshotBridge.lean`)。
 -/
 
 namespace Proofs.Consensus.Majority
@@ -1484,5 +1487,162 @@ theorem supporterMajority_of_eligible (hT : AdoptionTransport e st s tgtTree tgt
 end AdoptionTransport
 
 end Adoption
+
+/-! ## 候補ごとの得点の写し(手書き `CandidateScorePreservingViewExtension`。周回 327) -/
+
+/-- **候補ごとの得点の写しの境界**: 写し元の投票 `srcRaw`・支持の投票 `srcSupport`・tree `srcTree` から、写し先の `tgtRaw`・`tgtSupport`・
+`tgtTree` へ、ブロック `C` の得点を保つ条件。`raw_subset` と `raw_extra_equiv` は参加と equivocation を保ち、`forward` / `backward` は
+`C` 以下を指す支持の投票を相手側に運ぶか、その投票者の equivocation が相手側で検出済みであること。手書き
+`CandidateScorePreservingViewExtension`(`ProposalSnapshotBridge.lean`)。周回 327。 -/
+structure ScoreTransport (srcTree tgtTree : NaruStd.Set Block)
+    (srcRaw srcSupport tgtRaw tgtSupport : NaruStd.Set GoldfishVote) (C : Block) : Prop where
+  raw_subset : ∀ u ∈ srcRaw.elems, u ∈ tgtRaw.elems
+  raw_extra_equiv : ∀ u ∈ tgtRaw.elems, u ∉ srcRaw.elems → equivocates srcRaw u.valIndex = true
+  forward : ∀ u ∈ srcSupport.elems, targetsUnder srcTree C u = true →
+    (u ∈ tgtSupport.elems ∧ targetsUnder tgtTree C u = true) ∨ equivocates tgtRaw u.valIndex = true
+  backward : ∀ u ∈ tgtSupport.elems, targetsUnder tgtTree C u = true →
+    (u ∈ srcSupport.elems ∧ targetsUnder srcTree C u = true) ∨ equivocates srcRaw u.valIndex = true
+
+namespace ScoreTransport
+
+variable {srcTree tgtTree : NaruStd.Set Block} {srcRaw srcSupport tgtRaw tgtSupport : NaruStd.Set GoldfishVote} {C : Block}
+
+/-- 投票の集合が大きくなれば equivocation は保たれる(`votesBy` の長さは重複の無い部分集合で増える)。 -/
+theorem equivocates_mono {a b : NaruStd.Set GoldfishVote} (hand : a.elems.Nodup) (hab : ∀ u ∈ a.elems, u ∈ b.elems)
+    {v : ValidatorId} (h : equivocates a v = true) : equivocates b v = true := by
+  unfold equivocates at h ⊢
+  rw [decide_eq_true_eq] at h ⊢
+  unfold NaruStd.Set.size at h ⊢
+  have hnd : (votesBy a v).elems.Nodup := by
+    unfold votesBy NaruStd.Set.filter
+    exact hand.filter _
+  have hsub : (votesBy a v).elems.toFinset ⊆ (votesBy b v).elems.toFinset := by
+    intro u hu
+    rw [List.mem_toFinset, mem_votesBy_iff] at hu ⊢
+    exact ⟨hab u hu.1, hu.2⟩
+  have h1 := Finset.card_le_card hsub
+  rw [List.toFinset_card_of_nodup hnd] at h1
+  have h2 := List.toFinset_card_le (votesBy b v).elems
+  omega
+
+/-- 写し元と写し先の equivocation は一致する。手書き `ScorePreservingViewExtension.equivocates_eq`。 -/
+theorem equivocates_eq (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (hsnd : srcRaw.elems.Nodup) (htnd : tgtRaw.elems.Nodup) (v : ValidatorId) :
+    equivocates srcRaw v = equivocates tgtRaw v := by
+  cases hs : equivocates srcRaw v with
+  | true => exact (equivocates_mono hsnd h.raw_subset hs).symm
+  | false =>
+    symm
+    rw [← Bool.not_eq_true]
+    intro ht
+    by_cases hall : ∀ u ∈ tgtRaw.elems, u.valIndex = v → u ∈ srcRaw.elems
+    · have : equivocates srcRaw v = true := by
+        unfold equivocates at ht ⊢
+        rw [decide_eq_true_eq] at ht ⊢
+        unfold NaruStd.Set.size at ht ⊢
+        have hnd : (votesBy tgtRaw v).elems.Nodup := by
+          unfold votesBy NaruStd.Set.filter
+          exact htnd.filter _
+        have hsub : (votesBy tgtRaw v).elems.toFinset ⊆ (votesBy srcRaw v).elems.toFinset := by
+          intro u hu
+          rw [List.mem_toFinset, mem_votesBy_iff] at hu ⊢
+          exact ⟨hall u hu.1 hu.2, hu.2⟩
+        have h1 := Finset.card_le_card hsub
+        rw [List.toFinset_card_of_nodup hnd] at h1
+        have h2 := List.toFinset_card_le (votesBy srcRaw v).elems
+        omega
+      rw [hs] at this
+      exact Bool.false_ne_true this
+    · simp only [not_forall] at hall
+      obtain ⟨u, hu, hvi, hnot⟩ := hall
+      have := h.raw_extra_equiv u hu hnot
+      rw [hvi, hs] at this
+      exact Bool.false_ne_true this
+
+/-- 写し元と写し先の投票者の集合は、equivocation の無い者について一致し、equivocator はどちらにも現れる。ここでは参加者の一致を示す。 -/
+theorem mem_rawParticipants_iff' (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (v : ValidatorId) :
+    v ∈ (rawParticipants srcRaw).elems ↔ v ∈ (rawParticipants tgtRaw).elems := by
+  constructor
+  · intro hv
+    obtain ⟨hvo, -⟩ := (mem_rawParticipants_iff _ _).mp hv
+    exact mem_rawParticipants_of_voters (voters_mono h.raw_subset hvo)
+  · intro hv
+    obtain ⟨hvo, -⟩ := (mem_rawParticipants_iff _ _).mp hv
+    obtain ⟨u, hu, hvi⟩ := (mem_voters_iff _ _).mp hvo
+    by_cases hus : u ∈ srcRaw.elems
+    · exact mem_rawParticipants_of_voters ((mem_voters_iff _ _).mpr ⟨u, hus, hvi⟩)
+    · have he := h.raw_extra_equiv u hu hus
+      rw [hvi] at he
+      unfold equivocates at he
+      rw [decide_eq_true_eq] at he
+      unfold NaruStd.Set.size at he
+      obtain ⟨w, hw⟩ := List.exists_mem_of_length_pos (by omega : 0 < (votesBy srcRaw v).elems.length)
+      rw [mem_votesBy_iff] at hw
+      exact mem_rawParticipants_of_voters ((mem_voters_iff _ _).mpr ⟨w, hw.1, hw.2⟩)
+
+/-- equivocator の集合は一致する。 -/
+theorem mem_rawEquivocators_iff' (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (hsnd : srcRaw.elems.Nodup) (htnd : tgtRaw.elems.Nodup) (v : ValidatorId) :
+    v ∈ (rawEquivocators srcRaw).elems ↔ v ∈ (rawEquivocators tgtRaw).elems := by
+  rw [mem_rawEquivocators_iff, mem_rawEquivocators_iff, ← h.equivocates_eq hsnd htnd v]
+  constructor
+  · rintro ⟨hvo, he⟩
+    exact ⟨voters_mono h.raw_subset hvo, he⟩
+  · rintro ⟨-, he⟩
+    refine ⟨?_, he⟩
+    unfold equivocates at he
+    rw [decide_eq_true_eq] at he
+    unfold NaruStd.Set.size at he
+    obtain ⟨w, hw⟩ := List.exists_mem_of_length_pos (by omega : 0 < (votesBy srcRaw v).elems.length)
+    rw [mem_votesBy_iff] at hw
+    exact (mem_voters_iff _ _).mpr ⟨w, hw.1, hw.2⟩
+
+/-- `C` の支持者の集合は一致する。手書き `CandidateScorePreservingViewExtension.supporters_eq`。 -/
+theorem mem_rawSupporters_iff' (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (hsnd : srcRaw.elems.Nodup) (htnd : tgtRaw.elems.Nodup) (s : Nat) (v : ValidatorId) :
+    v ∈ (rawSupporters srcTree srcRaw srcSupport s C).elems ↔ v ∈ (rawSupporters tgtTree tgtRaw tgtSupport s C).elems := by
+  rw [mem_rawSupporters_iff, mem_rawSupporters_iff]
+  have heq := h.equivocates_eq hsnd htnd v
+  constructor
+  · rintro ⟨-, hclean, u, hu, hvi, hus, ht⟩
+    rcases h.forward u hu ht with ⟨hut, htt⟩ | hequiv
+    · exact ⟨(mem_voters_iff _ _).mpr ⟨u, hut, hvi⟩, heq ▸ hclean, u, hut, hvi, hus, htt⟩
+    · rw [hvi, ← heq, hclean] at hequiv
+      exact absurd hequiv Bool.false_ne_true
+  · rintro ⟨-, hclean, u, hu, hvi, hus, ht⟩
+    rcases h.backward u hu ht with ⟨hus', htt⟩ | hequiv
+    · exact ⟨(mem_voters_iff _ _).mpr ⟨u, hus', hvi⟩, heq ▸ hclean, u, hus', hvi, hus, htt⟩
+    · rw [hvi, heq, hclean] at hequiv
+      exact absurd hequiv Bool.false_ne_true
+
+/-- 整列した 2 つの集合が同じ要素を持てば大きさは等しい。 -/
+theorem size_eq_of_mem_iff {a b : VSet} (ha : Sorted a) (hb : Sorted b) (hab : ∀ v, v ∈ a.elems ↔ v ∈ b.elems) :
+    a.size = b.size := by
+  rw [size_eq_card ha, size_eq_card hb]
+  congr 1
+  ext v
+  rw [List.mem_toFinset, List.mem_toFinset]
+  exact hab v
+
+/-- **得点の写し**: 境界の下で `C` の Goldfish の得点は一致する。手書き `CandidateScorePreservingViewExtension.goldfish_score_eq`。 -/
+theorem goldfishScore_eq (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (hsnd : srcRaw.elems.Nodup) (htnd : tgtRaw.elems.Nodup) (e e' : ProtocolEnv) (s : Nat) :
+    goldfishScore e srcTree srcRaw srcSupport s C = goldfishScore e' tgtTree tgtRaw tgtSupport s C := by
+  show (rawEquivocators srcRaw).size + (rawSupporters srcTree srcRaw srcSupport s C).size =
+    (rawEquivocators tgtRaw).size + (rawSupporters tgtTree tgtRaw tgtSupport s C).size
+  have hE : (rawEquivocators srcRaw).size = (rawEquivocators tgtRaw).size :=
+    size_eq_of_mem_iff ((sorted_voters _).filter _) ((sorted_voters _).filter _) (h.mem_rawEquivocators_iff' hsnd htnd)
+  have hS : (rawSupporters srcTree srcRaw srcSupport s C).size = (rawSupporters tgtTree tgtRaw tgtSupport s C).size :=
+    size_eq_of_mem_iff ((sorted_voters _).filter _) ((sorted_voters _).filter _) (h.mem_rawSupporters_iff' hsnd htnd s)
+  rw [hE, hS]
+
+/-- 境界の下で参加者の数(過半の門の分母)は一致する。手書き `CandidateScorePreservingViewExtension.voters_count_eq`。 -/
+theorem votersCount_eq (h : ScoreTransport srcTree tgtTree srcRaw srcSupport tgtRaw tgtSupport C)
+    (e e' : ProtocolEnv) (s s' : Nat) :
+    votersCount e srcRaw s = votersCount e' tgtRaw s' :=
+  size_eq_of_mem_iff ((sorted_voters _).filter _) ((sorted_voters _).filter _) h.mem_rawParticipants_iff'
+
+end ScoreTransport
 
 end Proofs.Consensus.Majority
