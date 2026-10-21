@@ -565,6 +565,10 @@ tick の前の状態はその時刻の読みで、`preparedCache` / `setClock` �
 walk は提案に降ります(`preceq_ghost_of_unique_child`)。提案が絞り込んだ tree にあること(`proposal_mem_voterTreeOne_genesis`。手書きの `hcandidate`)は、
 FG root が anchor の祖先で finalized が FG root の祖先なことから組み、提案が投票時刻の tree にあること(穴 `proposal_mem_voteTreeOne_genesis`。
 手書きの `hadmit` / `hBT`)と提案の高さが viable の証人になること(穴 `proposal_frontier_voteTreeOne_genesis`。手書きの `hfrontier`)を残しました。
+周回 310 に提案が投票時刻の tree にあること(`proposal_mem_voteTreeOne_genesis`)を組みました: honest なノードは horizon 以内の公開の時刻すべてで
+tick するので、提案者 `p 1` は提案の時刻に提案を発行し(`proposedBlockAt_emits`。`tick_block_of_proposalWith` は `Proposal.tick_block_shape` の逆向き)、
+`tGST ≤ 0` なので配送の締切は投票の時刻そのもの。受信者の FG root は tree にあって genesis か提案なので、genesis なら提案の親の祖先で
+`ProposerRoot.partialSynchrony_emitted_block_mem_of_parent` から、提案ならそのまま tree にあります。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -583,7 +587,6 @@ FG root が anchor の祖先で finalized が FG root の祖先なことから�
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.proposedBlockAt_isSome_genesis` | `Consensus.Spec.Claims.available` | `proposedBlockAt_isSome` | `DecoupledConsensusProofs/Protocol/ChainState/ProposalBridge.lean` | 306 |
-| `Proofs.Consensus.AvailableHoles.proposal_mem_voteTreeOne_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_one_of_gstZero_named` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakGenesisProposalOneNamed.lean` | 309 |
 | `Proofs.Consensus.AvailableHoles.proposal_frontier_voteTreeOne_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_one_of_gstZero_named` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakGenesisProposalOneNamed.lean` | 309 |
 | `Proofs.Consensus.AvailableHoles.proposal_preceq_voteDutyHead_succ_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_succ_of_gstZero_of_pins` | `DecoupledConsensusProofs/Protocol/Schedule/WeakGenesisVoteStoresSuccPins.lean` | 308 |
 | `Proofs.Consensus.AvailableHoles.genuineConf_proposal_genesis` | `Consensus.Spec.Claims.available` | `genuineConfirmation_of_dutyExecution` | `DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean` | 306 |
