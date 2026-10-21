@@ -125,11 +125,11 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(9 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
-   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposedBlockAt_isSome_genesis`(手書き `proposedBlockAt_isSome`)/
-   `proposal_frontier_voteTreeOne_genesis`(手書き `honestVoteStoresExtend_one_of_gstZero_named` の `hfrontier`。slot 1 の head は周回 309 に
-   `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる `proposal_mem_voteTreeOne_genesis` は周回 310 に
-   提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から組んだ)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
+4. 穴(8 件): `recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposedBlockAt_isSome_genesis`(手書き `proposedBlockAt_isSome`。
+   slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
+   `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
+   `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
    祖先の側。等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した)/ `genuineConf_proposal_genesis`(手書き
    `genuineConfirmation_of_dutyExecution`)/ `confHeadExtendsStable_genesis`(手書き `honestHeadExtendsStableFrom_zero_of_weakGenesis`)/
    `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
@@ -7444,26 +7444,44 @@ theorem proposal_mem_voteTreeOne_genesis (hwf : SetupWellFormed c p s) (_hdom : 
   · rw [← he]
     exact hrootMem
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、slot 1 の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノードの slot 1 の
-投票時刻の読みで、提案のブロックの状態の高さは最大の高さ `hMax` より高々 1 低い(提案が viable の証人になる)。手書き
+/-- **slot 1 の提案は投票時刻の読みで viable の証人になる**(GST-zero の枝): slot 1 の提案者が honest なら、どのノード `x` の slot 1 の
+投票時刻の読みでも、提案のブロックの状態の高さは最大の高さ `hMax` より高々 1 低い。手書き
 `honestVoteStoresExtend_one_of_gstZero_named`(`Protocol/ForkChoice/Goldfish/WeakGenesisProposalOneNamed.lean`)の `hfrontier` に当たる。
-閉じるのに要るもの: 読みの `sigma` の提案の値が導出した状態であること(手書き `derivedView_stateBeforeTime`)と、`hMax` を与える
-bodies のブロックが genesis か提案であること(手書き `maximum_carrier_stateBeforeTime` と `voteTreeOne_cases`)。 -/
-theorem proposal_frontier_voteTreeOne_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+読みの `hMax` は bodies のブロック `W` の導出の高さで、`W` の消去は tree にあり `sigma` のその鍵の値は `W` の導出
+(`MaxCarrier.stateBeforeTime_maxCarrier`。手書き `maximum_carrier_stateBeforeTime` / `derivedView_stateBeforeTime`)。tree は genesis と
+提案だけ(`voteTreeOne_cases`)なので、`W` が genesis なら `hMax` は genesis の導出の高さ 1 で、そうでなければ `W` の消去は提案の消去で
+提案の状態の高さが `hMax` そのもの(周回 311)。 -/
+theorem proposal_frontier_voteTreeOne_genesis (hwf : SetupWellFormed c p s) (_hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
-    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e 1 ≤ rho.horizon)
+    (_hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e 1 ≤ rho.horizon)
     (hhon : rho.honest.contains (p 1) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
-    (hB : proposedBlockAt c p a nr s rho 1 = some B) {x : ValidatorId} (hx : rho.honest.contains x = true) :
+    (hB : proposedBlockAt c p a nr s rho 1 = some B) {x : ValidatorId} (_hx : rho.honest.contains x = true) :
     (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e 1)) x).st.core.hMax - 1 ≤
       (Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf
         (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.voteTime s.e 1)) x).st.core.sigma
         (Model.Consensus.Objects.NamedBlocks.eraseBlock B)).h := by
-  sorry
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  obtain ⟨W, -, hWt, hWs, hWh⟩ := Proofs.Consensus.MaxCarrier.stateBeforeTime_maxCarrier c p a nr s rho
+    (Model.Consensus.Protocol.Schedule.voteTime s.e 1) x
+  rcases voteTreeOne_cases c p a nr s rho hsch hexec.1.2 hδ hhon hB x hWt with hg | he
+  · -- `W` は genesis で、`hMax` は genesis の導出の高さ 1
+    cases W with
+    | Genesis =>
+      have h1 : (Model.Consensus.Protocol.ChainState.deriveNamed s.e s.cfg
+          Model.Consensus.Objects.NamedBlocks.NamedBlock.Genesis).h = 1 := rfl
+      omega
+    | Node _ _ _ _ _ _ _ => simp [Model.Consensus.Objects.NamedBlocks.eraseBlock] at hg
+  · -- `W` の消去は提案の消去で、提案の状態の高さが `hMax`
+    rw [← he, hWs, hWh]
+    omega
 
 /-- **slot 1 の提案は投票者の絞り込んだ tree にある**(GST-zero の枝): 提案は投票時刻の tree にあり(
 `proposal_mem_voteTreeOne_genesis`。周回 310 に証明した)、slot が投票の slot 1 なので凍結した view に入り、FG root は anchor の祖先(`fgRoot_preceq_voteDutyAnchorAt`)で
 anchor は genesis か提案(`voteTreeOne_cases`)なので提案の祖先、finalized は FG root の祖先(`ProposerFinality.stateBefore_fj` /
-`fgRoot_extends`)、viable の証人は提案そのもの(高さは穴 `proposal_frontier_voteTreeOne_genesis`)。手書き
+`fgRoot_extends`)、viable の証人は提案そのもの(高さは `proposal_frontier_voteTreeOne_genesis`。周回 311 に証明した)。手書き
 `honestVoteStoresExtend_one_of_gstZero_named` の `hcandidate`(周回 309)。 -/
 theorem proposal_mem_voterTreeOne_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0)
