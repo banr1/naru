@@ -126,14 +126,18 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(7 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+4. 穴(6 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
    祖先の側。等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
    `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/
-   `confAnchor_preceq_proposal_genesis` / `confPath_proposal_genesis`(手書き `CanonicalProposalDutyAt` の欄 `anchor` / `path`。周回 314 に
+   `confPath_proposal_genesis`(手書き `CanonicalProposalDutyAt` の欄 `path`。周回 314 に
    `genuineConf_proposal_genesis`(手書き `genuineConfirmation_of_dutyExecution`)を、務めの事実から walk が提案で止まる
-   `Majority.head_eq_of_exactSupport` で組んで分け、欄 `votes`・`counted`・`resolve` に当たる支持の投票 `confSupport_proposal_genesis` は同じ周回に証明した)/
+   `Majority.head_eq_of_exactSupport` で組んで分け、欄 `votes`・`counted`・`resolve` に当たる支持の投票 `confSupport_proposal_genesis` は同じ周回に証明した。
+   欄 `anchor` に当たる `confAnchor_preceq_proposal_genesis` は周回 315 に、anchor の補題の連鎖(`confAnchor_preceq_laterVoteHead` から下)の
+   slot の仮定を `q < d` から `1 ≤ d`・`q ≤ d` に弱めて同じ slot `k` の投票の務めの head(提案)に当てて証明した。FG root の確認の証人の行の時刻は
+   tick の時刻より前の確認の時刻なので slot `k + 1` の投票時刻より前(`attest_lt_nextVote_of_lt_confTick`)、窓の行の round は `r ≥ 3` で
+   opening slot が `k` より前、G1 の domain 時刻は slot `k + 1` の提案時刻以下)/
    `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
    提案のブロックの存在(周回 306 に穴 `proposedBlockAt_isSome_genesis` として置いた)は周回 312 に前提なしの `proposedBlockAt_isSome` に
    した(bodies の消去の単射性 `BodiesUnique.lean`)。
@@ -144,7 +148,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 手書きは `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
 `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致と確認の包含の穴はすでに枝ごとに分けた(`commonUpper_genesis` /
-GST-zero の枝の 3 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
+GST-zero の枝の 2 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
 (`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)をそのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく
 `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
@@ -5585,19 +5589,65 @@ theorem sgBlock_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDo
     preceq (Proofs.Consensus.RootWitness.sgBlockAt c p a nr s rho u i2 t2) (voteDutyHeadAt c p a nr s rho x d) = true :=
   (laterVoteHead_rowSources c p a nr s rho hwf hdom hsleep hhor hd hupper hx hu hem hev ht2).1
 
+/-- round `r` の action 時刻は opening slot の確認の時刻(定義の展開。周回 248)。 -/
+theorem actionTime_eq_confirmationTime (r : Nat) :
+    Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta r =
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e (Model.Consensus.Protocol.Grades.openingSlot s.hc r) := rfl
+
+/-- slot `first` の確認の時刻は、`first ≤ last` なら slot `last + 2` の投票時刻より前(`6Δ + 4Δ·first < Δ + 4Δ(last + 2)`。
+手書き `confirmationTime_lt_nextVote_of_lt`。周回 248)。 -/
+theorem confirmationTime_lt_nextVote (hδ : 0 < s.e.delta) {first last : Nat} (h : first ≤ last) :
+    Model.Consensus.Protocol.Schedule.confirmationTime s.e first <
+      Model.Consensus.Protocol.Schedule.voteTime s.e (last + 1 + 1) := by
+  have h' : (first : Int) ≤ (last : Int) := by exact_mod_cast h
+  unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
+    Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+  simp only [Int.ofNat_eq_natCast]
+  push_cast
+  nlinarith
+
+/-- 確認評価の tick(時刻 `t`、slot `q = slotOf e t - 1`)より前に honest なノードが出した行の時刻 `t2` は、`1 ≤ d` かつ `q ≤ d` なら
+slot `d + 1` の投票時刻より前。行の時刻は行の round の opening slot `o` の確認の時刻(`RootWitness.emits_attest_actionTime_round`)で、
+`t2 < t` なので `o < q`、よって `confirmationTime_lt_nextVote`(周回 315。`confTick_lt_nextVote` は `q < d` で `t` そのものを抑える)。 -/
+theorem attest_lt_nextVote_of_lt_confTick (hδ : 0 < s.e.delta) {w u : ValidatorId} {i : Nat} {t t2 : Int}
+    (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
+    {row : Model.Consensus.Objects.NamedBlocks.NamedAttestation}
+    (hem : Statements.Consensus.Spec.Execution.Emits c p a nr s rho u
+      (Model.Consensus.Execution.Objects.NamedObject.Attest row) t2)
+    (ht2 : t2 < t) {d : Nat} (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) :
+    t2 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+  rw [Proofs.Consensus.RootWitness.emits_attest_actionTime_round c p a nr s rho hem, actionTime_eq_confirmationTime] at ht2 ⊢
+  rw [Proofs.Consensus.ConfirmedOrigin.confTick_time s rho ht] at ht2
+  obtain ⟨o, ho⟩ : ∃ o, o = Model.Consensus.Protocol.Grades.openingSlot s.hc row.round := ⟨_, rfl⟩
+  rw [← ho] at ht2 ⊢
+  have hlt : o < Model.Consensus.Objects.Parameters.slotOf s.e t - 1 := by
+    by_contra h
+    have h' : ((Model.Consensus.Objects.Parameters.slotOf s.e t - 1 : Nat) : Int) ≤ (o : Int) := by
+      exact_mod_cast Nat.le_of_not_lt h
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart at ht2
+    simp only [Int.ofNat_eq_natCast] at ht2
+    nlinarith
+  have h := confirmationTime_lt_nextVote s hδ (first := o) (last := d - 1) (by omega)
+  have hd' : d - 1 + 1 + 1 = d + 1 := by omega
+  rwa [hd'] at h
+
 /-- GST-zero の枝で、honest なノード `w` の確認評価の tick(添字 `i`・時刻 `t`、slot `q = slotOf e t - 1`)の確認の更新の前の段の
-store の FG root は、`q < d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)の honest なノードの slot `d` の投票の務めの head の祖先。
-手書き `preparedFGRoot_preceq_voteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)に当たる。
+store の FG root は、`1 ≤ d`・`q ≤ d ≤ last + 1`(`last` の確認の時刻は `horizon` 以下)の honest なノードの slot `d` の投票の務めの head の祖先。
+手書き `preparedFGRoot_preceq_voteDutyHead_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/GSTZeroPreparedWalk.lean`)と、
+同じ slot の `preparedFGRoot_preceq_voterHeadAt_same_of_gstZero` に当たる。
 手書きと同じ運び: FG root を tick の時刻の読みの FG root に移し(`confPreUpdate_fgRoot`)、その確認の証人
 (`RootWitness.stateBeforeTime_fgRoot_confirmationWitness`。手書き `WeakFG.fgRoot_confirmationWitness_at_read`)で genesis か、
-時刻 `< t` に honest な署名者が行を出した tick の務めの確認の証人に分け、後者は `t` が slot `d + 1` の投票時刻より前
-(`confTick_lt_nextVote`)なので `fgWitness_preceq_laterVoteHead` から(周回 247)。 -/
+時刻 `< t` に honest な署名者が行を出した tick の務めの確認の証人に分け、後者は行の時刻が slot `d + 1` の投票時刻より前
+(`attest_lt_nextVote_of_lt_confTick`)なので `fgWitness_preceq_laterVoteHead` から(周回 247。周回 315 に `q < d` を `q ≤ d` に弱めた。
+連鎖の `confWindowCarrier_preceq_laterVoteHead` / `confG1Carrier_positive` / `confG1Raw_preceq_laterVoteHead` / `confAnchor_preceq_laterVoteHead`
+も同じ)。 -/
 theorem confFgRoot_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) {last d : Nat}
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1) :
     preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot
         (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
       (voteDutyHeadAt c p a nr s rho x d) = true := by
@@ -5622,9 +5672,9 @@ theorem confFgRoot_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : Ru
     hg | ⟨-, row, -, t2, i2, -, -, hH, -, ht2, hem, hev, hT⟩
   · rw [hg]
     exact Proofs.Consensus.Blocks.preceq_genesis _
-  · exact fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor (by omega) hupper hx
+  · exact fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hd hupper hx
       ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hH) hem hev
-      (lt_trans ht2 (confTick_lt_nextVote s rho hfacts.1 ht hqd)) hT
+      (attest_lt_nextVote_of_lt_confTick c p a nr s rho hfacts.1 ht hem ht2 hd hqd) hT
 
 open Proofs.Consensus.Clocks in
 /-- 確認の更新の前の段 `tickPreUpdateStore` の後の時計は `(t, slotOf e t)`(冒頭で合わせた時計を提案と投票が変えない)。 -/
@@ -5645,23 +5695,6 @@ theorem tickPreUpdateStore_clockIs (cache : Model.Consensus.Protocol.Grades.Cach
     | with_reducible exact proposeBlockWith_clockIs c p nr cache hc nd h0
     | with_reducible exact h0
 
-/-- round `r` の action 時刻は opening slot の確認の時刻(定義の展開。周回 248)。 -/
-theorem actionTime_eq_confirmationTime (r : Nat) :
-    Model.Consensus.Protocol.Grades.actionTime s.hc s.e.delta r =
-      Model.Consensus.Protocol.Schedule.confirmationTime s.e (Model.Consensus.Protocol.Grades.openingSlot s.hc r) := rfl
-
-/-- slot `first` の確認の時刻は、`first ≤ last` なら slot `last + 2` の投票時刻より前(`6Δ + 4Δ·first < Δ + 4Δ(last + 2)`。
-手書き `confirmationTime_lt_nextVote_of_lt`。周回 248)。 -/
-theorem confirmationTime_lt_nextVote (hδ : 0 < s.e.delta) {first last : Nat} (h : first ≤ last) :
-    Model.Consensus.Protocol.Schedule.confirmationTime s.e first <
-      Model.Consensus.Protocol.Schedule.voteTime s.e (last + 1 + 1) := by
-  have h' : (first : Int) ≤ (last : Int) := by exact_mod_cast h
-  unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.voteTime
-    Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
-  simp only [Int.ofNat_eq_natCast]
-  push_cast
-  nlinarith
-
 /-- `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の更新の前の段の store の round `R` の窓の round の honest な行の SG block
 (`RootWitness.HonestWindowCarrierAt R`)は、slot `d` の投票の務めの head の祖先。窓の round は `R` より小さい
 (`lt_of_mem_latestWindow`)ので、その行の時刻(opening slot の確認の時刻)は slot `d + 1` の投票時刻より前
@@ -5672,7 +5705,7 @@ theorem confWindowCarrier_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hd
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) {Y : Block}
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1) {Y : Block}
     (hY : Proofs.Consensus.RootWitness.HonestWindowCarrierAt c p a nr s rho
       (Model.Consensus.Protocol.Grades.roundOf s.hc
         (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) Y) :
@@ -5700,7 +5733,7 @@ theorem confWindowCarrier_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hd
     have hd' : d - 1 + 1 + 1 = d + 1 := by omega
     rwa [hd'] at h
   have hu' : rho.honest.contains u = true := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu
-  exact sgBlock_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor (by omega) hupper hx hu' hem2 hev2 ht2
+  exact sgBlock_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hd hupper hx hu' hem2 hev2 ht2
 
 /-- `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の更新の前の段の store の round `R` が正なら、round `R` の phase G1 の
 読みの grade に担い手(窓の round の honest な行の SG block。`RootWitness.RelativeGradeCarrierAt`)がある。手書き
@@ -5715,7 +5748,7 @@ theorem confG1Carrier_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (_hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1)
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1)
     (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
       (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) :
     Proofs.Consensus.RootWitness.RelativeGradeCarrierAt c p a nr s rho
@@ -5751,15 +5784,36 @@ theorem confG1Carrier_positive (hwf : SetupWellFormed c p s) (hdom : RunDomain s
     rw [h3]
     linarith
   have hth : t ≤ rho.horizon := (Proofs.Consensus.Window.eventTime_bounds hsch (List.mem_of_getElem? ht.1)).2
-  have htv := confTick_lt_nextVote s rho hδ ht hqd
+  -- G1 の domain 時刻は slot `d + 1` の投票時刻より前(round `R` の opening slot は `slotOf e t ≤ d + 1` 以下)
+  have hT1v : Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+      (Model.Consensus.Protocol.Grades.roundOf s.hc
+        (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s)
+      Model.Consensus.Protocol.Grades.GradePhase.G1 < Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+    rw [hS]
+    have hRS : Model.Consensus.Protocol.Grades.roundOf s.hc (Model.Consensus.Objects.Parameters.slotOf s.e t) * s.hc.r ≤
+        d + 1 := le_trans (Nat.div_mul_le_self _ _) (by omega)
+    have h1 := Proofs.Consensus.Clocks.proposalTime_mono s.e hδ hRS
+    have h3 : Model.Consensus.Protocol.Grades.domainTime s.e s.hc
+        (Model.Consensus.Protocol.Grades.roundOf s.hc (Model.Consensus.Objects.Parameters.slotOf s.e t))
+        Model.Consensus.Protocol.Grades.GradePhase.G1 =
+        Model.Consensus.Protocol.Schedule.proposalTime s.e
+          (Model.Consensus.Protocol.Grades.roundOf s.hc (Model.Consensus.Objects.Parameters.slotOf s.e t) * s.hc.r) := by
+      unfold Model.Consensus.Protocol.Grades.domainTime Model.Consensus.Protocol.Grades.openingTime
+      simp [Model.Consensus.Protocol.Grades.domainOffset, Model.Consensus.Protocol.Grades.openingSlot]
+    have h4 : Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1) <
+        Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1) := by
+      unfold Model.Consensus.Protocol.Schedule.proposalTime Model.Consensus.Protocol.Schedule.voteTime
+      linarith
+    rw [h3]
+    linarith
   refine relativeGradeCarrierAt_of_commonUpper c p a nr s rho hwf hdom hsleep hpos
     Model.Consensus.Protocol.Grades.GradePhase.G1 (by linarith) (D := voteDutyHeadAt c p a nr s rho x d) ?_ ?_
   · intro Y hY
-    exact confWindowCarrier_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hx ht hqd hupper hY
+    exact confWindowCarrier_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hx ht hd hqd hupper hY
   · intro v hv
     refine stateBeforeTime_f_preceq_of_witnesses c p a nr s rho hwf hsleep hv _ ?_
     intro u i2 t2 row2 hu hev2 hem2 ht2 T hT
-    exact fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor (by omega) hupper hx
+    exact fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hd hupper hx
       ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu) hem2 hev2 (by linarith) hT
 
 /-- `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の更新の前の段の store の round `R` が正なら、その round の g1 の frame の
@@ -5773,7 +5827,7 @@ theorem confG1Raw_preceq_laterVoteHead_positive (hwf : SetupWellFormed c p s) (h
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1)
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1)
     (hpos : 0 < Model.Consensus.Protocol.Grades.roundOf s.hc
       (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) {raw : Block}
     (hraw : (Model.Consensus.Protocol.Grades.readFrame
@@ -5799,9 +5853,9 @@ theorem confG1Raw_preceq_laterVoteHead_positive (hwf : SetupWellFormed c p s) (h
   obtain ⟨-, hgrade⟩ := Proofs.Consensus.Grade2Capture.freezeRoot_mem hfz
   rw [Proofs.Consensus.RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs hnd' hevj] at hgrade
   obtain ⟨Y, hY, hg0Y⟩ :=
-    confG1Carrier_positive c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hpos w hwm g0 hgrade
+    confG1Carrier_positive c p a nr s rho hwf hdom hsleep hhor hw hx ht hd hqd hupper hpos w hwm g0 hgrade
   exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.Blocks.preceq_trans hrawg0 hg0Y)
-    (confWindowCarrier_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hx ht hqd hupper hY)
+    (confWindowCarrier_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hx ht hd hqd hupper hY)
 
 /-- `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の更新の前の段の store の round の g1 の frame の raw ブロックは、
 slot `d` の投票の務めの head の祖先。手書き `preparedG1Raw_preceq_voteDutyHead_of_gstZero`
@@ -5812,7 +5866,7 @@ theorem confG1Raw_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : Run
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) {raw : Block}
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1) {raw : Block}
     (hraw : (Model.Consensus.Protocol.Grades.readFrame
         (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t)
         (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
@@ -5823,7 +5877,7 @@ theorem confG1Raw_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : Run
       (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core.s) with h0 | hpos
   · rw [h0] at hraw
     exact (confCache_g1_round_zero c p a nr s rho _ hraw).elim
-  · exact confG1Raw_preceq_laterVoteHead_positive c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hpos hraw
+  · exact confG1Raw_preceq_laterVoteHead_positive c p a nr s rho hwf hdom hsleep hhor hw hx ht hd hqd hupper hpos hraw
 
 /-- `confFgRoot_preceq_laterVoteHead` と同じ前提で、確認の walk が anchor から動いた(filtered tree の要素で、得点の 2 倍が
 遅い投票の参加者の数を超える。genuine な確認)なら、walk は slot `d` の投票の務めの head の祖先。手書き
@@ -5856,11 +5910,11 @@ theorem confAnchor_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : Ru
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e last ≤ rho.horizon)
     {w x : ValidatorId} (hw : rho.honest.contains w = true) (hx : rho.honest.contains x = true) {i : Nat} {t : Int}
     (ht : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho w i t)
-    (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 < d) (hupper : d ≤ last + 1) :
+    (hd : 1 ≤ d) (hqd : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 ≤ d) (hupper : d ≤ last + 1) :
     preceq (Proofs.Consensus.Goldfish.sgRoot (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho w i t) s.e s.hc
         (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
       (voteDutyHeadAt c p a nr s rho x d) = true := by
-  have hfg := confFgRoot_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper
+  have hfg := confFgRoot_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hd hqd hupper
   show preceq (Model.Consensus.Protocol.Grades.anchor s.e s.hc
       (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core)
       (Model.Consensus.Protocol.Grades.roundOf s.hc
@@ -5874,7 +5928,7 @@ theorem confAnchor_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : Ru
   unfold Model.Consensus.Protocol.Grades.anchor
   split
   · rename_i raw hraw
-    have hhead := confG1Raw_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hraw
+    have hhead := confG1Raw_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hd hqd hupper hraw
     cases hA : Model.Consensus.Protocol.Grades.activePrefix
         (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
           (Model.Consensus.Protocol.Store.storeToHealing (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho w i t).core))
@@ -5901,7 +5955,7 @@ theorem confWalk_preceq_laterVoteHead (hwf : SetupWellFormed c p s) (hdom : RunD
       (Model.Consensus.Objects.Parameters.slotOf s.e t - 1) with h | ⟨hmem, hel⟩
   · unfold Proofs.Consensus.ConfirmedOrigin.confWalkAt
     rw [h]
-    exact confAnchor_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper
+    exact confAnchor_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht (by omega) hqd.le hupper
   · exact confEligibleWalk_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hw hx ht hqd hupper hmem hel
 
 /-- **g2 の frame の root の出どころ**: run の添字 `i` の event が `w` の時刻 `t` の tick なら、その tick が準備する cache
@@ -7897,16 +7951,15 @@ theorem confSupport_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDo
     · right
       exact hvv
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
+/-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
 確認評価の tick の確認の anchor(SG root `Goldfish.sgRoot`)は提案のブロックの消去の祖先。手書き `CanonicalProposalDutyAt` の欄 `anchor`
 (`DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean`)で、`canonicalProposalDuty_positive_of_gstZero_named` はそれを
 `preparedConfirmationAnchor_preceq_voterHeadAt_of_gstZero`(`DecoupledConsensusProofs/Protocol/Grades/WeakConfirmationReadAnchorsNamed.lean`。
 anchor は同じ slot の honest な投票者の head の祖先)と、その head が提案であること(`voteDutyHead_proposal_genesis`)から与える
 (周回 314 に `genuineConf_proposal_genesis` から分けた)。
-閉じるのに要るもの: anchor は FG root か grade の読みの g1 の活きた接頭辞(`confAnchor_preceq_laterVoteHead` と同じ場合分け)で、それぞれ
-同じ slot `k` の投票の務めの head の祖先であること(手書き `preparedFGRoot_preceq_voterHeadAt_same_of_gstZero` /
-`preparedG1Raw_preceq_voterHeadAt_same_of_gstZero`。naru の `confFgRoot_preceq_laterVoteHead` / `confG1Raw_preceq_laterVoteHead` は
-後の slot `q < d` の形)。 -/
+周回 315 に証明した: 提案を `v` 自身の slot `k` の投票の務めの head に戻し(`voteDutyHead_proposal_genesis`)、anchor の補題
+`confAnchor_preceq_laterVoteHead`(slot の仮定を `1 ≤ d`・`q ≤ d` に弱めたもの。手書き `preparedFGRoot_preceq_voterHeadAt_same_of_gstZero` /
+`preparedG1Raw_preceq_voterHeadAt_same_of_gstZero` の場合分けに当たる)を `d = k` で掛ける。 -/
 theorem confAnchor_preceq_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
@@ -7917,7 +7970,8 @@ theorem confAnchor_preceq_proposal_genesis (hwf : SetupWellFormed c p s) (hdom :
     preceq (Proofs.Consensus.Goldfish.sgRoot (Proofs.Consensus.ConfirmedOrigin.confCacheAt c p a nr s rho v i t) s.e s.hc
         (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho v i t).core)
       (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true := by
-  sorry
+  rw [← voteDutyHead_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv]
+  exact confAnchor_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hv hv hct hk (le_of_eq hq) (by omega)
 
 /-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
 確認評価の tick で、確認の anchor から提案のブロックの消去までの途中のブロック(anchor を除く)はみな確認の更新の前の段の store の
