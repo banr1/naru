@@ -997,6 +997,86 @@ theorem goldfishForkChoice_passes_supporter_majority (e : ProtocolEnv)
   exact ghost_passes_supporter_majority e hnd hsub hmaj
     (fun C _ h => goldfishEligible_of_lt e sigma hMax tree cur votes sv s h) hAB hpath
 
+/-- **ちょうど `B` に解決する honest な支持の下で、門を通るブロックは `B` の祖先**: slot `s` の committee が honest 過半で、honest な
+committee の要素がみな支持の投票に root が `B` に解決する slot `s` の投票を持てば、門 `eligible` を通る `X` には honest な支持者がいて
+(`exists_honest_supporter_of_eligible`)、その支持の投票は投票者ごとに 1 つ(`supportVotes_unique`)なので `B` に解決し、`X ⪯ B`。
+手書き `HonestSupport.not_eligible`(`Protocol/ForkChoice/Goldfish/Confirmation.lean`。`B` の祖先でないブロックは門を通らない)。 -/
+theorem preceq_of_eligible_exactSupport {c : Nat → NaruStd.Set ValidatorId} (e : ProtocolEnv) {st : Store} {s : Nat}
+    {H : VSet} {B : Block} (hδ : 0 ≤ e.delta) (hinv : PoolInv c st) (hsorted : Sorted (c s))
+    (hcom : (c s).size < 2 * ((c s).inter H).size)
+    (hvote : ∀ v ∈ (c s).elems, v ∈ H.elems →
+      ∃ u ∈ (supportVotes e st s).elems, u.valIndex = v ∧ u.slot = s ∧ findRoot? st.tree u.head = some B)
+    (hBs : slot B ≤ s) {X : Block} (hX : Proofs.Consensus.Goldfish.eligible e st s X = true) :
+    preceq X B = true := by
+  have hsup : HonestSupport c e st s H B := ⟨hcom, fun v hv hH => by
+    obtain ⟨u, hu, hvi, hs, hf⟩ := hvote v hv hH
+    exact ⟨u, hu, hvi, hs, (targetsUnder_iff _ _ _).mpr ⟨B, hf, by omega, preceq_self _⟩⟩⟩
+  obtain ⟨v, u, hvH, hu, hvi, -, ht⟩ :=
+    exists_honest_supporter_of_eligible e s X H hδ hinv hsorted hcom (hsup.participants hδ) hX
+  have hvc : v ∈ (c s).elems := by
+    rw [← hvi]
+    exact supportVotes_committee hinv hδ hu
+  obtain ⟨u', hu', hvi', -, hf⟩ := hvote v hvc hvH
+  have heq : u' = u := supportVotes_unique e st s hδ hu hu' (hvi'.trans hvi.symm)
+  subst heq
+  obtain ⟨Y, hY, -, hXY⟩ := (targetsUnder_iff _ _ _).mp ht
+  rw [hf, Option.some.injEq] at hY
+  subst hY
+  exact hXY
+
+/-- **ちょうど `B` に解決する honest な支持は確認の walk を `B` で止める**: 上の honest な支持の下で、確認の anchor(SG root)が `B` の祖先で、
+anchor から `B` までの途中(anchor を除く)が filtered tree にあれば、確認の walk `Goldfish.head` は `B` そのもので、`B` は門を通る。
+途中の各ブロックで `B` に向かう子は門を通り(`HonestSupport.eligible_of_preceq`)、門を通る子はどれも `B` の祖先
+(`preceq_of_eligible_exactSupport`)なので同じ親の子としてただ 1 つ(`child_towards_unique`)、`B` の子は `B` の祖先になれないので
+門を通らない。手書き `confWalkWith_eq_of_support`(`DecoupledConsensusProofs/Protocol/Grades/Main.lean`。得点の真の支配
+`HonestSupport.score_lt` の代わりに、門を通る子がただ 1 つであることを使う)。 -/
+theorem head_eq_of_exactSupport {c : Nat → NaruStd.Set ValidatorId} (cache : Cache) (e : ProtocolEnv) (hc : HealConfig)
+    {st : Store} {s : Nat} {H : VSet} {B : Block} (hδ : 0 ≤ e.delta) (hinv : PoolInv c st) (hsorted : Sorted (c s))
+    (hcom : (c s).size < 2 * ((c s).inter H).size)
+    (hvote : ∀ v ∈ (c s).elems, v ∈ H.elems →
+      ∃ u ∈ (supportVotes e st s).elems, u.valIndex = v ∧ u.slot = s ∧ findRoot? st.tree u.head = some B)
+    (hBs : slot B ≤ s) (hnd : (getFilteredBlockTree (storeToHealing st)).elems.Nodup)
+    (hpre : preceq (sgRoot cache e hc st) B = true)
+    (hpath : ∀ C, preceq (sgRoot cache e hc st) C = true → C ≠ sgRoot cache e hc st → preceq C B = true →
+      C ∈ (getFilteredBlockTree (storeToHealing st)).elems) :
+    Proofs.Consensus.Goldfish.head cache e hc st s = B ∧ Proofs.Consensus.Goldfish.eligible e st s B = true := by
+  have hsup : HonestSupport c e st s H B := ⟨hcom, fun v hv hH => by
+    obtain ⟨u, hu, hvi, hs, hf⟩ := hvote v hv hH
+    exact ⟨u, hu, hvi, hs, (targetsUnder_iff _ _ _).mpr ⟨B, hf, by omega, preceq_self _⟩⟩⟩
+  have helig : ∀ C, preceq C B = true → Proofs.Consensus.Goldfish.eligible e st s C = true := fun C hCB =>
+    (eligible_iff e st s C).mpr (hsup.eligible_of_preceq hδ hinv hsorted hCB)
+  have hunder : ∀ X, Proofs.Consensus.Goldfish.eligible e st s X = true → preceq X B = true := fun X hX =>
+    preceq_of_eligible_exactSupport e hδ hinv hsorted hcom hvote hBs hX
+  refine ⟨?_, helig B (preceq_self _)⟩
+  unfold Proofs.Consensus.Goldfish.head
+  refine Proofs.Consensus.Goldfish.ghost_reaches hpre hpath ?_ ?_
+  · -- `B` の子は門を通らない
+    apply Proofs.Consensus.Goldfish.ghostStep_none
+    intro D _ hDp
+    rw [← Bool.not_eq_true]
+    intro hD
+    have hDB := hunder D hD
+    have h1 := depth_of_parent? hDp
+    have h2 := preceq_depth_le hDB
+    omega
+  · -- 途中の各ブロックで、門を通る子は `B` に向かう子だけ
+    intro K hAK hKB hne
+    obtain ⟨C, hCp, hCB⟩ := exists_child_towards hKB hne
+    have hAC : preceq (sgRoot cache e hc st) C = true := preceq_trans hAK (preceq_of_parent? hCp)
+    have hCne : C ≠ sgRoot cache e hc st := by
+      intro hEq
+      have h1 := depth_of_parent? hCp
+      have h2 := preceq_depth_le hAK
+      rw [hEq] at h1
+      omega
+    have hCmem : C ∈ (ghostChildren (getFilteredBlockTree (storeToHealing st)) (Proofs.Consensus.Goldfish.eligible e st s)
+        K).elems :=
+      (mem_ghostChildren_iff _ _ _ _).mpr ⟨hpath C hAC hCne hCB, hCp, helig C hCB⟩
+    refine ⟨C, ghostStep_eq_of_dominates hnd hCmem ?_, hCB⟩
+    intro D hD hDC
+    obtain ⟨-, hDp, hDel⟩ := (mem_ghostChildren_iff _ _ _ _).mp hD
+    exact absurd (child_towards_unique hCp hDp hCB (hunder D hDel)).symm hDC
+
 end SupporterMajority
 
 /-! ## 確認の過半の別の読みへの移送(手書き `AdoptionTransport`。周回 299) -/
