@@ -126,19 +126,22 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(6 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+4. 穴(5 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposal_preceq_voteDutyHead_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の
    祖先の側。等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
    `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/
-   `confPath_proposal_genesis`(手書き `CanonicalProposalDutyAt` の欄 `path`。周回 314 に
-   `genuineConf_proposal_genesis`(手書き `genuineConfirmation_of_dutyExecution`)を、務めの事実から walk が提案で止まる
-   `Majority.head_eq_of_exactSupport` で組んで分け、欄 `votes`・`counted`・`resolve` に当たる支持の投票 `confSupport_proposal_genesis` は同じ周回に証明した。
+   `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
+   walk が提案で eligible なこと(周回 306 に穴として置いた `genuineConf_proposal_genesis`。手書き `genuineConfirmation_of_dutyExecution`)は
+   周回 314 に、務めの事実から walk が提案で止まる `Majority.head_eq_of_exactSupport` で組んで手書き `CanonicalProposalDutyAt` の欄に分け、欄 `votes`・`counted`・`resolve` に当たる支持の投票 `confSupport_proposal_genesis` は同じ周回に証明した。
    欄 `anchor` に当たる `confAnchor_preceq_proposal_genesis` は周回 315 に、anchor の補題の連鎖(`confAnchor_preceq_laterVoteHead` から下)の
    slot の仮定を `q < d` から `1 ≤ d`・`q ≤ d` に弱めて同じ slot `k` の投票の務めの head(提案)に当てて証明した。FG root の確認の証人の行の時刻は
    tick の時刻より前の確認の時刻なので slot `k + 1` の投票時刻より前(`attest_lt_nextVote_of_lt_confTick`)、窓の行の round は `r ≥ 3` で
-   opening slot が `k` より前、G1 の domain 時刻は slot `k + 1` の提案時刻以下)/
-   `confirmedIncluded_recovered`(手書き `available_confirmedIncluded` の `recovered` の枝)/ `stableIncluded`(手書き `available_stableIncluded_any`)。
+   opening slot が `k` より前、G1 の domain 時刻は slot `k + 1` の提案時刻以下。欄 `path` に当たる `confPath_proposal_genesis` は周回 316 に、
+   手書き `proposedBlock_confirmationBandAndCandidate_of_gstZero_of_pins` と同じく、提案が tick の前の tree にあること
+   (`proposal_stamped_confTick_genesis`。`confSupport_proposal_genesis` から切り出した)と高さの帯(`confBand_proposal_genesis`。最大の高さの
+   横断の honest な行の確認の証人は提案の祖先)から、途中のブロックは tree の祖先の閉包にあり viable の証人が提案そのもので、finalized ⪯ FG root
+   ⪯ anchor の子孫であることで証明した。
    提案のブロックの存在(周回 306 に穴 `proposedBlockAt_isSome_genesis` として置いた)は周回 312 に前提なしの `proposedBlockAt_isSome` に
    した(bodies の消去の単射性 `BodiesUnique.lean`)。
    stable の書き込みが元の確認の記録を walk に進めたものの祖先であること(周回 306 に穴として置いた `confHeadExtendsStable_genesis`。手書き
@@ -148,7 +151,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 手書きは `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
 `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致と確認の包含の穴はすでに枝ごとに分けた(`commonUpper_genesis` /
-GST-zero の枝の 2 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
+GST-zero の枝の 1 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
 (`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)をそのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく
 `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
@@ -7760,6 +7763,91 @@ theorem voteDutyHead_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunD
     (proposal_preceq_voteDutyHead_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hx)
 
 /-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
+確認評価の tick(添字 `i`)の前の store の tree に提案のブロックの消去があり、その受信の印は支持の締切より前。手書き
+`proposedBlock_confirmationBandAndCandidate_of_gstZero_of_pins`(`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakConfirmationReadBandCandidateNamed.lean`)
+の `hBconf` と、`CanonicalProposalDutyAt` の欄 `counted` の提案の印に当たる。運び: 提案は `v` の slot `k` の投票の務めの head
+(`voteDutyHead_proposal_genesis`)で、支持の締切の読みの finalized はそれより前の honest な行の確認の証人を経て head の祖先
+(`stateBeforeTime_f_preceq_of_witnesses` / `fgWitness_preceq_laterVoteHead`)なので、提案は締切より前の印で `v` の tree に入り
+(`bodiesBlock_stamped`)、印は以後変わらない(`BlockStamps.stateBefore_keep`)。周回 316 に `confSupport_proposal_genesis` の途中から切り出した。 -/
+theorem proposal_stamped_confTick_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
+    (hhon : rho.honest.contains (p k) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho k = some B) {v : ValidatorId} (hv : rho.honest.contains v = true)
+    {i : Nat} {t : Int} (hct : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho v i t)
+    (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = k) :
+    Model.Consensus.Objects.NamedBlocks.eraseBlock B ∈ (worldAt (stateBefore c p a nr s rho i) v).st.core.tree.elems ∧
+      Model.Consensus.Objects.Time.occurrenceBefore
+        ((worldAt (stateBefore c p a nr s rho i) v).st.core.timestampBlock.get?
+          (Model.Consensus.Objects.NamedBlocks.eraseBlock B))
+        (Model.Consensus.Protocol.Schedule.supportCutoff s.e k) = true := by
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hvm : v ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hv
+  have htime : t = Model.Consensus.Protocol.Schedule.confirmationTime s.e k := by
+    rw [← hq]; exact Proofs.Consensus.ConfirmedOrigin.confTick_time s rho hct
+  have hcutConf : Model.Consensus.Protocol.Schedule.supportCutoff s.e k ≤
+      Model.Consensus.Protocol.Schedule.confirmationTime s.e k :=
+    Proofs.Consensus.Majority.supportCutoff_le_confirmationTime s.e k hδ.le
+  have hvoteCut : Model.Consensus.Protocol.Schedule.voteTime s.e k + s.e.delta =
+      Model.Consensus.Protocol.Schedule.supportCutoff s.e k := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.supportCutoff
+    ring
+  have hT0 : 0 ≤ Model.Consensus.Protocol.Schedule.voteTime s.e k := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    positivity
+  have hcutNext : Model.Consensus.Protocol.Schedule.supportCutoff s.e k <
+      Model.Consensus.Protocol.Schedule.voteTime s.e (k + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.supportCutoff
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hBhead : voteDutyHeadAt c p a nr s rho v k = Model.Consensus.Objects.NamedBlocks.eraseBlock B :=
+    voteDutyHead_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv
+  have hmemX : voteDutyHeadAt c p a nr s rho v k ∈
+      (worldAt (stateBefore c p a nr s rho
+        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k))) v).st.core.tree.elems := by
+    rw [← Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
+    unfold voteDutyHeadAt
+    exact voteHeadBlock_mem_tree _ s.e s.hc
+      ((Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ v).congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+  obtain ⟨Y, hY, hYe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho _ v).named _ hmemX
+  have hfB : preceq (Model.Consensus.Protocol.Store.storeToHealing
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k)) v).st.core).f
+      (voteDutyHeadAt c p a nr s rho v k) = true :=
+    stateBeforeTime_f_preceq_of_witnesses c p a nr s rho hwf hsleep hvm _
+      (fun u2 i2 t3 row2 hu2 hev2 hem2 ht3 T hT =>
+        fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor (by omega) (by omega) hv
+          ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu2) hem2 hev2
+          (lt_trans ht3 hcutNext) hT)
+  have hcompat : Model.Consensus.Objects.Blocks.compatible
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k)) v).st.core.f
+      (Model.Consensus.Objects.NamedBlocks.eraseBlock Y) = true := by
+    rw [hYe]
+    exact Proofs.Consensus.Blocks.compatible_of_preceq_common hfB (Proofs.Consensus.Blocks.preceq_self _)
+  obtain ⟨htreeτ, hstampτ⟩ := bodiesBlock_stamped c p a nr s rho hwf hdom hsleep hvm hT0
+    (fun j' ev' hj' hev' => le_of_lt (Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs hj' hev'))
+    hY hvm (le_of_eq hvoteCut) (by linarith) hcompat
+  rw [hYe, hBhead] at htreeτ hstampτ
+  rw [hvoteCut] at hstampτ
+  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at htreeτ hstampτ
+  have hidx : Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k) ≤ i := by
+    by_contra hlt
+    have h := Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs (Nat.lt_of_not_le hlt) hct.1
+    change t < _ at h
+    linarith
+  obtain ⟨hmemi, hstampEq⟩ := Proofs.Consensus.BlockStamps.stateBefore_keep c p a nr s rho hidx v _ htreeτ
+  refine ⟨hmemi, ?_⟩
+  rw [hstampEq]
+  exact hstampτ
+
+/-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
 確認評価の tick で、slot `k` の committee の honest な要素はみな、確認の更新の前の段の store の支持の投票 `supportVotes` に、root が
 提案のブロックの消去に解決する slot `k` の投票を持つ。手書き `CanonicalProposalDutyAt` の欄 `votes`・`counted`・`resolve` を
 `honestSupport_of_dutyExecution`(`DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean`)で合わせた `HonestSupport.vote` に
@@ -7818,13 +7906,6 @@ theorem confSupport_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDo
       Model.Consensus.Objects.Time.slotStart
     simp only [Int.ofNat_eq_natCast]
     positivity
-  have hcutNext : Model.Consensus.Protocol.Schedule.supportCutoff s.e k <
-      Model.Consensus.Protocol.Schedule.voteTime s.e (k + 1) := by
-    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.supportCutoff
-      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
-    simp only [Int.ofNat_eq_natCast]
-    push_cast
-    nlinarith
   set st := (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho v i t).core with hst
   have hpre := confPreUpdate_eq c p a nr s rho hδ hct
   have hpool : ∀ k', Proofs.Consensus.Votes.poolList st k' =
@@ -7870,40 +7951,8 @@ theorem confSupport_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDo
     voteDutyHead_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hx
   have hroot : u.head = root (Model.Consensus.Objects.NamedBlocks.eraseBlock B) := by
     rw [hhead, Proofs.Consensus.Voting.voteHead_eq_root, ← hduty, hBhead]
-  -- 提案は `v` の支持の締切の読みの tree に、締切より前の印で入る(`bodiesBlock_stamped`)
-  have hmemX : voteDutyHeadAt c p a nr s rho x k ∈
-      (worldAt (stateBefore c p a nr s rho
-        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e k))) x).st.core.tree.elems := by
-    rw [← Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
-    unfold voteDutyHeadAt
-    exact voteHeadBlock_mem_tree _ s.e s.hc
-      ((Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ x).congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
-  obtain ⟨Y, hY, hYe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho _ x).named _ hmemX
-  have hfB : preceq (Model.Consensus.Protocol.Store.storeToHealing
-      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k)) v).st.core).f
-      (voteDutyHeadAt c p a nr s rho x k) = true :=
-    stateBeforeTime_f_preceq_of_witnesses c p a nr s rho hwf hsleep hvm _
-      (fun u2 i2 t3 row2 hu2 hev2 hem2 ht3 T hT =>
-        fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor (by omega) (by omega) hx
-          ((Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hu2) hem2 hev2
-          (lt_trans ht3 hcutNext) hT)
-  have hcompat : Model.Consensus.Objects.Blocks.compatible
-      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k)) v).st.core.f
-      (Model.Consensus.Objects.NamedBlocks.eraseBlock Y) = true := by
-    rw [hYe]
-    exact Proofs.Consensus.Blocks.compatible_of_preceq_common hfB (Proofs.Consensus.Blocks.preceq_self _)
-  obtain ⟨htreeτ, hstampτ⟩ := bodiesBlock_stamped c p a nr s rho hwf hdom hsleep hxh hT0
-    (fun j' ev' hj' hev' => le_of_lt (Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs hj' hev'))
-    hY hvm (le_of_eq hvoteCut) (by linarith) hcompat
-  rw [hYe, hBhead] at htreeτ hstampτ
-  rw [hvoteCut] at hstampτ
-  rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at htreeτ hstampτ
-  have hidx : Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.supportCutoff s.e k) ≤ i := by
-    by_contra hlt
-    have h := Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs (Nat.lt_of_not_le hlt) hct.1
-    change t < _ at h
-    linarith
-  obtain ⟨hmemi, hstampEq⟩ := Proofs.Consensus.BlockStamps.stateBefore_keep c p a nr s rho hidx v _ htreeτ
+  -- 提案は tick の前の store の tree に、支持の締切より前の印で入る
+  obtain ⟨hmemi, hstampi⟩ := proposal_stamped_confTick_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv hct hq
   have hBmem : Model.Consensus.Objects.NamedBlocks.eraseBlock B ∈ st.tree.elems := by
     rw [htree]; exact hmemi
   have hfind : Model.Consensus.Objects.Blocks.findRoot? st.tree u.head =
@@ -7933,8 +7982,7 @@ theorem confSupport_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDo
       show Model.Consensus.Objects.Time.occurrenceBefore
         ((worldAt (stateBefore c p a nr s rho i) v).st.core.timestampBlock.get?
           (Model.Consensus.Objects.NamedBlocks.eraseBlock B)) _ = true
-      rw [hstampEq]
-      exact hstampτ
+      exact hstampi
   · -- 遅い投票に `x` の別の投票は無い(honest な投票者の pool の投票は slot ごとに 1 つ)
     unfold Model.Consensus.Protocol.ForkChoice.Goldfish.noSecondVoteIn NaruStd.Set.all
     rw [List.all_eq_true]
@@ -7973,13 +8021,94 @@ theorem confAnchor_preceq_proposal_genesis (hwf : SetupWellFormed c p s) (hdom :
   rw [← voteDutyHead_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv]
   exact confAnchor_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hv hv hct hk (le_of_eq hq) (by omega)
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
+/-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
+確認評価の tick(添字 `i`)の前の store の `hMax - 1` は、`sigma` での提案のブロックの消去の高さ以下。手書き
+`proposedBlock_confirmationBandAndCandidate_of_gstZero_of_pins`(`DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/WeakConfirmationReadBandCandidateNamed.lean`)
+の `hband` に当たり、同じ運びで組む(周回 316): `hMax` が 1 より大きければ、tick の前の状態は時刻 `< t` の読み
+(`RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime`)で、その最大の高さの横断の honest な行
+(`MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt`。手書き `frontier_confirmationWitness_core_entry`)を出した tick の務めの
+確認の証人 `K`(`HeightRowWitness.emits_vote_confirmationWitness`。導出の高さ `hMax - 1`)は、行の時刻が slot `k + 1` の投票時刻より前
+(`attest_lt_nextVote_of_lt_confTick`)なので `v` の slot `k` の投票の務めの head の祖先(`fgWitness_preceq_laterVoteHead`。手書き
+`actionSources_preceq_voteDutyHead_of_gstZero`)で、head は提案(`voteDutyHead_proposal_genesis`)。提案の消去は `v` の bodies の名前付き
+ブロック `Y` の消去(`Carrier.StoreInv` の `named` / `sigma`)で、`K` の消去の持ち上げは root の衝突なしで `K` なので、高さは
+`deriveNamed_h_mono` で上がる。 -/
+theorem confBand_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
+    (hhon : rho.honest.contains (p k) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho k = some B) {v : ValidatorId} (hv : rho.honest.contains v = true)
+    {i : Nat} {t : Int} (hct : Proofs.Consensus.ConfirmedOrigin.ConfTick s rho v i t)
+    (hq : Model.Consensus.Objects.Parameters.slotOf s.e t - 1 = k) :
+    (worldAt (stateBefore c p a nr s rho i) v).st.core.hMax - 1 ≤
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.chainStateOf (worldAt (stateBefore c p a nr s rho i) v).st.core.sigma
+        (Model.Consensus.Objects.NamedBlocks.eraseBlock B)).h := by
+  have hfacts := Proofs.Consensus.Liveness.wf_facts hwf
+  have hδ := hfacts.1
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  have hcf : Statements.Consensus.Spec.Execution.NamedRootCollisionFree c p a nr s rho :=
+    (runWellFormed_of_executionValid c p a nr s rho hexec).2
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  unfold UnforgeableSignatures at hunf
+  obtain ⟨-, hcar⟩ := hunf
+  obtain ⟨hs, hnd⟩ := Proofs.Consensus.Available.schedule_sorted_nodup s rho hsch
+  have hnd' := Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd
+  have hhor0 : (0 : Int) ≤ rho.horizon := by
+    have h := hsch
+    unfold ScheduleWellFormed at h
+    exact h.1.1.1.1.1.1
+  have hlag : (0 : Int) ≤ Model.Consensus.Spec.Constants.participationLag s :=
+    (Proofs.Consensus.Constants.period_pos s hfacts.1 hfacts.2.2).le
+  have hqh := Proofs.Consensus.JustificationCertificate.quorumHonest_of_sleepyRegime
+    (Proofs.Consensus.JustificationCertificate.sorted_validators hwf) hsleep hlag le_rfl (by rw [sub_self]; exact hhor0)
+  have hw := Proofs.Consensus.RootWitness.worldAt_stateBefore_tick_eq_stateBeforeTime c p a nr s rho hs hnd' hct.1
+  -- 提案の消去は `v` の bodies の名前付きブロック `Y` の消去で、`sigma` の値は `Y` の導出
+  have hBmem := (proposal_stamped_confTick_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv hct hq).1
+  have hinv := Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i v
+  obtain ⟨Y, hY, hYe⟩ := hinv.named _ hBmem
+  rw [← hYe, hinv.sigma Y hY]
+  by_cases hlarge : 1 < (worldAt (stateBefore c p a nr s rho i) v).st.core.hMax
+  swap
+  · omega
+  -- 最大の高さの横断の honest な行と、それを出した tick の務めの確認の証人 `K`
+  rw [hw] at hlarge
+  obtain ⟨_W, _X, _Y, row, _t1, t2, -, -, -, -, -, hH, hmatch, -, -, -, ht2, hem⟩ :=
+    Proofs.Consensus.MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt c p a nr s rho hs hqh hcar v t hlarge
+  rw [← hw] at hmatch
+  obtain ⟨nu, hvt⟩ := Proofs.Consensus.RootEntry.matchesEntry_vote hmatch
+  obtain ⟨i2, -, K, hev2, hfg, -, -, -, hK, -, hKh, -, -, -, hbod⟩ :=
+    Proofs.Consensus.HeightRowWitness.emits_vote_confirmationWitness c p a nr s rho hem hvt
+  have hu : rho.honest.contains row.valIndex = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hH
+  have hnext := attest_lt_nextVote_of_lt_confTick c p a nr s rho hδ hct hem ht2 (d := k) hk (le_of_eq hq)
+  -- `K` の消去は `v` の slot `k` の投票の務めの head(提案)の祖先
+  have hKB := fgWitness_preceq_laterVoteHead c p a nr s rho hwf hdom hsleep hhor hk (Nat.le_succ k) hv hu hem hev2
+    hnext hfg
+  rw [voteDutyHead_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv, ← hYe] at hKB
+  obtain ⟨Kn, hKn, hKne⟩ := Proofs.Consensus.NamedBlocks.erased_ancestor_lift hKB
+  have hKb : K ∈ (worldAt (stateBefore c p a nr s rho (i2 + 1)) row.valIndex).st.bodies.elems := by
+    rw [hbod]; exact hK
+  have hKdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho K :=
+    Or.inr ⟨row.valIndex, hu, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hKb⟩
+  have hYdir : Statements.Consensus.Spec.Execution.DirectBlockInRun c p a nr s rho Y :=
+    Or.inr ⟨v, hv, _, (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Orders.nb_compare_eq_iff _ _).mpr hY⟩
+  have heq : K = Kn := hcf K Y ⟨⟨K, hKdir, Proofs.Consensus.NamedBlocks.namedPreceq_self K⟩,
+      ⟨Y, hYdir, Proofs.Consensus.NamedBlocks.namedPreceq_self Y⟩⟩ K Kn
+    ⟨⟨Or.inl (Proofs.Consensus.NamedBlocks.namedPreceq_self _), Or.inr hKn⟩,
+      by rw [← Proofs.Consensus.NamedBlocks.root_eraseBlock, ← Proofs.Consensus.NamedBlocks.root_eraseBlock, hKne]⟩
+  rw [← heq] at hKn
+  have hmono := Proofs.Consensus.EntryHeight.deriveNamed_h_mono s.e s.cfg hKn
+  omega
+
+/-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノード `v` の slot `k` の
 確認評価の tick で、確認の anchor から提案のブロックの消去までの途中のブロック(anchor を除く)はみな確認の更新の前の段の store の
 filtered tree にある。手書き `CanonicalProposalDutyAt` の欄 `path`(`DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean`)で、
 `canonicalProposalDuty_positive_of_gstZero_named` はそれを `proposedBlock_confirmationBandAndCandidate_of_gstZero`
 (`DecoupledConsensusProofs/Execution/WeakConfirmationReadBandCandidateClosed.lean`)から与える(周回 314 に `genuineConf_proposal_genesis` から分けた)。
-閉じるのに要るもの: 提案が確認の締切までに `v` の tree に入ること(`ProposerRoot.partialSynchrony_emitted_block_mem_of_fgRoot`)、tree が祖先に
-ついて閉じていること、途中のブロックが viable で finalized の子孫であること(`Goldfish.getFilteredBlockTreeFrom` の絞り込み)。 -/
+周回 316 に手書きと同じ運びで証明した: 提案は tick の前の tree にあり(`proposal_stamped_confTick_genesis`)、tree は祖先について閉じている
+(`Trees.ancestor_mem_tree` / `Trees.tree_closed`)ので途中のブロックも tree にある。viable の証人は提案そのもので、その高さは
+`hMax - 1` 以上(`confBand_proposal_genesis`。手書きの `hband`)。finalized ⪯ FG root(`ProposerFinality.fgRoot_extends`)⪯ anchor
+(`ProposerRoot.getSgRootWith_extends_fgRoot`)⪯ 途中のブロック。 -/
 theorem confPath_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (k : Nat) (hk : 0 < k)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e k ≤ rho.horizon)
@@ -7994,14 +8123,42 @@ theorem confPath_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomai
       preceq C (Model.Consensus.Objects.NamedBlocks.eraseBlock B) = true →
       C ∈ (Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree (Model.Consensus.Protocol.Store.storeToHealing
         (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho v i t).core)).elems := by
-  sorry
+  intro C hAC _ hCB
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hBmem := (proposal_stamped_confTick_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv hct hq).1
+  have hband := confBand_proposal_genesis c p a nr s rho hwf hdom hsleep k hk hhor hhon hB hv hct hq
+  have hinv := Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho i v
+  have hfj := Proofs.Consensus.ProposerFinality.stateBefore_fj c p a nr s rho i v
+  -- FG root ⪯ SG root(anchor)⪯ `C`
+  have hroot : preceq (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot (Model.Consensus.Protocol.Store.storeToHealing
+      (Proofs.Consensus.RootWitness.preUpdateStoreAt c p a nr s rho v i t).core)) C = true :=
+    Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.ProposerRoot.getSgRootWith_extends_fgRoot _ _ _ _ _) hAC
+  -- tree は祖先について閉じているので `C` は tree にある
+  have hCmem : C ∈ (worldAt (stateBefore c p a nr s rho i) v).st.core.tree.elems :=
+    Proofs.Consensus.Trees.ancestor_mem_tree (Proofs.Consensus.Trees.tree_closed hinv) hCB hBmem
+  rw [confPreUpdate_eq c p a nr s rho hδ hct] at hroot ⊢
+  unfold Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.getFilteredBlockTreeFrom
+    Model.Consensus.Protocol.ForkChoice.Goldfish.viableTree
+    Model.Consensus.Protocol.ForkChoice.Goldfish.finalizedDescendants
+  dsimp only
+  simp only [Proofs.Consensus.Trees.mem_filter_iff]
+  refine ⟨⟨⟨hCmem, ?_⟩, ?_⟩, hroot⟩
+  · -- finalized ⪯ FG root ⪯ `C`
+    exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.ProposerFinality.fgRoot_extends hfj) hroot
+  · -- viable の証人は提案そのもの(高さは `confBand_proposal_genesis`)
+    unfold Model.Consensus.Protocol.ForkChoice.Goldfish.viable NaruStd.Set.any
+    rw [List.any_eq_true]
+    refine ⟨Model.Consensus.Objects.NamedBlocks.eraseBlock B, hBmem, ?_⟩
+    rw [Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨hCB, hband⟩
 
 /-- GST-zero の枝(`t0 = 0`)で、正の slot `k` の提案者が honest で確認の時刻が `horizon` 以下なら、honest なノードの slot `k` の確認評価の
 tick の確認は提案のブロックの消去の genuine な確認(walk が提案で eligible)。手書き `genuineConfirmation_of_dutyExecution`
 (`DecoupledConsensusProofs/Protocol/Grades/ProposalLifecycleCore.lean`)を `canonicalProposalDuty_positive_of_gstZero_named`
 (`DecoupledConsensusProofs/Execution/WeakGenesisCanonicalProposalDutyClosed.lean`)の務めの事実に当てたものに当たる。
 周回 306 に穴として置き、周回 314 に手書きと同じ運びで組んだ: 務めの事実(支持の投票 `confSupport_proposal_genesis` と、穴
-`confAnchor_preceq_proposal_genesis` / `confPath_proposal_genesis`)と、確認の更新の前の段の store の pool の不変条件(`Votes.stateBefore_pool`。前の段は時計を合わせただけ
+`confAnchor_preceq_proposal_genesis` / `confPath_proposal_genesis`。どちらも後に証明した)と、確認の更新の前の段の store の pool の不変条件(`Votes.stateBefore_pool`。前の段は時計を合わせただけ
 `confPreUpdate_eq`)・committee の整列(`Majority.committee_sorted`)・honest 過半(`HonestCommittees`)・tree の重複の無さ(`TreeInv`)から、
 walk は提案で止まり提案は門を通る(`Majority.head_eq_of_exactSupport`。手書き `confWalkWith_eq_of_support`)。 -/
 theorem genuineConf_proposal_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)

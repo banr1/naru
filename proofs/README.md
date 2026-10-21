@@ -596,7 +596,13 @@ anchor が提案の祖先なこと(`confAnchor_preceq_proposal_genesis`。欄 `a
 `confG1Raw_preceq_laterVoteHead` から下)の slot の仮定を `q < d` から `1 ≤ d`・`q ≤ d` に弱めました。tick の時刻 `t` そのものは slot `q + 1` の
 投票時刻より後ですが、使っていたのは `t` より前の時刻だけです: FG root の確認の証人の行の時刻は `t` より前の確認の時刻なので opening slot が `q` より前
 (`attest_lt_nextVote_of_lt_confTick`)、窓の行の round の opening slot は `r ≥ 3` で `q` より前、G1 の domain 時刻は slot `q + 1` の提案時刻以下です。
-残る穴は anchor から提案までの途中が filtered tree にあること(`confPath_proposal_genesis`。欄 `path`)です。
+anchor から提案までの途中が filtered tree にあること(`confPath_proposal_genesis`。欄 `path`)は周回 316 に、手書き
+`proposedBlock_confirmationBandAndCandidate_of_gstZero_of_pins` と同じ運びで証明しました: 提案は tick の前の tree に支持の締切より前の印で入り
+(`proposal_stamped_confTick_genesis`。`confSupport_proposal_genesis` の途中から切り出しました)、tree は祖先について閉じているので途中のブロックも
+tree にあります。viable の証人は提案そのもので、その高さが `hMax - 1` 以上なこと(`confBand_proposal_genesis`)は、最大の高さの横断の honest な行
+(`MaxCrossing.stateBeforeTime_maxCrossing_honestEmission_lt`)を出した tick の務めの確認の証人 `K`(高さ `hMax - 1`)が、行の時刻が slot `k + 1` の
+投票時刻より前なので提案(slot `k` の投票の務めの head)の祖先で、root の衝突なしで高さが単調なことから出します。finalized ⪯ FG root ⪯ anchor ⪯ 途中のブロックです。
+GST-zero の枝で残る穴は、提案が slot `k ≥ 2` の投票の務めの head の祖先なこと(`proposal_preceq_voteDutyHead_succ_genesis`)だけです。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -615,7 +621,6 @@ anchor が提案の祖先なこと(`confAnchor_preceq_proposal_genesis`。欄 `a
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.proposal_preceq_voteDutyHead_succ_genesis` | `Consensus.Spec.Claims.available` | `honestVoteStoresExtend_succ_of_gstZero_of_pins` | `DecoupledConsensusProofs/Protocol/Schedule/WeakGenesisVoteStoresSuccPins.lean` | 308 |
-| `Proofs.Consensus.AvailableHoles.confPath_proposal_genesis` | `Consensus.Spec.Claims.available` | `proposedBlock_confirmationBandAndCandidate_of_gstZero` | `DecoupledConsensusProofs/Execution/WeakConfirmationReadBandCandidateClosed.lean` | 314 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |
