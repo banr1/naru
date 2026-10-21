@@ -619,6 +619,11 @@ slot `k - 1` の head の祖先(`voteDutyAnchor_preceq_prevHead`)なので保護
 (`proposalParent_passes_supporter_majority`。重複なしと「支持 ⊆ 投票」は証明済み)。途中のブロックは、歩みの tree の証人 `X` の祖先として
 tree に入ります(`proposalDutyTree_mem_of_preceq`)。残りは 2 つの穴です。証人 `X`(`proposerCandidate_protected_succ_genesis`。手書きの `hXcandidate` と `hanchorX`)と、
 提案者の view での過半(`proposerSupporterMajority_protected_succ_genesis`。手書きの `supporterMajority_of_cone`)です。
+周回 322 に、過半の穴を閉じました。前提に anchor ⪯ `P` を足しました(呼び出し側の枝にあります)。提案者の view は pool のバケツ `d` そのもので、
+凍結の絞り込みがありません。参加者は pool の不変条件で committee に収まり(`proposalDutyStore_participants_committee`)、honest な委員は
+equivocate しません(`proposalDutyStore_no_honest_equivocation`)。slot `d` の honest な委員の投票(`voteConeSlot_of_heads`)は、支持の締切
+`supportCutoff d ≤ proposalTime (d + 1)` より前に提案者の pool に入ります。その head は提案者の読みの tree にあります(`voteDutyHead_mem_proposalDutyTree`。
+互換は finalized ⪯ FG root ⪯ anchor ⪯ `P` ⪯ head)。そこで投票は支持の view で `P` 以下を指します(`proposalDutyStore_supportVote_of_pool`)。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -637,7 +642,6 @@ tree に入ります(`proposalDutyTree_mem_of_preceq`)。残りは 2 つの穴�
 | `Proofs.Consensus.AvailableHoles.recordAgree_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedSafe` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.crossAgree_recovered` | `Consensus.Spec.Claims.available` | `latest_compatible_finalized_core` | `DecoupledConsensusProofs/Execution/PreparedV4LatestFinalizedCompatibilityClosed.lean` | 216 |
 | `Proofs.Consensus.AvailableHoles.proposerCandidate_protected_succ_genesis` | `Consensus.Spec.Claims.available` | `protected_preceq_proposedParent_of_gstZero_named` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakProposalHeadNamed.lean` | 321 |
-| `Proofs.Consensus.AvailableHoles.proposerSupporterMajority_protected_succ_genesis` | `Consensus.Spec.Claims.available` | `protected_preceq_proposedParent_of_gstZero_named` | `DecoupledConsensusProofs/Protocol/ForkChoice/Views/WeakProposalHeadNamed.lean` | 321 |
 | `Proofs.Consensus.AvailableHoles.voteStep_proposal_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalWalkTransferred_of_frozenCompatiblePivot_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/ProposalPivot.lean` | 318 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |

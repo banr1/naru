@@ -126,11 +126,12 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    `latestAtProposalField_of_weakGenesis`)と交差の互換 `crossAgree` から出す。回復の枝は穴 `confirmedIncluded_recovered`。
    `latestAtProposal_genesis` は周回 306 に手書き `update_confirmation_latest_eq_of_duty` の運びで組み(読みの記録は確認評価の tick の確認の更新の
    結果 `confRead_eq_update`、更新の後の記録 `updateConfirmation_latest_eq_of_genuine`)、残りを 4 つの穴に分けた。
-4. 穴(7 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
-   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposerCandidate_protected_succ_genesis` と
-   `proposerSupporterMajority_protected_succ_genesis`(手書き `protected_preceq_proposedParent_of_gstZero_named` の歩みの tree の証人と
-   提案者の view での過半。周回 321 に `protected_preceq_proposalParent_succ_genesis` を提案者の walk の層
-   `proposalParent_passes_supporter_majority` で組み、この 2 つに分けた)/
+4. 穴(6 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
+   `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/ `proposerCandidate_protected_succ_genesis`(手書き
+   `protected_preceq_proposedParent_of_gstZero_named` の歩みの tree の証人。周回 321 に `protected_preceq_proposalParent_succ_genesis` を
+   提案者の walk の層 `proposalParent_passes_supporter_majority` で組み、歩みの tree の証人と提案者の view での過半
+   `proposerSupporterMajority_protected_succ_genesis` の 2 つに分けた。過半は周回 322 に、cone の投票が提案時刻までに提案者の pool と
+   tree に入ることで証明した)/
    `voteStep_proposal_succ_genesis`(手書き `honestVoteStoresExtend_succ_of_gstZero_of_pins` の祖先の側 `proposal_preceq_voteDutyHead_succ_genesis` を
    周回 318 に降下補題 `Goldfish.ghost_reaches` の前提 `hpre` / `hpath` / `hstep` に分けたもの。`hstop` は `voteStop_proposal` で証明した。
    `hpre`(`voteAnchor_preceq_proposal_succ_genesis`)と `hpath`(`votePath_proposal_succ_genesis`)は周回 320 に、slot `k - 1` で保護された
@@ -158,7 +159,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 手書きは `RecoveredBy` の 2 枝で分ける: `genesis` は `WeakGenesis` に写して `gstZeroGuarantees_of_weakGenesis`
 (`DecoupledConsensusProofs/Execution/GSTZeroSafetyClosedNamed.lean`)、`recovered` は `recoveryProducesHealedState` /
 `boundedSafety`(`DecoupledConsensusProofs/ReviewTheorem.lean`)の位相の保証から。一致と確認の包含の穴はすでに枝ごとに分けた(`commonUpper_genesis` /
-GST-zero の枝の 3 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
+GST-zero の枝の 2 件の穴は `t0 = 0`、`_recovered` の 3 件は `hne : t0 ≠ 0` を受け取る)。stable の包含の穴は義務の前提
 (`SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0`)をそのまま受け取り、細分するときはこの 2 枝から切る。`commonUpper_genesis` は手書きと同じく
 `confirmation_time S.E 0 ≤ rho.horizon` か否かでさらに分けた。
 -/
@@ -7913,6 +7914,174 @@ theorem proposalDutyTree_mem_of_preceq (hs : EventsSorted rho) {k : Nat} {X C : 
   rw [Bool.and_eq_true] at hwv
   exact ⟨w, hw, by rw [Bool.and_eq_true]; exact ⟨Proofs.Consensus.Blocks.preceq_trans hCX hwv.1, hwv.2⟩⟩
 
+/-- 提案の務めの読みの store の slot は `k`(時計合わせ `setClock` の `slotOf`。`Clocks.slotOf_proposalTime`。周回 322)。 -/
+theorem proposalDutyStoreAt_s (hδ : 0 < s.e.delta) (k : Nat) : (proposalDutyStoreAt c p a nr s rho k).s = k := by
+  unfold proposalDutyStoreAt proposerReadAt confirmationReadAt confirmationReadFrom
+    Model.Consensus.Protocol.Handlers.setClock
+  exact Proofs.Consensus.Clocks.slotOf_proposalTime s.e hδ k
+
+/-- 提案の務めの読みの投票の view は読みの pool のバケツ `st.s - 1`(`proposerView` と `storePool` は同じ式。周回 322)。 -/
+theorem proposalDutyVotesAt_eq_pool (k : Nat) :
+    proposalDutyVotesAt c p a nr s rho k =
+      Model.Consensus.Protocol.Store.storePool (proposalDutyStoreAt c p a nr s rho k)
+        ((proposalDutyStoreAt c p a nr s rho k).s - 1) := rfl
+
+/-- 提案の務めの読みの store は pool の不変条件を満たす(時計合わせは pool を変えない。`CarriedCommittee.stateBeforeTime_pool`。
+周回 322)。 -/
+theorem proposalDutyStore_poolInv (k : Nat) :
+    Proofs.Consensus.Votes.PoolInv c (proposalDutyStoreAt c p a nr s rho k) := by
+  unfold proposalDutyStoreAt proposerReadAt confirmationReadAt confirmationReadFrom
+    Model.Consensus.Protocol.Handlers.setClock
+  exact Proofs.Consensus.CarriedCommittee.stateBeforeTime_pool c p a nr s rho _ _
+
+/-- **提案の務めの読みの view の参加者は slot `st.s - 1` の committee の要素**(手書き `proposerDutyStore_proposer_view_valid_core` の
+committee の半分): view は pool のバケツ `st.s - 1` で、pool の不変条件から投票者は committee の要素(周回 322)。 -/
+theorem proposalDutyStore_participants_committee (k : Nat) :
+    ∀ v ∈ (Model.Consensus.Protocol.ForkChoice.Goldfish.rawParticipants (proposalDutyVotesAt c p a nr s rho k)).elems,
+      v ∈ (c ((proposalDutyStoreAt c p a nr s rho k).s - 1)).elems := by
+  intro v hv
+  obtain ⟨hv, -⟩ := (Proofs.Consensus.Majority.mem_rawParticipants_iff _ _).mp hv
+  obtain ⟨u, hu, rfl⟩ := (Proofs.Consensus.Goldfish.mem_voters_iff _ _).mp hv
+  rw [proposalDutyVotesAt_eq_pool] at hu
+  exact ((proposalDutyStore_poolInv c p a nr s rho k).mem hu).2
+
+/-- **提案の務めの読みの view で honest な委員は equivocate しない**(手書き `pool_no_honest_equivocation_of_core`): view の honest な
+`v` の投票はどれも pool のバケツ `st.s - 1` の投票で、pool の honest な投票は `v` の出した投票(`PoolFrom.pool_genuine`)なので
+`ScheduleWellFormed` の下で等しい(`Voting.emits_gfVote_unique`)。view は整列した集合なので `votesBy` の大きさは 1 以下(周回 322)。 -/
+theorem proposalDutyStore_no_honest_equivocation (hsch : ScheduleWellFormed s rho)
+    (hunf : UnforgeableSignatures c p a nr s rho) (k : Nat) :
+    ∀ v ∈ (c ((proposalDutyStoreAt c p a nr s rho k).s - 1)).elems, v ∈ rho.honest.elems →
+      Model.Consensus.Protocol.Schedule.equivocates (proposalDutyVotesAt c p a nr s rho k) v = false := by
+  intro v _ hv
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e k)
+  have hp := proposalDutyStore_poolInv c p a nr s rho k
+  have hgen : ∀ u ∈ (proposalDutyVotesAt c p a nr s rho k).elems, u.valIndex = v →
+      u.slot = (proposalDutyStoreAt c p a nr s rho k).s - 1 ∧
+      ∃ t, Statements.Consensus.Spec.Execution.Emits c p a nr s rho v
+        (Model.Consensus.Execution.Objects.NamedObject.GfVote u) t := by
+    intro u hu huv
+    rw [proposalDutyVotesAt_eq_pool] at hu
+    refine ⟨(hp.mem hu).1, ?_⟩
+    have hu' : u ∈ Proofs.Consensus.Votes.poolList
+        (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.proposalTime s.e k)) (p k)).st.core
+        ((proposalDutyStoreAt c p a nr s rho k).s - 1) :=
+      (Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mp hu
+    rw [heq] at hu'
+    have hh : rho.honest.contains u.valIndex = true := by
+      rw [huv]
+      exact (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hv
+    rw [← huv]
+    exact Proofs.Consensus.PoolFrom.pool_genuine c p a nr s rho hunf hu' hh
+  have hsorted : Proofs.Consensus.Majority.SortedLt (proposalDutyVotesAt c p a nr s rho k) :=
+    Proofs.Consensus.Majority.SortedLt.toSet Proofs.Consensus.Orders.gv_compare_eq_iff
+      Proofs.Consensus.Majority.gv_lt_trans Proofs.Consensus.Majority.gv_gt_lt _
+  unfold Model.Consensus.Protocol.Schedule.equivocates
+  rw [decide_eq_false_iff_not]
+  intro h2
+  have hnd : (Model.Consensus.Protocol.Schedule.votesBy (proposalDutyVotesAt c p a nr s rho k) v).elems.Nodup := by
+    unfold Model.Consensus.Protocol.Schedule.votesBy
+    exact Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl
+      (Proofs.Consensus.Majority.SortedLt.filter hsorted _)
+  have hle : (Model.Consensus.Protocol.Schedule.votesBy (proposalDutyVotesAt c p a nr s rho k) v).elems.length ≤ 1 := by
+    apply Proofs.Consensus.Majority.length_le_one_of_nodup hnd
+    intro x hx y hy
+    rw [Proofs.Consensus.Goldfish.mem_votesBy_iff] at hx hy
+    obtain ⟨hxs, t₁, he₁⟩ := hgen x hx.1 hx.2
+    obtain ⟨hys, t₂, he₂⟩ := hgen y hy.1 hy.2
+    exact Proofs.Consensus.Voting.emits_gfVote_unique c p a nr s rho hsch he₁ he₂ (hxs.trans hys.symm)
+  unfold NaruStd.Set.size at h2
+  omega
+
+/-- **pool の投票は提案の務めの読みの支持の view にあり `B` 以下を指す**(手書き `mem_proposer_support_view_of_pool` に当たる。
+提案者の view は凍結の絞り込みが無い): 読みの pool のバケツ `st.s - 1` の投票 `u` の head を root に持つ読みの tree のブロック `X`
+(slot が投票の slot 以下)があれば、読みの tree は root が要素を決める(`tickTree_root_inj`。提案者は honest)ので `u` は `X` に解決し
+(`findRoot?_of_mem`)、`u` は解決できる票、`B ⪯ X` なら `B` 以下を指す(`Goldfish.targetsUnder_iff`。周回 322)。 -/
+theorem proposalDutyStore_supportVote_of_pool (hsleep : SleepyRegime c p a nr s rho 0) (hsch : ScheduleWellFormed s rho)
+    {k : Nat} (hhon : rho.honest.contains (p k) = true) {B X : Block} {u : GoldfishVote}
+    (hpool : u ∈ (Model.Consensus.Protocol.Store.storePool (proposalDutyStoreAt c p a nr s rho k)
+      ((proposalDutyStoreAt c p a nr s rho k).s - 1)).elems)
+    (hX : X ∈ (proposalDutyStoreAt c p a nr s rho k).tree.elems) (hroot : root X = u.head) (hsl : slot X ≤ u.slot)
+    (hBX : preceq B X = true) :
+    u ∈ (proposalDutySupportAt c p a nr s rho k).elems ∧
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho k)).tree B u = true := by
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e k)
+  have hnd : (proposalDutyStoreAt c p a nr s rho k).tree.elems.Nodup :=
+    (Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho
+      (Model.Consensus.Protocol.Schedule.proposalTime s.e k) (p k)).nodup
+  have hinj : ∀ y ∈ (proposalDutyStoreAt c p a nr s rho k).tree.elems,
+      ∀ z ∈ (proposalDutyStoreAt c p a nr s rho k).tree.elems, root y = root z → y = z := by
+    intro y hy z hz hr
+    have hy' : y ∈ (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Schedule.proposalTime s.e k)) (p k)).st.core.tree.elems := hy
+    have hz' : z ∈ (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Schedule.proposalTime s.e k)) (p k)).st.core.tree.elems := hz
+    rw [heq] at hy' hz'
+    exact tickTree_root_inj c p a nr s rho hsleep hhon _ hy' hz' hr
+  have hr := findRoot?_of_mem hnd hinj hX hroot
+  refine ⟨?_, (Proofs.Consensus.Goldfish.targetsUnder_iff _ _ _).mpr ⟨X, hr, hsl, hBX⟩⟩
+  unfold proposalDutySupportAt Model.Consensus.Protocol.ForkChoice.Views.proposerSupportView
+  rw [Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff]
+  refine List.mem_filter.mpr ⟨(Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mp hpool, ?_⟩
+  have hr' : findRoot? (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+      (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho k))).tree u.head = some X := hr
+  unfold Model.Consensus.Protocol.StoreBase.resolved
+  rw [hr']
+  exact decide_eq_true hsl
+
+/-- **honest なノードの slot `d` の投票の務めの head は、slot `d + 1` の提案の務めの読みの tree にある**(GST-zero の枝。手書き
+`headsResolveIn_storeBeforeTime_of_availableBefore_at_core` の提案時刻の形): `voteDutyHead_stamped_next` と同じ運びで、時刻を
+`proposalTime (d + 1)`、読むノードを honest な提案者 `p (d + 1)` にした形。head は `u` の時刻 `voteTime d` の読みの tree の
+名前付きブロックの消去で、`bodiesBlock_stamped`(`T = voteTime d`、`T + Δ = supportCutoff d ≤ proposalTime (d + 1)`)で提案者の読みの
+tree にある。前提は提案者の読みの finalized と head の互換(周回 322)。 -/
+theorem voteDutyHead_mem_proposalDutyTree (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) {u : ValidatorId} (hu : rho.honest.contains u = true) {d : Nat}
+    (hhor : Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true)
+    (hcompat : Model.Consensus.Objects.Blocks.compatible
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1))) (p (d + 1))).st.core.f
+      (voteDutyHeadAt c p a nr s rho u d) = true) :
+    voteDutyHeadAt c p a nr s rho u d ∈ (proposalDutyStoreAt c p a nr s rho (d + 1)).tree.elems := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  have hsch : ScheduleWellFormed s rho := hexec.1.1.1
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hu' : u ∈ rho.honest.elems := (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hu
+  have hx' : p (d + 1) ∈ rho.honest.elems :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mp hhon
+  have hT0 : 0 ≤ Model.Consensus.Protocol.Schedule.voteTime s.e d := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    positivity
+  have hτ : Model.Consensus.Protocol.Schedule.voteTime s.e d + s.e.delta ≤
+      Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Protocol.Schedule.proposalTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hmem : voteDutyHeadAt c p a nr s rho u d ∈
+      (worldAt (stateBefore c p a nr s rho
+        (Proofs.Consensus.ReceiverFinality.idxLt rho (Model.Consensus.Protocol.Schedule.voteTime s.e d))) u).st.core.tree.elems := by
+    rw [← Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs]
+    unfold voteDutyHeadAt
+    exact voteHeadBlock_mem_tree _ s.e s.hc
+      ((Proofs.Consensus.Trees.stateBeforeTime_treeInv c p a nr s rho _ u).congr ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩)
+  obtain ⟨Y, hY, hYe⟩ := (Proofs.Consensus.Carrier.stateBefore_inv c p a nr s rho _ u).named _ hmem
+  have hcompat' := hcompat
+  rw [← hYe] at hcompat'
+  obtain ⟨htree, -⟩ := bodiesBlock_stamped c p a nr s rho hwf hdom hsleep hu' hT0
+    (fun j ev hj hev => le_of_lt (Proofs.Consensus.JustificationCertificate.time_lt_of_lt_idxLt rho hs hj hev))
+    hY hx' hτ hhor hcompat'
+  rw [hYe] at htree
+  exact htree
+
 /-- 穴: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest で、slot `d` で保護されたブロック `P` が提案の務めの読みの
 anchor の祖先でなければ、`P` の子孫で anchor の子孫でもあるブロックが提案者の読みの歩みの tree にある(周回 321)。手書き
 `protected_preceq_proposedParent_of_gstZero_named`(`WeakProposalHeadNamed.lean`)の `hXcandidate` と `hanchorX` に当たる(証人は honest な
@@ -7929,24 +8098,107 @@ theorem proposerCandidate_protected_succ_genesis (hwf : SetupWellFormed c p s) (
       preceq (proposalDutyAnchorAt c p a nr s rho (d + 1)) X = true := by
   sorry
 
-/-- 穴: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、slot `d` で保護されたブロック `P` の支持者は、提案者の
-読みの view(投票 `proposerView`・支持 `proposerSupportView`、slot `d`)の参加者の過半(周回 321)。手書き
+/-- GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest で、提案の務めの読みの anchor ⪯ `P` なら、slot `d` で保護された
+ブロック `P` の支持者は、提案者の読みの view(投票 `proposerView`・支持 `proposerSupportView`、slot `d`)の参加者の過半。手書き
 `protected_preceq_proposedParent_of_gstZero_named`(`WeakProposalHeadNamed.lean`)の `Protocol.supporterMajority_of_cone S.E hcone hvalid` に
-当たる。閉じるのに要るもの: `Majority.supporterMajority_of_cone` の形で、view の参加者が committee に収まること(手書き `hvalid`。
-`proposerDutyStore_proposer_view_valid_core`)、honest な委員が equivocate しないこと(手書き `hne`。`pool_no_honest_equivocation_of_core`)、
-honest な委員の cone の投票(`hP.cone`)が提案の時刻までに提案者の pool に入り head が tree で解決すること(手書き `hvote`。
-`gfVote_in_cutoff_view_after_gst` と `headsResolveIn_storeBeforeTime_of_availableBefore_at_core`)。 -/
+当たる。周回 321 に穴として置き、周回 322 に `Majority.supporterMajority_of_cone` の形で証明した: view の参加者は committee の要素
+(`proposalDutyStore_participants_committee`。手書き `hvalid`)、honest な委員は equivocate しない(`proposalDutyStore_no_honest_equivocation`。
+手書き `hne`)。slot `d` の committee の honest な元 `v` は投票時刻に自分の head の root に投票し(`voteConeSlot_of_heads`)、その投票は支持の
+締切 `supportCutoff d ≤ proposalTime (d + 1)` より前に提案者の pool に入り(`Stamps.partialSynchrony_honest_gfVote_stamped`)、head は
+提案者の読みの tree にある(`voteDutyHead_mem_proposalDutyTree`。互換は finalized ⪯ FG root ⪯ anchor ⪯ `P` ⪯ head)ので、投票は支持の
+view にあり `P` 以下を指す(`proposalDutyStore_supportVote_of_pool`。手書き `hvote`)。前提 anchor ⪯ `P` は呼び出し側
+(`protected_preceq_proposalParent_succ_genesis` の `P` が anchor の祖先でない枝)にある。 -/
 theorem proposerSupporterMajority_protected_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
-    (hhon : rho.honest.contains (p (d + 1)) = true) {P : Block} (hP : ProtectedVoteSlot c p a nr s rho d P) :
+    (hhon : rho.honest.contains (p (d + 1)) = true) {P : Block} (hP : ProtectedVoteSlot c p a nr s rho d P)
+    (hAP : preceq (proposalDutyAnchorAt c p a nr s rho (d + 1)) P = true) :
     Model.Consensus.Protocol.ForkChoice.Goldfish.votersCount s.e (proposalDutyVotesAt c p a nr s rho (d + 1))
         ((proposalDutyStoreAt c p a nr s rho (d + 1)).s - 1) <
       2 * (Model.Consensus.Protocol.ForkChoice.Goldfish.rawSupporters
         (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree
         (proposalDutyVotesAt c p a nr s rho (d + 1)) (proposalDutySupportAt c p a nr s rho (d + 1))
         ((proposalDutyStoreAt c p a nr s rho (d + 1)).s - 1) P).size := by
-  sorry
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  have hhc : HonestCommittees c rho.honest := hsleep.1.1.2
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  refine Proofs.Consensus.Majority.supporterMajority_of_cone s.e
+    (Proofs.Consensus.Majority.committee_sorted hwf _) (Proofs.Consensus.Majority.honestCommittees_at hhc _)
+    (proposalDutyStore_participants_committee c p a nr s rho (d + 1))
+    (proposalDutyStore_no_honest_equivocation c p a nr s rho hsch hunf (d + 1)) ?_
+  have hslot : (proposalDutyStoreAt c p a nr s rho (d + 1)).s = d + 1 :=
+    proposalDutyStoreAt_s c p a nr s rho hδ (d + 1)
+  intro v hvc hvh
+  have hv : rho.honest.contains v = true :=
+    (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hvh
+  have hvc' : (c d).contains v = true := by
+    rw [hslot, Nat.add_sub_cancel] at hvc
+    exact (Proofs.Consensus.Sets.contains_iff_mem Proofs.Consensus.Sets.vid_eq _ _).mpr hvc
+  obtain ⟨X, hPX, -, hem, hsl, hXe⟩ :=
+    voteConeSlot_of_heads c p a nr s rho hwf hsleep hhor hd (by omega) hP.heads v hv hvc'
+  have hps : Statements.Consensus.Spec.Conditions.PartialSynchrony c p a nr s rho := hsleep.1.1.1.1.2
+  have hgst : s.e.tGST ≤ 0 := hsleep.1.1.1.2
+  obtain ⟨hs, hnd⟩ := Proofs.Consensus.Available.schedule_sorted_nodup s rho hsch
+  have hnd' := Proofs.Consensus.RecordGrowth.nodup_of_eventsNodup rho hnd
+  have hT0 : 0 ≤ Model.Consensus.Protocol.Schedule.voteTime s.e d := by
+    unfold Model.Consensus.Protocol.Schedule.voteTime Model.Consensus.Objects.Parameters.slotTime
+      Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    positivity
+  have hcut : Model.Consensus.Protocol.Schedule.supportCutoff s.e d ≤
+      Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1) := by
+    unfold Model.Consensus.Protocol.Schedule.supportCutoff Model.Consensus.Protocol.Schedule.proposalTime
+      Model.Consensus.Objects.Parameters.slotTime Model.Consensus.Objects.Time.slotStart
+    simp only [Int.ofNat_eq_natCast]
+    push_cast
+    nlinarith
+  have hpt : Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1) ≤ rho.horizon := by
+    refine le_trans ?_ hhor
+    unfold Model.Consensus.Protocol.Schedule.confirmationTime Model.Consensus.Protocol.Schedule.proposalTime
+    linarith
+  -- 投票は提案時刻の読みの pool のバケツ `d` にある
+  obtain ⟨t2, j, ⟨-, ht2⟩, hh, hmem⟩ :=
+    Proofs.Consensus.Stamps.partialSynchrony_honest_gfVote_stamped c p a nr s rho hps hsch hunf hδ hem hv
+      (le_trans hgst hT0) hhon (le_trans hcut hpt)
+  obtain ⟨ev, hevj, hte⟩ := Proofs.Consensus.Stamps.handlesAt_event c p a nr s rho hh
+  have hji : j < Proofs.Consensus.ReceiverFinality.idxLt rho
+      (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1)) :=
+    Proofs.Consensus.ReceiverFinality.lt_idxLt_of_time_lt rho hs hnd' hevj
+      (by rw [hte]; exact lt_of_lt_of_le ht2 hcut)
+  obtain ⟨hm, -⟩ := hmem _ hji
+  have heq := Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1))
+  have hpool : (⟨v, d, root (Model.Consensus.Objects.NamedBlocks.eraseBlock X)⟩ : GoldfishVote) ∈
+      (Model.Consensus.Protocol.Store.storePool (proposalDutyStoreAt c p a nr s rho (d + 1))
+        ((proposalDutyStoreAt c p a nr s rho (d + 1)).s - 1)).elems := by
+    rw [hslot, Nat.add_sub_cancel]
+    refine (Proofs.Consensus.Votes.mem_storePool_iff _ _ _).mpr ?_
+    show _ ∈ Proofs.Consensus.Votes.poolList
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1))) (p (d + 1))).st.core d
+    rw [heq]
+    exact hm
+  -- 投票の head のブロックは提案時刻の読みの tree にある(互換: finalized ⪯ FG root ⪯ anchor ⪯ `P` ⪯ head)
+  have hfj := Proofs.Consensus.ProcessedAncestor.stateBeforeTime_fj c p a nr s rho hs
+    (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1)) (p (d + 1))
+  have hf : preceq (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).f
+      (Model.Consensus.Protocol.ForkChoice.Goldfish.getFgRoot
+        (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1)))) = true :=
+    Proofs.Consensus.ProposerFinality.fgRoot_extends hfj
+  have hfh := Proofs.Consensus.Blocks.preceq_trans hf
+    (Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.ProposerRoot.getSgRootWith_extends_fgRoot _ _ _ _ _)
+      (Proofs.Consensus.Blocks.preceq_trans hAP (hP.heads v hv)))
+  have hcompat : Model.Consensus.Objects.Blocks.compatible
+      (worldAt (stateBeforeTime c p a nr s rho (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1))) (p (d + 1))).st.core.f
+      (voteDutyHeadAt c p a nr s rho v d) = true :=
+    Proofs.Consensus.Blocks.compatible_of_preceq_common hfh (Proofs.Consensus.Blocks.preceq_self _)
+  have hXt : Model.Consensus.Objects.NamedBlocks.eraseBlock X ∈ (proposalDutyStoreAt c p a nr s rho (d + 1)).tree.elems := by
+    rw [hXe]
+    exact voteDutyHead_mem_proposalDutyTree c p a nr s rho hwf hdom hsleep hv hpt hhon hcompat
+  obtain ⟨hsv, htg⟩ := proposalDutyStore_supportVote_of_pool c p a nr s rho hsleep hsch hhon hpool hXt rfl hsl hPX
+  refine ⟨_, hsv, rfl, ?_, htg⟩
+  rw [hslot, Nat.add_sub_cancel]
 
 /-- GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、slot `d` で保護されたブロック(`ProtectedVoteSlot d P`:
 honest なノードの slot `d` の投票の務めの head の祖先で、cone を持つ)は提案の親の祖先。手書き
@@ -7955,8 +8207,8 @@ honest なノードの slot `d` の投票の務めの head の祖先で、cone �
 の `hcompat`(anchor ⪯ 提案)はどちらもこれを使う。周回 320 に穴として置き、周回 321 に提案者の walk の層で組んだ: `P` が提案の務めの
 読みの anchor の祖先なら anchor ⪯ 提案の親(`proposalDutyAnchorAt_preceq_parent`)。そうでなければ穴 `proposerCandidate_protected_succ_genesis`
 の証人 `X`(歩みの tree にあり `P` と anchor の子孫)で anchor ⪯ `P`(互換で `P ⪯ anchor` でない)、途中は `X` の祖先で
-FG root ⪯ anchor の子孫なので歩みの tree にあり(`proposalDutyTree_mem_of_preceq`)、過半(穴 `proposerSupporterMajority_protected_succ_genesis`)
-で walk は `P` を通る(`proposalParent_passes_supporter_majority`)。 -/
+FG root ⪯ anchor の子孫なので歩みの tree にあり(`proposalDutyTree_mem_of_preceq`)、過半(`proposerSupporterMajority_protected_succ_genesis`。
+周回 322 に証明した)で walk は `P` を通る(`proposalParent_passes_supporter_majority`)。 -/
 theorem protected_preceq_proposalParent_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
@@ -7974,7 +8226,7 @@ theorem protected_preceq_proposalParent_succ_genesis (hwf : SetupWellFormed c p 
     · exact h
     · exact absurd h hPA
   refine proposalParent_passes_supporter_majority c p a nr s rho hB
-    (proposerSupporterMajority_protected_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hP) hAP ?_
+    (proposerSupporterMajority_protected_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hP hAP) hAP ?_
   intro C hAC _ hCP
   refine proposalDutyTree_mem_of_preceq c p a nr s rho hs hX (Proofs.Consensus.Blocks.preceq_trans hCP hPX) ?_
   exact Proofs.Consensus.Blocks.preceq_trans (Proofs.Consensus.ProposerRoot.getSgRootWith_extends_fgRoot _ _ _ _ _) hAC
