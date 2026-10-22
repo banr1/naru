@@ -657,6 +657,10 @@ pivot より下の一歩は、pivot の支持者が投票者の読みの voter v
 (`voteDutyTree_slot_eq_proposal`。手書き `unique_slot_block_in_store_core`。tree のブロックは bodies の名前付きブロックで、受理されたブロックの作者は
 slot の提案者なので、署名の偽造なしからその提案者が発行した提案)。したがって carried の投票は提案の運ぶ投票で、提案者の view にあります
 (`voterViewCarried_mem_proposalVotes_succ_genesis`)。残りは pooled の部分の穴 `voteScoreRawExtraPooled_succ_genesis` です。
+周回 329 に、backward を支持の voter view の pooled と carried の和で分けました。carried の支持の投票は、同じく提案の運ぶ支持の投票
+(`proposal_gfSupportVotes_eq`)で、提案者の支持の view にあって提案者の tree で解決できます。投票者の tree と提案者の tree で解決したブロックは
+root が等しいので同じブロックです(`runTree_root_inj`。手書き `frozenSuffix_resolved_blocks_eq`)。したがって `D` 以下を指すことも写ります
+(`voterSupportCarried_backward_succ_genesis`)。残りは pooled の部分の穴 `voteScoreBackwardPooled_succ_genesis` です。
 手書きはどの穴も `RecoveredBy` の 2 枝(`gstZeroGuarantees_of_weakGenesis` / `recoveryProducesHealedState` の位相の保証)で分けるので、細分はその 2 枝から切ります。
 `confirmedLive` / `stableLive`(周回 212)は固有の穴を持たず、`LiveSleepyRegime` の `SleepyRegime` で `availableAt` を当て、証明済みの
 `Liveness.lean` の `confirmedLive_of_available` / `stableLive_of_available` で活性に移します(`available` の穴を閉じれば一緒に閉じる)。
@@ -678,7 +682,7 @@ slot の提案者なので、署名の偽造なしからその提案者が発行
 | `Proofs.Consensus.AvailableHoles.voteSuffixReflect_succ_genesis` | `Consensus.Spec.Claims.available` | `NamedProposalPivotSuffixTransfer` | `DecoupledConsensusInternal/Definitions/NamedProposalPivot.lean` | 326 |
 | `Proofs.Consensus.AvailableHoles.voteScoreRawExtraPooled_succ_genesis` | `Consensus.Spec.Claims.available` | `voter_raw_extra_equivocates_proposal_afterGST_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/RecoveryProposalCapInputs.lean` | 328 |
 | `Proofs.Consensus.AvailableHoles.voteScoreForward_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalCandidateScoreBridge_afterGST_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/SGOpeningFrozenSuffix.lean` | 327 |
-| `Proofs.Consensus.AvailableHoles.voteScoreBackward_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalCandidateScoreBridge_afterGST_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/SGOpeningFrozenSuffix.lean` | 327 |
+| `Proofs.Consensus.AvailableHoles.voteScoreBackwardPooled_succ_genesis` | `Consensus.Spec.Claims.available` | `namedProposalCandidateScoreBridge_afterGST_core` | `DecoupledConsensusProofs/Protocol/ForkChoice/Goldfish/SGOpeningFrozenSuffix.lean` | 329 |
 | `Proofs.Consensus.AvailableHoles.confirmedIncluded_recovered` | `Consensus.Spec.Claims.available` | `available_confirmedIncluded` | `DecoupledConsensusProofs/Bridge/StandardVocabulary.lean` | 305 |
 | `Proofs.Consensus.AvailableHoles.stableIncluded` | `Consensus.Spec.Claims.available` | `available_stableIncluded_any` | `DecoupledConsensusProofs/Bridge/StableIncludedAnySlot.lean` | 211 |
 | `Proofs.Consensus.StableIncludedFastHoles.stableWriteFresh_genesis` | `Consensus.Spec.Claims.stableIncludedFast` | `stableWrite_anySlot_fresh_gstZero` | `DecoupledConsensusProofs/Bridge/StableIncludedFresh.lean` | 212 |

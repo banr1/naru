@@ -129,7 +129,7 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
 4. 穴(9 件):`recordAgree_recovered`(手書き `available_confirmedSafe` の `recovered` の枝)/ `crossAgree_recovered`(手書き
    `SettledBootstrapPreparedV4.latest_compatible_finalized_core`)/
    `voteSuffixPersist_succ_genesis` / `voteSuffixReflect_succ_genesis` / `voteScoreRawExtraPooled_succ_genesis` / `voteScoreForward_succ_genesis` /
-   `voteScoreBackward_succ_genesis`(手書き
+   `voteScoreBackwardPooled_succ_genesis`(手書き
    `honestVoteStoresExtend_succ_of_gstZero_of_pins` の祖先の側 `proposal_preceq_voteDutyHead_succ_genesis` を
    周回 318 に降下補題 `Goldfish.ghost_reaches` の前提 `hpre` / `hpath` / `hstep` に分けたもの。`hstop` は `voteStop_proposal` で証明した。
    `hpre`(`voteAnchor_preceq_proposal_succ_genesis`)と `hpath`(`votePath_proposal_succ_genesis`)は周回 320 に、slot `k - 1` で保護された
@@ -145,7 +145,10 @@ claim `available` は `SetupWellFormed ∧ RunDomain ∧ SleepyRegime t0 → Ava
    証明し(`proposalVotes_sub_voterView_succ_genesis`)、raw extra / forward / backward を 3 つの穴に残した。raw extra は周回 328 に
    voter view の pooled と carried の和で分け、carried の投票は投票者の tree の slot `d + 1` のブロックが提案だけ
    (`voteDutyTree_slot_eq_proposal`。手書き `unique_slot_block_in_store_core`)なので提案の運ぶ投票であることで証明し
-   (`voterViewCarried_mem_proposalVotes_succ_genesis`)、pooled の部分を穴 `voteScoreRawExtraPooled_succ_genesis` に残した。
+   (`voterViewCarried_mem_proposalVotes_succ_genesis`)、pooled の部分を穴 `voteScoreRawExtraPooled_succ_genesis` に残した。backward は
+   周回 329 に支持の view の pooled と carried の和で分け、carried の支持の投票は提案の運ぶ支持の投票(`proposal_gfSupportVotes_eq`)で、
+   解決したブロックは root の衝突なし(`runTree_root_inj`)で両方の tree で同じなことで証明し(`voterSupportCarried_backward_succ_genesis`)、
+   pooled の部分を穴 `voteScoreBackwardPooled_succ_genesis` に残した。
    等号は周回 307 に `voteDutyHead_eq_of_preceq` で出した。slot 1 の head は周回 309 に `proposal_preceq_voteDutyHead_one` で、walk が提案に降りることから組み、`hadmit` に当たる
    `proposal_mem_voteTreeOne_genesis` は周回 310 に提案者が提案を発行すること `proposedBlockAt_emits` と配送の締切から、`hfrontier` に当たる
    `proposal_frontier_voteTreeOne_genesis` は周回 311 に最大の高さの carrier から組んだ)/
@@ -8822,6 +8825,20 @@ theorem proposal_gfVotes_eq {k : Nat} {B : Model.Consensus.Objects.NamedBlocks.N
   subst hb
   rfl
 
+/-- 提案が運ぶ支持の投票は提案の務めの読みの支持の view(`proposalInput` の `proposerSupportView`。`proposal_gfVotes_eq` の支持の版。
+周回 329)。 -/
+theorem proposal_gfSupportVotes_eq {k : Nat} {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho k = some B) :
+    gfSupportVotes (Model.Consensus.Objects.NamedBlocks.eraseBlock B) =
+      Model.Consensus.Protocol.ForkChoice.Views.proposerSupportView
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho k)))
+        (proposalDutyStoreAt c p a nr s rho k).s := by
+  unfold proposedBlockAt at hB
+  obtain ⟨par, -, hb⟩ := Proofs.Consensus.Proposal.proposalWith_some _ _ _ _ _ _ hB
+  subst hb
+  rfl
+
 /-- 提案の務めの読みの投票の view は重複が無い(`List.toSet` は整列。周回 327)。 -/
 theorem proposalDutyVotesAt_nodup (k : Nat) : (proposalDutyVotesAt c p a nr s rho k).elems.Nodup :=
   Proofs.Consensus.Majority.SortedLt.nodup Proofs.Consensus.Majority.gv_irrefl
@@ -9011,14 +9028,97 @@ theorem voteScoreForward_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunD
           (voteDutyStoreAt c p a nr s rho x (d + 1)).s) u.valIndex = true := by
   sorry
 
-/-- 穴(得点の写しの backward): 同じ前提で、提案者の歩みの tree のブロック `D` について、投票者の読みの支持の view の投票で投票者の
+/-- **voter の支持の view の carried の部分は提案の運ぶ支持の投票で、同じブロックに解決する**: honest なノード `x` の slot `d + 1` の
+投票の読みの tree の slot `d + 1` のブロックは提案だけ(`voteDutyTree_slot_eq_proposal`)なので、支持の view の carried の部分の投票は
+提案が運ぶ支持の投票(`proposal_gfSupportVotes_eq`)で、提案者の読みの支持の view にあり、提案者の tree で解決できる。投票者の tree と
+提案者の tree で解決したブロックは root が等しいので同じ(`runTree_root_inj`)で、投票者の tree で `D` 以下を指せば提案者の tree でも
+`D` 以下を指す。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の `backward` の carried の腕
+(`unique_slot_block_in_store_core` と `frozenSuffix_resolved_blocks_eq`)に当たる(周回 329)。 -/
+theorem voterSupportCarried_backward_succ_genesis (hwf : SetupWellFormed c p s)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {D : Block} {u : GoldfishVote}
+    (hu : u ∈ (NaruStd.Set.flatMap (NaruStd.Set.filter (voteDutyStoreAt c p a nr s rho x (d + 1)).tree
+        (fun b => slot b == (voteDutyStoreAt c p a nr s rho x (d + 1)).s)) (fun b =>
+        NaruStd.List.toSet (List.filter (fun vote =>
+          Model.Consensus.Protocol.StoreBase.resolved (voteDutyStoreAt c p a nr s rho x (d + 1)).tree vote &&
+            vote.slot == ((voteDutyStoreAt c p a nr s rho x (d + 1)).s - 1))
+          (gfSupportVotes b)))).elems)
+    (ht : Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree D u = true) :
+    u ∈ (proposalDutySupportAt c p a nr s rho (d + 1)).elems ∧
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree D u = true := by
+  have hexec := Proofs.Consensus.Liveness.executionValid_of_sleepy c p a nr s rho hsleep
+  unfold ExecutionValid at hexec
+  obtain ⟨⟨⟨hsch, -⟩, hunf⟩, -⟩ := hexec
+  have hs := Proofs.Consensus.Window.eventsSorted_of_schedule hsch
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hVs : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 := Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  rw [Proofs.Consensus.Sets.mem_flatMap_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu
+  obtain ⟨b, hb, hub⟩ := hu
+  rw [Proofs.Consensus.Trees.mem_filter_iff, beq_iff_eq, hVs] at hb
+  have hbB := voteDutyTree_slot_eq_proposal c p a nr s rho hsch hunf hδ x (d + 1) (Nat.succ_pos d) hhon hB hb.1 hb.2
+  rw [Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff, List.mem_filter, hbB,
+    proposal_gfSupportVotes_eq c p a nr s rho hB] at hub
+  have hmem : u ∈ (proposalDutySupportAt c p a nr s rho (d + 1)).elems := by
+    unfold proposalDutySupportAt
+    exact (Proofs.Consensus.Sets.mem_toSet_iff Proofs.Consensus.Orders.gv_compare_eq_iff _ _).mpr hub.1
+  refine ⟨hmem, ?_⟩
+  have hres := (List.mem_filter.mp hub.1).2
+  unfold Model.Consensus.Protocol.StoreBase.resolved at hres
+  obtain ⟨Y, hY, hYs, hDY⟩ := (Proofs.Consensus.Goldfish.targetsUnder_iff _ _ _).mp ht
+  cases hr' : findRoot? (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+      (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1)))).tree u.head with
+  | none => rw [hr'] at hres; exact absurd hres (by simp)
+  | some Y' =>
+    obtain ⟨hYm, hYr⟩ := Proofs.Consensus.BlockStamps.findRoot?_mem hY
+    obtain ⟨hY'm, hY'r⟩ := Proofs.Consensus.BlockStamps.findRoot?_mem hr'
+    have hYm' : Y ∈ (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Schedule.voteTime s.e (d + 1))) x).st.core.tree.elems := hYm
+    have hY'm' : Y' ∈ (worldAt (stateBeforeTime c p a nr s rho
+        (Model.Consensus.Protocol.Schedule.proposalTime s.e (d + 1))) (p (d + 1))).st.core.tree.elems := hY'm
+    rw [Proofs.Consensus.ReceiverFinality.stateBeforeTime_eq_stateBefore_idxLt c p a nr s rho hs] at hYm' hY'm'
+    have hYY := runTree_root_inj c p a nr s rho hsleep hx hhon _ _ hYm' hY'm' (hYr.trans hY'r.symm)
+    subst hYY
+    exact (Proofs.Consensus.Goldfish.targetsUnder_iff _ _ _).mpr ⟨Y, hr', hYs, hDY⟩
+
+/-- 穴(得点の写しの backward の pooled の部分): 同じ前提で、提案者の歩みの tree のブロック `D` について、honest なノード `x` の
+slot `d + 1` の投票の読みの pool の slot `d` の投票で、解決時刻 `tau` が凍結の時刻 `viewFreeze d` より前で投票者の tree で `D` 以下を
+指すものは、提案者の読みの支持の view にあって提案者の tree でも `D` 以下を指すか、その投票者が提案者の読みの view で equivocate する。
+手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の `backward` の pooled の腕に当たる。周回 329 に
+`voteScoreBackward_succ_genesis` から切り出した(carried の腕は `voterSupportCarried_backward_succ_genesis` で証明した)。
+閉じるのに要るもの: その投票が提案者の読みの view にあれば、その head のブロック(凍結の時刻より前に受信)は提案の時刻までに提案者の
+tree に入り(手書き `frozenSuffix_voterTarget_visibleAtProposal`)、`proposalDutyStore_supportVote_of_pool` で支持の view にあって
+`D` 以下を指す。無ければ raw extra の pooled の部分(穴 `voteScoreRawExtraPooled_succ_genesis`。`tau` の前なら受信の印も前)。 -/
+theorem voteScoreBackwardPooled_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
+    (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
+    (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
+    (hhon : rho.honest.contains (p (d + 1)) = true) {B : Model.Consensus.Objects.NamedBlocks.NamedBlock}
+    (hB : proposedBlockAt c p a nr s rho (d + 1) = some B) {x : ValidatorId} (hx : rho.honest.contains x = true)
+    {D : Block} (hDs : D ∈ (proposalDutyTreeAt c p a nr s rho (d + 1)).elems) :
+    ∀ u ∈ (Model.Consensus.Protocol.StoreBase.pool
+        (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+          (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1)))) d).elems,
+      Model.Consensus.Objects.Time.occurrenceBefore
+        (Model.Consensus.Protocol.StoreBase.tau
+          (Model.Consensus.Protocol.ForkChoice.Goldfish.fgToGoldfish
+            (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1)))) u)
+        (Model.Consensus.Protocol.Schedule.viewFreeze s.e d) = true →
+      Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+        (Model.Consensus.Protocol.Store.storeToHealing (voteDutyStoreAt c p a nr s rho x (d + 1))).tree D u = true →
+      (u ∈ (proposalDutySupportAt c p a nr s rho (d + 1)).elems ∧
+        Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
+          (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree D u = true) ∨
+      Model.Consensus.Protocol.Schedule.equivocates (proposalDutyVotesAt c p a nr s rho (d + 1)) u.valIndex = true := by
+  sorry
+
+/-- **得点の写しの backward**: 同じ前提で、提案者の歩みの tree のブロック `D` について、投票者の読みの支持の view の投票で投票者の
 tree で `D` 以下を指すものは、提案者の読みの支持の view にあって提案者の tree でも `D` 以下を指すか、その投票者が提案者の読みの view で
-equivocate する。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の `backward` に当たる。周回 327 に
-`voteSuffixScore_succ_genesis` から切り出した。
-閉じるのに要るもの: pooled の支持の投票が提案の運ぶ投票にあれば、その head のブロック(凍結の時刻より前に受信)は提案の時刻までに提案者の
-tree に入り(手書き `frozenSuffix_voterTarget_visibleAtProposal`)、無ければ raw extra(`voteScoreRawExtra_succ_genesis`。pooled の部分は穴 `voteScoreRawExtraPooled_succ_genesis`)。carried の支持の
-投票は提案が運ぶもので(手書き `unique_slot_block_in_store_core`)、両方の tree で同じブロックに解決する(手書き
-`frozenSuffix_resolved_blocks_eq`)。 -/
+equivocate する。支持の view は pooled と carried の和で、carried の投票は `voterSupportCarried_backward_succ_genesis` で左の腕、pooled の
+投票は穴 `voteScoreBackwardPooled_succ_genesis`。手書き `namedProposalCandidateScoreBridge_afterGST_core`(`SGOpeningFrozenSuffix.lean`)の
+`backward` に当たる。周回 327 に `voteSuffixScore_succ_genesis` から穴として切り出し、周回 329 に pooled と carried に分けて組んだ。 -/
 theorem voteScoreBackward_succ_genesis (hwf : SetupWellFormed c p s) (hdom : RunDomain s rho)
     (hsleep : SleepyRegime c p a nr s rho 0) (d : Nat) (hd : 1 ≤ d)
     (hhor : Model.Consensus.Protocol.Schedule.confirmationTime s.e (d + 1) ≤ rho.horizon)
@@ -9035,7 +9135,16 @@ theorem voteScoreBackward_succ_genesis (hwf : SetupWellFormed c p s) (hdom : Run
         Model.Consensus.Protocol.ForkChoice.Goldfish.targetsUnder
           (Model.Consensus.Protocol.Store.storeToHealing (proposalDutyStoreAt c p a nr s rho (d + 1))).tree D u = true) ∨
       Model.Consensus.Protocol.Schedule.equivocates (proposalDutyVotesAt c p a nr s rho (d + 1)) u.valIndex = true := by
-  sorry
+  intro u hu ht
+  have hδ := (Proofs.Consensus.Liveness.wf_facts hwf).1
+  have hVs : (voteDutyStoreAt c p a nr s rho x (d + 1)).s = d + 1 := Proofs.Consensus.Voting.slotOf_voteTime s.e hδ (d + 1)
+  unfold Model.Consensus.Protocol.ForkChoice.Views.voterSupportView at hu
+  dsimp only at hu
+  rw [Proofs.Consensus.Sets.mem_union_iff Proofs.Consensus.Orders.gv_compare_eq_iff] at hu
+  rcases hu with hpool | hcar
+  · rw [Proofs.Consensus.Trees.mem_filter_iff, hVs] at hpool
+    exact voteScoreBackwardPooled_succ_genesis c p a nr s rho hwf hdom hsleep d hd hhor hhon hB hx hDs u hpool.1 hpool.2 ht
+  · exact Or.inl (voterSupportCarried_backward_succ_genesis c p a nr s rho hwf hsleep d hhon hB hx hcar ht)
 
 /-- **得点の写しの境界**: GST-zero の枝(`t0 = 0`)で、slot `d + 1`(`d ≥ 1`)の提案者が honest なら、投票者と提案者の両方の歩みの tree に
 あるブロック `D` について、提案者の読み(投票 `proposerView`・支持 `proposerSupportView`・提案者の tree)から投票者の読み(voter view・
